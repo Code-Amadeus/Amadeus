@@ -192,6 +192,73 @@ test('one-shot heads cover 750ms while loop heads stay finite at 250ms without c
   }
 });
 
+test('short entry prefixes and replay history survive speculative tails without increasing the budget', async t => {
+  const f = fixture(t, { budgetBytes: 110 }), s = f.sprite;
+  const loop = Array.from({ length: 8 }, (_, i) => 'loop-' + i);
+  const entry = Array.from({ length: 4 }, (_, i) => 'entry-' + i);
+  s.loadFrames('normal', loop);
+  s.loadFrames('entry', entry);
+  s.setIdleFrameIntervalMs('normal', 100);
+  s.setIdleFrameIntervalMs('entry', 100);
+  s.setClipConfig('entry', { loopMode: 'once_then_hold' });
+  s.prefetchLabels(['entry'], 95, { reason: 'graph-entries', headMs: 50 });
+  s.prefetchLabels(['entry'], 'warm', { reason: 'speculative-tail' });
+  s.setIdleAnimation(true);
+  async function settle() {
+    for (let round = 0; round < 32; round++) {
+      await flush();
+      const loads = f.loads.filter(call => !call.pending.done);
+      const uploads = f.uploads.filter(call => !call.pending.done);
+      if (!loads.length && !uploads.length) return;
+      for (const call of loads) f.finishLoad(call.url);
+      await flush();
+      for (const call of f.uploads.filter(call => !call.pending.done)) f.finishUpload(call.texture.url);
+    }
+    assert.fail('finite head/window demand settles');
+  }
+  await settle();
+  assert.ok(s._frames.entry.slice(0, 2).every(Boolean), 'the short entry prefix is ready');
+  for (let tick = 0; tick < 16; tick++) {
+    f.ticker.tick(100); await settle();
+    assert.ok(s._frames.entry.slice(0, 2).every(Boolean), 'replay history cannot evict the short entry prefix');
+    assert.ok(s._frames.normal[s._frameIdx], 'the current source frame stays ready');
+    assert.ok(s._frameStore.stats().residentBytes <= 110, 'head protection does not raise the budget floor');
+  }
+  assert.ok(s._frames.normal.every(Boolean), 'the repeated loop stays cached after its first lap');
+  assert.ok(s._frames.entry.filter(Boolean).length < entry.length, 'speculative tails yield to useful replay history');
+  s.holdFrame(6); await settle();
+  assert.equal(s._activeFrameIdx, 6);
+  assert.equal(s.sprite.texture, s._frames.normal[6], 'explicit hold still resolves its exact source');
+});
+
+test('a pending-tag preview is bounded and revocable without advancing playback or discarding another owner', async t => {
+  const f = fixture(t, { budgetBytes: 400 }), s = f.sprite;
+  s.loadFrames('normal', ['visible']);
+  s.loadFrames('future', Array.from({ length: 8 }, (_, i) => 'future-' + i));
+  s.setIdleFrameIntervalMs('future', 20);
+  s.setClipConfig('future', { loopMode: 'once_then_hold' });
+  s.holdFrame(0);
+  await flush(); await f.complete('visible'); await f.complete('future-0');
+  const before = { label: s._currentEmotion, index: s._frameIdx, time: s._sampleTimeMs, texture: s.sprite.texture };
+  s.prefetchLabels(['future'], 'interactive', { reason: 'pending-tag', headMs: 40 });
+  await flush();
+  assert.deepEqual(f.demands.get('prefetch:pending-tag').map(row => row.url), ['future-0', 'future-1', 'future-2']);
+  const one = f.loads.find(call => call.url === 'future-1');
+  const two = f.loads.find(call => call.url === 'future-2');
+  assert.ok(one && two, 'preview starts the finite near head');
+  s.prefetchLabels(['future'], 'interactive', { reason: 'graph-next', headMs: 20 });
+  s.prefetchLabels([], 'interactive', { reason: 'pending-tag' });
+  await flush();
+  assert.equal(two.signal.aborted, true, 'withdrawal cancels speculative work with no other owner');
+  assert.equal(one.signal.aborted, false, 'a natural successor still owns its preparation');
+  await f.complete('future-1');
+  await f.finishCancelled();
+  assert.equal(s._frames.future[1].url, 'future-1');
+  assert.equal(Boolean(s._frames.future[2]), false, 'late canceled data cannot publish');
+  assert.deepEqual({ label: s._currentEmotion, index: s._frameIdx, time: s._sampleTimeMs, texture: s.sprite.texture }, before);
+  assert.equal(f.randomCalls, 0);
+});
+
 test('repeated trigger hints replace prior URL needs and cancel obsolete work through the actual store', async t => {
   const f = fixture(t, { budgetBytes: 200 }), s = f.sprite, runtime = f.runtime();
   s.loadFrames('first', ['first-0', 'first-1', 'first-2']);
@@ -200,8 +267,9 @@ test('repeated trigger hints replace prior URL needs and cancel obsolete work th
   runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
     { id: 'root', label: 'normal', isRoot: true }, { id: 'a', label: 'first' }, { id: 'b', label: 'second' },
   ], edges: [{ from: 'root', to: 'a', prob: 0 }, { from: 'root', to: 'b', prob: 0 }] } });
-  // Isolate trigger replacement from the independent graph-entry retention.
+  // Isolate trigger replacement from the independent first-hop reserves.
   s.prefetchLabels([], 'warm', { reason: 'graph-entries' });
+  s.prefetchLabels([], 'interactive', { reason: 'graph-next' });
   runtime._prefetchForTrigger('first', 'interactive');
   await flush();
   const old = f.loads.find(call => call.url === 'first-1');
@@ -275,7 +343,7 @@ test('current loop retains visited frames without eagerly decoding the entire cy
   assert.equal(s.sprite.texture.url, 'lap-3');
 });
 
-test('all positive graph neighbors outrank cycle retention, remain eligible during speech, and withdraw at an empty neighborhood', async t => {
+test('graph first hops outrank cycle retention, remain eligible during speech, and withdraw at an empty neighborhood', async t => {
   const f = fixture(t, { budgetBytes: 200 }), s = f.sprite, runtime = f.runtime();
   s.loadFrames('normal', ['normal']);
   s.loadFrames('next', ['next-0', 'next-1', 'next-2']);
@@ -283,12 +351,14 @@ test('all positive graph neighbors outrank cycle retention, remain eligible duri
   runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
     { id: 'root', label: 'normal', isRoot: true }, { id: 'leaf', label: 'next' }, { id: 'rare', label: 'rare' },
   ], edges: [{ from: 'root', to: 'leaf', prob: 0.95 }, { from: 'root', to: 'rare', prob: 0.05 }] } });
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority === 90));
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority === 90));
+  // Isolate neighborhood withdrawal from the independent root-fallback reserve.
+  s.prefetchLabels([], 'warm', { reason: 'graph-entries' });
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority >= 90));
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority >= 90));
   s.setSpeaking(true); runtime.speechActive = true;
   runtime._prefetchNodeNeighborhood('root');
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority === 90));
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority === 90));
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority >= 90));
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority >= 90));
   await flush();
   await f.complete('normal'); await f.complete('next-0'); await f.complete('rare-0');
   const next = f.loads.find(call => call.url === 'next-1');
@@ -330,7 +400,7 @@ test('the five-percent successor head is resident before the ordinary selection 
     for (const call of pending) await f.complete(call.url);
   }
   assert.equal(s._frameStore.stats().queued, 0);
-  assert.ok(s._frames.rare[1] && s._frames.rare[3], 'rare successor sources are ready before selecting a winner');
+  assert.ok(s._frames.rare[1], 'the rare successor can advance before selecting a winner');
   assert.equal(Boolean(s._frames.rare[4]), false, 'the prepared loop head remains finite');
   assert.equal(f.randomCalls, 0, 'preparing all neighbors consumes no draw');
   const selected = f.withRandom(0.99, () => runtime._nextAutoNode('root'));
@@ -371,7 +441,7 @@ test('speech release heads survive a larger active cycle for root and emotion re
     await settle();
     runtime.speechActive = true; s.setSpeaking(true); runtime._playNode('talk');
     const expected = emotionRoute ? 'calm' : 'root';
-    assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === `${expected}-1` && row.priority === 90));
+    assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === `${expected}-1` && row.priority >= 90));
     for (let i = 1; i < 24; i++) { s._frameIdx = i % 12; s._showFrame(s._frameIdx); await settle(); }
     assert.ok(s._frameStore.stats().evictions > 0, 'exercise real budget pressure');
     assert.ok(s._frameStore.stats().residentBytes <= 120);
@@ -729,15 +799,22 @@ test('graph entry-head hints use existing edges and config without extra decisio
   runtime.loadGraph(payload);
   const entries = hints.filter(hint => hint.reason === 'graph-entries');
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].priority, 'warm');
+  assert.equal(entries[0].priority, 95);
+  assert.equal(entries[0].headMs, 50);
   assert.deepEqual(new Set(entries[0].labels), new Set([
     'speaking-entry', 'closed-eye-entry', 'manual-entry', 'configured-emotion-entry',
     'thinking-entry', 'serious-entry', 'post-speech-entry',
+    'normal', 'automatic-common', 'automatic-rare',
   ]));
-  assert.equal(entries[0].labels.length, 7, 'aliases and duplicate config entries request one head');
+  assert.equal(entries[0].labels.length, 10, 'aliases and duplicate config entries request one head');
   const neighbors = hints.find(hint => hint.reason === 'graph-next');
-  assert.deepEqual(new Set(neighbors.labels), new Set(['automatic-common', 'automatic-rare']));
-  assert.equal(neighbors.priority, 'interactive');
+  assert.deepEqual(new Set(neighbors.labels), new Set(['manual-entry', 'automatic-common', 'automatic-rare']));
+  assert.equal(neighbors.priority, 95);
+  assert.equal(neighbors.headMs, 50);
+  runtime._prefetchNodeNeighborhood('auto');
+  const manualHead = hints.at(-1);
+  assert.deepEqual(manualHead.labels, ['nonroot-manual-entry'], 'a tag can use a non-root manual first hop');
+  assert.equal(manualHead.headMs, 50);
   assert.equal(runtime.rootNodeId, 'root');
   assert.equal(runtime.currentNodeId, 'root');
   assert.deepEqual(selections, ['normal']);
@@ -756,4 +833,74 @@ test('graph entry-head hints use existing edges and config without extra decisio
   assert.equal(sprite.timeMs, 740);
   assert.equal(randomCalls, 0);
   assert.equal(autoDecisions, 0);
+});
+
+
+async function settleFiniteDemand(f) {
+  for (let round = 0; round < 64; round++) {
+    await flush();
+    const loads = f.loads.filter(call => !call.pending.done);
+    const uploads = f.uploads.filter(call => !call.pending.done);
+    if (!loads.length && !uploads.length) return;
+    for (const call of loads) f.finishLoad(call.url);
+    await flush();
+    for (const call of f.uploads.filter(call => !call.pending.done)) f.finishUpload(call.texture.url);
+  }
+  assert.fail('finite head/window work settles');
+}
+
+test('bounded branch prefixes prepare every possible first hop before one branch occupies the budget', async t => {
+  const f = fixture(t, { budgetBytes: 90 }), s = f.sprite, runtime = f.runtime();
+  s.loadFrames('normal', ['normal']);
+  for (const label of ['common', 'rare']) {
+    s.loadFrames(label, Array.from({ length: 8 }, (_, i) => `${label}-${i}`));
+    s.setIdleFrameIntervalMs(label, 25);
+    s.setClipConfig(label, { loopMode: 'once_then_hold' });
+  }
+  runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
+    { id: 'root', label: 'normal' }, { id: 'hub', label: 'normal' },
+    { id: 'common', label: 'common' }, { id: 'rare', label: 'rare' },
+  ], edges: [{ from: 'root', to: 'hub', prob: 0 },
+    { from: 'hub', to: 'common', prob: 0.95 }, { from: 'hub', to: 'rare', prob: 0.05 }] } });
+  runtime._playNode('hub');
+  await settleFiniteDemand(f);
+  assert.equal(runtime.currentNodeId, 'hub');
+  assert.equal(s._frameIdx, 0);
+  assert.equal(f.randomCalls, 0, 'preparation does not choose a branch');
+  assert.ok(s._frameStore.stats().residentBytes <= 90);
+  for (const label of ['common', 'rare']) {
+    assert.ok(s._frames[label].slice(0, 3).every(Boolean), `${label} can enter and advance through its near prefix`);
+  }
+  const selected = f.withRandom(0.99, () => runtime._nextAutoNode('hub'));
+  assert.equal(selected, 'rare');
+  const misses = s._displayMisses;
+  runtime._playNode(selected);
+  f.ticker.tick(25);
+  assert.equal(s._activeFrameIdx, 1);
+  assert.equal(s.sprite.texture.url, 'rare-1');
+  assert.equal(s._displayMisses, misses, 'the rare next node advances immediately within the same budget');
+  assert.equal(f.randomCalls, 1);
+});
+
+test('root fallback heads stay prepared after leaving the root even without a root self edge', async t => {
+  const f = fixture(t, { budgetBytes: 120 }), s = f.sprite, runtime = f.runtime();
+  for (const label of ['normal', 'automatic', 'manual', 'away']) {
+    s.loadFrames(label, Array.from({ length: 4 }, (_, i) => `${label}-${i}`));
+    s.setIdleFrameIntervalMs(label, 100);
+  }
+  runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
+    { id: 'root', label: 'normal' }, { id: 'automatic', label: 'automatic' },
+    { id: 'manual', label: 'manual' }, { id: 'away', label: 'away' },
+  ], edges: [{ from: 'root', to: 'automatic', prob: 1 }, { from: 'root', to: 'manual', prob: 0 }] } });
+  runtime._playNode('away');
+  await settleFiniteDemand(f);
+  for (const label of ['normal', 'automatic', 'manual']) {
+    const id = runtime._findTriggerEntry(label);
+    assert.equal(runtime._label(id), label, 'the real resolver uses a root fallback entry');
+    assert.ok(s._frames[label][1], `${label} has more than its mandatory first-frame pin`);
+  }
+  assert.equal(runtime.currentNodeId, 'away');
+  assert.equal(s._frameIdx, 0);
+  assert.ok(s._frameStore.stats().residentBytes <= 120);
+  assert.equal(f.randomCalls, 0);
 });

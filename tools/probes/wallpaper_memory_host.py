@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 import platform
 import socket
+import threading
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 os.environ["WALLPAPER_WHEEL_FORWARD"] = "false"
@@ -64,6 +66,37 @@ def main():
     cache = os.environ.get("TEXTURE_PROBE_BC7_CACHE")
     if cache:
         host._asset_server.mount_static("/__bc7_cache", Path(cache))
+    video_fixture = os.environ.get("TEXTURE_PROBE_VIDEO_FIXTURE")
+    if video_fixture:
+        host._asset_server.mount_static("/__frame_video", Path(video_fixture))
+    timing_stop = threading.Event()
+    if os.environ.get("TEXTURE_PROBE_HOST_TIMING") == "1":
+        from render.server import _CORSHandler
+        original_get = _CORSHandler.do_GET
+
+        def timed_get(handler):
+            started, epoch = time.perf_counter(), time.time() * 1000
+            try:
+                return original_get(handler)
+            finally:
+                elapsed = (time.perf_counter() - started) * 1000
+                if elapsed >= 100:
+                    print(json.dumps({"probeTiming": "asset-request", "startedAtEpochMs": epoch,
+                                      "durationMs": elapsed, "path": handler.path.split("?", 1)[0]}),
+                          file=sys.stderr, flush=True)
+
+        _CORSHandler.do_GET = timed_get
+
+        def heartbeat():
+            previous = time.perf_counter()
+            while not timing_stop.wait(0.05):
+                current = time.perf_counter()
+                if current - previous > 0.15:
+                    print(json.dumps({"probeTiming": "host-scheduler-gap", "atEpochMs": time.time() * 1000,
+                                      "durationMs": (current - previous) * 1000}), file=sys.stderr, flush=True)
+                previous = current
+
+        threading.Thread(target=heartbeat, daemon=True).start()
     animator = SpriteForgeAnimator(host)
     try:
         host.start()
@@ -117,10 +150,10 @@ def main():
                     host.set_speaking(request["active"] is True)
                     result = {"ok": True}
                 elif command == "trigger":
-                    host.trigger_spriteforge_intent(str(request["label"]))
+                    host.trigger_spriteforge_intent(str(request["label"]), request.get("options"))
                     result = {"ok": True}
                 elif command == "idle":
-                    host.release_spriteforge()
+                    host.release_spriteforge(request.get("options"))
                     result = {"ok": True}
                 elif command == "companion":
                     host.set_companion_active(request["active"] is True)
@@ -134,6 +167,7 @@ def main():
             except Exception as exc:
                 print(json.dumps({"id": request["id"], "error": str(exc)}), flush=True)
     finally:
+        timing_stop.set()
         animator.stop()
         host.stop()
         bridge_module._prepare_scenario_payload = prepare_scenario

@@ -49,7 +49,7 @@ def identify(cache, path):
 def test_keys_follow_contents_and_transcoder_not_asset_names(cache_fixture):
     cache, source, vendor = cache_fixture
     first = identify(cache, source)
-    assert first[1:] == (8, 8)
+    assert first[1:] == (5, 7)
     alias = source.with_name("alias.ktx2")
     alias.write_bytes(source.read_bytes())
     assert identify(cache, alias) == first
@@ -304,6 +304,41 @@ def test_http_cold_write_warm_repair_and_original_negotiation(server):
     assert request(server, "GET", "/frame.ktx2", {"Accept": MIME})[2] == packed
 
 
+def test_http_cache_upload_preserves_persistent_read_connection(server):
+    server, cache, source = server
+    with closing(http.client.HTTPConnection("127.0.0.1", server.port, timeout=3)) as connection:
+        connection.request("GET", "/frame.ktx2", headers={"Accept": MIME})
+        response = connection.getresponse()
+        key = response.getheader("X-Amadeus-BC7-Key")
+        auth = {"Origin": f"http://127.0.0.1:{server.port}",
+                "X-Amadeus-Cache-Token": response.getheader("X-Amadeus-Cache-Token")}
+        assert response.read() == source.read_bytes()
+        original_socket = connection.sock
+        packed = container(key)
+        for _ in range(3):
+            connection.request("POST", "/_texture-cache/" + key, packed, auth)
+            response = connection.getresponse()
+            assert response.status == 204 and response.read() == b""
+            connection.request("GET", "/frame.ktx2", headers={"Accept": MIME})
+            response = connection.getresponse()
+            assert response.status == 200 and response.read() == packed
+            assert connection.sock is original_socket, "complete uploads reuse the same read connection"
+
+
+def test_http_rejected_cache_upload_closes_before_unconsumed_body_can_be_reused(server):
+    server, cache, source = server
+    key = identify(cache, source)[0]
+    with closing(http.client.HTTPConnection("127.0.0.1", server.port, timeout=3)) as connection:
+        connection.request("POST", "/_texture-cache/" + key, container(key),
+                           {"Origin": f"http://127.0.0.1:{server.port}", "X-Amadeus-Cache-Token": "invalid"})
+        response = connection.getresponse()
+        assert response.status == 403
+        assert response.will_close
+        response.read()
+        assert connection.sock is None
+        assert not (cache.root / (key + ".bc7")).exists()
+
+
 def test_asset_server_recovers_from_temporary_cache_initialization_failure(tmp_path, monkeypatch):
     server = AssetServer(tmp_path, texture_cache=True)
     now, attempts = [100.0], []
@@ -354,3 +389,21 @@ def test_http_write_capability_cannot_escape_cache_or_origin(server, change):
     if change == "oversize": headers["Content-Length"] = str(MAX_BODY_BYTES + 1)
     assert request(server, "POST", path, headers, body)[0] in {400, 403, 404}
     assert not list(cache.root.glob("*.bc7"))
+
+
+def test_http_preserves_source_geometry_across_existing_padded_cache(server):
+    server, cache, source = server
+    source.write_bytes(ktx(width=5, height=7))
+    status, cold, _ = request(server, "GET", "/frame.ktx2", {"Accept": MIME})
+    assert status == 200 and cold.get("X-Amadeus-Texture-Size") == "5x7"
+    key = cold["X-Amadeus-BC7-Key"]
+    packed = container(key, width=8, height=8)
+    cache.publish(key, packed)
+    for method in ("GET", "HEAD"):
+        status, warm, body = request(server, method, "/frame.ktx2", {"Accept": MIME})
+        assert status == 200 and warm["Content-Type"] == MIME
+        assert warm.get("X-Amadeus-Texture-Size") == "5x7"
+        assert warm["X-Amadeus-BC7-Key"] == key
+        assert body == (packed if method == "GET" else b"")
+    _, repaired, body = request(server, "GET", "/frame.ktx2?source=1", {"Accept": MIME})
+    assert repaired.get("X-Amadeus-Texture-Size") == "5x7" and body == source.read_bytes()

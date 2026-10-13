@@ -177,3 +177,48 @@ test('disabled sampling preserves the old four-source-frame limit and cycle trig
   for(let i=0;i<30;i++)loop.ticker.tick(1);
   assert.equal(notifications,10,'off mode retains the old index-zero notification rule');
 });
+
+
+test('a 200fps transition sampled at 60fps preserves visible poses across ordinary presentation jitter', async () => {
+  const original = await clip(60, 120, 5, undefined, false);
+  const sampled = await clip(60, 120, 5);
+  for (const f of [original, sampled]) f.sprite.setClipConfig('normal', { loopMode: 'once_then_hold' });
+  const baseline = [], actual = [];
+  for (let i = 0; i < 45; i++) {
+    const dt = [16, 17, 18, 15, 17, 17][i % 6];
+    for (const f of [original, sampled]) { f.ticker.deltaMS = dt; f.ticker.tick(1); }
+    baseline.push(original.sprite._activeFrameIdx); actual.push(sampled.sprite._activeFrameIdx);
+    assert.equal(sampled.sprite._frameIdx, original.sprite._frameIdx, 'sampling cannot change source-clock progression');
+  }
+  assert.deepEqual(actual, baseline, 'small jitter must not turn a 60fps presentation into repeated stale poses');
+  assert.equal(sampled.sprite._frameSamplingPlans.get('normal').indices.length, 37);
+  assert.equal(sampled.sprite._activeFrameIdx, 119);
+  sampled.sprite.holdFrame(42); await settled(sampled.sprite);
+  assert.equal(sampled.sprite._activeFrameIdx, 42);
+  assert.equal(sampled.sprite.sprite.texture.url, 'frame-42');
+});
+
+test('clips already below the display rate keep their original visible source under presentation jitter', async () => {
+  for (const interval of [17, 21, 50, 100]) {
+    const original = await clip(60, 120, interval, undefined, false);
+    const sampled = await clip(60, 120, interval);
+    for (let i = 0; i < 60; i++) {
+      const dt = [16, 17, 18, 15, 17, 17][i % 6];
+      for (const f of [original, sampled]) { f.ticker.deltaMS = dt; f.ticker.tick(1); }
+      assert.equal(sampled.sprite._activeFrameIdx, original.sprite._activeFrameIdx, `${interval}ms clip, tick ${i}`);
+    }
+  }
+});
+
+
+test('reduced timeline selection stays within half an output period plus source quantization', async () => {
+  for (const interval of [5, 8, 10]) {
+    const { sprite } = await clip(60, 120, interval);
+    for (let time = 0; time < 120 * interval; time += 0.5) {
+      const source = Math.floor(time / interval);
+      const selected = sprite._sampleFrameIndex('normal', source, time);
+      assert.ok(Math.abs(selected - source) * interval <= 1000 / 60 / 2 + interval,
+        `${interval}ms clip at ${time}ms selected ${selected} for logical ${source}`);
+    }
+  }
+});

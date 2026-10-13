@@ -33,6 +33,13 @@
     });
   }
 
+  function sourceDimensions(bytes) {
+    const signature = [171, 75, 84, 88, 32, 50, 48, 187, 13, 10, 26, 10];
+    if (bytes.byteLength < 28 || !signature.every((value, index) => new Uint8Array(bytes)[index] === value)) return null;
+    const view = new DataView(bytes);
+    return { width: view.getUint32(20, true), height: view.getUint32(24, true) };
+  }
+
   function resourceBytes(resource, compressed) {
     const buffers = new Set();
     const retain = value => {
@@ -147,7 +154,7 @@
       cache.save(entry, texture.baseTexture.resource);
     }
 
-    function makeTexture(resource, baseOptions, releaseSource) {
+    function makeTexture(resource, baseOptions, releaseSource, sourceSize = null) {
       let base;
       resource.internal = true;
       // Observe the resource boundary, including Pixi GC/restore uploads which
@@ -161,7 +168,15 @@
       };
       try {
         base = new pixi.BaseTexture(resource, baseOptions);
-        const texture = new pixi.Texture(base);
+        // Physical block padding remains in the BaseTexture and byte budget.
+        // The visible frame uses the source canvas on cold loads, cache hits,
+        // context restoration and video/static handoff alike.
+        const frame = sourceSize ? new pixi.Rectangle(0, 0, sourceSize.width, sourceSize.height) : undefined;
+        if (sourceSize && (!(sourceSize.width > 0 && sourceSize.height > 0)
+            || sourceSize.width > base.width || sourceSize.height > base.height)) {
+          throw new Error("Source canvas exceeds decoded texture geometry");
+        }
+        const texture = new pixi.Texture(base, frame);
         owned.set(texture, releaseSource);
         return texture;
       } catch (error) {
@@ -207,8 +222,12 @@
       let { response, bytes } = await read(useCache ? cache.requestUrl(url) : url);
       check(signal);
       let resources, cacheWrite;
+      let sourceSize = sourceDimensions(bytes);
       if (useCache && response.headers?.get('Content-Type') === 'application/x-amadeus-bc7') {
         try {
+          const size = /^(\d+)x(\d+)$/.exec(response.headers.get('X-Amadeus-Texture-Size') || '');
+          if (!size) throw new Error('Cached texture source geometry is missing');
+          sourceSize = { width: Number(size[1]), height: Number(size[2]) };
           resources = [await cache.decode(bytes, response.headers.get('X-Amadeus-BC7-Key'))];
           resources.basisFormat = 6;
           if (disposed || signal.aborted) { resources[0].destroy(); throw abortError(); }
@@ -217,6 +236,7 @@
           // Worker interruption is not evidence that the on-disk bytes are bad.
           if (!error.cacheTransient) cache.invalidate(url);
           ({ response, bytes } = await read(cache.sourceUrl(url)));
+          sourceSize = sourceDimensions(bytes);
         }
       }
       if (!resources) {
@@ -258,7 +278,7 @@
         alphaMode: pixi.ALPHA_MODES.NO_PREMULTIPLIED_ALPHA,
         type: shim.BASIS_FORMAT_TO_TYPE[basisFormat],
         format: basisFormat === shim.BASIS_FORMATS.cTFRGBA32 ? pixi.FORMATS.RGBA : pixi.FORMATS.RGB,
-      });
+      }, undefined, sourceSize);
       if (cacheWrite && compressed && basisFormat === 6) cacheWrites.set(texture, cacheWrite);
       return { texture, ...accounting };
     }

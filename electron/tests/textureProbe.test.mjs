@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
-import { parseArgs, createJourney, seededRandom, summarizeGaps, createEvidenceSummary, installTextureProbe, installTranscodeCounter } from './textureProbe.mjs'
+import { parseArgs, createJourney, seededRandom, summarizeGaps, createEvidenceSummary, installTextureProbe, installTranscodeCounter, installFrameBudget } from './textureProbe.mjs'
 
 test('shared counter installs on vendor load before rendering and preserves results, receivers and failures', async () => {
   const listeners = new Set(), window = {}, receiver = { marker: 17 }
@@ -29,6 +29,42 @@ test('probe defaults to the current-source baseline with sampling disabled', () 
   assert.equal(options.fps, 30)
   assert.equal(options.scenario, false)
   assert.equal(options.contextLoss, false)
+  assert.equal(options.videoFixture, undefined)
+  assert.equal(parseArgs(['--video-fixture', 'local fixture']).videoFixture, 'local fixture')
+  assert.throws(() => parseArgs(['--video-fixture']))
+  assert.throws(() => parseArgs(['--video-lifecycle']), /requires --video-fixture/)
+  assert.equal(parseArgs(['--video-fixture', 'local', '--video-lifecycle']).videoLifecycle, true)
+})
+
+test('budget and single-clip experiments are explicit, bounded and mutually exclusive with other journeys', () => {
+  const options = parseArgs(['sampled', '60', '--texture-budget-mib', '128', '--only-clip', 'idle_closed_eye', '--gpu-memory'])
+  assert.equal(options.textureBudgetMiB, 128)
+  assert.equal(options.gpuMemory, true)
+  assert.deepEqual(createJourney(options), [{ at: 0, phase: 'clip-only-idle_closed_eye', command: 'route-clip', label: 'idle_closed_eye' }])
+  assert.equal(parseArgs([]).textureBudgetMiB, undefined)
+  for (const args of [['--texture-budget-mib', '0'], ['--texture-budget-mib', '4097'],
+    ['--texture-budget-mib', '128.5'], ['--only-clip', 'x', '--fixed-route'],
+    ['--only-clip', '../x'], ['--only-clip', 'x', '--cold-clip', 'x']]) assert.throws(() => parseArgs(args))
+})
+
+test('budget injection overrides only the factory budget and persists for resource reactivation', () => {
+  const listeners = new Set(), calls = [], window = {}
+  const context = { window, document: {
+    addEventListener(_name, fn) { listeners.add(fn) }, removeEventListener(_name, fn) { listeners.delete(fn) },
+  } }
+  vm.runInNewContext(`(${installFrameBudget.toString()})(128)`, context)
+  window.FrameStore = { createFrameStore(options) { calls.push({ receiver: this, options }); return options.backend } }
+  for (const fn of listeners) fn({ target: { tagName: 'SCRIPT' } })
+  const backend = {}, original = { backend, budgetBytes: 2048 * 1048576, maxInFlight: 3 }
+  assert.equal(window.FrameStore.createFrameStore(original), backend)
+  window.FrameStore.createFrameStore(original)
+  assert.equal(calls[0].options.budgetBytes, 128 * 1048576)
+  assert.equal(calls[0].options.backend, backend)
+  assert.equal(calls[0].options.maxInFlight, 3)
+  assert.equal(calls[0].receiver, window.FrameStore)
+  assert.equal(original.budgetBytes, 2048 * 1048576)
+  assert.equal(window.__frameBudgetProbe.instances, 2)
+  assert.equal(listeners.size, 0)
 })
 
 test('fixed resource routes keep identical clip timing across sampling and repeat without graph selection', () => {
@@ -149,7 +185,12 @@ function probeFixture(seed = 103) {
   const originalTexture = { id: 'existing' }, loadedTexture = { id: 'loaded' }
   const sprite = { sprite: { texture: originalTexture }, _currentEmotion: 'idle', _frames: { idle: [loadedTexture, null] },
     _activeFrameIdx: 0, _frameIdx: 0, _held: false, _heldFrameIdx: null,
-    _showFrame(index) { if (this._frames.idle[index]) this.sprite.texture = this._frames.idle[index] },
+    _displayMisses: 0, videoReady: false,
+    _showFrame(index) {
+      if (this._frames.idle[index]) this.sprite.texture = this._frames.idle[index]
+      else if (this.videoReady) this.sprite.texture = loadedTexture
+      else this._displayMisses++
+    },
     _cycleCompleteHandler() { this.cycleCalls = (this.cycleCalls || 0) + 1 },
     _loadTextureFromCompressedAsset() { return Promise.resolve(loadedTexture) } }
   const math = Object.create(Math), originalRandom = Math.random
@@ -195,6 +236,16 @@ test('probe instrumentation preserves missing-frame behavior and observes real h
   assert.equal(fixture.isStopped(), true)
 })
 
+test('ready video with an empty static slot is not a display miss, while missing both sources is', () => {
+  const fixture = probeFixture()
+  fixture.sprite.videoReady = true
+  fixture.sprite._showFrame(1)
+  assert.equal(fixture.drain().events.filter(event => event.kind === 'miss').length, 0)
+  fixture.sprite.videoReady = false
+  fixture.sprite._showFrame(1)
+  assert.equal(fixture.drain().events.filter(event => event.kind === 'miss').length, 1)
+})
+
 test('seeded decision wrappers restore Math.random after nested calls and exceptions', () => {
   const a = probeFixture(), b = probeFixture()
   a.runtime.setSpeaking(true); b.runtime.setSpeaking(true)
@@ -204,3 +255,39 @@ test('seeded decision wrappers restore Math.random after nested calls and except
   assert.equal(a.math.random, a.originalRandom)
   a.context.window.__textureProbe.stop(); b.context.window.__textureProbe.stop()
 })
+
+
+test('GPU GC tuning is opt-in, paired and bounded without changing the journey', () => {
+  const plain = parseArgs(['sampled', '60', '--fixed-route'])
+  const tuned = parseArgs(['sampled', '60', '--fixed-route', '--texture-gc-trace',
+    '--texture-gc-idle-frames', '120', '--texture-gc-check-frames', '30'])
+  assert.equal(plain.textureGcIdleFrames, undefined)
+  assert.equal(plain.textureGcTrace, undefined)
+  assert.equal(tuned.textureGcIdleFrames, 120); assert.equal(tuned.textureGcCheckFrames, 30)
+  assert.equal(tuned.textureGcTrace, true)
+  assert.deepEqual(createJourney(plain), createJourney(tuned))
+  assert.equal(parseArgs(['--texture-gc-trace']).textureGcTrace, true)
+  for (const args of [['--texture-gc-idle-frames', '120'], ['--texture-gc-check-frames', '30'],
+    ['--texture-gc-idle-frames', '0', '--texture-gc-check-frames', '30'],
+    ['--texture-gc-idle-frames', '1.5', '--texture-gc-check-frames', '30'],
+    ['--texture-gc-idle-frames', '120', '--texture-gc-check-frames', 'NaN'],
+    ['--texture-gc-idle-frames', '36001', '--texture-gc-check-frames', '30']]) assert.throws(() => parseArgs(args))
+})
+
+test('full material route covers every complete clip and rejects a truncated acceptance journey', async () => {
+  const {createAllMaterialJourney}=await import('./textureProbe.mjs');
+  const clips=[{label:'fast',frames:120,interval:5,mouth:false},{label:'talk',frames:360,interval:17,mouth:true}];
+  const route=createAllMaterialJourney(clips,{durationSeconds:45});
+  assert.deepEqual(route.slice(0,2).map(row=>row.label),['fast','talk']);
+  assert.equal(route[1].at,1.2); assert.equal(route[1].speaking,true);
+  assert.throws(()=>createAllMaterialJourney(clips,{durationSeconds:1}),/cover every/);
+});
+
+
+test('shared GPU output is explicit and does not change playback settings', () => {
+  const normal=parseArgs(['sampled','60']);
+  const shared=parseArgs(['sampled','60','--shared-texture-output']);
+  assert.equal(shared.sharedTextureOutput,true);
+  delete shared.sharedTextureOutput;
+  assert.deepEqual(shared,normal);
+});
