@@ -285,7 +285,8 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
             # Derived writes have a separate, narrow capability. They cannot select
             # a filesystem path, create assets, or use cross-origin ambient access.
             from render.texture_cache import KEY, MAX_BODY_BYTES
-            self.close_connection = True
+            # A fully consumed valid upload can reuse the HTTP/1.1 connection.
+            # send_error closes rejected requests whose body may be unread.
             if self._reject_untrusted_host():
                 return
             origin = self.headers.get("Origin", "")
@@ -305,8 +306,12 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
                 size = int(self.headers.get("Content-Length", "0"))
                 if self.headers.get("Transfer-Encoding") or not 4 < size <= MAX_BODY_BYTES:
                     raise ValueError("Invalid body size")
+                previous_timeout = self.connection.gettimeout()
                 self.connection.settimeout(10)
-                body = self.rfile.read(size)
+                try:
+                    body = self.rfile.read(size)
+                finally:
+                    self.connection.settimeout(previous_timeout)
                 if len(body) != size:
                     raise ValueError("Incomplete cache upload")
                 cache.publish(key, body)
@@ -373,7 +378,7 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
                     try:
                         identity = cache.identify(source, target, metadata)
                         if identity:
-                            cache_info = (identity[0], cache.token)
+                            cache_info = (identity[0], cache.token, identity[1], identity[2])
                             if "source" not in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query):
                                 hit = cache.open(identity[0])
                                 if hit:
@@ -391,6 +396,7 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
                 if cache_info:
                     self.send_header("X-Amadeus-BC7-Key", cache_info[0])
                     self.send_header("X-Amadeus-Cache-Token", cache_info[1])
+                    self.send_header("X-Amadeus-Texture-Size", f"{cache_info[2]}x{cache_info[3]}")
                 # For 304 this is the selected representation's size, not a
                 # body length. Both GET and HEAD remain explicitly bodyless.
                 self.send_header("Content-Length", str(metadata.st_size))

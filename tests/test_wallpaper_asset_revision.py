@@ -44,6 +44,25 @@ def test_wallpaper_asset_revision_changes_with_client_asset(tmp_path, monkeypatc
     assert len(first) == len(second) == 16
 
 
+def test_each_video_dependency_updates_wallpaper_revision(tmp_path, monkeypatch):
+    # Keep the production inventory; redirect its file stats to a synthetic tree.
+    paths = wallpaper_engine_bridge._WALLPAPER_CLIENT_ASSETS
+    relative = [path.relative_to(wallpaper_engine_bridge._PROJECT_ROOT) for path in paths]
+    modules = ['decoder.mjs', 'hybrid_source.mjs', 'ivf.mjs', 'pixi-output.mjs']
+    for name in modules:
+        assert Path('render/web/frame_video') / name in relative
+    for path in relative:
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('initial')
+    monkeypatch.setattr(wallpaper_engine_bridge, '_PROJECT_ROOT', tmp_path)
+    monkeypatch.setattr(wallpaper_engine_bridge, '_WALLPAPER_CLIENT_ASSETS', tuple(tmp_path / path for path in relative))
+    for name in modules:
+        before = wallpaper_engine_bridge._wallpaper_asset_revision()
+        (tmp_path / 'render/web/frame_video' / name).write_text('changed module contents')
+        assert wallpaper_engine_bridge._wallpaper_asset_revision() != before, name
+
+
 def test_bridge_info_is_idle_until_manual_start_and_exposes_asset_version() -> None:
     handler = WallpaperHandler()
     idle = handler.bridge_info()

@@ -34,6 +34,8 @@ VTS_TOKEN_FILE: str = _catalog_values["VTS_TOKEN_FILE"]
 GRAPHICS_PROFILE: str = _catalog_values["GRAPHICS_PROFILE"]
 RENDER_MAX_FPS: int = _catalog_values["RENDER_MAX_FPS"]
 RENDER_MAX_RESOLUTION: float = _catalog_values["RENDER_MAX_RESOLUTION"]
+RENDER_FRAME_SOURCE: str = _catalog_values["RENDER_FRAME_SOURCE"]
+RENDER_FRAME_BUDGET_MIB: str = _catalog_values["RENDER_FRAME_BUDGET_MIB"]
 RENDER_BC7_CACHE: bool = _catalog_values["RENDER_BC7_CACHE"]
 BEDROCK_AUTH_MODE: str = _catalog_values["BEDROCK_AUTH_MODE"]
 AWS_BEARER_TOKEN_BEDROCK: str = _catalog_values["AWS_BEARER_TOKEN_BEDROCK"]
@@ -538,6 +540,10 @@ ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 _GRAPHICS_FIELDS = configuration_groups()["graphics_budget"]["config"]
 GRAPHICS_PROFILES = frozenset(option_values(_GRAPHICS_FIELDS["GRAPHICS_PROFILE"]))
 GRAPHICS_PROFILE = GRAPHICS_PROFILE.strip().lower()
+for _frame_setting in ("RENDER_FRAME_SOURCE", "RENDER_FRAME_BUDGET_MIB"):
+    if globals()[_frame_setting] not in option_values(configuration_field(_frame_setting)):
+        raise ValueError(f"Invalid {_frame_setting}: {globals()[_frame_setting]}")
+
 
 
 def _resolve_graphics_profile(

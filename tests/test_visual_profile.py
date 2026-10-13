@@ -486,3 +486,17 @@ def test_capabilities_refresh_on_inspect_reload_save_and_resource_rebuild(tmp_pa
     assert len(calls) == before_save + 1
     assert handler.snapshot()["capabilities"]["expressions"] == ["Happy"]
     assert "diagnostic" not in handler.snapshot()
+
+
+@pytest.mark.parametrize('valid', [True, False])
+def test_selecting_model_retires_only_that_surfaces_video_mount(tmp_path, valid):
+    store, _, entry, _ = configured_store(tmp_path)
+    server = AssetServer(tmp_path)
+    server.mount_files('/frame-video', {'bundle.json': entry})
+    server.mount_files('/other-owner', {'asset': entry})
+    if not valid:
+        entry.unlink()
+    result = store.runtime_config('wallpaper', asset_server=server)
+    assert result['backend'] == 'live2d'
+    assert not any(key.startswith('/frame-video/') for key in server._static_files)
+    assert server._static_files['/other-owner/asset'] == entry.resolve()

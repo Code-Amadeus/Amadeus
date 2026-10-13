@@ -469,3 +469,16 @@ Run `python tools/smoke_builtin_handler_catalog.py` to start an isolated backend
 with models and external agents disabled. The smoke adds a synthetic factory,
 verifies an authenticated WebSocket round trip, reads the real configuration,
 checks voice routes, and shuts the process down cleanly.
+
+
+### Animation frame source
+
+Graphics settings retain the existing profiles, FPS, density, sampling and BC7
+cache controls. `RENDER_FRAME_SOURCE=auto` selects the optional matched `video/`
+companion within the existing SpriteForge pack only after renderer capability
+checks; `static` selects the established static path. `RENDER_FRAME_BUDGET_MIB=auto`
+uses 384 MiB for video and 2048 MiB for static/fallback. Explicit 384/768/2048 values
+apply to both paths. The GUI shows observed per-surface state separately from
+saved choices. Restart the backend and reopen existing render windows after saving.
+No launcher override or old-pack path migration is required. See
+[frame-source integration](../docs/frame_video_candidate.md).

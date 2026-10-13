@@ -1,3 +1,4 @@
+import { createTagJourney } from './tagPreviewProbe.mjs'
 // Probe-only argument, journey, and evidence helpers. No renderer imports.
 
 // Install before navigation's vendor scripts, identically for main and store.
@@ -26,6 +27,26 @@ export function installTranscodeCounter() {
   document.addEventListener('load', loaded, true)
   install()
 }
+
+// Probe-only factory interception before renderer construction. The same wrapper
+// is injected into the pristine baseline and candidate; product defaults stay.
+export function installFrameBudget(mib) {
+  const state = window.__frameBudgetProbe = { installed: false, instances: 0, bytes: mib * 1048576 }
+  const install = () => {
+    const api = window.FrameStore
+    if (state.installed || typeof api?.createFrameStore !== 'function') return
+    const create = api.createFrameStore
+    api.createFrameStore = function (options) {
+      state.instances++
+      return create.call(this, { ...options, budgetBytes: state.bytes })
+    }
+    state.installed = true
+    document.removeEventListener('load', loaded, true)
+  }
+  const loaded = event => { if (event.target?.tagName === 'SCRIPT') install() }
+  document.addEventListener('load', loaded, true)
+  install()
+}
 export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|sampled] [30|60] [options]
   --sampling off|on        Explicit sampling setting (default: off; sampled means on)
   --profile PROFILE       custom (default), standard at 60 FPS, power_saving at 30 FPS
@@ -36,12 +57,25 @@ export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|samp
   --companion             Exercise companion presentation suppression/restoration
   --context-loss          Lose and restore WebGL context if supported
   --texture-disposal      Dispose the held GPU texture and verify re-upload pixels
+  --texture-gc-trace      Record bounded Pixi GC timings without changing its policy
+  --texture-gc-idle-frames N   Probe-only GPU idle threshold in screen-render counts
+  --texture-gc-check-frames N  Probe-only GC check threshold; requires idle threshold
   --fixed-route           Use the same scheduled clip route without graph draws
+  --tag-preview MODE      Public tag/interrupt journey: off, correct, revoked
+  --all-clip-tags         Request every runtime graph label, in both speech states
+  --all-materials         Play every installed clip through one complete source cycle
+  --shared-texture-output  Release GPU paint textures directly, without continuous CPU readback
   --high-performance-gpu  Request Chromium's high-performance GPU preference
   --expect-gpu TEXT       Refuse measurement on a different WebGL renderer
   --bc7-cache DIRECTORY   Experimental prebuilt, source-verified BC7 cache
   --disk-cache            Exercise automatic product cache generation and reuse
   --cache-profile PATH    Shared isolated user-cache profile across product runs
+  --video-fixture PATH    Experimental verified video clip or full bundle (default: disabled)
+  --production-frame-source  Use the normal installed-package and saved-settings activation path
+  --video-lifecycle       Run video/static lifecycle diagnostics after the timed journey
+  --texture-budget-mib N  Probe-only FrameStore CPU+GPU budget, 64..4096 MiB
+  --only-clip LABEL       Repeat one real clip with its normal clock and global pins
+  --gpu-memory           Publish target PIDs and record a post-release phase for the external sampler
   --cold-clip LABEL       Isolate a real root successor after head prefetch
   --cold-fill             Preload and release low-priority demand before entry
   --cold-start-delay-ms N  Inject one bounded cold-entry loading pause (0..1000)
@@ -58,7 +92,8 @@ export function parseArgs(argv) {
   let explicitSampling
   const values = new Map([['--duration-seconds', 'durationSeconds'], ['--sample-seconds', 'sampleSeconds'],
     ['--seed', 'seed'], ['--output', 'output'], ['--cold-clip', 'coldClip'], ['--cold-start-delay-ms', 'coldStartDelayMs'],
-    ['--cold-enter-seconds', 'coldEnterSeconds']])
+    ['--cold-enter-seconds', 'coldEnterSeconds'], ['--texture-budget-mib', 'textureBudgetMiB'], ['--only-clip', 'onlyClip'],
+    ['--texture-gc-idle-frames', 'textureGcIdleFrames'], ['--texture-gc-check-frames', 'textureGcCheckFrames']])
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
     if (token === '--help') options.help = true
@@ -66,13 +101,25 @@ export function parseArgs(argv) {
     else if (token === '--companion') options.companion = true
     else if (token === '--context-loss') options.contextLoss = true
     else if (token === '--texture-disposal') options.textureDisposal = true
+    else if (token === '--texture-gc-trace') options.textureGcTrace = true
     else if (token === '--fixed-route') options.fixedRoute = true
+    else if (token === '--all-clip-tags') options.allClipTags = true
+    else if (token === '--all-materials') options.allMaterials = true
     else if (token === '--disk-cache') options.diskCache = true
     else if (token === '--high-performance-gpu') options.highPerformanceGpu = true
-    else if (token === '--expect-gpu' || token === '--bc7-cache' || token === '--cache-profile') {
+    else if (token === '--shared-texture-output') options.sharedTextureOutput = true
+    else if (token === '--production-frame-source') options.productionFrameSource = true
+    else if (token === '--video-lifecycle') options.videoLifecycle = true
+    else if (token === '--gpu-memory') options.gpuMemory = true
+    else if (token === '--tag-preview') {
+      options.tagPreview = argv[++i]
+      if (!['off', 'correct', 'revoked'].includes(options.tagPreview)) throw Error('Invalid tag preview mode')
+    }
+    else if (token === '--expect-gpu' || token === '--bc7-cache' || token === '--cache-profile' || token === '--video-fixture') {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw Error('Missing expected GPU')
-      options[token === '--bc7-cache' ? 'bc7Cache' : token === '--cache-profile' ? 'cacheProfile' : 'expectGpu'] = value
+      options[token === '--bc7-cache' ? 'bc7Cache' : token === '--cache-profile' ? 'cacheProfile'
+        : token === '--video-fixture' ? 'videoFixture' : 'expectGpu'] = value
     }
     else if (token === '--cold-fill') options.coldFill = true
     else if (token === '--sampling' || token === '--profile' || values.has(token)) {
@@ -82,7 +129,7 @@ export function parseArgs(argv) {
         if (!['off', 'on'].includes(value)) throw Error('--sampling expects off|on')
         explicitSampling = value === 'on'
       } else if (token === '--profile') options.profile = value
-      else options[values.get(token)] = ['--output', '--cold-clip'].includes(token) ? value : Number(value)
+      else options[values.get(token)] = ['--output', '--cold-clip', '--only-clip'].includes(token) ? value : Number(value)
     } else if (token.startsWith('--')) throw Error(`Unknown option: ${token}`)
     else positional.push(token)
   }
@@ -111,11 +158,47 @@ export function parseArgs(argv) {
   if (options.coldClip && !/^[a-zA-Z0-9_-]+$/.test(options.coldClip)) throw Error('Invalid cold clip label')
   if (options.coldFill && !options.coldClip) throw Error('--cold-fill requires --cold-clip')
   if (options.fixedRoute && options.coldClip) throw Error('Fixed route and cold-clip are separate experiments')
+  if (options.videoLifecycle && !options.videoFixture) throw Error('--video-lifecycle requires --video-fixture')
+  if (options.textureBudgetMiB !== undefined && (!Number.isInteger(options.textureBudgetMiB)
+    || options.textureBudgetMiB < 64 || options.textureBudgetMiB > 4096)) throw Error('Invalid texture budget')
+  if ((options.textureGcIdleFrames === undefined) !== (options.textureGcCheckFrames === undefined)) {
+    throw Error('Texture GC tuning requires both idle and check thresholds')
+  }
+  for (const key of ['textureGcIdleFrames', 'textureGcCheckFrames']) {
+    if (options[key] !== undefined && (!Number.isInteger(options[key]) || options[key] < 1 || options[key] > 36000)) {
+      throw Error('Invalid texture GC threshold')
+    }
+  }
+  if (options.onlyClip && (!/^[a-zA-Z0-9_-]+$/.test(options.onlyClip) || options.fixedRoute || options.coldClip)) {
+    throw Error('--only-clip requires one valid clip and no other route')
+  }
   if (options.coldStartDelayMs !== undefined && (!options.coldClip || !Number.isFinite(options.coldStartDelayMs)
     || options.coldStartDelayMs < 0 || options.coldStartDelayMs > 1000)) throw Error('Invalid cold-start delay')
   if (options.coldEnterSeconds !== undefined && (!options.coldClip || !Number.isFinite(options.coldEnterSeconds)
     || options.coldEnterSeconds < 20 || options.coldEnterSeconds + 15 >= options.durationSeconds)) throw Error('Invalid cold entry time')
+  if (options.allMaterials && (options.onlyClip || options.fixedRoute || options.coldClip || options.tagPreview || options.allClipTags)) throw Error('All-materials requires its own route')
+  if (options.allClipTags && !options.tagPreview) options.tagPreview = 'off'
+  if (options.tagPreview && (options.fixedRoute || options.onlyClip || options.coldClip || options.scenario)) {
+    throw Error('Tag preview uses a separate public journey')
+  }
   return options
+}
+
+export function createAllMaterialJourney(clips, options) {
+  const cycleSeconds = clips.reduce((sum, clip) => sum + clip.frames * clip.interval / 1000 + 0.6, 0);
+  if (!clips.length || cycleSeconds > options.durationSeconds) throw Error('Duration cannot cover every material');
+  const actions = [];
+  let at = 0, lap = 0;
+  while (at < options.durationSeconds) {
+    for (const clip of clips) {
+      if (at >= options.durationSeconds) break;
+      actions.push({at: Math.round(at*1000)/1000, phase: `material-${lap}-${clip.label}`,
+        command:'material-clip', label:clip.label, speaking:clip.mouth});
+      at += clip.frames * clip.interval / 1000 + 0.6;
+    }
+    lap++;
+  }
+  return actions;
 }
 
 export function seededRandom(seed) {
@@ -131,6 +214,9 @@ export function seededRandom(seed) {
 // The first triggers happen before preload settles. Later phases repeat the same
 // public journey; the soak continues with deterministic, timestamped inputs.
 export function createJourney(options) {
+  if (options.allClipTags) throw Error('All-clip journey requires the loaded runtime labels')
+  if (options.tagPreview) return createTagJourney(options)
+  if (options.onlyClip) return [{ at: 0, phase: 'clip-only-' + options.onlyClip, command: 'route-clip', label: options.onlyClip }]
   if (options.fixedRoute) {
     const clips = [
       ['idle', 8], ['trans_smile', 1.2], ['smile_speaking', 8, true],
@@ -279,15 +365,16 @@ export function installTextureProbe(seed) {
       } finally { Math.random = previous }
     })
   }
-  const legacyMisses = wrap(sprite, '_showFrame', fn => function (index, ...args) {
-    const label = this._frames?.[this._currentEmotion] ? this._currentEmotion : 'normal'
-    const frames = this._frames?.[label]
-    if (frames?.length) {
-      const logical = index % frames.length
-      const target = this._sampleFrameIndex ? this._sampleFrameIndex(label, logical, this._sampleTimeMs) : logical
-      if (!frames[target]) emit('miss', { label, logical, target })
-    }
-    return fn.call(this, index, ...args)
+  // The renderer owns readiness across static and video sources. Looking only
+  // in _frames would incorrectly count every successfully displayed video frame.
+  const actualMisses = Number.isFinite(sprite._displayMisses) && wrap(sprite, '_showFrame', fn => function (index, ...args) {
+    const before = this._displayMisses
+    const result = fn.call(this, index, ...args)
+    for (let i = before; i < this._displayMisses; i++) emit('miss', {
+      label: this._currentEmotion, logical: index, displayed: this._activeFrameIdx,
+      video: this._frameVideoSource?.snapshot?.() ?? null,
+    })
+    return result
   })
   wrap(sprite, '_cycleCompleteHandler', fn => function (label, ...args) {
     emit('cycle', { label })
@@ -346,7 +433,7 @@ export function installTextureProbe(seed) {
   canvas.addEventListener('webglcontextrestored', restored)
   emit('phase-start')
   window.__textureProbe = {
-    capabilities: { legacyMisses, legacyLoads, textureStats: typeof renderApp.getTextureStats === 'function' },
+    capabilities: { actualMisses, legacyLoads, textureStats: typeof renderApp.getTextureStats === 'function' },
     setPhase(next) {
       emit('phase-end'); phase = next; previousRaf = null; previousTick = null; emit('phase-start')
     },

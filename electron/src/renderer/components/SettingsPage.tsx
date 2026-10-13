@@ -32,6 +32,7 @@ import { extensionLanguageSupported, extensionText, type ExtensionRuntimeStatus 
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
 import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
+import GraphicsFrameSourceStatus from './GraphicsFrameSourceStatus'
 import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues, runtimeSettingValue } from './desktopRuntimeSettings'
 
 interface Props {
@@ -1337,6 +1338,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </BoundaryNote> : <BoundaryNote title="Backend status unavailable">
                   {t('You can save graphics settings while disconnected. Current renderer limits will appear when the backend connects.')}
                 </BoundaryNote>}
+                <GraphicsFrameSourceStatus connected={connected} send={send} subscribe={subscribe} />
                 {graphicsConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Video" collapsible={group.id === 'graphics_sampling'} />)}
               </div>
             ) : null}

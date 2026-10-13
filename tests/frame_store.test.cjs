@@ -647,3 +647,125 @@ test('destroy clears resident views and owns late backend results without new wo
   assert.equal(f.loads.length, 2);
   assert.equal(f.destroyed.length, 2);
 });
+
+
+function retentionPriorityFixture(abortable) {
+  const calls = [], destroyed = [];
+  let running = 0, peak = 0;
+  const backend = {
+    now: () => 0,
+    load(url, signal) {
+      running++; peak = Math.max(peak, running);
+      let resolve, reject;
+      const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+      const call = { url, signal, finish() {
+        resolve({ texture: { url }, cpuBytes: 4, gpuBytes: 6 });
+      } };
+      calls.push(call);
+      if (abortable) signal.addEventListener('abort', () => reject(Object.assign(Error('cancelled'), { name: 'AbortError' })), { once: true });
+      if (!url.startsWith('old-')) call.finish();
+      return pending.finally(() => running--);
+    },
+    upload: async () => {},
+    destroy: texture => destroyed.push(texture.url),
+  };
+  const store = createFrameStore({ backend, budgetBytes: 100, maxInFlight: 3 });
+  return { store, calls, destroyed, peak: () => peak };
+}
+
+test('current playback preempts stalled loads kept only by lower-priority history', async () => {
+  const f = retentionPriorityFixture(true), old = ['old-0', 'old-1', 'old-2'];
+  try {
+    f.store.replaceDemand('history', old.map(url => demand(url, 80)), { load: false });
+    f.store.replaceDemand('current', old.map(url => demand(url, 100)));
+    await flush();
+    assert.equal(f.store.stats().inFlight, 3);
+    f.store.replaceDemand('current', [demand('current-target', 100)]);
+    await flush(); await flush();
+    assert.ok(f.store.get('current-target'), 'history-only slow fetches must not starve the new current frame');
+    assert.ok(f.calls.filter(call => call.url.startsWith('old-')).every(call => call.signal.aborted));
+    assert.equal(f.calls.length, 4, 'withdrawn history is not silently reloaded');
+    assert.equal(f.store.stats().failures, 0);
+    assert.equal(f.store.stats().retainedLoadPreemptions, 3);
+    assert.ok(f.peak() <= 3);
+  } finally { f.store.destroy(); await flush(); }
+});
+
+test('preempted non-abortable history keeps its real slots until completion', async () => {
+  const f = retentionPriorityFixture(false), old = ['old-0', 'old-1', 'old-2'];
+  try {
+    f.store.replaceDemand('history', old.map(url => demand(url, 80)), { load: false });
+    f.store.replaceDemand('current', old.map(url => demand(url, 100)));
+    await flush();
+    f.store.replaceDemand('current', [demand('current-target', 100)]);
+    await flush();
+    assert.ok(f.calls.every(call => call.signal.aborted), 'obsolete generation is marked cancelled');
+    assert.equal(f.calls.length, 3);
+    assert.equal(f.store.stats().inFlight, 3);
+    f.calls.slice().forEach(call => call.finish());
+    await flush(); await flush();
+    assert.ok(f.store.get('current-target'));
+    assert.deepEqual(f.destroyed.slice().sort(), old);
+    assert.ok(old.every(url => f.store.get(url) === null));
+    assert.equal(f.store.stats().failures, 0);
+    assert.equal(f.store.stats().retainedLoadPreemptions, 3);
+    assert.ok(f.peak() <= 3);
+  } finally {
+    f.calls.forEach(call => call.finish());
+    f.store.destroy(); await flush();
+  }
+});
+
+test('equal-priority retention, still-requested work and pins are not preempted', async () => {
+  for (const mode of ['equal', 'requested', 'pinned']) {
+    const f = retentionPriorityFixture(true), old = ['old-0', 'old-1', 'old-2'];
+    try {
+      f.store.replaceDemand('history', old.map(url => demand(url, 80)), { load: mode === 'requested' });
+      if (mode === 'pinned') f.store.replacePins('required', old);
+      f.store.replaceDemand('current', old.map(url => demand(url, 100)));
+      await flush();
+      f.store.replaceDemand('current', [demand('current-target', mode === 'equal' ? 80 : 100)]);
+      await flush();
+      assert.equal(f.calls.length, 3, mode);
+      assert.ok(f.calls.every(call => !call.signal.aborted), mode);
+      assert.equal(f.store.stats().retainedLoadPreemptions, 0, mode);
+      f.calls.slice().forEach(call => call.finish());
+      await flush(); await flush();
+      assert.ok(f.store.get('current-target'), mode);
+      assert.ok(old.every(url => f.store.get(url)), mode);
+      assert.equal(f.store.stats().failures, 0);
+      assert.ok(f.peak() <= 3);
+    } finally { f.store.destroy(); await flush(); }
+  }
+});
+
+test('pins protect residency without putting unrelated posters ahead of active playback', async () => {
+  const f = fixture({ budgetBytes: 1000, maxInFlight: 3 });
+  f.store.replacePins('posters', Array.from({ length: 39 }, (_, i) => `poster-${i}`));
+  f.store.replacePins('mouth', ['active-mouth']);
+  f.store.replaceDemand('current', ['frame-0', 'frame-1', 'active-mouth'].map(url => demand(url, 100)));
+  await flush();
+  assert.deepEqual(f.loads.map(row => row.url).sort(), ['active-mouth', 'frame-0', 'frame-1']);
+  await f.complete('active-mouth');
+  f.store.replaceDemand('current', []);
+  assert.ok(f.store.get('active-mouth'), 'lower scheduling urgency never removes pin protection');
+  f.store.destroy();
+});
+
+
+test('switching resource budgets preserves displayed pins and resumes deferred demand', async () => {
+  const backend = { now: () => 0, load: async url => ({ texture: { url }, cpuBytes: 4, gpuBytes: 6 }),
+    upload: async () => {}, destroy() {} };
+  const store = createFrameStore({ backend, budgetBytes: 30, maxInFlight: 3 });
+  store.replacePins('display', ['visible']);
+  store.replaceDemand('warm', ['a', 'b'].map(url => demand(url)));
+  await flush();
+  const visible = store.get('visible'); assert.ok(visible);
+  store.setBudgetBytes(10);
+  assert.equal(store.stats().budgetBytes, 10); assert.equal(store.stats().residentBytes, 10);
+  assert.equal(store.get('visible'), visible);
+  store.setBudgetBytes(30); await flush();
+  assert.ok(store.get('a') && store.get('b'));
+  assert.throws(() => store.setBudgetBytes(NaN), /Invalid texture budget/);
+  store.destroy();
+});

@@ -15,7 +15,8 @@
    * never receive callbacks that could extend the replacement array.
    * replaceDemand(owner, [{url, priority, deadline}]) replaces a finite request
    * set; larger numeric priorities win, then earlier deadlines. {load: false}
-   * retains demand without starting loads (in-flight work may finish). replacePins
+   * retains demand without starting loads. In-flight work may finish unless
+   * it blocks an admissible higher-priority load. replacePins
    * replaces an owner's URL set atomically. Pins imply demand and prevent
    * eviction. Empty sets release the owner. get(url) returns a ready texture.
    * Failed loads retry only on renewed owner need: adding a URL or promoting
@@ -37,14 +38,14 @@
    */
   function createFrameStore(options) {
     const { backend } = options;
-    const budgetBytes = Number(options.budgetBytes);
+    let budgetBytes = Number(options.budgetBytes);
     if (!Number.isFinite(budgetBytes) || budgetBytes < 0) throw new Error("Invalid texture budget");
     const maxInFlight = Math.max(1, Math.min(3, Math.floor(Number(options.maxInFlight) || 2)));
     const onViewChange = options.onViewChange || (() => {});
     const entries = new Map(), views = new Map(), demands = new Map(), pins = new Map();
     const jobs = new Set(), residents = new Set(), pending = new Set();
     const amounts = { residentCpuBytes: 0, residentGpuBytes: 0, pinnedBytes: 0, reservedBytes: 0 };
-    const counters = { loads: 0, refetches: 0, evictions: 0, failures: 0, pressure: 0 };
+    const counters = { loads: 0, refetches: 0, evictions: 0, failures: 0, pressure: 0, retainedLoadPreemptions: 0 };
     let destroyed = false, pumpScheduled = false, serial = 0;
 
     function entryFor(url) {
@@ -63,7 +64,8 @@
     function wanted(entry) { return entry.pinned || !!entry.demand; }
     function loadable(entry) { return entry.pinned || !!entry.request; }
     function priority(entry) { return entry.pinned ? Infinity : entry.demand?.priority ?? -Infinity; }
-    function requestPriority(entry) { return entry.pinned ? Infinity : entry.request?.priority ?? -Infinity; }
+    // Pinning protects residency; it does not make an unrelated poster urgent.
+    function requestPriority(entry) { return entry.request?.priority ?? (entry.pinned ? 0 : -Infinity); }
     function deadline(entry) { return entry.request?.deadline ?? Infinity; }
     function costBytes(cost) { return cost.cpuBytes + cost.gpuBytes; }
 
@@ -187,7 +189,10 @@
     }
 
     function pump() {
-      if (jobs.size >= maxInFlight) return;
+      // A retained history hint cannot keep obsolete reads ahead of current
+      // playback. Active load requests and pins still own their real slots.
+      if (jobs.size >= maxInFlight && !Array.from(jobs).some(job =>
+        !job.cancelled && !loadable(job.entry))) return;
       const candidates = Array.from(pending)
         .sort((a, b) => requestPriority(b) - requestPriority(a) || deadline(a) - deadline(b) || a.serial - b.serial);
       // Residents cannot change during this synchronous scheduling pass. Reuse
@@ -199,7 +204,6 @@
         return victimLists.get(key);
       };
       for (const entry of candidates) {
-        if (jobs.size >= maxInFlight) break;
         if (entry.cost) {
           if (!admission(entry, entry.cost, false, () => victims(entry))) { pressure(entry); continue; }
         } else if (!entry.pinned) {
@@ -207,6 +211,18 @@
           if (occupied >= Math.max(budgetBytes, amounts.pinnedBytes) && !victims(entry).length) {
             pressure(entry); continue;
           }
+        }
+        if (jobs.size >= maxInFlight) {
+          for (const job of jobs) {
+            if (!job.cancelled && !loadable(job.entry)
+                && priority(job.entry) < requestPriority(entry)) {
+              counters.retainedLoadPreemptions++;
+              cancel(job);
+            }
+          }
+          // Abortable reads release promptly; workers/uploads that cannot stop
+          // retain their slot until start()'s existing finally path finishes.
+          break;
         }
         entry.pressured = false;
         start(entry);
@@ -364,7 +380,15 @@
       }
     }
 
-    return { replaceViews, replaceDemand, replacePins, get, stats, destroy };
+    function setBudgetBytes(value) {
+      const next = Number(value);
+      if (!Number.isFinite(next) || next < 0) throw new Error("Invalid texture budget");
+      budgetBytes = next;
+      trim();
+      schedulePump();
+    }
+
+    return { replaceViews, replaceDemand, replacePins, get, stats, destroy, setBudgetBytes };
   }
 
   return { createFrameStore };

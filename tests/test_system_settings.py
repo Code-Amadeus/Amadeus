@@ -246,6 +246,7 @@ def test_graphics_status_distinguishes_saved_custom_limits_from_applied_preset(m
     result = asyncio.run(SystemHandler()._get_config({}))
     assert result["graphics"] == {"profile": "standard", "custom_max_fps": 48,
         "custom_max_resolution": 1.25, "texture_sampling": False, "bc7_cache": True,
+        "frame_source": settings.RENDER_FRAME_SOURCE, "frame_budget_mib": settings.RENDER_FRAME_BUDGET_MIB,
         "effective_max_fps": 60, "effective_max_resolution": None}
 
 

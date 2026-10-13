@@ -23,14 +23,14 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
 localStorage.setItem('amadeus.ui.locale', seed.locale || 'zh-CN')
 localStorage.setItem('amadeus.ui.theme', 'classic')
 localStorage.setItem('amadeus.sidebar.collapsed', '0')
-localStorage.setItem('amadeus.settings.section', 'capabilities')
+localStorage.setItem('amadeus.settings.section', seed.section || 'capabilities')
 const desktop = {
   platform: 'win32', values: { AMADEUS_UI_LOCALE: seed.locale || 'zh-CN', AMADEUS_UI_THEME: 'classic' },
   sources: {}, locked: {}, secrets: {}, encryptionAvailable: false,
   mcpConnections: [], mcpConnectionsLocked: false, restartRequired: false,
   pendingKeys: [], pendingRevisions: {}, retired_settings: [],
 }
-const snapshot = (): VisualSnapshot => ({ config: structuredClone(config), capabilities: seed.capabilities, surfaces: {} })
+const snapshot = (): VisualSnapshot => ({ config: structuredClone(config), capabilities: seed.capabilities, surfaces: seed.surfaces || {} })
 const emit = (method: string, payload: Record<string, unknown>) => {
   for (const listener of listeners[method] || []) listener(payload)
 }
@@ -41,7 +41,7 @@ const subscribe = (method: string, listener: (payload: Record<string, unknown>) 
 const send = async (method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
   calls.push({ method, params: structuredClone(params) })
   if (method === 'character.list') return { characters: [{ character_id: 'kurisu', name: 'Kurisu', persona: '', valid: true, builtin: true, editable: false }], active: { character_id: 'kurisu', name: 'Kurisu' }, limits: { name_max_chars: 128, persona_max_chars: 7900 } }
-  if (method === 'system.get_config') return { values: {} }
+  if (method === 'system.get_config') return { values: seed.systemConfig || {} }
   if (method === 'provider.list') return { provider_availability: [], provider_manifests: [], acp_agents: [], provider_configurations: [] }
   if (method === 'capability.list') return { packages: [] }
   if (method === 'visual.get') return snapshot() as unknown as Record<string, unknown>
@@ -79,6 +79,10 @@ host.amadeus = {
   getDesktopTheme: async () => ({ selected: 'wallpaper-slice', base: 'wallpaper-slice', reason: '' }),
   onDesktopThemeChanged: () => () => {},
   getDesktopSettings: async () => desktop,
+  updateDesktopSettings: async (changes: { startup?: { values?: Record<string, unknown> } }) => {
+    Object.assign(desktop.values, changes.startup?.values || {})
+    return desktop
+  },
   getCompanionPortraitStatus: async () => ({ installed: false, state: 'not_installed', emotionCount: 0, frameCount: 0, detail: '' }),
   getChatAvatars: async () => ({ user: '', assistant: '' }),
   setTitleBarTheme: async () => true,
@@ -91,7 +95,7 @@ document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
 
 function SettingsNavigationFixture() {
-  const [page, setPage] = useState<Page>('chat')
+  const [page, setPage] = useState<Page>(seed.page || 'chat')
   return <>
     <Sidebar page={page} onNavigate={setPage} renderActive={false} wallpaperActive={false}
       onToggleRender={() => {}} onToggleWallpaper={() => {}} />

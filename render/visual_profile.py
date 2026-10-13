@@ -366,10 +366,20 @@ class VisualProfileStore:
                       "revision": self.revision, "runtime_id": self.runtime_id,
                       "reload_revision": self.reload_revision, "surface": surface}
             if backend == "sprite":
+                from config import settings
+                from render.frame_video import frame_source_config
+                result["frame_source"] = frame_source_config(
+                    self.project_root / "assets/spriteforge/runtime/kurisu",
+                    mode=settings.RENDER_FRAME_SOURCE,
+                    budget_mib=0 if settings.RENDER_FRAME_BUDGET_MIB == "auto" else int(settings.RENDER_FRAME_BUDGET_MIB),
+                    asset_server=asset_server,
+                )
                 if asset_server is not None:
                     asset_server.mount_files("/visual-model", {})
                     asset_server.mount_files("/visual-core", {})
                 return result
+            if asset_server is not None:
+                asset_server.mount_files("/frame-video", {})
             if not profile:
                 if asset_server is not None:
                     asset_server.mount_files("/visual-model", {})

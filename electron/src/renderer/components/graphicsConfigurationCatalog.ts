@@ -8,6 +8,8 @@ export interface GraphicsRuntimeSettings {
   custom_max_resolution: number
   texture_sampling: boolean
   bc7_cache?: boolean
+  frame_source?: string
+  frame_budget_mib?: string
   effective_max_fps: number
   effective_max_resolution: number | null
 }
@@ -42,6 +44,12 @@ export function buildGraphicsConfiguration(
       // separate from the computed default; pending clears remain unknown.
       ...(runtime ? { RENDER_TEXTURE_SAMPLING: runtime.texture_sampling } : {}),
       ...(runtime?.bc7_cache !== undefined ? { RENDER_BC7_CACHE: runtime.bc7_cache } : {}),
+    }),
+    active: false, configured: true, status: 'Configured', status_ok: true,
+  }, {
+    ...catalogConfiguration('graphics_frame_source', snapshot, {
+      RENDER_FRAME_SOURCE: runtime?.frame_source,
+      RENDER_FRAME_BUDGET_MIB: runtime?.frame_budget_mib,
     }),
     active: false, configured: true, status: 'Configured', status_ok: true,
   }]

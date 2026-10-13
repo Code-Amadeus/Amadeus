@@ -92,6 +92,10 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "texture_cache_worker.mjs",
     _PROJECT_ROOT / "render" / "web" / "vendor" / "zstd" / "zstd.wasm",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
+    _PROJECT_ROOT / "render" / "web" / "frame_video" / "decoder.mjs",
+    _PROJECT_ROOT / "render" / "web" / "frame_video" / "hybrid_source.mjs",
+    _PROJECT_ROOT / "render" / "web" / "frame_video" / "ivf.mjs",
+    _PROJECT_ROOT / "render" / "web" / "frame_video" / "pixi-output.mjs",
     _PROJECT_ROOT / "render" / "web" / "live2d_character.js",
     _PROJECT_ROOT / "render" / "web" / "model_character.js",
 )

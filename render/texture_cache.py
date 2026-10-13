@@ -168,7 +168,8 @@ class TextureDiskCache:
         while block := source.read(256 * 1024):
             digest.update(block)
         source.seek(0)
-        result = (digest.hexdigest(), (width + 3) & ~3, (height + 3) & ~3)
+        # Identity describes the authored canvas; the BC7 payload is block padded.
+        result = (digest.hexdigest(), width, height)
         with self._lock:
             self._sources[path] = (stamp, result)
             self._tickets[result[0]] = (path, stamp, result[1], result[2])
@@ -209,7 +210,7 @@ class TextureDiskCache:
             info = os.fstat(source.fileno())
         if stamp != (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns):
             raise ValueError("Texture source changed")
-        parse_container(body, key=key, width=width, height=height)
+        parse_container(body, key=key, width=(width + 3) & ~3, height=(height + 3) & ~3)
         if len(body) > self.max_bytes:
             raise ValueError("Texture exceeds disk cache budget")
         # An identical winner is already complete, even if another reader has it open.

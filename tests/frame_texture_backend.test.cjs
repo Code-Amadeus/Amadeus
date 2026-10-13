@@ -100,7 +100,7 @@ test('persistent cache hits bypass UASTC; source misses only save after successf
     decode: async () => compressed(), save: () => { saved++; }, miss: () => { misses++; },
     stats: () => ({}), dispose() {} };
   const hit = fixture({ cache, fetch: async () => ({ ok: true,
-    headers: { get: name => name === 'Content-Type' ? 'application/x-amadeus-bc7' : 'key' },
+    headers: { get: name => name === 'Content-Type' ? 'application/x-amadeus-bc7' : name === 'X-Amadeus-Texture-Size' ? '4x4' : 'key' },
     arrayBuffer: async () => new ArrayBuffer(4) }) });
   const loaded = await hit.backend.load('frame.ktx2');
   assert.equal(hit.initCount(), 0);
@@ -109,7 +109,7 @@ test('persistent cache hits bypass UASTC; source misses only save after successf
   assert.equal(loaded.cpuBytes, 16);
   hit.backend.dispose();
   const cold = fixture({ cache, fetch: async () => ({ ok: true,
-    headers: { get: name => name === 'Content-Type' ? 'image/ktx2' : 'key' },
+    headers: { get: name => name === 'Content-Type' ? 'image/ktx2' : name === 'X-Amadeus-Texture-Size' ? '4x4' : 'key' },
     arrayBuffer: async () => new ArrayBuffer(4) }) });
   const frame = await cold.backend.load('frame.ktx2');
   assert.equal(cold.fetches[0].cache, 'no-store', 'source reads use the same streaming contract');
@@ -126,7 +126,7 @@ test('invalid disk payload retries the original compressed source exactly once, 
     miss() {}, save() {}, stats: () => ({}), dispose() {} };
   const f = fixture({ cache, fetch: async url => ({ ok: true,
     headers: { get: name => name === 'Content-Type'
-      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : 'key' },
+      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : name === 'X-Amadeus-Texture-Size' ? '4x4' : 'key' },
     arrayBuffer: async () => new ArrayBuffer(4) }) });
   const result = await f.backend.load('frame.ktx2');
   assert.equal(result.cpuBytes, 16);
@@ -161,7 +161,7 @@ test('a transient cache-worker failure falls back for this load without invalida
     }, invalidate: () => { invalidated++; }, miss() {}, save() {}, stats: () => ({}), dispose() {} };
   const f = fixture({ cache, fetch: async url => ({ ok: true,
     headers: { get: name => name === 'Content-Type'
-      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : 'key' },
+      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : name === 'X-Amadeus-Texture-Size' ? '4x4' : 'key' },
     arrayBuffer: async () => new ArrayBuffer(4) }) });
   const first = await f.backend.load('frame.ktx2');
   assert.equal(first.cpuBytes, 16);
@@ -503,4 +503,105 @@ test('destroy/dispose cancel queued uploads without binding borrowed or destroye
   f.backend.dispose(); await assert.rejects(bJob, { name: 'AbortError' });
   assert.equal(f.binds.length, 0); assert.equal(f.callbacks.size, 0); assert.equal(f.listeners.size, 0);
   await assert.rejects(f.backend.upload({}), { name: 'AbortError' });
+});
+
+
+test('real Pixi idle GPU collection preserves CPU payload and redraws without another fetch or decode', async () => {
+  const f = fixture(), idle = await f.backend.load('idle.ktx2'), active = await f.backend.load('active.ktx2');
+  const payload = idle.texture.baseTexture.resource._levelBuffers[0].levelBuffer;
+  payload.set(Array.from({ length: 16 }, (_, index) => index + 1));
+  const uploaded = [], deleted = [];
+  f.renderer.gl = { isContextLost: () => false, TEXTURE_2D: 3553, UNPACK_ALIGNMENT: 3317,
+    pixelStorei() {}, compressedTexImage2D(...args) { uploaded.push(Array.from(args.at(-1))); },
+    deleteTexture(texture) { deleted.push(texture); } };
+  f.renderer.context.extensions = { bptc: { COMPRESSED_RGBA_BPTC_UNORM_EXT: 36492 } };
+  const texture = f.renderer.texture;
+  Object.assign(texture, { CONTEXT_UID: f.renderer.CONTEXT_UID, gl: f.renderer.gl, managedTextures: [],
+    unbind() {}, destroyTexture: P.TextureSystem.prototype.destroyTexture });
+  const gc = f.renderer.textureGC = new P.TextureGCSystem(f.renderer);
+  texture.bind = base => {
+    let gpu = base._glTextures[f.renderer.CONTEXT_UID];
+    if (!gpu) {
+      gpu = base._glTextures[f.renderer.CONTEXT_UID] = { texture: {}, dirtyId: -1 };
+      texture.managedTextures.push(base);
+      base.on('dispose', texture.destroyTexture, texture);
+    }
+    base.touched = gc.count;
+    if (gpu.dirtyId !== base.dirtyId) {
+      assert.equal(base.resource.upload(f.renderer, base, gpu), true);
+      gpu.dirtyId = base.dirtyId;
+    }
+  };
+  const uploads = [f.backend.upload(idle.texture), f.backend.upload(active.texture)];
+  f.tick(); await Promise.all(uploads);
+  const firstPayload = uploaded[0];
+  gc.maxIdle = 60; gc.count = 60;
+  active.texture.baseTexture.touched = gc.count;
+  gc.run(); assert.equal(texture.managedTextures.length, 2, 'exact threshold stays resident');
+  gc.count++; gc.run();
+  assert.equal(deleted.length, 1);
+  assert.equal(texture.managedTextures.length, 1);
+  assert.equal(idle.texture.baseTexture._glTextures[f.renderer.CONTEXT_UID], undefined);
+  assert.equal(idle.texture.baseTexture.resource.destroyed, false);
+  assert.equal(idle.texture.baseTexture.resource._levelBuffers[0].levelBuffer, payload);
+  texture.bind(idle.texture.baseTexture);
+  assert.deepEqual(uploaded.at(-1), firstPayload);
+  assert.equal(texture.managedTextures.length, 2);
+  assert.equal(f.fetches.length, 2); assert.equal(f.decoded.length, 2);
+  assert.equal(f.backend.stats().textureUploads, 3);
+  f.backend.dispose();
+});
+
+
+function sourceKtx(width, height) {
+  const bytes = new Uint8Array(80);
+  bytes.set([171, 75, 84, 88, 32, 50, 48, 187, 13, 10, 26, 10]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(20, width, true); view.setUint32(24, height, true);
+  return bytes.buffer;
+}
+
+function paddedResource() {
+  return new P.CompressedTextureResource(null, { format: 36492, width: 8, height: 8, levels: 1,
+    levelBuffers: [{ levelID: 0, levelWidth: 8, levelHeight: 8, levelBuffer: new Uint8Array(64) }] });
+}
+
+test('odd source geometry excludes codec padding on cold and persistent-cache paths', async () => {
+  for (const cached of [false, true]) {
+    const resource = paddedResource();
+    const cache = cached ? { canUse: () => true, requestUrl: url => url,
+      decode: async () => resource, stats: () => ({}), dispose() {} } : false;
+    const f = fixture({ cache,
+      parser: { loadTranscoder: async () => {}, transcode: async () => resources(resource) },
+      fetch: async () => ({ ok: true, headers: { get: name => ({
+        'Content-Type': cached ? 'application/x-amadeus-bc7' : 'image/ktx2',
+        'X-Amadeus-BC7-Key': 'key', 'X-Amadeus-Texture-Size': '5x7',
+      })[name] ?? null }, arrayBuffer: async () => cached ? new ArrayBuffer(4) : sourceKtx(5, 7) }) });
+    try {
+      const result = await f.backend.load('odd.ktx2');
+      const texture = result.texture;
+      assert.deepEqual([texture.width, texture.height], [5, 7], 'visible source canvas, not the 8x8 BC7 allocation');
+      assert.deepEqual([texture.baseTexture.width, texture.baseTexture.height], [8, 8]);
+      assert.equal(texture._uvs.x2, 5 / 8); assert.equal(texture._uvs.y2, 7 / 8);
+      assert.equal(result.cpuBytes, 64); assert.equal(result.gpuBytes, 64, 'padding remains charged');
+      const upload = f.backend.upload(texture); f.tick(); await upload;
+      f.lose(); f.restore();
+      const restored = f.backend.upload(texture); f.tick(); await restored;
+      assert.deepEqual([texture.width, texture.height], [5, 7], 'restoration preserves the visible rectangle');
+      assert.equal(f.fetches.length, 1); assert.equal(f.images.length, 0);
+      assert.equal(f.backend.stats().transcodesCompleted, cached ? 0 : 1);
+    } finally { f.backend.dispose(); }
+  }
+});
+
+test('aligned source geometry retains the complete texture and unchanged accounting', async () => {
+  const f = fixture({ cache: false,
+    parser: { loadTranscoder: async () => {}, transcode: async () => resources(paddedResource()) },
+    fetch: async () => ({ ok: true, arrayBuffer: async () => sourceKtx(8, 8) }) });
+  try {
+    const result = await f.backend.load('aligned.ktx2');
+    assert.deepEqual([result.texture.width, result.texture.height], [8, 8]);
+    assert.equal(result.texture._uvs.x2, 1); assert.equal(result.texture._uvs.y2, 1);
+    assert.equal(result.cpuBytes + result.gpuBytes, 128);
+  } finally { f.backend.dispose(); }
 });
