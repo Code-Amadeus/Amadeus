@@ -247,25 +247,45 @@ class StreamPlayer:
     def initialize(self, sample_rate: int) -> None:
         import pyaudio
 
-        if self.pyaudio_instance is None:
-            self.pyaudio_instance = initialize_pyaudio(pyaudio.PyAudio)
-
-        current_rate = getattr(self, "_current_rate", None)
-        if self.stream is not None and self.is_playing and current_rate == sample_rate:
-            return
-
-        if self.stream is not None:
-            self.stop()
-
+        # Own the complete open/reset transition so concurrent warmup and
+        # playback cannot publish different streams or reuse a retired instance.
         with self._stream_lock:
-            self.stream = self.pyaudio_instance.open(
-                format=pyaudio.paFloat32,
-                channels=1,
-                rate=sample_rate,
-                output=True,
-            )
-        self._current_rate = sample_rate
-        self.is_playing = True
+            current_rate = getattr(self, "_current_rate", None)
+            if self.stream is not None and self.is_playing and current_rate == sample_rate:
+                return
+
+            if self.stream is not None:
+                self.stop()
+
+            for attempt in range(2):
+                if self.pyaudio_instance is None:
+                    self.pyaudio_instance = initialize_pyaudio(pyaudio.PyAudio)
+                try:
+                    self.stream = self.pyaudio_instance.open(
+                        format=pyaudio.paFloat32,
+                        channels=1,
+                        rate=sample_rate,
+                        output=True,
+                    )
+                except OSError as exc:
+                    # PortAudio may retain stale CoreAudio device state after
+                    # Bluetooth/output changes. Release it before reopening;
+                    # only the observed internal-device failure gets one retry.
+                    stale = self.pyaudio_instance
+                    self.pyaudio_instance = None
+                    self.is_playing = False
+                    self._current_rate = None
+                    terminate_pyaudio(stale)
+                    if attempt or exc.errno != -9986:
+                        raise
+                    logger.warning(
+                        "[AUDIO-RECOVERY] output open failed (%s); reinitializing PortAudio once",
+                        exc,
+                    )
+                    continue
+                self._current_rate = sample_rate
+                self.is_playing = True
+                return
 
     def prewarm(self, sample_rate: int, silence_ms: int = 80) -> bool:
         """Open the output stream early and keep the device path warm."""
