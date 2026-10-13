@@ -14,12 +14,13 @@ def frame_source_config(runtime_root: Path, *, mode: str = 'auto', budget_mib: i
                         asset_server=None) -> dict:
     result = {'requested': mode, 'budgetMiB': budget_mib, 'candidate': None,
               'reason': 'static_selected' if mode == 'static' else 'video_pack_missing'}
-    if mode == 'static':
-        return result
-    video_root = runtime_root / 'video'
-    if not (video_root / 'bundle.json').is_file():
-        return result
+    files = {}
     try:
+        if mode == 'static':
+            return result
+        video_root = runtime_root / 'video'
+        if not (video_root / 'bundle.json').is_file():
+            return result
         raw = (runtime_root / 'runtime_manifest.json').read_bytes()
         manifest = json.loads(raw)
         digest = hashlib.sha256(raw).hexdigest()
@@ -59,8 +60,6 @@ def frame_source_config(runtime_root: Path, *, mode: str = 'auto', budget_mib: i
                 files[label + '/' + stream['video']] = stream_path
         base_url = video_root.resolve().as_uri() + '/'
         if asset_server is not None:
-            # Serve only runtime metadata/streams, never quality images or logs.
-            asset_server.mount_files('/frame-video', files)
             base_url = '/frame-video/'
         result.update(reason='video_pack_available', candidate={
             'baseUrl': base_url,
@@ -69,4 +68,10 @@ def frame_source_config(runtime_root: Path, *, mode: str = 'auto', budget_mib: i
         })
     except (OSError, ValueError, KeyError, TypeError) as exc:
         result.update(reason='video_pack_invalid', detail=str(exc))
+    finally:
+        if asset_server is not None:
+            # The caller owns this surface's server. Replace only our prefix,
+            # including revocation on static/missing/invalid package selection.
+            # Publish only runtime metadata/streams, never quality images/logs.
+            asset_server.mount_files('/frame-video', files if result['candidate'] else {})
     return result

@@ -186,7 +186,7 @@
 
     // ---- Asset loading ----
 
-    // Probe injection only: { headFrameCount, createSource({ onFrame, onError }) }.
+    // Validated video descriptor: { headFrameCount, createSource({ onFrame, onError }) }.
     // Source hasAny/has are readiness queries; texture uploads synchronously.
     // requestWindow receives sampled source indices. releaseClip/destroy stop
     // sessions, while retainDisplay/releaseDisplay own surviving output pixels.
@@ -324,15 +324,15 @@
     loadFrames(emotion, urls) {
       if (this._sameUrlList(this._frameUrls[emotion], urls) && this._frames[emotion]) return;
       const list = Array.isArray(urls) ? urls.slice() : [];
-      if (emotion === this._currentEmotion && this._experimentalFrameVideos.has(emotion)) {
-        this._releaseFrameVideoSource();
-        this._videoFrozenHold = false;
-      }
+      const video = this._frameUrls[emotion] && this._experimentalFrameVideos.get(emotion);
       this._frameUrls[emotion] = list;
       this._frames[emotion] = new Array(list.length);
       this._frameSamplingPlans.delete(emotion);
       this._requiredFrameIndices.delete(emotion);
       this._textureDemandRevision++;
+      // A descriptor qualifies this ordered static clip. Releasing its decoder
+      // alone would allow it to restart against different assets on the next tick.
+      if (video) this._failFrameVideoSource(new Error("Static frame assets changed; video requires revalidation"), video);
       this._frameStore.replaceViews("frames:" + emotion, list);
       this._updateRequiredPins(emotion);
       this._refreshTextureDemand();
@@ -401,9 +401,14 @@
     }
 
     setIdleFrameIntervalMs(emotion, intervalMs) {
+      const previous = this._frameIntervals[emotion];
       this._frameIntervals[emotion] = intervalMs;
       this._frameSamplingPlans.delete(emotion);
       this._textureDemandRevision++;
+      if (previous !== undefined && previous !== intervalMs) {
+        this._failFrameVideoSource(new Error("Static frame timing changed; video requires revalidation"),
+          this._experimentalFrameVideos.get(emotion) || null);
+      }
       this._refreshTextureDemand();
     }
 
@@ -462,6 +467,8 @@
       if (!plan) {
         const cfg = this._mouthConfigs[emotion] || {};
         const required = Array.from(this._requiredFrameIndices.get(emotion) || []);
+        // Replanning after an asset/timing change must preserve an exact hold.
+        if (this._held && emotion === this._currentEmotion) required.push(this._heldFrameIdx);
         if (Number.isInteger(cfg.closedFrameIdx)) required.push(cfg.closedFrameIdx);
         const openness = cfg.opennessByFrame || [];
         let minimum = Infinity, closed = -1;
@@ -474,12 +481,13 @@
         this._frameSamplingPlans.set(emotion, plan);
       }
       if (timeMs !== null && !this._held && idx !== count - 1) {
-        // Reduced timelines use the closest planned presentation instant.
-        // Flooring repeats the old pose when ordinary vsync jitter lands just
-        // before a slot boundary. Full-density clips keep their source clock.
+        // Nearest presentation avoids jitter-induced repeated poses in the
+        // video policy. Static mode keeps its established floor semantics;
+        // full-density clips always keep the authored source clock.
         const sample = timeMs / plan.sampleIntervalMs;
+        const nearest = this._frameResourcePolicy.mode === "video" && plan.timelineIndices.length < count;
         const slot = Math.min(plan.timelineIndices.length - 1,
-          plan.timelineIndices.length < count ? Math.round(sample) : Math.floor(sample));
+          nearest ? Math.round(sample) : Math.floor(sample));
         const selected = plan.timelineIndices[slot] ?? idx;
         // The legacy speaking loop deliberately excludes its zero/neutral pose.
         if (selected === 0 && idx > 0 && this._speaking && !this._mouthConfigs[emotion]

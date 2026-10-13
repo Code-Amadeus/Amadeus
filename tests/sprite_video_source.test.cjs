@@ -642,3 +642,48 @@ test('freezing a healthy video cannot suppress a failed successor static prefetc
   s.clearHold(); await settle(f);
   assert.ok(f.demands.get('prefetch:failed-next').some(row => row.url === `${failed}:5`));
 });
+
+
+for (const change of ['urls', 'order', 'count', 'interval']) {
+  test(`changed ${change} retire the installed video and recover an exact frozen hold`, async t => {
+    const f = fixture(t), s = f.sprite;
+    const source = install(f, { count: 30, head: 3, interval: 20, allReady: true });
+    await settle(f); s._showFrame(5); s.holdFrame(null);
+    const oldDisplay = s.sprite.texture;
+    let failures = 0; s._frameVideoFailureHandler = () => failures++;
+    s.loadFrames(label, urls(30)); s.setIdleFrameIntervalMs(label, 20);
+    assert.equal(failures, 0, 'identical bootstrap replay preserves the descriptor');
+    const replacement = change === 'urls' ? urls(30).map(url => 'new-' + url)
+      : change === 'order' ? urls(30).reverse() : urls(31);
+    if (change === 'interval') s.setIdleFrameIntervalMs(label, 10);
+    else s.loadFrames(label, replacement);
+    assert.equal(s.getExperimentalFrameVideoStats().failed, true);
+    assert.equal(failures, 1);
+    assert.equal(s._heldFrameIdx, 5);
+    assert.equal(s._videoFrozenHold, false);
+    assert.deepEqual(f.pins.get('hold'), [s._frameUrls[label][5]]);
+    await settle(f);
+    assert.equal(s.sprite.texture.url, s._frameUrls[label][5]);
+    assert.equal(oldDisplay.destroyed, true);
+    s.clearHold(); s._showFrame(8);
+    assert.equal(f.sessions.length, 1, 'old descriptor cannot restart');
+    assert.equal(source.destroyed, 1);
+  });
+}
+
+test('changing an inactive alias invalidates its video without retiring the current source', async t => {
+  const f = fixture(t), s = f.sprite;
+  const source = install(f, { count: 30, head: 3, allReady: true });
+  s.loadFrames('static', ['static:0', 'static:1']);
+  s.setIdleFrameIntervalMs('static', 20); s.setIdleFrameIntervalMs('static', 10);
+  assert.equal(source.destroyed, 0, 'unrelated static timing cannot fail the current video');
+  s.loadFrames('alias', urls(30)); s.setIdleFrameIntervalMs('alias', 17);
+  s.setExperimentalFrameVideoSource('alias', s._experimentalFrameVideos.get(label).descriptor);
+  s.loadFrames('alias', urls(30).map(url => 'replacement-' + url));
+  assert.equal(s.getExperimentalFrameVideoStats('alias').failed, true);
+  assert.equal(s.getExperimentalFrameVideoStats(label).failed, false);
+  assert.equal(source.destroyed, 0);
+  s.setEmotion('alias'); s.holdFrame(8); await settle(f);
+  assert.equal(f.sessions.length, 1);
+  assert.equal(s.sprite.texture.url, 'replacement-' + urls(30)[8]);
+});

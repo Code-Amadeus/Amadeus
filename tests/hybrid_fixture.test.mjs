@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { loadHybridFixture, installHybridProbe } from '../render/web/frame_video/hybrid_source.mjs';
+import { loadHybridFixture, installHybridProbe, installHybridSources } from '../render/web/frame_video/hybrid_source.mjs';
 
 test('fixture loading requires the currently hosted pack identity, not just a historical verified flag', async t => {
   const bytes = new Uint8Array(32 + 3 * 13), view = new DataView(bytes.buffer);
@@ -75,3 +75,41 @@ test('fixture loading requires the currently hosted pack identity, not just a hi
     await assert.rejects(loadHybridFixture('/fixture/', invalid), /hosted pack identity/);
   }
 });
+
+for (const change of ['during-install', 'before-reinstall']) {
+  test(`video registration rejects stale static URLs ${change}`, async t => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'location');
+    globalThis.location = { href: 'http://localhost/' };
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, 'location', previous);
+      else delete globalThis.location;
+    });
+    const pack = { available: true, version: 'v1', sourceSha256: { 'runtime_manifest.json': 'hash' } };
+    const bundle = { schema: 'amadeus.frame-video-bundle-experiment.v1', packVersion: 'v1',
+      manifestSha256: 'hash', clips: [{ label: 'idle', path: 'idle/' }] };
+    const metadata = { schema: 'amadeus.frame-video-split-experiment.v1', headFrames: 1, frames: 3,
+      frameIntervalMs: 20, reference: { clip: 'idle', packVersion: 'v1', manifestSha256: 'hash',
+        productionLineageVerified: true, currentPackDimensionsMatch: true } };
+    t.mock.method(globalThis, 'fetch', async url => ({ ok: true,
+      json: async () => structuredClone(url.pathname.endsWith('bundle.json') ? bundle : metadata) }));
+    const installs = [], load = async () => {};
+    const sprite = { _frameUrls: { idle: ['a', 'b', 'c'] }, _frameIntervals: { idle: 20 },
+      _frameBackend: { load }, getExperimentalFrameVideoStats: () => ({}),
+      setExperimentalFrameVideoSource(label, descriptor) { installs.push({ label, descriptor }); } };
+    const pending = installHybridSources(sprite, {}, {}, '/video/', pack, { bundle: true });
+    if (change === 'during-install') {
+      sprite._frameUrls.idle = ['new-a', 'new-b', 'new-c'];
+      await assert.rejects(pending, /Static clip changed/);
+      assert.equal(installs.length, 0);
+      assert.equal(sprite._frameBackend.load, load);
+    } else {
+      const installed = await pending;
+      installed.reinstall();
+      assert.equal(installs.length, 2, 'unchanged source can be explicitly retried');
+      sprite._frameUrls.idle.reverse();
+      assert.throws(() => installed.reinstall(), /Static clip changed/);
+      assert.equal(installs.length, 2);
+      installed.disable();
+    }
+  });
+}

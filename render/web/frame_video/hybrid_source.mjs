@@ -1,5 +1,5 @@
-// Experimental adapter between SpriteRenderer's demand seam and the measured
-// WebCodecs/Pixi resources. No product manifest or default activation path.
+// Adapter between SpriteRenderer demand and the validated optional video pack.
+// Static clip identity must survive asynchronous preparation and explicit retry.
 import { parseIvf } from './ivf.mjs';
 import { FrameDecoder } from './decoder.mjs';
 import { createVideoOutput } from './pixi-output.mjs';
@@ -226,6 +226,17 @@ export function findVideoAliases(sprite, entries) {
 export async function installHybridSources(sprite, renderer, PIXI, baseUrl, installedPack,
   { bundle = false, signal, verifySupport = false } = {}) {
   const base = new URL(baseUrl, location.href), entries = [];
+  const staticClips = new Map(Object.entries(sprite._frameUrls).map(([label, urls]) =>
+    [label, { urls: urls.slice(), interval: sprite._frameIntervals[label] }]));
+  const verifyStaticClips = registrations => {
+    for (const { label } of registrations) {
+      const original = staticClips.get(label), urls = sprite._frameUrls[label];
+      if (!original || original.interval !== sprite._frameIntervals[label]
+          || urls?.length !== original.urls.length || !original.urls.every((url, index) => url === urls[index])) {
+        throw Error('Static clip changed; video package revalidation required');
+      }
+    }
+  };
   if (bundle) {
     const response = await fetchAsset(new URL('bundle.json', base), { cache: 'no-store', signal });
     if (!response.ok) throw Error('Video bundle unavailable');
@@ -271,6 +282,7 @@ export async function installHybridSources(sprite, renderer, PIXI, baseUrl, inst
   const aliases = findVideoAliases(sprite,entries);
   const registrations = [...entries.map(({label,experiment})=>({label,experiment})),
     ...[...aliases].map(([label,target])=>({label,experiment:entries.find(entry=>entry.label===target).experiment}))];
+  verifyStaticClips(registrations);
   const loads = { normalBody: 0, requiredBody: 0, explicitHoldBody: 0, fallbackBody: 0 };
   const backend = sprite._frameBackend, originalLoad = backend.load;
   backend.load = function(url, ...args) {
@@ -300,7 +312,10 @@ export async function installHybridSources(sprite, renderer, PIXI, baseUrl, inst
         renderer:sprite.getExperimentalFrameVideoStats()};
     },
     failActive() { for (const {experiment} of entries) experiment.failActive(); },
-    reinstall() { for (const {label,experiment} of registrations) sprite.setExperimentalFrameVideoSource(label,experiment.descriptor); },
+    reinstall() {
+      verifyStaticClips(registrations);
+      for (const {label,experiment} of registrations) sprite.setExperimentalFrameVideoSource(label,experiment.descriptor);
+    },
     disable() { for (const {label} of registrations) sprite.setExperimentalFrameVideoSource(label,null); backend.load=originalLoad; },
   };
 }

@@ -66,10 +66,40 @@ def test_bad_optional_video_keeps_static_package_available(tmp_path, fault):
     host = Mock()
     config = frame_source_config(root, asset_server=host)
     assert config['candidate'] is None and config['reason'] == 'video_pack_invalid'
-    host.mount_files.assert_not_called()
+    host.mount_files.assert_called_once_with('/frame-video', {})
 
 
 def test_explicit_static_and_manual_budget_are_preserved(tmp_path):
     root, _, _, _ = make_pack(tmp_path)
     assert frame_source_config(root, mode='static', budget_mib=768) == {
         'requested': 'static', 'budgetMiB': 768, 'candidate': None, 'reason': 'static_selected'}
+
+
+@pytest.mark.parametrize('change', ['static', 'missing', 'invalid', 'replacement'])
+def test_video_mount_tracks_current_selection_without_touching_other_owners(tmp_path, change):
+    from render.server import AssetServer
+    root, video, _, _ = make_pack(tmp_path)
+    server = AssetServer(tmp_path)
+    other_server = AssetServer(tmp_path)
+    unrelated = tmp_path / 'other.txt'
+    unrelated.write_text('another owner')
+    server.mount_files('/other-owner', {'asset.txt': unrelated})
+    first = frame_source_config(root, asset_server=server)
+    frame_source_config(root, asset_server=other_server)
+    assert first['candidate'] is not None
+    previous = dict(other_server._static_files)
+    mode = 'auto'
+    if change == 'static': mode = 'static'
+    elif change == 'missing': (video / 'bundle.json').unlink()
+    elif change == 'invalid': (video / 'bundle.json').write_text('{}')
+    else: root, video, _, _ = make_pack(tmp_path / 'replacement')
+    current = frame_source_config(root, mode=mode, asset_server=server)
+    mounted = {key: value for key, value in server._static_files.items() if key.startswith('/frame-video/')}
+    if change == 'replacement':
+        assert current['candidate'] is not None
+        assert mounted['/frame-video/idle/color.ivf'] == (video / 'idle/color.ivf').resolve()
+    else:
+        assert current['candidate'] is None
+        assert mounted == {}
+    assert server._static_files['/other-owner/asset.txt'] == unrelated.resolve()
+    assert other_server._static_files == previous, 'another display server keeps its mapping'

@@ -71,9 +71,24 @@ leases retain the outgoing image until its successor is ready.
 Production provider code lives in `render/web/frame_video`. Probes call the same
 implementation. Short prefetch and short GPU GC activate with verified video;
 static compatibility restores the previous policy without changing playback
-position or consuming graph random draws. A decoder failure restores static
+position or consuming graph random draws. Static mode retains floor-based time
+sampling; only reduced timelines under the video policy use nearest presentation
+slots. Exact holds and mouth anchors remain tied to the displayed source index.
+A decoder failure restores static
 supply and the corresponding automatic budget; failure remains latched until
 reconfiguration/reopening rather than silently retrying forever.
+
+Changing a clip's ordered static URLs or timing invalidates its installed video;
+this also restores exact static holds and reports fallback through the existing
+source-policy owner. Unchanged bootstrap replay does not invalidate the package.
+Asynchronous installation and explicit probe retries check the captured static
+clip identities before registration. Returning to video requires package
+qualification again; an old descriptor is not automatically reused.
+
+Wallpaper asset revisions include all four video modules (including `ivf.mjs`).
+The surface's AssetServer replaces only its own `/frame-video/` file map and
+revokes it on static selection, missing/invalid packages or a switch to Live2D.
+Other URL prefixes and other surface servers are unaffected.
 
 The shared geometry, cache-connection and FrameStore urgency fixes also apply to
 static playback. The original character controller and required static backend
@@ -118,12 +133,17 @@ pytest discovery. The frozen-display bug has a failing-before/passing-after
 reproduction: a healthy frozen video no longer suppresses a failed successor's
 static prefetch. Tests also cover missing/invalid packages, capability failure,
 explicit overrides, stale asynchronous activation and restoration of original
-static prefetch without changing the playback clock.
+static prefetch without changing the playback clock. The October 14 audit
+regressions reproduce stale video registration, static sampling drift, missing
+module revision tracking and retained HTTP mappings without a GPU. They cover
+URL order/count and timing changes, active/frozen and inactive alias paths,
+asynchronous preparation/retry, 30/60 FPS mouth/hold behavior and mount ownership.
+These are deterministic contract checks, not new GPU performance measurements.
 
 Run focused checks with:
 
 ```powershell
-python -m pytest tests/test_frame_video_contracts.py tests/test_frame_video_package.py tests/test_sprite_texture_lifecycle.py tests/test_texture_cache.py tests/test_visual_profile.py tests/test_system_settings.py tests/test_render_budget.py -q
+python -m pytest tests/test_frame_video_contracts.py tests/test_frame_video_package.py tests/test_sprite_texture_lifecycle.py tests/test_sprite_frame_sampling.py tests/test_texture_cache.py tests/test_visual_profile.py tests/test_wallpaper_asset_revision.py tests/test_asset_server_http.py tests/test_system_settings.py tests/test_render_budget.py -q
 npm --prefix electron test
 npm --prefix electron run build
 python -m ruff check .

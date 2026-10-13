@@ -378,6 +378,8 @@ class VisualProfileStore:
                     asset_server.mount_files("/visual-model", {})
                     asset_server.mount_files("/visual-core", {})
                 return result
+            if asset_server is not None:
+                asset_server.mount_files("/frame-video", {})
             if not profile:
                 if asset_server is not None:
                     asset_server.mount_files("/visual-model", {})

@@ -107,6 +107,7 @@ test('source mapping never strays by more than one output frame period',()=>{
 test('time sampling does not introduce systematic repeated images at the selected render rate',async()=>{
   for(const interval of [5,8,17,21]) for(const fps of [30,60]) {
     const {sprite:s,ticker}=await clip(fps,738,interval);
+    s._frameResourcePolicy.mode = "video";
     let last=s.sprite.texture,changes=0;
     for(let i=0;i<300;i++) {ticker.tick(1);if(s.sprite.texture!==last)changes++;last=s.sprite.texture;}
     const expected=300*Math.min(1,1000/interval/fps);
@@ -182,6 +183,7 @@ test('disabled sampling preserves the old four-source-frame limit and cycle trig
 test('a 200fps transition sampled at 60fps preserves visible poses across ordinary presentation jitter', async () => {
   const original = await clip(60, 120, 5, undefined, false);
   const sampled = await clip(60, 120, 5);
+  sampled.sprite._frameResourcePolicy.mode = "video";
   for (const f of [original, sampled]) f.sprite.setClipConfig('normal', { loopMode: 'once_then_hold' });
   const baseline = [], actual = [];
   for (let i = 0; i < 45; i++) {
@@ -214,6 +216,7 @@ test('clips already below the display rate keep their original visible source un
 test('reduced timeline selection stays within half an output period plus source quantization', async () => {
   for (const interval of [5, 8, 10]) {
     const { sprite } = await clip(60, 120, interval);
+    sprite._frameResourcePolicy.mode = "video";
     for (let time = 0; time < 120 * interval; time += 0.5) {
       const source = Math.floor(time / interval);
       const selected = sprite._sampleFrameIndex('normal', source, time);
@@ -222,3 +225,24 @@ test('reduced timeline selection stays within half an output period plus source 
     }
   }
 });
+
+
+for (const fps of [30, 60]) {
+  test(`static ${fps} FPS retains floor sampling; video nearest sampling preserves holds and mouth anchors`, async () => {
+    const { sprite: s } = await clip(fps, 120, 5, 42);
+    s._mouthConfigs.normal.anchorTrack = Array.from({length:120}, (_,i) => ({cx:i,cy:0,width:10,height:10}));
+    const plan = s._frameSamplingPlans.get('normal');
+    const time = plan.sampleIntervalMs * 1.75, logical = Math.floor(time / 5);
+    for (const [mode, expected] of [['static', plan.timelineIndices[1]], ['video', plan.timelineIndices[2]],
+      ['static', plan.timelineIndices[1]]]) {
+      s._frameResourcePolicy.mode = mode;
+      s._held = false; s._sampleTimeMs = time; s._showFrame(logical);
+      assert.equal(s._frameIdx, logical);
+      assert.equal(s._activeFrameIdx, expected);
+      assert.equal(s._getMouthAnchor(s._mouthConfigs.normal).cx, expected);
+      s.holdFrame(42); await settled(s);
+      assert.equal(s._activeFrameIdx, 42);
+      assert.equal(s._getMouthAnchor(s._mouthConfigs.normal).cx, 42);
+    }
+  });
+}
