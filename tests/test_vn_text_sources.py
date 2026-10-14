@@ -413,6 +413,8 @@ def test_mac_vision_ocr_parses_stream_lines() -> None:
         fake_proc = Mock()
         fake_proc.stdout = fake_stdout
         fake_proc.pid = 9999
+        fake_proc.returncode = 0
+        fake_proc.wait = AsyncMock(return_value=0)
         source._proc = fake_proc
 
         await source._read_loop()
@@ -420,6 +422,6 @@ def test_mac_vision_ocr_parses_stream_lines() -> None:
         assert received[0]["text"] == "【红莉栖】你在看什么啊，笨蛋！"
         assert received[0]["metadata"]["source"] == "mac_vision_ocr"
         assert source.status()[1]["lineCount"] == 1
-        assert source.status()[1]["status"] == "running"
+        assert source.status()[1]["status"] == "exited"
 
     asyncio.run(run())

@@ -18,6 +18,7 @@ type DragMode = 'move' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
 export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
   const [dragState, setDragState] = useState<{
     mode: DragMode
     startX: number
@@ -100,8 +101,8 @@ export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Pr
   // Clamped display values
   const leftPct = Math.max(0, Math.min(1, crop.x)) * 100
   const topPct = Math.max(0, Math.min(1, crop.y)) * 100
-  const widthPct = Math.max(5, Math.min(100 - leftPct, crop.w * 100))
-  const heightPct = Math.max(5, Math.min(100 - topPct, crop.h * 100))
+  const widthPct = Math.max(0, Math.min(100 - leftPct, crop.w * 100))
+  const heightPct = Math.max(0, Math.min(100 - topPct, crop.h * 100))
 
   return (
     <div
@@ -112,11 +113,12 @@ export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Pr
       onPointerCancel={handlePointerUp}
       style={{
         position: 'relative',
-        width: '100%',
-        maxHeight: '400px',
+        width: imageSize ? `${400 * imageSize.width / imageSize.height}px` : '100%',
+        maxWidth: '100%',
+        marginInline: 'auto',
         overflow: 'hidden',
         borderRadius: '8px',
-        border: '1px solid var(--border)',
+        outline: '1px solid var(--border)',
         backgroundColor: '#0a0a0c',
         userSelect: 'none',
         touchAction: 'none',
@@ -125,11 +127,13 @@ export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Pr
       <img
         src={imageSrc}
         alt="Preview Window Frame"
+        onLoad={event => {
+          const image = event.currentTarget
+          setImageSize({ width: image.naturalWidth, height: image.naturalHeight })
+        }}
         style={{
           width: '100%',
           height: 'auto',
-          maxHeight: '400px',
-          objectFit: 'contain',
           display: 'block',
           pointerEvents: 'none',
         }}

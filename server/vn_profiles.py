@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import uuid
 from pathlib import Path
@@ -18,6 +19,16 @@ def validate_luna_ws_url(value: str) -> None:
     url = urlparse(value)
     if url.scheme not in {"ws", "wss"} or not url.hostname or url.path != "/api/ws/text/origin":
         raise ValueError("Luna original-text WebSocket URL must end in /api/ws/text/origin (ws:// or wss://).")
+
+
+def validate_ocr_crop(value: dict[str, float]) -> dict[str, float]:
+    if (not isinstance(value, dict) or set(value) != {"x", "y", "w", "h"}
+            or not all(type(v) in (int, float) and math.isfinite(v) for v in value.values())):
+        raise ValueError("OCR crop must contain finite x, y, w and h values.")
+    x, y, w, h = (value[key] for key in ("x", "y", "w", "h"))
+    if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1 and x + w <= 1 and y + h <= 1):
+        raise ValueError("OCR crop must be a nonempty rectangle inside the window.")
+    return value
 
 
 def inspect_game(executable: str) -> dict[str, str]:
@@ -78,6 +89,11 @@ class LaunchProfile(BaseModel):
         if value and not Path(value).is_absolute():
             raise ValueError("Choose an absolute file path.")
         return value
+
+    @field_validator("ocrCropRect")
+    @classmethod
+    def ocr_crop(cls, value: dict[str, float]) -> dict[str, float]:
+        return validate_ocr_crop(value)
 
     @model_validator(mode="after")
     def source_settings(self) -> "LaunchProfile":

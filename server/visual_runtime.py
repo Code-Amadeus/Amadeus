@@ -13,6 +13,7 @@ import ctypes
 import io
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass, asdict
 from typing import Any
@@ -347,41 +348,18 @@ def capture_game_window(
         return result
 
     if sys.platform == "darwin":
-        import json
         from pathlib import Path
-        import subprocess
+        from server.macos_capture import list_macos_capture_windows, resolve_macos_window
         from server.window_capture import capture_window_frame
 
-        project_root = Path(__file__).resolve().parents[1]
-        binary = project_root / "build" / "bin" / "mac_screen_ocr"
-        if not binary.is_file():
-            raise RuntimeError("mac_screen_ocr binary not available on macOS")
-
-        proc = subprocess.run([str(binary), "--list-windows"], capture_output=True, text=True, check=False)
-        windows: list[dict[str, Any]] = []
-        try:
-            windows = json.loads(proc.stdout)
-        except Exception:
-            pass
-
-        target = None
-        if window_id:
-            target = next((w for w in windows if w.get("id") == window_id), None)
-        if not target and pid:
-            target = next((w for w in windows if w.get("pid") == pid), None)
-        if not target and window_name:
-            target = next((w for w in windows if window_name.lower() in (w.get("title") or "").lower()), None)
-        if not target and app_name:
-            target = next((w for w in windows if app_name.lower() in (w.get("app") or "").lower()), None)
-        if not target and executable:
-            stem = Path(executable).stem.lower()
-            target = next((w for w in windows if stem in (w.get("app") or "").lower()), None)
-
-        if not target:
-            raise RuntimeError("The game window could not be found.")
+        target = resolve_macos_window(
+            list_macos_capture_windows(), window_id=window_id, pid=pid,
+            window_name=window_name,
+            app_name=app_name or (Path(executable).stem if executable and not pid and not window_id else ""),
+        )
 
         wid = int(target["id"])
-        image = capture_window_frame(wid)
+        image = capture_window_frame(wid, expected_pid=int(target["pid"]))
         rect = {"left": 0, "top": 0, "width": target.get("width", image.width), "height": target.get("height", image.height)}
         result = _encode_visual_context(image, rect, requested_scope="game_window", actual_scope="game_window",
                                         provider="auto", mode="on_demand", reason="vn_player",

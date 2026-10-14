@@ -170,3 +170,47 @@ def test_invalid_reaction_is_rejected_before_queue_and_next_reaction_is_polled()
         shell._server.shutdown()
         shell._server.server_close()
         shell._thread.join(timeout=2)
+
+
+def test_photo_transfer_keeps_pixels_and_alpha_without_pillow_tk_bridge(monkeypatch):
+    import io
+    import sys
+    from PIL import Image
+    from render import vn_overlay_window
+
+    monkeypatch.setitem(sys.modules, "PIL._imagingtk", None)
+    create = Mock(return_value=object())
+    monkeypatch.setattr(vn_overlay_window.tk, "PhotoImage", create)
+    master = object()
+    with Image.new("RGBA", (2, 1), (100, 150, 200, 255)) as frame:
+        frame.putpixel((1, 0), (10, 20, 30, 0))
+        photo = vn_overlay_window.photo_image(frame, master=master)
+    assert photo is create.return_value
+    assert create.call_args.kwargs["master"] is master
+    with Image.open(io.BytesIO(create.call_args.kwargs["data"])) as transferred:
+        assert transferred.getpixel((0, 0)) == (100, 150, 200, 255)
+        assert transferred.getpixel((1, 0)) == (10, 20, 30, 0)
+
+
+def test_tk_data_libraries_follow_base_interpreter_and_respect_overrides(tmp_path, monkeypatch):
+    import os
+    from render import vn_overlay_window
+    monkeypatch.setattr(vn_overlay_window.sys, "base_prefix", str(tmp_path))
+    monkeypatch.setattr(vn_overlay_window.tk, "TclVersion", 8.6)
+    monkeypatch.setattr(vn_overlay_window.tk, "TkVersion", 8.6)
+    for variable in ("TCL_LIBRARY", "TK_LIBRARY"):
+        monkeypatch.delenv(variable, raising=False)
+    vn_overlay_window.initialize_tk_libraries()
+    assert "TCL_LIBRARY" not in os.environ and "TK_LIBRARY" not in os.environ
+    for directory, entry in (("tcl8.6", "init.tcl"), ("tk8.6", "tk.tcl")):
+        library = tmp_path / "lib" / directory
+        library.mkdir(parents=True)
+        (library / entry).touch()
+    vn_overlay_window.initialize_tk_libraries()
+    assert os.environ["TCL_LIBRARY"] == str(tmp_path / "lib/tcl8.6")
+    assert os.environ["TK_LIBRARY"] == str(tmp_path / "lib/tk8.6")
+    monkeypatch.setenv("TCL_LIBRARY", "user-selected-tcl")
+    monkeypatch.setenv("TK_LIBRARY", "user-selected-tk")
+    vn_overlay_window.initialize_tk_libraries()
+    assert os.environ["TCL_LIBRARY"] == "user-selected-tcl"
+    assert os.environ["TK_LIBRARY"] == "user-selected-tk"

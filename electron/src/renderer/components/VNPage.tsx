@@ -412,7 +412,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   }
   const sourceReady = !!activeProfile && (
     activeProfile.textSource === 'ocr'
-      ? Boolean(activeProfile.ocrWindowId || activeProfile.ocrWindowName || activeProfile.id)
+      ? Boolean(activeProfile.ocrWindowId || activeProfile.ocrWindowName || activeProfile.ocrAppName)
       : (!activeProfile.launchGame || !!activeProfile.gameExists) && (
           activeProfile.textSource === 'luna'
             ? !!activeProfile.lunaWsUrl

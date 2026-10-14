@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ctypes
+import io
 import json
 import math
+import os
+from pathlib import Path
 import queue
 import re
 import sys
@@ -12,7 +15,7 @@ import threading
 import time
 import tkinter as tk
 
-from PIL import Image, ImageColor, ImageDraw, ImageTk
+from PIL import Image, ImageColor, ImageDraw
 
 CARD_BG = "#071e24"
 CARD_BORDER = "#397c73"
@@ -29,6 +32,24 @@ EMOTION_ALIASES = {
     "smile": "happy", "trans_smile": "happy", "shy": "blush", "shy_trans": "blush",
     "angry_trans": "angry", "sad_trans": "sad",
 }
+
+
+def photo_image(image: Image.Image, *, master):
+    """Transfer pixels through Tk's PNG decoder without a Pillow/Tcl ABI bridge."""
+    with io.BytesIO() as data:
+        image.save(data, format="PNG", compress_level=1)
+        return tk.PhotoImage(data=data.getvalue(), format="png", master=master)
+
+
+def initialize_tk_libraries():
+    """Use Tcl/Tk data shipped by the interpreter when launched from a venv."""
+    for setting, directory, entry in (
+        ("TCL_LIBRARY", f"tcl{tk.TclVersion}", "init.tcl"),
+        ("TK_LIBRARY", f"tk{tk.TkVersion}", "tk.tcl"),
+    ):
+        library = Path(sys.base_prefix) / "lib" / directory
+        if setting not in os.environ and (library / entry).is_file():
+            os.environ[setting] = str(library)
 
 
 def clean_display_text(text: str) -> str:
@@ -57,6 +78,7 @@ class PortraitOverlayTk:
         if sys.platform == "win32":
             # Render at monitor resolution instead of letting Windows enlarge a 96-DPI bitmap.
             ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        initialize_tk_libraries()
         self.root = tk.Tk()
         self._scale = self.root.winfo_fpixels("1i") / 96
         self.root.title("Amadeus · VN Companion")
@@ -227,7 +249,7 @@ class PortraitOverlayTk:
         with surface.resize((self._px(self.card_width), self._px(height)), Image.Resampling.LANCZOS) as frame:
             with frame.getchannel("A") as alpha:
                 frame.putalpha(alpha.point(lambda value: 255 if value >= 128 else 0))
-            self._card_photo = ImageTk.PhotoImage(frame, master=self.root)
+            self._card_photo = photo_image(frame, master=self.root)
         self.frame.itemconfigure(self._background_item, image=self._card_photo)
         surface.close()
 

@@ -41,3 +41,17 @@ def test_only_vn_playback_is_projected_and_audio_edges_keep_order():
     assert posted[0]["display_text"] == "字幕"
     assert posted[1]["display_text"] == ""
     assert posted[2]["source"] == "vn_pretranslation"
+
+
+def test_overlay_start_failure_reports_exit_and_cause(tmp_path):
+    import pytest
+    from server.vn_launch_manager import VNLaunchManager
+    helper = tmp_path / "broken_overlay.py"
+    helper.write_text('import sys\nprint("Synthetic initialization failure", file=sys.stderr)\nsys.exit(7)\n')
+    manager = VNLaunchManager(tmp_path, runtime_start=AsyncMock(), runtime_stop=AsyncMock(),
+                              runtime_status=AsyncMock(), runtime_line=AsyncMock())
+    manager._publish_status = AsyncMock()
+    with patch("server.vn_launch_manager._http_health", return_value=False):
+        with pytest.raises(RuntimeError, match=r"exit 7.*Synthetic initialization failure"):
+            asyncio.run(manager._launch_overlay({"overlayHelper": str(helper)}, {}))
+    assert manager._overlay_proc.poll() == 7

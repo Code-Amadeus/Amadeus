@@ -13,7 +13,8 @@ import sys
 from threading import Event
 
 
-def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool = False):
+def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool = False,
+                         expected_pid: int | None = None):
     """Isolate the native capture lifetime and faults from the long-running host."""
     from PIL import Image
     import psutil
@@ -21,14 +22,11 @@ def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool 
     if not hwnd:
         raise RuntimeError("The game window is unavailable.")
     if sys.platform == "darwin":
-        project_root = Path(__file__).resolve().parents[1]
-        binary = project_root / "build" / "bin" / "mac_screen_ocr"
-        build_script = project_root / "tools" / "build_mac_screen_ocr.sh"
-        if not binary.is_file() and build_script.is_file():
-            subprocess.run([str(build_script)], check=False)
-        if not binary.is_file():
-            raise RuntimeError("mac_screen_ocr binary not available on macOS")
+        from server.macos_capture import ensure_macos_helper
+        binary = ensure_macos_helper()
         args = [str(binary), "--capture-only", "--window-id", str(hwnd)]
+        if expected_pid:
+            args.extend(["--pid", str(expected_pid)])
         if preserve_alpha:
             args.append("--preserve-alpha")
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

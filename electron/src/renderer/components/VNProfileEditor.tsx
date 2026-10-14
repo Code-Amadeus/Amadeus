@@ -56,6 +56,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
   const [fetchingWindows, setFetchingWindows] = useState(false)
   const [previewImage, setPreviewImage] = useState<string>('')
   const [capturingPreview, setCapturingPreview] = useState(false)
+  const previewRequest = useRef(0)
   const [section, setSection] = useState<EditorSection>('game')
   const [agent, setAgent] = useState(agentExe)
   const [busy, setBusy] = useState(false)
@@ -88,6 +89,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
 
   const capturePreview = useCallback(async () => {
     if (!send) return
+    const request = ++previewRequest.current
     setCapturingPreview(true)
     setError('')
     try {
@@ -96,6 +98,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
         windowName: profile.ocrWindowName,
         appName: profile.ocrAppName,
       })
+      if (request !== previewRequest.current) return
       if (res.error) {
         throw new Error(String(res.error))
       }
@@ -105,9 +108,9 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
         throw new Error(t('Window preview not found or empty.'))
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (request === previewRequest.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setCapturingPreview(false)
+      if (request === previewRequest.current) setCapturingPreview(false)
     }
   }, [send, profile.ocrWindowId, profile.ocrWindowName, profile.ocrAppName, t])
 
@@ -248,6 +251,9 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
                       onChange={e => {
                         const wid = Number(e.target.value) || undefined
                         const win = windows.find(w => w.id === wid)
+                        ++previewRequest.current
+                        setCapturingPreview(false)
+                        setPreviewImage('')
                         setProfile(curr => ({
                           ...curr,
                           ocrWindowId: wid,

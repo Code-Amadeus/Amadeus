@@ -14,6 +14,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -156,6 +157,16 @@ class VNLaunchManager:
                 raise RuntimeError((runtime.get("visual") or {}).get("reason") or "The current VN model does not support images.")
             if not (runtime.get("capabilities", {}).get("interaction") or {}).get("enabled"):
                 raise RuntimeError("Enable player interaction before attaching a game view.")
+            if self._state.get("textSource") == "ocr":
+                # Use the source's session binding, never mutable saved selectors.
+                window = (self._text_source.status()[1] if self._text_source else {}).get("window")
+                if not window:
+                    raise RuntimeError("Select the game window again before capturing.")
+                from server.visual_runtime import capture_game_window
+                visual = await asyncio.to_thread(
+                    capture_game_window, int(window["pid"]), "", window_id=int(window["id"]),
+                )
+                return {"status": "ok", "visual_context": visual}
             profile = self._profile_by_id(self._state["profileId"])
             executable = str(profile.get("gameExe") or "")
             if not executable and sys.platform != "darwin":
@@ -168,14 +179,7 @@ class VNLaunchManager:
             if pid is None and sys.platform != "darwin":
                 raise RuntimeError("The configured game is not running.")
             from server.visual_runtime import capture_game_window
-            kwargs: dict[str, Any] = {}
-            if profile.get("ocrWindowId"):
-                kwargs["window_id"] = profile["ocrWindowId"]
-            if profile.get("ocrWindowName"):
-                kwargs["window_name"] = profile["ocrWindowName"]
-            if profile.get("ocrAppName"):
-                kwargs["app_name"] = profile["ocrAppName"]
-            visual = await asyncio.to_thread(capture_game_window, pid or 0, executable, **kwargs)
+            visual = await asyncio.to_thread(capture_game_window, pid or 0, executable)
             return {"status": "ok", "visual_context": visual}
 
     async def set_overlay(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -556,33 +560,39 @@ class VNLaunchManager:
                 AUTH_TOKEN_ENV: self._auth_policy.token,
                 INSTANCE_NONCE_ENV: self._auth_policy.instance_nonce,
             }
-        self._overlay_proc = self._spawn(args, cwd=self.project_root, hidden=True, env=overlay_env)
-        self._state["overlay"] = {
-            "status": "starting",
-            "pid": self._overlay_proc.pid,
-            "url": url,
-            "helper": str(helper),
-            "owned": True,
-        }
-        await self._publish_status()
+        with tempfile.TemporaryFile() as startup_error:
+            self._overlay_proc = self._spawn(args, cwd=self.project_root, hidden=True, env=overlay_env, stderr=startup_error)
+            self._state["overlay"] = {
+                "status": "starting",
+                "pid": self._overlay_proc.pid,
+                "url": url,
+                "helper": str(helper),
+                "owned": True,
+            }
+            await self._publish_status()
 
-        deadline = time.monotonic() + 4.0
-        while time.monotonic() < deadline:
-            if not self._process_alive(self._overlay_proc):
-                raise RuntimeError("VN portrait overlay exited before becoming ready.")
-            if await asyncio.to_thread(_http_health, health_url, 0.35):
-                self._state["overlay"] = {
-                    "status": "running",
-                    "pid": self._overlay_proc.pid if self._overlay_proc else None,
-                    "url": url,
-                    "helper": str(helper),
-                    "owned": True,
-                    "visible": True,
-                }
-                await self._publish_status()
-                return url
-            await asyncio.sleep(0.12)
-        raise RuntimeError(f"VN portrait overlay did not become ready: {health_url}")
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline:
+                if not self._process_alive(self._overlay_proc):
+                    startup_error.seek(0, os.SEEK_END)
+                    size = startup_error.tell()
+                    startup_error.seek(max(0, size - 2000))
+                    lines = startup_error.read().decode("utf-8", errors="replace").strip().splitlines()
+                    detail = lines[-1][:500] if lines else "No startup error was reported."
+                    raise RuntimeError(f"VN portrait overlay exited before becoming ready (exit {self._overlay_proc.poll()}). {detail}")
+                if await asyncio.to_thread(_http_health, health_url, 0.35):
+                    self._state["overlay"] = {
+                        "status": "running",
+                        "pid": self._overlay_proc.pid if self._overlay_proc else None,
+                        "url": url,
+                        "helper": str(helper),
+                        "owned": True,
+                        "visible": True,
+                    }
+                    await self._publish_status()
+                    return url
+                await asyncio.sleep(0.12)
+            raise RuntimeError(f"VN portrait overlay did not become ready: {health_url}")
 
     async def _launch_game(self, profile: dict[str, Any]) -> None:
         game_exe = Path(str(profile.get("gameExe") or ""))
@@ -622,7 +632,7 @@ class VNLaunchManager:
         raise TimeoutError("Steam did not start the configured game. Check Steam's launch window, the app ID and the selected game executable, then retry.")
 
     def _spawn(self, args: list[str], *, cwd: Path, hidden: bool,
-               env: dict[str, str] | None = None) -> subprocess.Popen[Any]:
+               env: dict[str, str] | None = None, stderr: Any = subprocess.DEVNULL) -> subprocess.Popen[Any]:
         child_env = os.environ.copy()
         clear_inherited_auth_environment(child_env)
         if env is not None:
@@ -631,7 +641,7 @@ class VNLaunchManager:
             "cwd": str(cwd),
             "stdin": subprocess.DEVNULL,
             "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
+            "stderr": stderr,
             "shell": False,
             "env": child_env,
         }

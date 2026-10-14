@@ -18,7 +18,8 @@ from typing import Any, Awaitable, Callable, Protocol
 
 import psutil
 
-from server.vn_profiles import validate_luna_ws_url
+from server.vn_profiles import validate_luna_ws_url, validate_ocr_crop
+from server.macos_capture import ensure_macos_helper, list_macos_capture_windows, resolve_macos_window
 
 VNLine = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 StatusChanged = Callable[[dict[str, Any], dict[str, Any]], Awaitable[None]]
@@ -277,19 +278,22 @@ class LunaVNTextSource:
 
 
 class MacVisionOCRTextSource:
-    """Capture game dialogue via native macOS ScreenCaptureKit and Apple Vision OCR."""
+    """Own one native OCR process and its session-bound window identity."""
 
     def __init__(self, on_line: VNLine, on_status: StatusChanged) -> None:
         self._on_line = on_line
         self._on_status = on_status
         self._proc: asyncio.subprocess.Process | None = None
         self._read_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._stderr = ""
         self._line_count = 0
         self._bridge: dict[str, Any] = {"status": "not_started", "lineCount": 0, "source": "mac_vision_ocr"}
 
     def status(self) -> tuple[dict[str, Any], dict[str, Any]]:
         return {
-            "status": self._bridge.get("status", "not_started"),
+            "status": "exited" if self._proc is not None and self._proc.returncode is not None
+                      else self._bridge.get("status", "not_started"),
             "pid": self._proc.pid if self._proc is not None else None,
             "helper": "mac_screen_ocr",
             "owned": True,
@@ -299,204 +303,155 @@ class MacVisionOCRTextSource:
         await self._on_status(*self.status())
 
     async def start(self, profile: dict[str, Any], params: dict[str, Any], *, target_pid: int | None) -> None:
-        del target_pid
         if sys.platform != "darwin":
             raise RuntimeError("mac_vision_ocr text source is supported only on macOS.")
-
-        project_root = Path(__file__).resolve().parents[1]
-        binary = project_root / "build" / "bin" / "mac_screen_ocr"
-        build_script = project_root / "tools" / "build_mac_screen_ocr.sh"
-        if not binary.is_file():
-            if build_script.is_file():
-                build_proc = await asyncio.create_subprocess_exec(str(build_script))
-                await build_proc.wait()
-            if not binary.is_file():
-                raise FileNotFoundError(f"Native OCR helper not found: {binary}")
-
-        crop = profile.get("ocrCropRect") or params.get("ocrCropRect") or {"x": 0.0, "y": 0.65, "w": 1.0, "h": 0.35}
-        crop_str = f"{crop.get('x', 0.0)},{crop.get('y', 0.65)},{crop.get('w', 1.0)},{crop.get('h', 0.35)}"
-        args = [str(binary), "--stream", "--crop", crop_str]
-
-        win_id = params.get("ocrWindowId") or profile.get("ocrWindowId")
-        win_name = str(params.get("ocrWindowName") or profile.get("ocrWindowName") or "").strip()
-        app_name = str(params.get("ocrAppName") or profile.get("ocrAppName") or "").strip()
-        if not win_name and not app_name and profile.get("gameExe"):
-            app_name = Path(profile["gameExe"]).stem
-
-        if win_id:
-            args.extend(["--window-id", str(win_id)])
-        elif target_pid:
-            args.extend(["--pid", str(target_pid)])
-        elif win_name:
-            args.extend(["--window-name", win_name])
-        elif app_name:
-            args.extend(["--app-name", app_name])
-
-        languages = str(profile.get("ocrLanguage") or "ja,zh-Hans,zh-Hant,en-US").strip()
-        if languages:
-            args.extend(["--languages", languages])
-
-        interval = profile.get("ocrIntervalMs") or 700
-        args.extend(["--interval-ms", str(interval)])
-
-        self._line_count = 0
-        self._bridge = {"status": "connecting", "lineCount": 0, "source": "mac_vision_ocr"}
-        await self._publish()
-
-        self._proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        crop = validate_ocr_crop(params.get("ocrCropRect", profile.get("ocrCropRect", {
+            "x": 0.0, "y": 0.65, "w": 1.0, "h": 0.35,
+        })))
+        binary = await asyncio.to_thread(ensure_macos_helper)
+        window = resolve_macos_window(
+            await asyncio.to_thread(list_macos_capture_windows),
+            window_id=params.get("ocrWindowId", profile.get("ocrWindowId")), pid=target_pid,
+            window_name=str(params.get("ocrWindowName", profile.get("ocrWindowName")) or "").strip(),
+            app_name=str(params.get("ocrAppName", profile.get("ocrAppName")) or "").strip(),
         )
-        self._bridge = {"status": "running", "lineCount": 0, "source": "mac_vision_ocr"}
+        args = [str(binary), "--stream", "--crop", ",".join(str(crop[k]) for k in ("x", "y", "w", "h")),
+                "--window-id", str(window["id"]), "--pid", str(window["pid"]),
+                "--languages", str(profile.get("ocrLanguage") or "ja,zh-Hans,zh-Hant,en-US"),
+                "--interval-ms", str(profile.get("ocrIntervalMs") or 700)]
+        self._line_count = 0
+        self._stderr = ""
+        self._bridge = {"status": "connecting", "lineCount": 0, "source": "mac_vision_ocr", "window": window}
         await self._publish()
+        self._proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
         self._read_task = asyncio.create_task(self._read_loop())
+
+    async def _terminate_helper(self) -> None:
+        if self._proc is None:
+            return
+        # The stdout reader has stopped before cleanup takes ownership of pipes.
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            await asyncio.gather(self._stderr_task, return_exceptions=True)
+            self._stderr_task = None
+        if self._proc.returncode is None:
+            try:
+                self._proc.terminate()
+            except ProcessLookupError:
+                pass
+        try:
+            _, stderr = await asyncio.wait_for(self._proc.communicate(), timeout=2.0)
+        except asyncio.TimeoutError:
+            try:
+                self._proc.kill()
+            except ProcessLookupError:
+                pass
+            _, stderr = await self._proc.communicate()
+        if stderr:
+            self._stderr = (self._stderr + stderr.decode("utf-8", errors="replace"))[-500:]
 
     async def stop(self) -> None:
         if self._read_task is not None:
             self._read_task.cancel()
-            try:
-                await self._read_task
-            except asyncio.CancelledError:
-                pass
+            result = (await asyncio.gather(self._read_task, return_exceptions=True))[0]
+            if isinstance(result, Exception):
+                logger.error("[VNSource] OCR reader failed: %s", result)
+                self._bridge["error"] = str(result)
             self._read_task = None
-
-        if self._proc is not None:
-            try:
-                self._proc.terminate()
-                await asyncio.wait_for(self._proc.wait(), timeout=2.0)
-            except Exception:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
+        try:
+            await self._terminate_helper()
+        finally:
             self._proc = None
+        self._bridge.update(status="not_started", lineCount=self._line_count)
+        try:
+            await self._publish()
+        except Exception:
+            logger.exception("[VNSource] failed to publish OCR shutdown status")
 
-        self._bridge = {"status": "not_started", "lineCount": self._line_count, "source": "mac_vision_ocr"}
-        await self._publish()
+    async def _drain_stderr(self) -> None:
+        assert self._proc is not None and self._proc.stderr is not None
+        while chunk := await self._proc.stderr.read(4096):
+            self._stderr = (self._stderr + chunk.decode("utf-8", errors="replace"))[-500:]
 
     async def _read_loop(self) -> None:
         if self._proc is None or self._proc.stdout is None:
             return
-        while True:
-            line_bytes = await self._proc.stdout.readline()
-            if not line_bytes:
-                break
-            line_str = line_bytes.decode("utf-8", errors="replace").strip()
-            if not line_str:
-                continue
-            try:
-                data = json.loads(line_str)
-            except Exception:
-                continue
-            msg_type = data.get("type")
-            if msg_type == "status":
-                status = data.get("status")
-                if status:
-                    self._bridge["status"] = status
+        try:
+            while line_bytes := await self._proc.stdout.readline():
+                try:
+                    data = json.loads(line_bytes)
+                except (ValueError, UnicodeError):
+                    continue
+                msg_type = data.get("type")
+                if msg_type in {"status", "error"}:
+                    self._bridge["status"] = "error" if msg_type == "error" else data.get("status", "error")
+                    if data.get("error"):
+                        self._bridge["error"] = str(data["error"])
+                    elif self._bridge["status"] == "running":
+                        self._bridge.pop("error", None)
                     await self._publish()
-            elif msg_type == "line":
-                text = str(data.get("text") or "").strip()
-                if text:
+                elif msg_type == "line":
+                    text = str(data.get("text") or "").strip()
                     for item in _prepare_incoming_items(text):
-                        payload = {
-                            **item,
-                            "metadata": {
-                                **item.get("metadata", {}),
-                                "source": "mac_vision_ocr",
-                            },
-                        }
+                        payload = {**item, "metadata": {**item.get("metadata", {}), "source": "mac_vision_ocr"}}
                         result = await self._on_line(payload)
                         if isinstance(result, dict) and result.get("status") == "ignored":
                             continue
                         self._line_count += 1
                         line_info = result.get("line") if isinstance(result, dict) and isinstance(result.get("line"), dict) else {}
-                        self._bridge = {
-                            "status": "running",
-                            "lineCount": self._line_count,
-                            "source": "mac_vision_ocr",
-                            "lastTextPreview": str(line_info.get("text") or payload["text"])[:80],
-                        }
+                        self._bridge.update(status="running", lineCount=self._line_count,
+                                            lastTextPreview=str(line_info.get("text") or payload["text"])[:80])
+                        self._bridge.pop("error", None)
                         await self._publish()
+            code = await self._proc.wait()
+            if self._stderr_task is not None:
+                await self._stderr_task
+            if self._bridge["status"] != "error":
+                self._bridge["status"] = "error" if code else "exited"
+                self._bridge["error"] = self._stderr.strip() or f"OCR helper exited ({code}). Reconnect to resume capture."
+            await self._publish()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("[VNSource] OCR reader failed")
+            self._bridge.update(status="error", error=str(exc))
+            await self._terminate_helper()
+            try:
+                await self._publish()
+            except Exception:
+                logger.exception("[VNSource] failed to publish OCR error")
 
 
 async def list_macos_windows() -> list[dict[str, Any]]:
     if sys.platform != "darwin":
         return []
-    project_root = Path(__file__).resolve().parents[1]
-    binary = project_root / "build" / "bin" / "mac_screen_ocr"
-    build_script = project_root / "tools" / "build_mac_screen_ocr.sh"
-    if not binary.is_file() and build_script.is_file():
-        proc = await asyncio.create_subprocess_exec(str(build_script))
-        await proc.wait()
-    if not binary.is_file():
-        return []
-    proc = await asyncio.create_subprocess_exec(
-        str(binary), "--list-windows",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        logger.warning("[VNSource] mac_screen_ocr --list-windows error (%d): %s", proc.returncode, stderr.decode("utf-8", errors="replace"))
-    try:
-        raw_list = json.loads(stdout.decode("utf-8"))
-        results = []
-        for item in raw_list:
-            wid = item.get("id") or item.get("windowId")
-            app = item.get("app") or item.get("appName") or ""
-            title = item.get("title") or ""
-            pid = item.get("pid", 0)
-            results.append({
-                "id": wid,
-                "windowId": wid,
-                "app": app,
-                "appName": app,
-                "title": title,
-                "pid": pid,
-                "width": item.get("width", 0),
-                "height": item.get("height", 0),
-            })
-        return results
-    except Exception:
-        return []
+    windows = await asyncio.to_thread(list_macos_capture_windows)
+    return [{**w, "windowId": w["id"], "appName": w["app"]} for w in windows]
 
 
 async def capture_macos_window_preview(
-    window_id: int | None = None,
-    window_name: str = "",
-    app_name: str = "",
-    pid: int | None = None,
+    window_id: int | None = None, window_name: str = "", app_name: str = "", pid: int | None = None,
 ) -> dict[str, Any]:
     if sys.platform != "darwin":
         return {"error": "Supported only on macOS"}
-    project_root = Path(__file__).resolve().parents[1]
-    binary = project_root / "build" / "bin" / "mac_screen_ocr"
-    build_script = project_root / "tools" / "build_mac_screen_ocr.sh"
-    if not binary.is_file() and build_script.is_file():
-        proc = await asyncio.create_subprocess_exec(str(build_script))
-        await proc.wait()
-    if not binary.is_file():
-        return {"error": "mac_screen_ocr binary not available"}
-    args = [str(binary), "--preview-frame"]
-    if window_id:
-        args.extend(["--window-id", str(window_id)])
-    elif pid:
-        args.extend(["--pid", str(pid)])
-    elif window_name:
-        args.extend(["--window-name", window_name])
-    elif app_name:
-        args.extend(["--app-name", app_name])
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
     try:
-        return json.loads(stdout.decode("utf-8"))
-    except Exception as exc:
-        return {"error": f"Failed to capture preview: {stderr.decode('utf-8', errors='replace') or exc}"}
+        window = resolve_macos_window(await asyncio.to_thread(list_macos_capture_windows),
+                                      window_id=window_id, pid=pid, window_name=window_name, app_name=app_name)
+        binary = await asyncio.to_thread(ensure_macos_helper)
+        def capture() -> dict[str, Any]:
+            proc = subprocess.run(
+                [str(binary), "--preview-frame", "--window-id", str(window["id"]), "--pid", str(window["pid"])],
+                capture_output=True, text=True, timeout=15, check=False,
+            )
+            if proc.returncode:
+                raise RuntimeError(proc.stderr.strip()[-500:] or "Window preview capture failed.")
+            return json.loads(proc.stdout)
+        return await asyncio.to_thread(capture)
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        return {"error": str(exc)}
 
 
 def _prepare_incoming_items(raw: str) -> list[dict[str, Any]]:

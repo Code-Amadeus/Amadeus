@@ -3,8 +3,6 @@ import Foundation
 import ScreenCaptureKit
 import Vision
 
-_ = NSApplication.shared
-
 struct WindowInfo: Codable {
     let id: CGWindowID
     let title: String
@@ -26,6 +24,20 @@ struct PreviewResult: Codable {
     let width: Int
     let height: Int
     let imageBase64: String
+}
+
+enum CaptureError: LocalizedError {
+    case invalidCrop
+    case windowUnavailable
+    case permissionDenied
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidCrop: return "OCR crop must be a nonempty rectangle inside the window."
+        case .windowUnavailable: return "The game window is missing or ambiguous. Select its window again."
+        case .permissionDenied: return "PermissionDenied: Screen Recording permission is required. Enable it in System Settings and restart Amadeus (Cmd+Q)."
+        }
+    }
 }
 
 func listWindowsCG() -> [WindowInfo] {
@@ -90,41 +102,21 @@ func listWindows() async throws {
 }
 
 @MainActor
-func findTargetWindow(content: SCShareableContent, windowId: CGWindowID?, windowName: String?, appName: String?, pid: pid_t? = nil) -> SCWindow? {
-    if let wid = windowId, wid > 0 {
-        if let found = content.windows.first(where: { $0.windowID == wid }) {
-            return found
-        }
-    }
-    if let targetPid = pid, targetPid > 0 {
-        if let found = content.windows.first(where: { $0.owningApplication?.processID == targetPid }) {
-            return found
-        }
-    }
-    if let wname = windowName, !wname.isEmpty {
-        let lower = wname.lowercased()
-        if let found = content.windows.first(where: { ($0.title ?? "").lowercased().contains(lower) }) {
-            return found
-        }
-    }
-    if let aname = appName, !aname.isEmpty {
-        let lower = aname.lowercased()
-        if let found = content.windows.first(where: { ($0.owningApplication?.applicationName ?? "").lowercased().contains(lower) }) {
-            return found
-        }
-    }
-    return nil
+func findTargetWindow(content: SCShareableContent, windowId: CGWindowID?, pid: pid_t? = nil) -> SCWindow? {
+    guard let wid = windowId, wid > 0 else { return nil }
+    return content.windows.first(where: {
+        $0.windowID == wid && (pid == nil || $0.owningApplication?.processID == pid)
+    })
 }
 
 @MainActor
-func captureSingleFrame(windowId: CGWindowID?, windowName: String?, appName: String?, pid: pid_t? = nil) async throws -> CGImage? {
+func captureSingleFrame(windowId: CGWindowID?, pid: pid_t? = nil) async throws -> CGImage? {
     if !CGPreflightScreenCaptureAccess() {
         CGRequestScreenCaptureAccess()
-        fputs("PermissionDenied: Screen Recording permission is required. Please enable it in System Settings -> Privacy & Security -> Screen Recording, and restart Amadeus (Cmd+Q).\n", stderr)
-        return nil
+        throw CaptureError.permissionDenied
     }
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-    guard let win = findTargetWindow(content: content, windowId: windowId, windowName: windowName, appName: appName, pid: pid) else {
+    guard let win = findTargetWindow(content: content, windowId: windowId, pid: pid) else {
         return nil
     }
     let filter = SCContentFilter(desktopIndependentWindow: win)
@@ -135,16 +127,24 @@ func captureSingleFrame(windowId: CGWindowID?, windowName: String?, appName: Str
     return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
 }
 
-func cropImage(image: CGImage, crop: CGRect) -> CGImage? {
+func validateCrop(_ crop: CGRect) throws {
+    guard [crop.origin.x, crop.origin.y, crop.size.width, crop.size.height].allSatisfy({ $0.isFinite }),
+          crop.origin.x >= 0, crop.origin.y >= 0, crop.size.width > 0, crop.size.height > 0,
+          crop.maxX <= 1, crop.maxY <= 1 else { throw CaptureError.invalidCrop }
+}
+
+func cropImage(image: CGImage, crop: CGRect) throws -> CGImage {
+    try validateCrop(crop)
     let imgW = CGFloat(image.width)
     let imgH = CGFloat(image.height)
     let targetRect = CGRect(
-        x: max(0, min(imgW, crop.origin.x * imgW)),
-        y: max(0, min(imgH, crop.origin.y * imgH)),
-        width: max(1, min(imgW, crop.size.width * imgW)),
-        height: max(1, min(imgH, crop.size.height * imgH))
+        x: crop.origin.x * imgW,
+        y: crop.origin.y * imgH,
+        width: crop.size.width * imgW,
+        height: crop.size.height * imgH
     )
-    return image.cropping(to: targetRect)
+    guard let result = image.cropping(to: targetRect) else { throw CaptureError.invalidCrop }
+    return result
 }
 
 func recognizeText(image: CGImage, languages: [String]) throws -> String {
@@ -177,58 +177,47 @@ func emit(result: OCRResult) {
 }
 
 @MainActor
-func runStream(windowId: CGWindowID?, windowName: String?, appName: String?, pid: pid_t? = nil, crop: CGRect, languages: [String], intervalMs: Int) async {
-    var lastText = ""
-    var wasWaiting = false
+func runStream(windowId: CGWindowID?, pid: pid_t? = nil, crop: CGRect, languages: [String], intervalMs: Int) async {
+    var dialogue = OCRDialogueTracker()
     emit(result: OCRResult(type: "status", text: nil, status: "starting", error: nil, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
 
     if !CGPreflightScreenCaptureAccess() {
         CGRequestScreenCaptureAccess()
-        emit(result: OCRResult(type: "status", text: nil, status: "error", error: "PermissionDenied: Screen Recording permission is required. Please enable it in System Settings and restart Amadeus (Cmd+Q).", timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
+        emit(result: OCRResult(type: "status", text: nil, status: "error", error: CaptureError.permissionDenied.localizedDescription, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
         return
     }
 
-    while true {
-        do {
-            guard let frame = try await captureSingleFrame(windowId: windowId, windowName: windowName, appName: appName, pid: pid) else {
-                if !wasWaiting {
-                    emit(result: OCRResult(type: "status", text: nil, status: "waiting", error: "Target window not found", timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
-                    wasWaiting = true
-                }
-                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
-                continue
+    do {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let target = findTargetWindow(content: content, windowId: windowId, pid: pid),
+              let owner = target.owningApplication else { throw CaptureError.windowUnavailable }
+        emit(result: OCRResult(type: "status", text: nil, status: "running", error: nil, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
+        while true {
+            guard let frame = try await captureSingleFrame(windowId: target.windowID, pid: owner.processID) else {
+                throw CaptureError.windowUnavailable
             }
-            if wasWaiting {
-                emit(result: OCRResult(type: "status", text: nil, status: "running", error: nil, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
-                wasWaiting = false
-            }
-
-            let cropped = cropImage(image: frame, crop: crop) ?? frame
+            let cropped = try cropImage(image: frame, crop: crop)
             let text = try recognizeText(image: cropped, languages: languages)
-
-            if !text.isEmpty && text != lastText {
-                lastText = text
-                emit(result: OCRResult(type: "line", text: text, status: nil, error: nil, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
+            if let committed = dialogue.observe(text) {
+                emit(result: OCRResult(type: "line", text: committed, status: nil, error: nil, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
             }
-        } catch {
-            emit(result: OCRResult(type: "error", text: nil, status: nil, error: error.localizedDescription, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
+            try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
         }
-
-        try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+    } catch {
+        emit(result: OCRResult(type: "error", text: nil, status: nil, error: error.localizedDescription, timestamp: Int64(Date().timeIntervalSince1970 * 1000)))
     }
 }
 
 @MainActor
-func main() async {
+func runHelper() async {
     let args = CommandLine.arguments
     var mode = "stream"
     var windowId: CGWindowID?
-    var windowName: String?
-    var appName: String?
     var pid: pid_t?
     var crop = CGRect(x: 0.0, y: 0.65, width: 1.0, height: 0.35)
     var languages = ["ja", "zh-Hans", "zh-Hant", "en-US"]
     var intervalMs = 700
+    var invalidCrop = false
 
     var idx = 1
     while idx < args.count {
@@ -252,23 +241,18 @@ func main() async {
                 idx += 1
                 pid = pid_t(args[idx])
             }
-        case "--window-name":
-            if idx + 1 < args.count {
-                idx += 1
-                windowName = args[idx]
-            }
-        case "--app-name":
-            if idx + 1 < args.count {
-                idx += 1
-                appName = args[idx]
-            }
         case "--crop":
             if idx + 1 < args.count {
                 idx += 1
-                let parts = args[idx].split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-                if parts.count == 4 {
-                    crop = CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+                let parts = args[idx].split(separator: ",", omittingEmptySubsequences: false)
+                let values = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                if parts.count == 4 && values.count == 4 {
+                    crop = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+                } else {
+                    invalidCrop = true
                 }
+            } else {
+                invalidCrop = true
             }
         case "--languages":
             if idx + 1 < args.count {
@@ -287,12 +271,13 @@ func main() async {
     }
 
     do {
+        if invalidCrop { throw CaptureError.invalidCrop }
         switch mode {
         case "list":
             try await listWindows()
             exit(0)
         case "preview":
-            guard let image = try await captureSingleFrame(windowId: windowId, windowName: windowName, appName: appName, pid: pid) else {
+            guard let image = try await captureSingleFrame(windowId: windowId, pid: pid) else {
                 fputs("Window not found\n", stderr)
                 exit(1)
             }
@@ -309,7 +294,7 @@ func main() async {
             }
             exit(0)
         case "capture_only":
-            guard let image = try await captureSingleFrame(windowId: windowId, windowName: windowName, appName: appName, pid: pid) else {
+            guard let image = try await captureSingleFrame(windowId: windowId, pid: pid) else {
                 fputs("Window not found\n", stderr)
                 exit(1)
             }
@@ -321,7 +306,9 @@ func main() async {
             FileHandle.standardOutput.write(png)
             exit(0)
         default:
-            await runStream(windowId: windowId, windowName: windowName, appName: appName, pid: pid, crop: crop, languages: languages, intervalMs: intervalMs)
+            try validateCrop(crop)
+            await runStream(windowId: windowId, pid: pid, crop: crop, languages: languages, intervalMs: intervalMs)
+            exit(1)
         }
     } catch {
         fputs("Error: \(error.localizedDescription)\n", stderr)
@@ -329,7 +316,12 @@ func main() async {
     }
 }
 
-Task {
-    await main()
+@main
+struct MacScreenOCR {
+    @MainActor
+    static func main() {
+        _ = NSApplication.shared
+        Task { await runHelper() }
+        RunLoop.main.run()
+    }
 }
-RunLoop.main.run()
