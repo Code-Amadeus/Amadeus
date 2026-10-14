@@ -39,6 +39,20 @@
 - Graph 被捕获协调器推迟时，使用请求私有静态 KV；桶满时复制完整有效历史，接续现有动态 KV。batch>1 使用私有 KV，避免写入 batch=1 Graph 缓冲区。
 - 普通 ASR/TTS 工作继续使用 `speech_cuda` 的共享工作租约；仅捕获需要已有的独占窗口。TTS 工作区锁不覆盖 ASR 模型。
 
+## 多片段聚合与分桶的适用范围
+
+启用 utterance 聚合后，应区分首句与后续任务，而不能把每个排队片段都当成一个独立短句 AR 请求：
+
+- [`TTSUtteranceScheduler._can_start_merge()`](../tts/utterance_scheduler.py) 明确排除 `is_first` 或 `stream_tts` 的片段。首句不为聚合等待 lookahead；但它的 bucket 仍包含参考文本音素与参考音频 semantic prompt，不能仅凭目标句字数认定一定命中 448。
+- 后续允许聚合的连续片段按可播放缓冲、合成预算、字符上限、lookahead 超时及强句末等边界组成 `job.text`。[`get_sovits_params()`](../tts/pipeline.py) 对非首句且长度达到 45 的文本使用 32 步合成参数与“凑四句一切”；[`infer_stream()`](../local_tts_infer.py) 会根据该切分及换行得到实际 AR 输入片段。聚合 job 不保证永远只有一个 AR 请求，也不会因为播放侧保留多个 segment 就逐个重新选短桶。
+- decoder 对每个实际 AR 输入按 `参考音频 semantic prompt + 参考文本/目标文本音素` 的 KV 长度选桶，保持 `ceil(KV/32)*32 + 96 < bucket` 的原规则。例如初始 KV 288 / 335 / 432 / 704 分别选 448 / 512 / 768 / 1024。聚合变长通常增加大桶或动态路径的机会；实际命中分布未记录，不能断言后续任务仍以短桶为主，也不能断言聚合就一定不能走短桶。
+
+**此前完整语音/ASR 共存 probe 直接调用 `infer.infer_stream()`，没有经过 utterance scheduler、队列等待或播放覆盖预算。** 它对 short 和 medium 两类文本都调用 `get_sovits_params(..., is_first_sentence=True)`，使用首句 profile（4 步、`how_to_cut=不切`、首句速度/时长限制）。因此 20 对 waveform/ASR hash 一致与首段数据只证明这个预热后的首句 profile；medium 文本不能作为后续非首句聚合、32 步 SoVITS profile 的端到端性能证据。
+
+固定工作量 AR 的 768/1024、长解码和溢出实验仍验证了这些 KV 长度下的存储、Attention 和续接行为；它们没有测量真实聚合调度的等待、实际桶命中率、聚合任务首个有声 chunk 或连续播放缺口。采用结论不依赖“聚合后仍大量命中短桶”，但后续聚合路径的端到端延迟仍是明确的验证空白。Graph/KV 分桶与 nested 存储布局独立，聚合增加长度时仍选择相应计算桶。
+
+本次聚合范围复核运行现有 adaptive aggregation、deadline aggregation 和 TTS cost profile 合约测试，**62 passed**；未增加新的 GPU 性能采样。
+
 ## 显存实测
 
 环境：Windows 11 x86-64、Python 3.12.10、PyTorch 2.6.0+cu124、CUDA 12.4、FlashAttention 2.7.4.post1、驱动 581.57。主测 RTX 4070 Ti SUPER 16GB，复测 RTX 4070 Laptop GPU 8GB。没有锁定 GPU 频率；每个独立布局、attention、device 的容量测试都在新进程中执行。
@@ -99,7 +113,7 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 
 使用现有日语稳定性 probe，覆盖弱尾逗号、省略号、强句末、衔接句和普通句共 11 类，每类 5 个相同 seed，不启用语义重试。`graph` 与 `nested` 的 **55 对 token、停止条件和异常标记全部一致**。各布局都保留了 2 个既有异常样本；本次存储优化没有改变这项既有语义问题。
 
-完整语音链路使用当前 GPT/SoVITS、CNHubert、BigVGAN，并让 Qwen3-ASR-0.6B 与 TTS 在同一个 `cuda:0` 进程运行。ASR 音频 FA2、文本 SDPA，实际使用 384 Graph，有 replay 且无 fallback。短句/中句 × 串行/重叠 × 5 次，两种布局 **20 对完整 waveform hash 和 ASR text hash 全部一致**，math flags 未改变。这里的首段时间是首个有声的生成 PCM chunk，不包含实体扬声器播放延迟。
+完整语音链路在首句 profile 下直接调用 inferencer（未经过聚合 scheduler），使用当前 GPT/SoVITS、CNHubert、BigVGAN，并让 Qwen3-ASR-0.6B 与 TTS 在同一个 `cuda:0` 进程运行。ASR 音频 FA2、文本 SDPA，实际使用 384 Graph，有 replay 且无 fallback。短句/中句 × 串行/重叠 × 5 次，两种布局 **20 对完整 waveform hash 和 ASR text hash 全部一致**，math flags 未改变。这里的首段时间是首个有声的生成 PCM chunk，不包含实体扬声器播放延迟。
 
 | 场景 | graph 首段有声中位 ms | nested 首段有声中位 ms |
 | --- | ---: | ---: |

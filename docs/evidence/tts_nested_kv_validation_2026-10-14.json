@@ -5723,5 +5723,27 @@
       "passed": 93,
       "scope": "Existing mode selection, Graph synthesis lock and voice-thread contracts; runtime implementation unchanged."
     }
+  },
+  "aggregation_coverage_review": {
+    "date": "2026-10-14",
+    "code_sources": [
+      "tts/utterance_scheduler.py:TTSUtteranceScheduler._can_start_merge",
+      "tts/pipeline.py:get_sovits_params",
+      "local_tts_infer.py:infer_stream",
+      "GPT_SoVITS/AR/models/t2s_model.py:Text2SemanticDecoder._select_bucket",
+      "tools/asr/benchmark_qwen_tts_coexistence.py:run_tts"
+    ],
+    "opening": "First or explicitly streaming fragments bypass grouping; actual bucket still depends on reference and target token lengths.",
+    "later_jobs": "Eligible fragments form a merged job; backend text segmentation can produce multiple AR inputs. Each input retains the existing bucket route.",
+    "coexistence_probe_scope": "Direct infer_stream calls. Both short and medium text use is_first_sentence=True (4 synthesis steps, no text cut, first-sentence speed/duration settings). No utterance scheduler, queue or playback budget in this measurement.",
+    "unmeasured": [
+      "Actual bucket-hit distribution with aggregation enabled",
+      "Post-opening aggregated-job first voiced chunk under the non-first 32-step profile",
+      "Aggregation lookahead/queue delay and continuous-playback gaps"
+    ],
+    "contract_validation": {
+      "command": "python -X utf8 -m pytest tests/test_tts_adaptive_aggregation.py tests/test_deadline_aggregation.py tests/test_tts_cost_model.py -q",
+      "passed": 62
+    }
   }
 }
