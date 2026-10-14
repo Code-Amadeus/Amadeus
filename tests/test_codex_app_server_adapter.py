@@ -2577,6 +2577,9 @@ def test_bootstrap_exposes_exactly_one_codex_transport() -> None:
 def _main() -> None:
     test_sdk_adapter_maps_thread_turn_events_and_terminal_truth()
     test_native_plan_becomes_an_early_reported_design_milestone()
+    for mode in ("sequential", "interleaved", "streamed_final"):
+        with tempfile.TemporaryDirectory(prefix="amadeus-codex-message-boundary-") as temp_dir:
+            test_agent_message_progress_is_scoped_and_finalized_per_item(Path(temp_dir), mode)
     test_dynamic_tool_title_becomes_a_bounded_reported_direction()
     test_unknown_and_collaboration_items_fail_closed_as_execution()
     test_windows_runtime_path_prefers_a_real_powershell_binary()
@@ -2677,6 +2680,80 @@ def test_mcp_empty_confirmation_allows_descriptive_schema_metadata(mode):
     params = {"serverName": "example", "mode": mode, "message": "Allow this request?", "requestedSchema": {"type": "object", "properties": {}, "required": [], "title": "Confirmation", "description": "No fields", "additionalProperties": False}}
     assert CodexAppServerAdapter._native_approval_response("mcpServer/elicitation/request", params, allow=True) == {"action": "accept", "content": {}}
     assert CodexAppServerAdapter._permission_payload("mcpServer/elicitation/request", params, "id")["options"] == ["allow_once", "deny"]
+
+
+@pytest.mark.parametrize("mode", ["sequential", "interleaved", "streamed_final"])
+def test_agent_message_progress_is_scoped_and_finalized_per_item(tmp_path, mode) -> None:
+    async def scenario() -> None:
+        def delta(item_id: str, text: str) -> _Notification:
+            return _Notification("item/agentMessage/delta", {"itemId": item_id, "delta": text})
+
+        def completed(item_id: str, text: str, *, phase: str = "commentary") -> _Notification:
+            return _Notification("item/completed", {"item": {
+                "id": item_id, "type": "agentMessage", "phase": phase, "text": text,
+            }})
+
+        final_text = "The round ended with cleanup verified."
+        if mode == "sequential":
+            first = "[PROGRESS:DESIGN] Inspect the current session."
+            second = "[PROGRESS:DESIGN] Start a fresh session after inspection."
+            cleanup = "The launched window is closed; cleanup is verified."
+            events = [
+                delta("first", first), completed("first", first),
+                delta("second", second), completed("second", second),
+                delta("cleanup", cleanup), completed("cleanup", cleanup),
+                completed("final", final_text, phase="final_answer"),
+            ]
+            expected = [
+                ("design", "Inspect the current session."),
+                ("design", "Start a fresh session after inspection."),
+            ]
+        elif mode == "interleaved":
+            events = [
+                delta("first", "[PROGRESS:DES"),
+                delta("second", "[PROGRESS:VALID"),
+                delta("first", "IGN] Inspect the current session."),
+                delta("second", "ATION] The checks passed."),
+                completed("second", "[PROGRESS:VALIDATION] The checks passed."),
+                completed("first", "[PROGRESS:DESIGN] Inspect the current session."),
+                completed("final", final_text, phase="final_answer"),
+            ]
+            expected = [
+                ("validation", "The checks passed."),
+                ("design", "Inspect the current session."),
+            ]
+        else:
+            text = "[PROGRESS:VALIDATION] The checks passed.\n" + final_text
+            events = [delta("final", text), completed("final", text, phase="final_answer")]
+            expected = [("validation", "The checks passed.")]
+        events.append(_turn_completed("turn-message-boundary", "completed"))
+        adapter = CodexAppServerAdapter(codex=_FakeCodex([
+            _FakeThread("thread-message-boundary", _FakeTurn("turn-message-boundary", events))
+        ]))
+        observed = []
+
+        async def emit(event) -> None:
+            observed.append(event)
+
+        result = await adapter.run(
+            _request(tmp_path, "Inspect and finish the session", write=False),
+            "run-message-boundary", emit,
+        )
+        progress = [(event.payload["milestone"], event.payload["summary"])
+                    for event in observed if event.type == "semantic.progress"]
+        assert progress == expected
+        visible = "".join(event.payload["text"] for event in observed if event.type == "assistant.delta")
+        assert "[PROGRESS:" not in visible
+        assert result.status == "done"
+        assert result.result == final_text
+        if mode == "sequential":
+            replan_index = next(index for index, event in enumerate(observed)
+                                if event.type == "semantic.progress" and event.payload["summary"] == expected[1][1])
+            cleanup_index = next(index for index, event in enumerate(observed)
+                                 if event.type == "assistant.update" and event.payload["text"] == cleanup)
+            assert replan_index < cleanup_index
+
+    asyncio.run(scenario())
 
 
 if __name__ == "__main__":

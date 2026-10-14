@@ -1,0 +1,287 @@
+{
+  "date": "2026-10-14",
+  "reviewed_head": "e35d58a1eb86cce803db4c8941e0b6220ebf93bf",
+  "issue": "https://github.com/Code-Amadeus/Amadeus/issues/212",
+  "owning_layer": "decoder promotion boundary; invalid newly exposed KV slots must be zero",
+  "reproduction": {
+    "model": {
+      "layers": 2,
+      "hidden": 64,
+      "head_dimension": 32,
+      "dtype": "float16"
+    },
+    "initial_kv": 100,
+    "start_bucket": 256,
+    "target_bucket": 512,
+    "poison_slot": 400,
+    "poison_types": [
+      "NaN",
+      "Inf"
+    ],
+    "first_nonfinite_sdpa_step_zero_based": 157,
+    "decode_steps": 200,
+    "strict_fa2_valid_affected": false
+  },
+  "repair": "Zero only target K/V views [current_bucket,target_bucket) before mask/position reset; keep valid prefix and root addresses.",
+  "validation": {
+    "tail-clear-before.xml": {
+      "raw_result_sha256": "9bfda0343b7c3990ad81d10ecd6e94b44e9fdc3da3200c826af3db3c08790192",
+      "tests": 8,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0
+    },
+    "tail-clear-after.xml": {
+      "raw_result_sha256": "ed2b4274a0c54471e96199156679192c8ff3dbd13279d719d01f6db0887c2577",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "tail-clear-cpu.xml": {
+      "raw_result_sha256": "bcd253423d107f1120ea8662f454578fedeae48627c87cc019a33f1e23753a87",
+      "tests": 89,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 26
+    },
+    "tail-clear-regression.xml": {
+      "raw_result_sha256": "d34ea538f3308de41f40c8d018673ddc63304547ba7b6f2c920bc01f602a1c60",
+      "tests": 261,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "paired_latency": {
+    "tail-clear-pair-flash.json": {
+      "purpose": "Alternate a saved baseline and current nested AR on one GPU to control drift.\n\nBoth decoders remain resident, so this measures paired latency and tokens,\nnot standalone memory. Use benchmark_t2s_nested_kv.py for memory evidence.\n",
+      "device": 0,
+      "attention": "flash",
+      "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "checkpoint_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "baseline_sha256": "1862edc384032441efd48318221cb2e5bfc58f5a1b62a34bfc791a6354a4ea11",
+      "source_sha256": "90a08ad0f52009abf90692967b2c61370cc0b585671db24c2dc28f833dc4cd5c",
+      "construction_order": "nested-first",
+      "summary": [
+        {
+          "case": "unaligned_512",
+          "pairs": 10,
+          "original_median_ms": 140.59065000037663,
+          "nested_median_ms": 140.7080499920994,
+          "paired_median_elapsed_change_percent": -0.4502473897843029,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        },
+        {
+          "case": "overflow_dynamic",
+          "pairs": 10,
+          "original_median_ms": 310.6944999890402,
+          "nested_median_ms": 316.4569999935338,
+          "paired_median_elapsed_change_percent": 2.111422922449946,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        },
+        {
+          "case": "multiple_promotions",
+          "pairs": 10,
+          "original_median_ms": 795.0730500015197,
+          "nested_median_ms": 807.4457500042627,
+          "paired_median_elapsed_change_percent": 1.4611511565908897,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        }
+      ],
+      "precapture": {
+        "nested": {
+          "seconds": 0.9799990000028629,
+          "graph_count": 4,
+          "unique_kv_storage_bytes": 50331648,
+          "allocated_delta_bytes": 67409920,
+          "graph_keys": [
+            448,
+            512,
+            768,
+            1024
+          ]
+        },
+        "original": {
+          "seconds": 0.8810085000004619,
+          "graph_count": 4,
+          "unique_kv_storage_bytes": 50331648,
+          "allocated_delta_bytes": 50369536,
+          "graph_keys": [
+            448,
+            512,
+            768,
+            1024
+          ]
+        }
+      },
+      "raw_result_sha256": "1736bc3655566c24237529ac7f63bc523c5d6763facaa6cf6d4e90d7143c96ee",
+      "pairs": 30,
+      "all_tokens_equal": true,
+      "counters_by_case": {
+        "unaligned_512": {
+          "initial_kv": 335,
+          "start_bucket": 512,
+          "final_bucket": 512,
+          "promotions": 0,
+          "generated_tokens": 95,
+          "graph_replay_steps": 95,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        },
+        "overflow_dynamic": {
+          "initial_kv": 335,
+          "start_bucket": 512,
+          "final_bucket": 768,
+          "promotions": 1,
+          "generated_tokens": 223,
+          "graph_replay_steps": 223,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        },
+        "multiple_promotions": {
+          "initial_kv": 288,
+          "start_bucket": 448,
+          "final_bucket": 1024,
+          "promotions": 3,
+          "generated_tokens": 599,
+          "graph_replay_steps": 599,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        }
+      }
+    },
+    "tail-clear-pair-sdpa.json": {
+      "purpose": "Alternate a saved baseline and current nested AR on one GPU to control drift.\n\nBoth decoders remain resident, so this measures paired latency and tokens,\nnot standalone memory. Use benchmark_t2s_nested_kv.py for memory evidence.\n",
+      "device": 1,
+      "attention": "sdpa",
+      "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "checkpoint_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "baseline_sha256": "1862edc384032441efd48318221cb2e5bfc58f5a1b62a34bfc791a6354a4ea11",
+      "source_sha256": "90a08ad0f52009abf90692967b2c61370cc0b585671db24c2dc28f833dc4cd5c",
+      "construction_order": "baseline-first",
+      "summary": [
+        {
+          "case": "unaligned_512",
+          "pairs": 10,
+          "original_median_ms": 234.98105000180658,
+          "nested_median_ms": 222.09610001300462,
+          "paired_median_elapsed_change_percent": -5.380993566565384,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        },
+        {
+          "case": "overflow_dynamic",
+          "pairs": 10,
+          "original_median_ms": 538.6586500098929,
+          "nested_median_ms": 515.871049996349,
+          "paired_median_elapsed_change_percent": -3.8132684179323197,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        },
+        {
+          "case": "multiple_promotions",
+          "pairs": 10,
+          "original_median_ms": 1540.4089500079863,
+          "nested_median_ms": 1538.7566999852424,
+          "paired_median_elapsed_change_percent": -0.4614948551456055,
+          "all_tokens_equal": true,
+          "different_pairs": 0
+        }
+      ],
+      "precapture": {
+        "original": {
+          "seconds": 0.9579433999897446,
+          "graph_count": 4,
+          "unique_kv_storage_bytes": 50331648,
+          "allocated_delta_bytes": 67409920,
+          "graph_keys": [
+            448,
+            512,
+            768,
+            1024
+          ]
+        },
+        "nested": {
+          "seconds": 0.9776921000157017,
+          "graph_count": 4,
+          "unique_kv_storage_bytes": 50331648,
+          "allocated_delta_bytes": 50369536,
+          "graph_keys": [
+            448,
+            512,
+            768,
+            1024
+          ]
+        }
+      },
+      "raw_result_sha256": "d1fb5bec0b8194d5cadf91b250b6d83c21463a4d1b29313f6f0bdcc6d23fdf99",
+      "pairs": 30,
+      "all_tokens_equal": true,
+      "counters_by_case": {
+        "unaligned_512": {
+          "initial_kv": 335,
+          "start_bucket": 512,
+          "final_bucket": 512,
+          "promotions": 0,
+          "generated_tokens": 95,
+          "graph_replay_steps": 95,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        },
+        "overflow_dynamic": {
+          "initial_kv": 335,
+          "start_bucket": 512,
+          "final_bucket": 768,
+          "promotions": 1,
+          "generated_tokens": 223,
+          "graph_replay_steps": 223,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        },
+        "multiple_promotions": {
+          "initial_kv": 288,
+          "start_bucket": 448,
+          "final_bucket": 1024,
+          "promotions": 3,
+          "generated_tokens": 599,
+          "graph_replay_steps": 599,
+          "static_steps": 0,
+          "dynamic_steps": 0,
+          "capture_attempts": 0
+        }
+      }
+    }
+  },
+  "final_source_sha256": {
+    "GPT_SoVITS/AR/models/t2s_model.py": "90a08ad0f52009abf90692967b2c61370cc0b585671db24c2dc28f833dc4cd5c",
+    "tests/test_t2s_nested_kv.py": "617270a583a1edf87af411af7d8331a6ccd23a109507c8227509fdc8996a9f74"
+  },
+  "canonical_lf_source_sha256": {
+    "GPT_SoVITS/AR/models/t2s_model.py": "2b7aa62f1c33d32e4f18b72d1da4802b9d66ec91da4d30c9cc93ab933ac183be",
+    "tests/test_t2s_nested_kv.py": "fbabbe53bcf61e9e0d0be7dec882f2959c1fcd92e3884a187075d7080a5a8d28"
+  },
+  "limitations": [
+    "Paired latency samples use one construction order per backend, no clock locking; differences do not isolate all effects of allocation placement or noise.",
+    "This repairs stale previous-request values outside the valid prefix; it does not make a currently valid nonfinite prefix safe.",
+    "Previous long-output differences from the old overflow path remain expected backend-rounding/sampling divergence, not a defect or an additional merge gate."
+  ],
+  "prior_ci": {
+    "head": "e35d58a",
+    "all_reported_checks_passed": true,
+    "check_count": 15
+  },
+  "new_ci": "Pending after publishing the repair; status of e35d58a is not attributed to the new source."
+}

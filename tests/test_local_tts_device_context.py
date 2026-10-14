@@ -284,9 +284,9 @@ def test_auto_graph_and_flash_capture_replay_on_nvidia(monkeypatch):
         infer._configure_t2s_acceleration()
         decoder = model.model
         assert decoder.cuda_graph_enabled and decoder.use_flash_attn_kvcache
-        # Use one actual aligned graph key; this is not a model or audio benchmark.
-        assert decoder.precapture_cuda_graph([256], kv_len_range=(32, 32)) == {256: True}
-        key = (256, 32)
+        # Use one actual bucket graph; this is not a model or audio benchmark.
+        assert decoder.precapture_cuda_graph([256]) == {256: True}
+        key = 256
         decoder._replay_cuda_graph(decoder.bucket_graphs[key], infer.device)
         torch.cuda.synchronize(infer.device)
         assert torch.isfinite(decoder.bucket_static_outputs[key]["logits"]).all()
@@ -326,3 +326,23 @@ def test_tts_timing_sync_participates_in_capture_admission(monkeypatch):
         with pytest.raises(RuntimeError, match="synthetic timing failure"):
             inferencer._sync_sovits_timing()
         assert pool.submit(try_capture).result(timeout=2)
+
+
+@pytest.mark.parametrize("layout,expected", [
+    ("nested", [448, 512, 768, 1024]), ("bucket", [448, 512, 768]),
+])
+def test_nested_precapture_prepares_maximum_promotion_target(monkeypatch, layout, expected):
+    from types import SimpleNamespace
+    infer = _inferencer("cuda:0", uses_torch_cuda_api=True)
+    infer.is_rocm = False
+    calls = []
+    decoder = SimpleNamespace(kv_cache_layout=layout,
+                              kv_cache_buckets=[128, 256, 448, 512, 768, 1024],
+                              precapture_cuda_graph=lambda buckets: calls.append(buckets) or
+                              {bucket: True for bucket in buckets})
+    infer.t2s_model = SimpleNamespace(model=decoder)
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH", "1")
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH_PRECAPTURE", "1")
+    monkeypatch.setenv("CUDA_GRAPH_PRECAPTURE_BUCKETS", "512,768")
+    infer._maybe_precapture_t2s_graph()
+    assert calls == [expected]

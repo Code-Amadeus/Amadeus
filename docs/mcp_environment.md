@@ -7,8 +7,9 @@ explicit encrypted bindings, instead of arbitrary Host environment credentials.
 A service that relied on a Host token may therefore fail this probe even while
 it continues to work through Codex or ACP's independently launched MCP service.
 
-Codex/ACP launch behavior and saved version-1 records, commands, arguments and
-working directories are unchanged. Pi does not accept manual MCP connection
+Saved version-1 records, commands, arguments and working directories are unchanged.
+Codex explicitly forwards configured environment names to its stdio MCP children;
+ACP launch behavior is unchanged. Pi does not accept manual MCP connection
 bindings on main; its built-in web search uses HTTP and is unaffected by the
 stdio environment policy. Later Host-owned MCP consumers (for example extension
 execution paths) can use the same helper, but this PR does not introduce them.
@@ -63,3 +64,12 @@ Existing workspace and Host permission policies still apply.
 允许、拒绝、超时和取消按 MCP 的 action/content 合同回复。任意字段表单和 URL
 授权尚不支持，不能用一次“允许”伪造答案；未知协议方法明确报错，不映射为沙箱权限。
 Runtime 输入选择和动作门禁、Host 原有权限策略继续有效。
+
+## Explicit bindings through Codex
+
+For a manually bound stdio connection, the Codex adapter supplies the configured
+environment variable names through the native per-server `env_vars` option.
+Their values remain in the provider process environment and are not written into
+command-line overrides. Only names explicitly configured on that connection are
+added; this does not restore arbitrary Host-environment forwarding. HTTP
+connections and their bearer-token binding are unchanged.

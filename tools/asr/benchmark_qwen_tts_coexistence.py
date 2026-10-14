@@ -43,6 +43,8 @@ def main():
     parser.add_argument("--schedules", default="serial,overlap")
     parser.add_argument("--prepare-cuda-graphs", action="store_true",
                         help="Capture ASR graphs after TTS warmup and before any overlapping inference")
+    parser.add_argument("--tts-precapture", action="store_true",
+                        help="Pre-capture production TTS buckets for KV-residency comparisons")
     parser.add_argument("--graph-capacities", nargs="+", type=int,
                         help="Explicit ASR token capacities to pre-capture (otherwise production default)")
     parser.add_argument("--attention", nargs="+", choices=("current", "sdpa", "flash_attention_2", "audio_fa2_text_sdpa"), default=["current"])
@@ -110,6 +112,28 @@ def main():
                          sovits_path=settings.TTS_SOVITS_MODEL_PATH)
     report["tts_model_version"] = str(getattr(infer, "version", "unknown"))
     report["tts_cuda_graph"] = infer.cuda_graph_enabled
+    report["tts_kv_layout"] = infer.t2s_model.model.kv_cache_layout
+
+    def memory():
+        storages = {}
+        decoder = infer.t2s_model.model
+        for inputs in decoder.bucket_static_inputs.values():
+            for field in ("k_cache", "v_cache"):
+                for tensor in inputs[field]:
+                    storage = tensor.untyped_storage()
+                    storages[storage.data_ptr()] = storage.nbytes()
+        return {"allocated_bytes": torch.cuda.memory_allocated(device),
+                "reserved_bytes": torch.cuda.memory_reserved(device),
+                "peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
+                "unique_tts_kv_storage_bytes": sum(storages.values()),
+                "tts_graph_count": len(decoder.bucket_graphs)}
+
+    report["memory_after_load"] = memory()
+    if args.tts_precapture:
+        decoder = infer.t2s_model.model
+        report["tts_graph_preparation"] = decoder.precapture_cuda_graph(list(decoder.kv_cache_buckets))
+        if not all(report["tts_graph_preparation"].values()):
+            raise RuntimeError("TTS precapture failed")
     cases = [("short", "それなら簡単よ。"),
              ("medium", "まず条件を整理して、同じ方法でもう一度確かめましょう。")]
 
@@ -192,6 +216,8 @@ def main():
         for case_index, (_, text) in enumerate(cases):
             seed(case_index)
             run_tts(text)
+        torch.cuda.synchronize(device)
+        report["memory_after_warmup"] = memory()
         if args.prepare_cuda_graphs:
             apply_attention_override(asr, args.attention[0], current_configs=loaded_attention_configs)
             report["asr_graph_preparation"] = asr.prepare_cuda_graphs(
@@ -211,6 +237,7 @@ def main():
                             apply_attention_override(asr, attention, current_configs=loaded_attention_configs)
                             seed(case_index)
                             torch.cuda.synchronize(device)
+                            torch.cuda.reset_peak_memory_stats(device)
                             if schedule == "serial":
                                 asr_result = run_asr(engine)
                                 tts_result = run_tts(text)
@@ -223,7 +250,8 @@ def main():
                                 tts_result = tts_future.result()
                             rows.append({"repeat": repetition, "case": case, "engine": engine,
                                          "attention": attention, "actual_attention_configs": qwen_attention_configs(asr._model.model),
-                                         "schedule": schedule, "asr": asr_result, "tts": tts_result})
+                                         "schedule": schedule, "asr": asr_result, "tts": tts_result,
+                                         "memory": memory()})
                             save()
                             print(f"{case} {schedule} {attention} {engine}: ASR {asr_result['ms']:.0f} ms; "
                                   f"TTS voiced {tts_result['first_voiced_chunk_ms']:.0f} ms", flush=True)

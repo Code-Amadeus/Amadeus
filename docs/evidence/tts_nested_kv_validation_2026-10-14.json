@@ -1,0 +1,6029 @@
+{
+  "schema": 1,
+  "date": "2026-10-14",
+  "branch": "codex/tts-nested-kv-evaluation",
+  "scope": "Local offline synthetic AR, real Japanese semantic contexts, and offline speech/ASR generation.",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "architecture": "AMD64",
+    "torch": "2.6.0+cu124",
+    "cuda": "12.4",
+    "flash_attn": "2.7.4.post1",
+    "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER"
+  },
+  "driver": "581.57",
+  "checkpoint_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+  "model_config": {
+    "EOS": 1024,
+    "dropout": 0,
+    "embedding_dim": 512,
+    "head": 16,
+    "hidden_dim": 512,
+    "linear_units": 2048,
+    "n_layer": 24,
+    "phoneme_vocab_size": 732,
+    "random_bert": 0,
+    "vocab_size": 1025
+  },
+  "final_source_sha256": {
+    "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+    "config/tts_acceleration.py": "8016666c32313c0eeab8852711198b8439e98954570ef7ece68a2cc14f81117e",
+    "tools/probes/benchmark_t2s_nested_kv.py": "2dd04137e61ecb54f0231fafd366a78b56cd39fe01fc49f204d553c103751f8d",
+    "tools/probes/benchmark_t2s_nested_kv_paired.py": "109765873593383b1226d3d598dc5245316930ed2f5f737ea7f9bb5140bddd3b",
+    "tools/asr/benchmark_qwen_tts_coexistence.py": "c5219ed00c8419e55c3ad67ba2957882ef1e3de30c83d22c24331841f3ddb07d",
+    "tests/test_t2s_nested_kv.py": "70167c61efc3289b7fca32e48d3000ff0dd56049483000334882b1116c275b19",
+    "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540"
+  },
+  "baseline_note": "The untouched local snapshot includes semantic-history/EOS changes already present before this task. These were preserved in both sides of the experiment.",
+  "experiments": {
+    "original-flash-device0.json": {
+      "raw_sha256": "564ba99c80ce4e1d1081ed01e6f293c4f4d85c1a968ae6f8c51bbb0045836e21",
+      "parameters": {
+        "layout": "original",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 922746880,
+          "peak_allocated_bytes": 787998720,
+          "peak_reserved_bytes": 945815552,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 783850496,
+          "reserved_bytes": 1040187392,
+          "peak_allocated_bytes": 875731968,
+          "peak_reserved_bytes": 1040187392,
+          "unique_kv_storage_bytes": 600834048,
+          "kv_storage_count": 864,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.3693544999987353,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 93.93840000848286,
+          "median_stream_ms": 93.89055633544922,
+          "median_steps_per_second": 681.2975310865487,
+          "peak_allocated_bytes": 816935424,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 133.82370001636446,
+          "median_stream_ms": 133.76742553710938,
+          "median_steps_per_second": 717.3617228357964,
+          "peak_allocated_bytes": 824208896,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 133.66220000898466,
+          "median_stream_ms": 133.6084442138672,
+          "median_steps_per_second": 718.2284893825401,
+          "peak_allocated_bytes": 824296960,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 262.70299998577684,
+          "median_stream_ms": 262.64447021484375,
+          "median_steps_per_second": 730.8633704616817,
+          "peak_allocated_bytes": 845690880,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 267.7155999990646,
+          "median_stream_ms": 267.65478515625,
+          "median_steps_per_second": 717.1789764984591,
+          "peak_allocated_bytes": 885031424,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 506.1087000067346,
+          "median_stream_ms": 506.0298767089844,
+          "median_steps_per_second": 442.592668328008,
+          "peak_allocated_bytes": 826353152,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 223.24650001246482,
+          "median_stream_ms": 223.19004821777344,
+          "median_steps_per_second": 143.33931326230558,
+          "peak_allocated_bytes": 906187264,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 48.08090001461096,
+          "median_stream_ms": 48.01948928833008,
+          "median_steps_per_second": 665.544945919809,
+          "peak_allocated_bytes": 801353216,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "status": "original_batch_one_graph_rejected_batch_two",
+          "observed_error": "output with shape [1, 288, 512] doesn't match the broadcast shape [2, 288, 512]"
+        }
+      ]
+    },
+    "graph-flash-device0.json": {
+      "raw_sha256": "78d68db3eb182c6c9e071f9f238bd13801b61d7f610acf9f5c678efdf5118d1a",
+      "parameters": {
+        "layout": "graph",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 834666496,
+          "peak_allocated_bytes": 763890688,
+          "peak_reserved_bytes": 834666496,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 34,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 783714304,
+          "reserved_bytes": 968884224,
+          "peak_allocated_bytes": 876298240,
+          "peak_reserved_bytes": 968884224,
+          "unique_kv_storage_bytes": 600834048,
+          "kv_storage_count": 36,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.1258531999774277,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 91.22890001162887,
+          "median_stream_ms": 91.18303680419922,
+          "median_steps_per_second": 701.5320802053075,
+          "peak_allocated_bytes": 799549440,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 132.64450000133365,
+          "median_stream_ms": 132.59487915039062,
+          "median_steps_per_second": 723.7390166877238,
+          "peak_allocated_bytes": 808030208,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 136.59959999495186,
+          "median_stream_ms": 136.54861450195312,
+          "median_steps_per_second": 702.7839027606798,
+          "peak_allocated_bytes": 804891648,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 259.15870000608265,
+          "median_stream_ms": 259.083251953125,
+          "median_steps_per_second": 740.85878650994,
+          "peak_allocated_bytes": 820223488,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 265.18550000037067,
+          "median_stream_ms": 265.1263427734375,
+          "median_steps_per_second": 724.0214868449882,
+          "peak_allocated_bytes": 858978304,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 506.317699997453,
+          "median_stream_ms": 506.2430725097656,
+          "median_steps_per_second": 442.4099730290425,
+          "peak_allocated_bytes": 808030208,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 218.95760000916198,
+          "median_stream_ms": 218.90243530273438,
+          "median_steps_per_second": 146.14701658522475,
+          "peak_allocated_bytes": 905859584,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 47.55670001031831,
+          "median_stream_ms": 47.50835037231445,
+          "median_steps_per_second": 672.8810029513613,
+          "peak_allocated_bytes": 790275072,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 239.79099999996834,
+          "median_stream_ms": 239.73397827148438,
+          "median_steps_per_second": 133.44954564601767,
+          "peak_allocated_bytes": 876298240,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "bucket-flash-device0.json": {
+      "raw_sha256": "007c0d9bee28901dad0b621a96cb4c05820e1acbe8fde230b17fdea3c89a4bec",
+      "parameters": {
+        "layout": "bucket",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 309848064,
+          "reserved_bytes": 381681664,
+          "peak_allocated_bytes": 310905856,
+          "peak_reserved_bytes": 381681664,
+          "unique_kv_storage_bytes": 135266304,
+          "kv_storage_count": 8,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 330729472,
+          "reserved_bytes": 515899392,
+          "peak_allocated_bytes": 423411712,
+          "peak_reserved_bytes": 515899392,
+          "unique_kv_storage_bytes": 147849216,
+          "kv_storage_count": 10,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.138070200016955,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 90.57149998261593,
+          "median_stream_ms": 90.52230072021484,
+          "median_steps_per_second": 706.6240485393749,
+          "peak_allocated_bytes": 346695680,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 133.36259999778122,
+          "median_stream_ms": 133.31114196777344,
+          "median_steps_per_second": 719.8419946941434,
+          "peak_allocated_bytes": 355045376,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 136.58869999926537,
+          "median_stream_ms": 136.53213500976562,
+          "median_steps_per_second": 702.8399860348354,
+          "peak_allocated_bytes": 351906816,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 255.74270001379773,
+          "median_stream_ms": 255.68482971191406,
+          "median_steps_per_second": 750.7545669520237,
+          "peak_allocated_bytes": 364846592,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 263.94830000936054,
+          "median_stream_ms": 263.8901062011719,
+          "median_steps_per_second": 727.4151793862321,
+          "peak_allocated_bytes": 406222848,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 505.72800001828,
+          "median_stream_ms": 505.6514892578125,
+          "median_steps_per_second": 442.925841543089,
+          "peak_allocated_bytes": 355045376,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 218.86670001549646,
+          "median_stream_ms": 218.8206329345703,
+          "median_steps_per_second": 146.2077145483269,
+          "peak_allocated_bytes": 453202432,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 46.02330000489019,
+          "median_stream_ms": 45.97862243652344,
+          "median_steps_per_second": 695.29998927934,
+          "peak_allocated_bytes": 337290240,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 245.56829998618923,
+          "median_stream_ms": 245.51263427734375,
+          "median_steps_per_second": 130.3099789419061,
+          "peak_allocated_bytes": 423411712,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "nested-flash-device0.json": {
+      "raw_sha256": "2d8562df1a4a4c7bea89a816b58194ae637908aa1272d07a634486b943b40e52",
+      "parameters": {
+        "layout": "nested",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224913408,
+          "reserved_bytes": 293601280,
+          "peak_allocated_bytes": 225971200,
+          "peak_reserved_bytes": 293601280,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233211904,
+          "reserved_bytes": 411041792,
+          "peak_allocated_bytes": 325238784,
+          "peak_reserved_bytes": 411041792,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.17084249999607,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 96.6080000216607,
+          "median_stream_ms": 96.52294158935547,
+          "median_steps_per_second": 662.4710167444767,
+          "peak_allocated_bytes": 261269504,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 132.07510000211187,
+          "median_stream_ms": 132.02566528320312,
+          "median_steps_per_second": 726.8591884349509,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 132.4148999992758,
+          "median_stream_ms": 132.36534118652344,
+          "median_steps_per_second": 724.9939395077521,
+          "peak_allocated_bytes": 266972160,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 260.2766000200063,
+          "median_stream_ms": 260.216064453125,
+          "median_steps_per_second": 737.676763816808,
+          "peak_allocated_bytes": 279420416,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 263.9298999856692,
+          "median_stream_ms": 263.8721618652344,
+          "median_steps_per_second": 727.4658915508443,
+          "peak_allocated_bytes": 321288192,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 507.9979000147432,
+          "median_stream_ms": 507.9245910644531,
+          "median_steps_per_second": 440.9467046881474,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 220.50940000917763,
+          "median_stream_ms": 220.45472717285156,
+          "median_steps_per_second": 145.11853008836883,
+          "peak_allocated_bytes": 368267776,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 46.42500000772998,
+          "median_stream_ms": 46.379905700683594,
+          "median_steps_per_second": 689.2837909460819,
+          "peak_allocated_bytes": 239772672,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 237.83800000092015,
+          "median_stream_ms": 237.78038024902344,
+          "median_steps_per_second": 134.54536280945936,
+          "peak_allocated_bytes": 325238784,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "original-sdpa-device0.json": {
+      "raw_sha256": "328d0a37d06cd2439d8475dc0df7e4354f5a232d27afe46ea067b6318975a249",
+      "parameters": {
+        "layout": "original",
+        "attention": "sdpa",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 922746880,
+          "peak_allocated_bytes": 787998720,
+          "peak_reserved_bytes": 945815552,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 783850496,
+          "reserved_bytes": 1040187392,
+          "peak_allocated_bytes": 875731968,
+          "peak_reserved_bytes": 1040187392,
+          "unique_kv_storage_bytes": 600834048,
+          "kv_storage_count": 864,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.254988200002117,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 121.57969997497275,
+          "median_stream_ms": 121.53036499023438,
+          "median_steps_per_second": 526.4036678259152,
+          "peak_allocated_bytes": 816935424,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 183.05730001884513,
+          "median_stream_ms": 182.99871826171875,
+          "median_steps_per_second": 524.4259583754219,
+          "peak_allocated_bytes": 824208896,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 180.72370000299998,
+          "median_stream_ms": 180.66476440429688,
+          "median_steps_per_second": 531.1976237671452,
+          "peak_allocated_bytes": 824296960,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 402.90919999824837,
+          "median_stream_ms": 402.8377685546875,
+          "median_steps_per_second": 476.5341670054561,
+          "peak_allocated_bytes": 845690880,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 464.9331000109669,
+          "median_stream_ms": 464.8584899902344,
+          "median_steps_per_second": 412.9626391312451,
+          "peak_allocated_bytes": 885031424,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 591.6252000024542,
+          "median_stream_ms": 591.535888671875,
+          "median_steps_per_second": 378.61808455601755,
+          "peak_allocated_bytes": 826353152,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 230.13270000228658,
+          "median_stream_ms": 230.0738525390625,
+          "median_steps_per_second": 139.05020885637742,
+          "peak_allocated_bytes": 906187264,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 58.15119997714646,
+          "median_stream_ms": 58.071006774902344,
+          "median_steps_per_second": 550.2895901129481,
+          "peak_allocated_bytes": 801353216,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "status": "original_batch_one_graph_rejected_batch_two",
+          "observed_error": "output with shape [1, 288, 512] doesn't match the broadcast shape [2, 288, 512]"
+        }
+      ]
+    },
+    "graph-sdpa-device0.json": {
+      "raw_sha256": "daaae75a7daea5352ef7142d1e9d21941e4a624cc593ea034c77c4224c1a5cd4",
+      "parameters": {
+        "layout": "graph",
+        "attention": "sdpa",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "397ece9063f7d3a2c614c15b71aae0c1c3b6b963564ab1b1226b6e3e550d8b7d",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "fb089af1ac2144084f5b1ed0ec2056893eb4b4c22bab950ace11aca9c9e6690c"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 834666496,
+          "peak_allocated_bytes": 763892736,
+          "peak_reserved_bytes": 834666496,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 34,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 783714304,
+          "reserved_bytes": 968884224,
+          "peak_allocated_bytes": 876298240,
+          "peak_reserved_bytes": 968884224,
+          "unique_kv_storage_bytes": 600834048,
+          "kv_storage_count": 36,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.148691800015513,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 119.51760001829825,
+          "median_stream_ms": 119.4571533203125,
+          "median_steps_per_second": 535.4859869190943,
+          "peak_allocated_bytes": 799549440,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 181.1742999998387,
+          "median_stream_ms": 181.07565307617188,
+          "median_steps_per_second": 529.8764780660694,
+          "peak_allocated_bytes": 808030208,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 181.7684999841731,
+          "median_stream_ms": 181.71641540527344,
+          "median_steps_per_second": 528.1443154801789,
+          "peak_allocated_bytes": 804891648,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 394.8104999726638,
+          "median_stream_ms": 394.744384765625,
+          "median_steps_per_second": 486.30925472674573,
+          "peak_allocated_bytes": 820223488,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 465.4930999968201,
+          "median_stream_ms": 465.4215393066406,
+          "median_steps_per_second": 412.4658346199151,
+          "peak_allocated_bytes": 858978304,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 591.5316000173334,
+          "median_stream_ms": 591.4483032226562,
+          "median_steps_per_second": 378.67799453729305,
+          "peak_allocated_bytes": 808030208,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 223.72989999712445,
+          "median_stream_ms": 223.67315673828125,
+          "median_steps_per_second": 143.02960847169416,
+          "peak_allocated_bytes": 905859584,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 56.63019997882657,
+          "median_stream_ms": 56.57651138305664,
+          "median_steps_per_second": 565.0695214208048,
+          "peak_allocated_bytes": 790275072,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 244.37060000491329,
+          "median_stream_ms": 244.2973175048828,
+          "median_steps_per_second": 130.94864930297103,
+          "peak_allocated_bytes": 876298240,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "bucket-sdpa-device0.json": {
+      "raw_sha256": "1e819e0da77b7253212de7d7f095e07f344a26998cf804db05d59708c44cbea9",
+      "parameters": {
+        "layout": "bucket",
+        "attention": "sdpa",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "bf271b23428d2e38f2d0c9403411b7759507524aa03078a97e9d2fe13a6e57fc",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 309848064,
+          "reserved_bytes": 381681664,
+          "peak_allocated_bytes": 310907904,
+          "peak_reserved_bytes": 381681664,
+          "unique_kv_storage_bytes": 135266304,
+          "kv_storage_count": 8,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 330729472,
+          "reserved_bytes": 515899392,
+          "peak_allocated_bytes": 423411712,
+          "peak_reserved_bytes": 515899392,
+          "unique_kv_storage_bytes": 147849216,
+          "kv_storage_count": 10,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.118874000007054,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 118.87690000003204,
+          "median_stream_ms": 118.79254150390625,
+          "median_steps_per_second": 538.372047050207,
+          "peak_allocated_bytes": 346695680,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 181.46200000774115,
+          "median_stream_ms": 181.40911865234375,
+          "median_steps_per_second": 529.0363822503039,
+          "peak_allocated_bytes": 355045376,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 180.3638000274077,
+          "median_stream_ms": 180.3120574951172,
+          "median_steps_per_second": 532.2575815402649,
+          "peak_allocated_bytes": 351906816,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 396.64759999141097,
+          "median_stream_ms": 396.5816345214844,
+          "median_steps_per_second": 484.05688072777343,
+          "peak_allocated_bytes": 364846592,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 466.80140000535175,
+          "median_stream_ms": 466.72930908203125,
+          "median_steps_per_second": 411.30982040284965,
+          "peak_allocated_bytes": 406222848,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 588.1944000138901,
+          "median_stream_ms": 588.1121215820312,
+          "median_steps_per_second": 380.8264750475528,
+          "peak_allocated_bytes": 355045376,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 228.85340001084842,
+          "median_stream_ms": 228.7961883544922,
+          "median_steps_per_second": 139.82750528715366,
+          "peak_allocated_bytes": 453202432,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 55.89079999481328,
+          "median_stream_ms": 55.84540939331055,
+          "median_steps_per_second": 572.5450342984826,
+          "peak_allocated_bytes": 337290240,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 227.9073999961838,
+          "median_stream_ms": 227.84934997558594,
+          "median_steps_per_second": 140.40790251012396,
+          "peak_allocated_bytes": 423411712,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "nested-sdpa-device0.json": {
+      "raw_sha256": "a984729193eb286c3d39bd96e58d63a5bf78d7163592867e1df4a8286b60923d",
+      "parameters": {
+        "layout": "nested",
+        "attention": "sdpa",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "bf271b23428d2e38f2d0c9403411b7759507524aa03078a97e9d2fe13a6e57fc",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224913408,
+          "reserved_bytes": 293601280,
+          "peak_allocated_bytes": 225973248,
+          "peak_reserved_bytes": 293601280,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233211904,
+          "reserved_bytes": 411041792,
+          "peak_allocated_bytes": 325238784,
+          "peak_reserved_bytes": 411041792,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 159716,
+          "graph_count": 18,
+          "graph_keys": [
+            [
+              256,
+              64
+            ],
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.1333609000139404,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 118.92779998015612,
+          "median_stream_ms": 118.87561798095703,
+          "median_steps_per_second": 538.1416288763335,
+          "peak_allocated_bytes": 261269504,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 177.48389998450875,
+          "median_stream_ms": 177.42962646484375,
+          "median_steps_per_second": 540.8941318529688,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 175.15910000656731,
+          "median_stream_ms": 175.10508728027344,
+          "median_steps_per_second": 548.0731517597466,
+          "peak_allocated_bytes": 266972160,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 393.30970001174137,
+          "median_stream_ms": 393.24359130859375,
+          "median_steps_per_second": 488.16492447114393,
+          "peak_allocated_bytes": 279420416,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 453.69990001199767,
+          "median_stream_ms": 453.6293640136719,
+          "median_steps_per_second": 423.18722132167704,
+          "peak_allocated_bytes": 321288192,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 586.8716999830212,
+          "median_stream_ms": 586.7946166992188,
+          "median_steps_per_second": 381.6847873333823,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            177
+          ]
+        },
+        {
+          "case": "prompt_outside_buckets",
+          "steps": 32,
+          "median_wall_ms": 223.10159998596646,
+          "median_stream_ms": 223.0467529296875,
+          "median_steps_per_second": 143.4324092790588,
+          "peak_allocated_bytes": 368267776,
+          "graph_replay_steps": [
+            0
+          ]
+        },
+        {
+          "case": "reference_free",
+          "steps": 32,
+          "median_wall_ms": 55.49030000111088,
+          "median_stream_ms": 55.44790267944336,
+          "median_steps_per_second": 576.6773652216582,
+          "peak_allocated_bytes": 239772672,
+          "graph_replay_steps": [
+            31
+          ]
+        },
+        {
+          "case": "batch_two",
+          "steps": 32,
+          "median_wall_ms": 233.78130001947284,
+          "median_stream_ms": 233.72543334960938,
+          "median_steps_per_second": 136.88006695717132,
+          "peak_allocated_bytes": 325238784,
+          "graph_replay_steps": [
+            0
+          ]
+        }
+      ]
+    },
+    "original-flash-device1.json": {
+      "raw_sha256": "5dcbee33889f483f4f95694e5e177866ca7302c34fff2408414c89d356963e42",
+      "parameters": {
+        "layout": "original",
+        "attention": "flash",
+        "device": 1,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "230659a2f66e2eb6f21f522a0994fb7970288ccf2ed165316b94bb5f71a13155",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 922746880,
+          "peak_allocated_bytes": 787998720,
+          "peak_reserved_bytes": 945815552,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 771122176,
+          "reserved_bytes": 1015021568,
+          "peak_allocated_bytes": 826353152,
+          "peak_reserved_bytes": 1015021568,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.0547035000054166,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 106.73619998851791,
+          "median_stream_ms": 106.69395446777344,
+          "median_steps_per_second": 599.6091298630153,
+          "peak_allocated_bytes": 816935424,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 157.39819998270832,
+          "median_stream_ms": 157.34371948242188,
+          "median_steps_per_second": 609.9180296251577,
+          "peak_allocated_bytes": 824208896,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 321.00070000160486,
+          "median_stream_ms": 320.935546875,
+          "median_steps_per_second": 598.1295367861817,
+          "peak_allocated_bytes": 845690880,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 540.902200009441,
+          "median_stream_ms": 540.8280029296875,
+          "median_steps_per_second": 414.12292276883005,
+          "peak_allocated_bytes": 826353152,
+          "graph_replay_steps": [
+            177
+          ]
+        }
+      ]
+    },
+    "nested-flash-device1.json": {
+      "raw_sha256": "ae456544b3612fd6218113532448c6a32446e4d9306cb737e48cbdbeac598b65",
+      "parameters": {
+        "layout": "nested",
+        "attention": "flash",
+        "device": 1,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "230659a2f66e2eb6f21f522a0994fb7970288ccf2ed165316b94bb5f71a13155",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224913408,
+          "reserved_bytes": 293601280,
+          "peak_allocated_bytes": 225971200,
+          "peak_reserved_bytes": 293601280,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233202688,
+          "reserved_bytes": 375390208,
+          "peak_allocated_bytes": 270110720,
+          "peak_reserved_bytes": 375390208,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.0412033000029624,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 111.70100001618266,
+          "median_stream_ms": 111.65542602539062,
+          "median_steps_per_second": 572.958165018469,
+          "peak_allocated_bytes": 261269504,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 166.68809999828227,
+          "median_stream_ms": 166.634521484375,
+          "median_steps_per_second": 575.9259359305751,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 334.91450001019984,
+          "median_stream_ms": 334.8511657714844,
+          "median_steps_per_second": 573.2806432511958,
+          "peak_allocated_bytes": 279420416,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 555.228100012755,
+          "median_stream_ms": 555.1478271484375,
+          "median_steps_per_second": 403.43779429545106,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            177
+          ]
+        }
+      ]
+    },
+    "original-sdpa-device1.json": {
+      "raw_sha256": "6657cf501dcf3fac53bbaf9fe602dd254708f86c45d807ce6ae33c2ead6ee88b",
+      "parameters": {
+        "layout": "original",
+        "attention": "sdpa",
+        "device": 1,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "230659a2f66e2eb6f21f522a0994fb7970288ccf2ed165316b94bb5f71a13155",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 922746880,
+          "peak_allocated_bytes": 787998720,
+          "peak_reserved_bytes": 945815552,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 771122176,
+          "reserved_bytes": 1015021568,
+          "peak_allocated_bytes": 826353152,
+          "peak_reserved_bytes": 1015021568,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.1060830000205897,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 139.14489999297075,
+          "median_stream_ms": 139.06600952148438,
+          "median_steps_per_second": 459.95217937008914,
+          "peak_allocated_bytes": 816935424,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 212.45800002361648,
+          "median_stream_ms": 212.39830017089844,
+          "median_steps_per_second": 451.8540134489113,
+          "peak_allocated_bytes": 824208896,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 477.06389997620136,
+          "median_stream_ms": 476.9858093261719,
+          "median_steps_per_second": 402.4618085954063,
+          "peak_allocated_bytes": 845690880,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 639.1518999880645,
+          "median_stream_ms": 639.0602416992188,
+          "median_steps_per_second": 350.46442012326486,
+          "peak_allocated_bytes": 826353152,
+          "graph_replay_steps": [
+            177
+          ]
+        }
+      ]
+    },
+    "nested-sdpa-device1.json": {
+      "raw_sha256": "f101de7655ac833458197e42e6f8565f2038cf0caaf9c378ad484239228bfd83",
+      "parameters": {
+        "layout": "nested",
+        "attention": "sdpa",
+        "device": 1,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224913408,
+          "reserved_bytes": 293601280,
+          "peak_allocated_bytes": 225973248,
+          "peak_reserved_bytes": 293601280,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233202688,
+          "reserved_bytes": 375390208,
+          "peak_allocated_bytes": 270110720,
+          "peak_reserved_bytes": 375390208,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.061699800018687,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 146.31290000397712,
+          "median_stream_ms": 146.25990295410156,
+          "median_steps_per_second": 437.4187101633577,
+          "peak_allocated_bytes": 261269504,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 222.76740000233985,
+          "median_stream_ms": 222.71107482910156,
+          "median_steps_per_second": 430.94276810247663,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 488.2749000098556,
+          "median_stream_ms": 488.1996765136719,
+          "median_steps_per_second": 393.2211137540032,
+          "peak_allocated_bytes": 279420416,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 666.9961000152398,
+          "median_stream_ms": 666.9075317382812,
+          "median_steps_per_second": 335.8340475977025,
+          "peak_allocated_bytes": 270110720,
+          "graph_replay_steps": [
+            177
+          ]
+        }
+      ]
+    },
+    "nested-flash-maximum-shape-device0.json": {
+      "raw_sha256": "b9d51d565ea119830c35b03625b23955dae7f4b3c3ba494e5843abb209d95045",
+      "parameters": {
+        "layout": "nested",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "230659a2f66e2eb6f21f522a0994fb7970288ccf2ed165316b94bb5f71a13155",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224936448,
+          "reserved_bytes": 297795584,
+          "peak_allocated_bytes": 225994240,
+          "peak_reserved_bytes": 297795584,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 175142,
+          "graph_count": 19,
+          "graph_keys": [
+            [
+              1024,
+              192
+            ],
+            [
+              1024,
+              224
+            ],
+            [
+              1024,
+              256
+            ],
+            [
+              1024,
+              288
+            ],
+            [
+              1024,
+              320
+            ],
+            [
+              1024,
+              352
+            ],
+            [
+              1024,
+              384
+            ],
+            [
+              1024,
+              416
+            ],
+            [
+              1024,
+              448
+            ],
+            [
+              1024,
+              480
+            ],
+            [
+              1024,
+              512
+            ],
+            [
+              1024,
+              544
+            ],
+            [
+              1024,
+              576
+            ],
+            [
+              1024,
+              608
+            ],
+            [
+              1024,
+              640
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233225728,
+          "reserved_bytes": 419430400,
+          "peak_allocated_bytes": 321311232,
+          "peak_reserved_bytes": 419430400,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 175142,
+          "graph_count": 19,
+          "graph_keys": [
+            [
+              1024,
+              192
+            ],
+            [
+              1024,
+              224
+            ],
+            [
+              1024,
+              256
+            ],
+            [
+              1024,
+              288
+            ],
+            [
+              1024,
+              320
+            ],
+            [
+              1024,
+              352
+            ],
+            [
+              1024,
+              384
+            ],
+            [
+              1024,
+              416
+            ],
+            [
+              1024,
+              448
+            ],
+            [
+              1024,
+              480
+            ],
+            [
+              1024,
+              512
+            ],
+            [
+              1024,
+              544
+            ],
+            [
+              1024,
+              576
+            ],
+            [
+              1024,
+              608
+            ],
+            [
+              1024,
+              640
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.48853189998772,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 88.77610001945868,
+          "median_stream_ms": 88.73318481445312,
+          "median_steps_per_second": 720.9147505462838,
+          "peak_allocated_bytes": 261292544,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 130.8292000030633,
+          "median_stream_ms": 130.7777862548828,
+          "median_steps_per_second": 733.7811436418797,
+          "peak_allocated_bytes": 270133760,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 130.0030999991577,
+          "median_stream_ms": 129.9537353515625,
+          "median_steps_per_second": 738.4439294187753,
+          "peak_allocated_bytes": 266995200,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 251.75920000765473,
+          "median_stream_ms": 251.70089721679688,
+          "median_steps_per_second": 762.6335005599091,
+          "peak_allocated_bytes": 279443456,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 256.1293999897316,
+          "median_stream_ms": 256.0719909667969,
+          "median_steps_per_second": 749.6210899947347,
+          "peak_allocated_bytes": 321311232,
+          "graph_replay_steps": [
+            191
+          ]
+        }
+      ]
+    },
+    "nested-sdpa-maximum-shape-device0.json": {
+      "raw_sha256": "e43d8081ad6161dff7af64b60250584a20f4eec7405d8353ba80a13cd6d291bb",
+      "parameters": {
+        "layout": "nested",
+        "attention": "sdpa",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          1024
+        ]
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "869b1f4e5e1b023c61e06b64369b5e5e3a52ed3c9b2e378bd923465b4843ca9e"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 224936448,
+          "reserved_bytes": 297795584,
+          "peak_allocated_bytes": 225996288,
+          "peak_reserved_bytes": 297795584,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 175142,
+          "graph_count": 19,
+          "graph_keys": [
+            [
+              1024,
+              192
+            ],
+            [
+              1024,
+              224
+            ],
+            [
+              1024,
+              256
+            ],
+            [
+              1024,
+              288
+            ],
+            [
+              1024,
+              320
+            ],
+            [
+              1024,
+              352
+            ],
+            [
+              1024,
+              384
+            ],
+            [
+              1024,
+              416
+            ],
+            [
+              1024,
+              448
+            ],
+            [
+              1024,
+              480
+            ],
+            [
+              1024,
+              512
+            ],
+            [
+              1024,
+              544
+            ],
+            [
+              1024,
+              576
+            ],
+            [
+              1024,
+              608
+            ],
+            [
+              1024,
+              640
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233225728,
+          "reserved_bytes": 419430400,
+          "peak_allocated_bytes": 321311232,
+          "peak_reserved_bytes": 419430400,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 175142,
+          "graph_count": 19,
+          "graph_keys": [
+            [
+              1024,
+              192
+            ],
+            [
+              1024,
+              224
+            ],
+            [
+              1024,
+              256
+            ],
+            [
+              1024,
+              288
+            ],
+            [
+              1024,
+              320
+            ],
+            [
+              1024,
+              352
+            ],
+            [
+              1024,
+              384
+            ],
+            [
+              1024,
+              416
+            ],
+            [
+              1024,
+              448
+            ],
+            [
+              1024,
+              480
+            ],
+            [
+              1024,
+              512
+            ],
+            [
+              1024,
+              544
+            ],
+            [
+              1024,
+              576
+            ],
+            [
+              1024,
+              608
+            ],
+            [
+              1024,
+              640
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.5040950999828056,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 155.06759998970665,
+          "median_stream_ms": 155.01449584960938,
+          "median_steps_per_second": 412.72322525303997,
+          "peak_allocated_bytes": 261292544,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 228.24659998877905,
+          "median_stream_ms": 228.1898193359375,
+          "median_steps_per_second": 420.59772195826577,
+          "peak_allocated_bytes": 270133760,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "aligned_512",
+          "steps": 96,
+          "median_wall_ms": 228.36919999099337,
+          "median_stream_ms": 228.3095703125,
+          "median_steps_per_second": 420.37192407639094,
+          "peak_allocated_bytes": 266995200,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 452.35979999415576,
+          "median_stream_ms": 452.2879333496094,
+          "median_steps_per_second": 424.44089859992096,
+          "peak_allocated_bytes": 279443456,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "long_1024",
+          "steps": 192,
+          "median_wall_ms": 450.2756000147201,
+          "median_stream_ms": 450.2060546875,
+          "median_steps_per_second": 426.4055169627741,
+          "peak_allocated_bytes": 321311232,
+          "graph_replay_steps": [
+            191
+          ]
+        }
+      ]
+    },
+    "lazy-one-original.json": {
+      "raw_sha256": "bd4c28c8b8fcc41d3b0ddb504d8eeec9151d4ffb395dfdd90b780803cd6986e8",
+      "parameters": {
+        "layout": "original",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ],
+        "skip_precapture": true
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "2dd04137e61ecb54f0231fafd366a78b56cd39fe01fc49f204d553c103751f8d"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_scenarios": {
+          "allocated_bytes": 204738560,
+          "reserved_bytes": 285212672,
+          "peak_allocated_bytes": 250551808,
+          "peak_reserved_bytes": 285212672,
+          "unique_kv_storage_bytes": 22020096,
+          "kv_storage_count": 48,
+          "graph_io_storage_bytes": 8642,
+          "graph_count": 1,
+          "graph_keys": [
+            [
+              448,
+              288
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 2.2299995180219412e-05,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 89.85099999699742,
+          "median_stream_ms": 89.8024673461914,
+          "median_steps_per_second": 712.2903473766426,
+          "peak_allocated_bytes": 250551808,
+          "graph_replay_steps": [
+            63
+          ]
+        }
+      ]
+    },
+    "lazy-one-nested.json": {
+      "raw_sha256": "fd06e1952e422dadd708dc22db179cd298ae19ee14f92fe94c2b6bf28b07ea3e",
+      "parameters": {
+        "layout": "nested",
+        "attention": "flash",
+        "device": 0,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ],
+        "skip_precapture": true
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "2dd04137e61ecb54f0231fafd366a78b56cd39fe01fc49f204d553c103751f8d"
+      },
+      "baseline_sha256": null,
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_scenarios": {
+          "allocated_bytes": 233050112,
+          "reserved_bytes": 287309824,
+          "peak_allocated_bytes": 261116928,
+          "peak_reserved_bytes": 287309824,
+          "unique_kv_storage_bytes": 50331648,
+          "kv_storage_count": 2,
+          "graph_io_storage_bytes": 8642,
+          "graph_count": 1,
+          "graph_keys": [
+            [
+              448,
+              288
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 2.4299981305375695e-05,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 88.55260000564158,
+          "median_stream_ms": 88.50812530517578,
+          "median_steps_per_second": 722.7342844357211,
+          "peak_allocated_bytes": 261116928,
+          "graph_replay_steps": [
+            63
+          ]
+        }
+      ]
+    },
+    "original-flash-device1-repeat.json": {
+      "raw_sha256": "8e4a37a968655dbb25ba4e53d5f163d0613a76731246f89b9d4cb5133ff388bb",
+      "parameters": {
+        "layout": "original",
+        "attention": "flash",
+        "device": 1,
+        "repeats": 7,
+        "dtype": "float16",
+        "top_k": 5,
+        "top_p": 1.0,
+        "temperature": 0.6,
+        "repetition_penalty": 1.35,
+        "replay_sync": false,
+        "buckets": [
+          128,
+          256,
+          448,
+          512,
+          768,
+          1024
+        ],
+        "skip_precapture": false
+      },
+      "source_sha256_at_run": {
+        "GPT_SoVITS/AR/models/t2s_model.py": "0ca45853462271ccda8679458db93d9dd91d6ce7859fe8a6099e04a314882c30",
+        "GPT_SoVITS/AR/models/t2s_flash_attn.py": "2a2083786be1a8e996fcc8f938c9abb61eab90fa7136554b6a4706518c266540",
+        "tools/probes/benchmark_t2s_nested_kv.py": "2dd04137e61ecb54f0231fafd366a78b56cd39fe01fc49f204d553c103751f8d"
+      },
+      "baseline_sha256": "1801b0b0731b77801de630e13d77288df5720cf34bdfbc02f6dfd3117581c335",
+      "memory": {
+        "before_precapture": {
+          "allocated_bytes": 157379584,
+          "reserved_bytes": 163577856,
+          "peak_allocated_bytes": 157379584,
+          "peak_reserved_bytes": 163577856,
+          "unique_kv_storage_bytes": 0,
+          "kv_storage_count": 0,
+          "graph_io_storage_bytes": 0,
+          "graph_count": 0,
+          "graph_keys": []
+        },
+        "after_precapture": {
+          "allocated_bytes": 762832896,
+          "reserved_bytes": 922746880,
+          "peak_allocated_bytes": 787998720,
+          "peak_reserved_bytes": 945815552,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        },
+        "after_scenarios": {
+          "allocated_bytes": 771122176,
+          "reserved_bytes": 1015021568,
+          "peak_allocated_bytes": 826353152,
+          "peak_reserved_bytes": 1015021568,
+          "unique_kv_storage_bytes": 588251136,
+          "kv_storage_count": 816,
+          "graph_io_storage_bytes": 151266,
+          "graph_count": 17,
+          "graph_keys": [
+            [
+              448,
+              192
+            ],
+            [
+              448,
+              224
+            ],
+            [
+              448,
+              256
+            ],
+            [
+              448,
+              288
+            ],
+            [
+              448,
+              320
+            ],
+            [
+              512,
+              352
+            ],
+            [
+              512,
+              384
+            ],
+            [
+              768,
+              416
+            ],
+            [
+              768,
+              448
+            ],
+            [
+              768,
+              480
+            ],
+            [
+              768,
+              512
+            ],
+            [
+              768,
+              544
+            ],
+            [
+              768,
+              576
+            ],
+            [
+              1024,
+              672
+            ],
+            [
+              1024,
+              704
+            ],
+            [
+              1024,
+              736
+            ],
+            [
+              1024,
+              768
+            ]
+          ]
+        }
+      },
+      "precapture_seconds": 3.0768356999906246,
+      "summary": [
+        {
+          "case": "short_448",
+          "steps": 64,
+          "median_wall_ms": 107.77020000386983,
+          "median_stream_ms": 107.71984100341797,
+          "median_steps_per_second": 593.8561865682896,
+          "peak_allocated_bytes": 816935424,
+          "graph_replay_steps": [
+            63
+          ]
+        },
+        {
+          "case": "unaligned_512",
+          "steps": 96,
+          "median_wall_ms": 157.18010001000948,
+          "median_stream_ms": 157.12643432617188,
+          "median_steps_per_second": 610.7643397216732,
+          "peak_allocated_bytes": 824208896,
+          "graph_replay_steps": [
+            95
+          ]
+        },
+        {
+          "case": "medium_768",
+          "steps": 192,
+          "median_wall_ms": 320.88389998534694,
+          "median_stream_ms": 320.81884765625,
+          "median_steps_per_second": 598.3472527252618,
+          "peak_allocated_bytes": 845690880,
+          "graph_replay_steps": [
+            191
+          ]
+        },
+        {
+          "case": "overflow_dynamic",
+          "steps": 224,
+          "median_wall_ms": 536.3702999893576,
+          "median_stream_ms": 536.29833984375,
+          "median_steps_per_second": 417.6219302307464,
+          "peak_allocated_bytes": 826353152,
+          "graph_replay_steps": [
+            177
+          ]
+        }
+      ]
+    }
+  },
+  "fixed_work_consistency": [
+    {
+      "device": 0,
+      "attention": "flash",
+      "layout": "graph",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 0,
+      "attention": "flash",
+      "layout": "bucket",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 0,
+      "attention": "flash",
+      "layout": "nested",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 0,
+      "attention": "sdpa",
+      "layout": "graph",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 0,
+      "attention": "sdpa",
+      "layout": "bucket",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 0,
+      "attention": "sdpa",
+      "layout": "nested",
+      "pairs": 56,
+      "differences": []
+    },
+    {
+      "device": 1,
+      "attention": "flash",
+      "layout": "nested",
+      "pairs": 28,
+      "differences": [
+        {
+          "case": "unaligned_512",
+          "seed": 20261016
+        },
+        {
+          "case": "medium_768",
+          "seed": 20261020
+        },
+        {
+          "case": "overflow_dynamic",
+          "seed": 20261014
+        },
+        {
+          "case": "overflow_dynamic",
+          "seed": 20261016
+        }
+      ]
+    },
+    {
+      "device": 1,
+      "attention": "sdpa",
+      "layout": "nested",
+      "pairs": 28,
+      "differences": []
+    }
+  ],
+  "paired_latency": {
+    "paired-flash-device0.json": {
+      "raw_sha256": "c8f17b1a880f55b5ab1310842f4759048ac707f4f4772b89e66bdbd5a7c05c08",
+      "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+      "attention": "flash",
+      "summary": [
+        {
+          "case": "short_448",
+          "pairs": 20,
+          "original_median_ms": 91.22479999496136,
+          "nested_median_ms": 88.65760000480805,
+          "paired_median_elapsed_change_percent": -2.1465061590159316,
+          "all_tokens_equal": true,
+          "original_p95_ms": 93.68340001674369,
+          "nested_p95_ms": 91.31780001916923
+        },
+        {
+          "case": "unaligned_512",
+          "pairs": 20,
+          "original_median_ms": 130.96899999072775,
+          "nested_median_ms": 129.28254999860656,
+          "paired_median_elapsed_change_percent": -1.2111054687287626,
+          "all_tokens_equal": true,
+          "original_p95_ms": 134.78069999837317,
+          "nested_p95_ms": 133.49629999720491
+        },
+        {
+          "case": "medium_768",
+          "pairs": 20,
+          "original_median_ms": 252.72689999837894,
+          "nested_median_ms": 252.63774998893496,
+          "paired_median_elapsed_change_percent": -0.11169935539223075,
+          "all_tokens_equal": true,
+          "original_p95_ms": 257.4488999962341,
+          "nested_p95_ms": 255.69150000228547
+        }
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
+    },
+    "paired-flash-device1.json": {
+      "raw_sha256": "1f05f85d7671d0ef5002f986832f3ec81a37f5a3c7c18575b2334705c9f8b0c1",
+      "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "attention": "flash",
+      "summary": [
+        {
+          "case": "short_448",
+          "pairs": 20,
+          "original_median_ms": 107.36394999548793,
+          "nested_median_ms": 105.75580000295304,
+          "paired_median_elapsed_change_percent": -1.6172914375939929,
+          "all_tokens_equal": true,
+          "original_p95_ms": 108.80829999223351,
+          "nested_p95_ms": 106.75769997760653
+        },
+        {
+          "case": "unaligned_512",
+          "pairs": 20,
+          "original_median_ms": 158.12459998414852,
+          "nested_median_ms": 156.8783499969868,
+          "paired_median_elapsed_change_percent": -0.763301849612269,
+          "all_tokens_equal": true,
+          "original_p95_ms": 160.36919999169186,
+          "nested_p95_ms": 159.7135000047274
+        },
+        {
+          "case": "medium_768",
+          "pairs": 20,
+          "original_median_ms": 323.27985001029447,
+          "nested_median_ms": 328.85399999213405,
+          "paired_median_elapsed_change_percent": 1.7434861516505307,
+          "all_tokens_equal": true,
+          "original_p95_ms": 325.18179999897256,
+          "nested_p95_ms": 330.9086000081152
+        }
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
+    },
+    "paired-sdpa-device1.json": {
+      "raw_sha256": "92589bcc8253a2de7a81139e012a9a64e4d6d08b927c4fd60ac55ec6c0480165",
+      "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "attention": "sdpa",
+      "summary": [
+        {
+          "case": "short_448",
+          "pairs": 20,
+          "original_median_ms": 138.6752999969758,
+          "nested_median_ms": 139.0005499997642,
+          "paired_median_elapsed_change_percent": -0.18774893272837656,
+          "all_tokens_equal": true,
+          "original_p95_ms": 141.7284000199288,
+          "nested_p95_ms": 141.2856999959331
+        },
+        {
+          "case": "unaligned_512",
+          "pairs": 20,
+          "original_median_ms": 212.43189998494927,
+          "nested_median_ms": 216.23605000786483,
+          "paired_median_elapsed_change_percent": 1.7399338403449427,
+          "all_tokens_equal": true,
+          "original_p95_ms": 215.99480000440963,
+          "nested_p95_ms": 220.78410000540316
+        },
+        {
+          "case": "medium_768",
+          "pairs": 20,
+          "original_median_ms": 478.8196500012418,
+          "nested_median_ms": 495.8444499934558,
+          "paired_median_elapsed_change_percent": 3.5199645938884583,
+          "all_tokens_equal": true,
+          "original_p95_ms": 480.7003000169061,
+          "nested_p95_ms": 498.54440000490285
+        }
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
+    }
+  },
+  "baseline_repeat": {
+    "same_original_source_and_checkpoint": true,
+    "original_cross_process_differences": [
+      {
+        "case": "unaligned_512",
+        "seed": 20261016
+      },
+      {
+        "case": "medium_768",
+        "seed": 20261020
+      },
+      {
+        "case": "overflow_dynamic",
+        "seed": 20261014
+      },
+      {
+        "case": "overflow_dynamic",
+        "seed": 20261016
+      }
+    ],
+    "nested_vs_repeated_original_equal": true,
+    "pairs": 28,
+    "interpretation": "Cross-process bitwise instability also occurs on untouched baseline; low-level numerical cause uninvestigated. Alternating within-process comparisons are separately reported."
+  },
+  "real_semantic": {
+    "pairs": 55,
+    "all_equal": true,
+    "anomalous_in_each_layout": 2,
+    "checks": [
+      {
+        "case": "aa_weak",
+        "seed": 20261014,
+        "tokens": 40,
+        "token_sha256": "f977d41ac0c68439f1627f2d697432c2cabbf988968f4c0290449ddf769e2d01",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_weak",
+        "seed": 20261014,
+        "tokens": 31,
+        "token_sha256": "494a24529651f621fd83098926f46beeddf663cd36cdf83a77c9d8e5846e4471",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_weak",
+        "seed": 20261014,
+        "tokens": 32,
+        "token_sha256": "3bb06236dc8d7cf1277839ef04e6c6d8515706e6c1719f6f50f9f30a82b08895",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_ellipsis",
+        "seed": 20261014,
+        "tokens": 32,
+        "token_sha256": "0bbe20feb855cac8d17d2a9c70b175620dc80af6d1583850479171400505171e",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_strong",
+        "seed": 20261014,
+        "tokens": 44,
+        "token_sha256": "4639c3011df8a06271f94b54d619b4248535f14b2847bcc087c63edda03fc174",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_strong",
+        "seed": 20261014,
+        "tokens": 28,
+        "token_sha256": "1572b150876fba49ac1e12a2fa525918c8ba920c4e320442e868ae3957c983ec",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_strong",
+        "seed": 20261014,
+        "tokens": 32,
+        "token_sha256": "98c6b8df95e7dd609c76f619111df92dee793974cd1f80c08e9fb8262d2e2aa8",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_continuation",
+        "seed": 20261014,
+        "tokens": 58,
+        "token_sha256": "4cd905acf55f4348756562baa5dbe384c413f4acb3b0c3754393fb3e123c4611",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_continuation",
+        "seed": 20261014,
+        "tokens": 84,
+        "token_sha256": "205d6a847d403fe824558d931d68d9b4ac4701ec8ee5d85c9d6544f210b824ef",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_continuation",
+        "seed": 20261014,
+        "tokens": 111,
+        "token_sha256": "40947f317bfa7c6d5572fd1544bc5007b2110d2453cb4e7c6304e30f8eb58330",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "control_plain",
+        "seed": 20261014,
+        "tokens": 49,
+        "token_sha256": "6ab2b86d6f6402106c6ab7ba7fcee3eb6651c8427c5d69e6b99d989ac6a1c285",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_weak",
+        "seed": 20261015,
+        "tokens": 37,
+        "token_sha256": "7aace4bd0117a6e84aee7f2dd3f29def6958cc6be0d6b9d5672d5d3f1f213fc9",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_weak",
+        "seed": 20261015,
+        "tokens": 33,
+        "token_sha256": "7cb309f4b7368cb04ffe8735b1ac04b1d80efc53ad36f0392e15d8a5a40e3435",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_weak",
+        "seed": 20261015,
+        "tokens": 32,
+        "token_sha256": "4a40d600a777f5705f1602e021dbaea80c7d0f083a72db10dbe95f54b5e7770b",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_ellipsis",
+        "seed": 20261015,
+        "tokens": 32,
+        "token_sha256": "26bd278b80bb910aaae33af1f3f1ba6a3cd424230f8bf66339184dfb7fc8f29a",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_strong",
+        "seed": 20261015,
+        "tokens": 37,
+        "token_sha256": "62916cd080f5b20082c1985576d307ab3980b4bc5cf973aadc4458707ac48eb8",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_strong",
+        "seed": 20261015,
+        "tokens": 104,
+        "token_sha256": "fbec2a9764d0d0a2f47cd9013285cbd3f50d6036c28a0f7aaba43c2be92bc48b",
+        "termination": "eos",
+        "anomaly_reasons": [
+          "length_outlier",
+          "equal_token_run",
+          "periodic_token_run",
+          "token_concentration"
+        ],
+        "equal": true
+      },
+      {
+        "case": "uun_strong",
+        "seed": 20261015,
+        "tokens": 29,
+        "token_sha256": "99108eae6cf38cb8cb48b05dd68d5e6c11e3c5756f04817c444db40b15ade976",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_continuation",
+        "seed": 20261015,
+        "tokens": 58,
+        "token_sha256": "74d938a724b62ef2162751e9ec909890f0b77823818e0a745dd54876d7b0977b",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_continuation",
+        "seed": 20261015,
+        "tokens": 83,
+        "token_sha256": "ea8016397831753e381caaaa4b99329c05a07ce67d2afba1a6ca277abdb65aa5",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_continuation",
+        "seed": 20261015,
+        "tokens": 108,
+        "token_sha256": "aa739e62bd816e3a4d6bc9c260f1c5d9dcfef6e56a32751f56a8b4f208edc4f0",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "control_plain",
+        "seed": 20261015,
+        "tokens": 49,
+        "token_sha256": "b36d8605c3b4611e01eed44cfc4efa04ef7451516407af8c8429718db368295d",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_weak",
+        "seed": 20261016,
+        "tokens": 42,
+        "token_sha256": "1a45e0b459c44cb5a8c39e37f5f46df40cf73cd73565d06a1ad58a3723c066c5",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_weak",
+        "seed": 20261016,
+        "tokens": 36,
+        "token_sha256": "dccc637a4474ac7f10e12ddc04a00c098e89ea6e3f1f04a187c8674e342128c4",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_weak",
+        "seed": 20261016,
+        "tokens": 32,
+        "token_sha256": "ac23b85478b0e2c4e7066c0eae4114feb4f5ecbd95834397865b255da7592ce5",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_ellipsis",
+        "seed": 20261016,
+        "tokens": 33,
+        "token_sha256": "96d6dc8079b2b6dd1107552641bdae326e97daaafa15b05d41e5c674ef87125b",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_strong",
+        "seed": 20261016,
+        "tokens": 32,
+        "token_sha256": "d01fb510879a97eef0989752adb0a283c0eecea7ac80d591d266582e1281f1dd",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_strong",
+        "seed": 20261016,
+        "tokens": 28,
+        "token_sha256": "6990713bc3b31d25f8352d64e2f8272cea9dd6bd1b8e274224caa32d9cd25b60",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_strong",
+        "seed": 20261016,
+        "tokens": 27,
+        "token_sha256": "8d781581ac9918871f4bf4a61fcdd9306498cde2b5eb87fc2f3e7c18153f7e10",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_continuation",
+        "seed": 20261016,
+        "tokens": 59,
+        "token_sha256": "7a3c7bc8dd4a2368608f1bbded4426fd0fdb77ccf528b95e46cb96afb49305a9",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_continuation",
+        "seed": 20261016,
+        "tokens": 93,
+        "token_sha256": "9b7fca9498e730ef0adbd7f6526975e965c8ea5b221f9588a4d90071115b0e5b",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_continuation",
+        "seed": 20261016,
+        "tokens": 114,
+        "token_sha256": "a14c9013b1b0dbcd848408d544f316b6bd0f7960c8995621cc538b7703feac0a",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "control_plain",
+        "seed": 20261016,
+        "tokens": 48,
+        "token_sha256": "4a2248df2ce085ab6e9be7da30bca894b1e79aa5aa31b6944e07556a10a1a357",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_weak",
+        "seed": 20261017,
+        "tokens": 45,
+        "token_sha256": "2c36f4c8ca541cb53db054dcba009d9ed3f035250844f879a42cf004f9e28480",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_weak",
+        "seed": 20261017,
+        "tokens": 106,
+        "token_sha256": "6bc625fcc4df1d7b84cce208f4ef053a399cc6bf217316aede3ba4fddba3a3eb",
+        "termination": "eos",
+        "anomaly_reasons": [
+          "length_outlier",
+          "equal_token_run",
+          "periodic_token_run",
+          "token_concentration"
+        ],
+        "equal": true
+      },
+      {
+        "case": "uun_weak",
+        "seed": 20261017,
+        "tokens": 32,
+        "token_sha256": "a44d2d04091e53b958512d3e6a337e83005387a6ce232840c09ca515824ffd06",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_ellipsis",
+        "seed": 20261017,
+        "tokens": 30,
+        "token_sha256": "49c88ea5346f06d744850b29ccc6e21523399f81b22d4062f984f207371a8ae1",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_strong",
+        "seed": 20261017,
+        "tokens": 50,
+        "token_sha256": "407713423e0a5d2189684c1dd86916a750508ec4e1c4a039f4d68b2d03e42dcd",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_strong",
+        "seed": 20261017,
+        "tokens": 53,
+        "token_sha256": "20daf0afef661dc8b45e0e36b24779a4f39232fde063dd069d4b272ac5d1a6ca",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_strong",
+        "seed": 20261017,
+        "tokens": 31,
+        "token_sha256": "7c6c0fdcd0737cd968da08113968bbfe03175ec8212ad2717b0ec339fa0a3ad4",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_continuation",
+        "seed": 20261017,
+        "tokens": 70,
+        "token_sha256": "a068170e55411172244b2ef1aa868963313885449a4c4a877a26547317796686",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_continuation",
+        "seed": 20261017,
+        "tokens": 86,
+        "token_sha256": "fd4926cfed184850c93bfafcaf4f20efd21579f927a6c4449541c93233bd27bb",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_continuation",
+        "seed": 20261017,
+        "tokens": 107,
+        "token_sha256": "3057efaa3246a0262c7a55c667b71f219785cbb692834cd89b3b5506b62160ba",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "control_plain",
+        "seed": 20261017,
+        "tokens": 52,
+        "token_sha256": "5561b1cd14d7617e18c81fec1f086c980dc97e62f72fd7cf49aaac529cab0a65",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_weak",
+        "seed": 20261018,
+        "tokens": 35,
+        "token_sha256": "389efb83b7ad35c2e12eeab8eb6ce22b6302676bb6341353578f8ed2f5e3eae5",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_weak",
+        "seed": 20261018,
+        "tokens": 41,
+        "token_sha256": "2aff43910e200a3fa234e788103e3a35b62c88892fd4fcc91f825b36eb5b5752",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_weak",
+        "seed": 20261018,
+        "tokens": 33,
+        "token_sha256": "9dcc62ace1fb2ac84e1dabe653681c1645b670c15b2abe0cadb6ae20c66482c4",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_ellipsis",
+        "seed": 20261018,
+        "tokens": 35,
+        "token_sha256": "5a8d4a03d77b0cf3aa039e72265f5ddbf629ce6835d104035c4b4884a993abca",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_strong",
+        "seed": 20261018,
+        "tokens": 49,
+        "token_sha256": "424d8950acb3ab3dbc1b5c348bcf022ea2f66bf6ad7b623b575dec6e18953e88",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_strong",
+        "seed": 20261018,
+        "tokens": 34,
+        "token_sha256": "214491dbc27b8949140f88b0a57b0d79343fd8eea3b877dfd517721958f1013a",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_strong",
+        "seed": 20261018,
+        "tokens": 32,
+        "token_sha256": "b07c548ae3147eabb3031c24891e7d6a108b33ba1dbe2b8d29af254b2f101fa1",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "aa_continuation",
+        "seed": 20261018,
+        "tokens": 64,
+        "token_sha256": "b01b418ab2a0d8d9e28d0a51baa7e492708b6210d4277910257d54559d257fef",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "eeto_continuation",
+        "seed": 20261018,
+        "tokens": 92,
+        "token_sha256": "60c2f2cb9235186d35735d35a3890b1d20a45b2c9cec3cb3e9b95513e6234aad",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "uun_continuation",
+        "seed": 20261018,
+        "tokens": 107,
+        "token_sha256": "96627ac1d376571c717ed2963ca64d74d11627795e0be6997e12eeb1daafe4e8",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      },
+      {
+        "case": "control_plain",
+        "seed": 20261018,
+        "tokens": 51,
+        "token_sha256": "611e24a6f797ed8371f98839ad0ce46b2dfe3f89841df306d03b0c679022583b",
+        "termination": "eos",
+        "anomaly_reasons": [],
+        "equal": true
+      }
+    ],
+    "raw_sha256": {
+      "graph": "73d9ea9767f56b77a56729fc87346af1c89bbccafe4234b828199bf9923f8b01",
+      "nested": "3b26ab57dd7ff97b19e551c2707fd38a9c9ed3266a76a9283a8713b840e949dc"
+    }
+  },
+  "coexistence": {
+    "pairs": 20,
+    "all_waves_and_asr_equal": true,
+    "asr_actual_engine": "cuda_graph",
+    "checks": [
+      {
+        "case": "short",
+        "schedule": "serial",
+        "repeat": 0,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "repeat": 0,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "repeat": 0,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "repeat": 0,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "repeat": 1,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "repeat": 1,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "repeat": 1,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "repeat": 1,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "repeat": 2,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "repeat": 2,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "repeat": 2,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "repeat": 2,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "repeat": 3,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "repeat": 3,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "repeat": 3,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "repeat": 3,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "repeat": 4,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "repeat": 4,
+        "wave_sha256": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "repeat": 4,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "repeat": 4,
+        "wave_sha256": "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848",
+        "asr_text_sha256": "8993b674fc9739032d5bd7c3a1d8f4365695cba925e9c80b1b0a58c6fe2fb41f",
+        "wave_equal": true,
+        "asr_equal": true
+      }
+    ],
+    "layouts": {
+      "graph": {
+        "raw_sha256": "8f54959b6e837b4a6e50bd4d62445eb405e9c18a941971c08126374b43887323",
+        "memory_after_tts_warmup_before_asr_capture": {
+          "allocated_bytes": 3597325824,
+          "reserved_bytes": 3764387840,
+          "peak_allocated_bytes": 3644170240,
+          "unique_tts_kv_storage_bytes": 588251136,
+          "tts_graph_count": 17
+        },
+        "peak_allocated_bytes_across_measured_calls": 3753044992,
+        "summary": [
+          {
+            "case": "short",
+            "schedule": "serial",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 236.30889999913052,
+              "p95": 242.1180999954231
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 335.7296999893151,
+              "p95": 340.63369999057613
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 667.9754999931902,
+              "p95": 684.6470000164118
+            },
+            "wave_hashes": [
+              "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706"
+            ]
+          },
+          {
+            "case": "short",
+            "schedule": "overlap",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 366.50259999441914,
+              "p95": 390.3543000051286
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 509.7537999972701,
+              "p95": 571.2303000036627
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 856.74679998192,
+              "p95": 942.0116000110283
+            },
+            "wave_hashes": [
+              "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706"
+            ]
+          },
+          {
+            "case": "medium",
+            "schedule": "serial",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 236.4489000174217,
+              "p95": 239.50939998030663
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 423.02750001545064,
+              "p95": 425.2791000180878
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 873.9202000142541,
+              "p95": 877.0402000227477
+            },
+            "wave_hashes": [
+              "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848"
+            ]
+          },
+          {
+            "case": "medium",
+            "schedule": "overlap",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 321.6070999915246,
+              "p95": 324.0202000015415
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 635.4300000239164,
+              "p95": 678.7825999781489
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 1087.2694000136107,
+              "p95": 1166.625199984992
+            },
+            "wave_hashes": [
+              "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848"
+            ]
+          }
+        ],
+        "runtime_flags_unchanged": true
+      },
+      "nested": {
+        "raw_sha256": "e07ad2b450daaad79ef72cc7a090dd11f5bd3ad3300198493cc78c53616a572f",
+        "memory_after_tts_warmup_before_asr_capture": {
+          "allocated_bytes": 3059406336,
+          "reserved_bytes": 3210739712,
+          "peak_allocated_bytes": 3101581312,
+          "unique_tts_kv_storage_bytes": 50331648,
+          "tts_graph_count": 17
+        },
+        "peak_allocated_bytes_across_measured_calls": 3217091584,
+        "summary": [
+          {
+            "case": "short",
+            "schedule": "serial",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 236.30779999075457,
+              "p95": 240.1757999905385
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 334.26889998372644,
+              "p95": 340.111400000751
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 667.8718000184745,
+              "p95": 677.846699982183
+            },
+            "wave_hashes": [
+              "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706"
+            ]
+          },
+          {
+            "case": "short",
+            "schedule": "overlap",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 358.25580000528134,
+              "p95": 371.37750000692904
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 514.1184999956749,
+              "p95": 554.3543999956455
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 851.4415000099689,
+              "p95": 932.7606000006199
+            },
+            "wave_hashes": [
+              "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706"
+            ]
+          },
+          {
+            "case": "medium",
+            "schedule": "serial",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 237.2009000100661,
+              "p95": 241.5614000055939
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 423.4833999944385,
+              "p95": 431.82110000634566
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 875.4039999912493,
+              "p95": 876.8067999917548
+            },
+            "wave_hashes": [
+              "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848"
+            ]
+          },
+          {
+            "case": "medium",
+            "schedule": "overlap",
+            "attention": "audio_fa2_text_sdpa",
+            "engine": "cuda_graph",
+            "asr_ms": {
+              "n": 5,
+              "median": 320.90940000489354,
+              "p95": 325.3723999951035
+            },
+            "tts_first_voiced_chunk_ms": {
+              "n": 5,
+              "median": 630.6176999933086,
+              "p95": 680.3152000065893
+            },
+            "tts_total_ms": {
+              "n": 5,
+              "median": 1082.6823000097647,
+              "p95": 1169.3733000138309
+            },
+            "wave_hashes": [
+              "a2a2147dd76cf721cb20871701fee90b88f8fb67936143f1db1a1d4d437b0848"
+            ]
+          }
+        ],
+        "runtime_flags_unchanged": true
+      }
+    }
+  },
+  "upstream": {
+    "aqua": {
+      "repository": "Lucas1479/Aqua-TTS",
+      "commit": "591fbb5f82052b6965612a3f50dbc201fbc7e261"
+    },
+    "gsv_lite": {
+      "repository": "chinokikiss/GSV-TTS-Lite",
+      "commit": "6c049397142f4c9147a85f86b6ba37546e93a188"
+    }
+  },
+  "limitations": [
+    "One v3hc checkpoint, two Ada GPUs and this local runtime; no multi-user workspace slots.",
+    "Fixed-work synthetic AR evaluates but ignores EOS; those sequences are not speech quality samples.",
+    "No GPU clock lock; paired latency controls ordering drift but is not a universal no-regression guarantee.",
+    "PyTorch allocated/reserved metrics and storage deduplication are not board-wide nvidia-smi memory.",
+    "Single lazy 448 graph increases KV from 21 to 48 MiB; 17-graph production precapture decreases it from 561 to 48 MiB.",
+    "Raw reports remain in ignored local output; this artifact contains hashes and sanitized summary evidence only."
+  ],
+  "small_fa2_control": {
+    "configuration": {
+      "hidden_dim": 32,
+      "heads": 2,
+      "head_dim": 16,
+      "layers": 2,
+      "bucket": 48,
+      "prompt_kv": 16
+    },
+    "observed_untouched_original_vs_original_max_logit_errors": [
+      0.0,
+      0.1005859375,
+      0.003173828125,
+      0.00439453125,
+      0.0029296875,
+      0.0048828125,
+      0.004638671875,
+      0.00439453125,
+      0.001953125,
+      0.00225830078125,
+      0.00244140625,
+      0.0029296875,
+      0.001953125,
+      0.001312255859375,
+      0.001220703125,
+      0.00146484375
+    ],
+    "conclusion": "Occurs without nested layout; low-level cause unresolved. Final CUDA regression uses production head dimension 32 and aligned buckets, fixed shared inputs and per-step logits. No production Flash implementation change retained."
+  },
+  "regression": {
+    "passed": 168,
+    "skipped": 1,
+    "failures": 0,
+    "junit_sha256": "e8acc53c8ba9e99dfbcb4174db02bd9ff3820f8170cf04097b2f2327018b6cf2",
+    "skip_details": [
+      {
+        "test": "test_auto_graph_and_flash_capture_replay_on_nvidia",
+        "reason": "explicit NVIDIA kernel probe"
+      }
+    ],
+    "execution_note": "Outside Windows sandbox: restricted loopback socketpair blocked asyncio event-loop initialization in the sandbox."
+  },
+  "pr_validation": {
+    "branch": "codex/tts-nested-kv-pr",
+    "base_commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+    "isolated_model_less_environment": "uv sync --locked --extra dev; ci profile verified; no alteration of primary voice environment",
+    "gpu_checks": [
+      {
+        "name": "pr-regression.xml",
+        "tests": 173,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "sha256": "ab8110b296e85ccad6e289080f476cab70baf8fa1118ac1daa851d4e658df07a"
+      },
+      {
+        "name": "pr-explicit-gpu.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "e38178db1200750943117c652cfd685eb4ce907c9e46db19782d69caecc70cf6"
+      }
+    ],
+    "reported_model_less_totals": {
+      "passed": 5782,
+      "skipped": 43
+    },
+    "cpu_shards": [
+      {
+        "shard": 0,
+        "summary": "total                                 2180    24  2203  469.89     PASS",
+        "log_sha256": "e31d1644eb83c3bef3bbd25e964e16be2db5360cb0f40aa2c371d687e37c2f99"
+      },
+      {
+        "shard": 1,
+        "summary": "total                                 1836    10  1843  485.99     PASS",
+        "log_sha256": "1dc458821fe0f974b17cf747d2dcd2ff18967bbb04e912fb92c9b1697e8df8e2"
+      },
+      {
+        "shard": 2,
+        "summary": "total                                 1766     9  1769  481.74     PASS",
+        "log_sha256": "d0c40fdc9de0ebe0b88d07681819a5bb668993306641b7cece580064f380bffc"
+      }
+    ],
+    "source_matches_experimentally_tested_workspace": true,
+    "production_flash_unchanged": true,
+    "concurrent_request_cases": "SDPA/FA2, same/different graph key, separate CUDA streams; serial numerical references",
+    "static_checks": [
+      "ruff check .",
+      "tools/architecture/generate_views.py --check",
+      "tools/architecture/generate_readme_overview.py --check"
+    ],
+    "harness_smoke": {
+      "flash": {
+        "raw_sha256": "96ecad479af625542d0735c36d8637cf4d473fe5b92d949671db59aba13287b0",
+        "kv_bytes": 50331648,
+        "graph_count": 17,
+        "cases": [
+          {
+            "case": "short_448",
+            "steps": 64,
+            "graph_replay_steps": [
+              63
+            ]
+          },
+          {
+            "case": "overflow_dynamic",
+            "steps": 224,
+            "graph_replay_steps": [
+              177
+            ]
+          }
+        ],
+        "purpose": "post-lint correctness and memory check; timing is not used for adoption because CPU suite work was concurrent"
+      },
+      "sdpa": {
+        "raw_sha256": "c77dc1360958dba97089b00188fb1d83bcae14a9a3c860bb77947bd541ee7fdb",
+        "kv_bytes": 50331648,
+        "graph_count": 17,
+        "cases": [
+          {
+            "case": "short_448",
+            "steps": 64,
+            "graph_replay_steps": [
+              63
+            ]
+          },
+          {
+            "case": "overflow_dynamic",
+            "steps": 224,
+            "graph_replay_steps": [
+              177
+            ]
+          }
+        ],
+        "purpose": "post-lint correctness and memory check; timing is not used for adoption because CPU suite work was concurrent"
+      }
+    },
+    "public_baseline": {
+      "commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+      "path": "GPT_SoVITS/AR/models/t2s_model.py",
+      "git_blob": "d76d9f664e51bad72143b49886b7bbec7e7fbb44",
+      "matches_archived_original_baseline": true
+    }
+  },
+  "performance_tradeoff_review": {
+    "date": "2026-10-14",
+    "runtime_commit": "115129002e74003b29788ae1fcc8f6595a2ef459",
+    "preexisting_serial_policy_commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+    "serial_policy_sources": [
+      "tts/synthesis_backend.py:select_synthesis",
+      "tts/pipeline.py:speak_stream_graph_serial",
+      "tts/pipeline.py:reconfigure_tts_mode_name"
+    ],
+    "concurrency": "The existing CUDA Graph product pipeline already serializes complete TTS synthesis requests. Nested KV does not introduce another loss of request concurrency on this path. Direct concurrent decoder callers still require workspace ownership.",
+    "measurement_scope": "Reanalysis of saved raw samples plus code inspection; no new performance runs. Raw hashes verified before deriving paired p95.",
+    "unmeasured": [
+      "Isolated cold root allocation/lazy first capture latency",
+      "Long-run first-voiced/ASR p95 and p99",
+      "Independent CPU-lock/CUDA-event timing breakdown",
+      "Cold graph misses or deferred-capture performance comparison"
+    ],
+    "contract_validation": {
+      "command": "python -X utf8 -m pytest tests/test_tts_acceleration.py tests/test_tts_cache_backend_boundary.py tests/test_tts_threading.py -q",
+      "passed": 93,
+      "scope": "Existing mode selection, Graph synthesis lock and voice-thread contracts; runtime implementation unchanged."
+    }
+  },
+  "aggregation_coverage_review": {
+    "date": "2026-10-14",
+    "code_sources": [
+      "tts/utterance_scheduler.py:TTSUtteranceScheduler._can_start_merge",
+      "tts/pipeline.py:get_sovits_params",
+      "local_tts_infer.py:infer_stream",
+      "GPT_SoVITS/AR/models/t2s_model.py:Text2SemanticDecoder._select_bucket",
+      "tools/asr/benchmark_qwen_tts_coexistence.py:run_tts"
+    ],
+    "opening": "First or explicitly streaming fragments bypass grouping; actual bucket still depends on reference and target token lengths.",
+    "later_jobs": "Eligible fragments form a merged job; backend text segmentation can produce multiple AR inputs. Each input retains the existing bucket route.",
+    "coexistence_probe_scope": "Direct infer_stream calls. Both short and medium text use is_first_sentence=True (4 synthesis steps, no text cut, first-sentence speed/duration settings). No utterance scheduler, queue or playback budget in this measurement.",
+    "unmeasured": [
+      "Actual bucket-hit distribution with aggregation enabled",
+      "Post-opening aggregated-job first voiced chunk under the non-first 32-step profile",
+      "Aggregation lookahead/queue delay and continuous-playback gaps"
+    ],
+    "contract_validation": {
+      "command": "python -X utf8 -m pytest tests/test_tts_adaptive_aggregation.py tests/test_deadline_aggregation.py tests/test_tts_cost_model.py -q",
+      "passed": 62
+    }
+  },
+  "post_review_sdpa_precapture": {
+    "reviewed_commit": "d8cd3a945aa2e583c13450ab3b7c0ae536f7d935",
+    "classification": "Capture inference/autograd ownership boundary; prior tests disabled grad at the caller and missed product initialization.",
+    "fix": "_capture_bucket owns torch.no_grad, keeping ordinary writable roots on grad-enabled startup. Removed replay fallback copies that alias their source.",
+    "updated_runtime_source_sha256": "67aa2789a658db13baf36c9b69110c585a05014468254d3878d3550f393caf87",
+    "before_reproduction": {
+      "raw_sha256": "43ce869083d43921c68e65bf6bead409c8bdbf7a5770af2230c33024a3a88ea4",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "purpose": "Functional capture reproduction only; no latency measurements.",
+      "rows": [
+        {
+          "layout": "graph",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "graph",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "bucket",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "bucket",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "nested",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "nested",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "untouched_baseline",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": true,
+          "captured_keys": 17
+        }
+      ]
+    },
+    "real_checkpoint_functional_validation": {
+      "raw_sha256": "b2a2314abc1cc089746f338739b76fee9c0d51fd05432ef9f01aeed2f097ccaa",
+      "purpose": "Real-checkpoint SDPA startup/reuse functional validation only; no timing.",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "checkpoint_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "rows": [
+        {
+          "layout": "graph",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 588251136,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        },
+        {
+          "layout": "bucket",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 135266304,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        },
+        {
+          "layout": "nested",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 50331648,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        }
+      ]
+    },
+    "test_results": {
+      "sdpa-precapture-fix-tests.xml": {
+        "raw_sha256": "38c60cd2697fdca615b142550030d8f4ac7c770ffeccf98055f57ebf046bd27e",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 26
+      },
+      "sdpa-fix-regression.xml": {
+        "raw_sha256": "7f6a0f6ef52c4e1744171063c1804d4f605993abd26a9534bf6c5ba241befcf1",
+        "tests": 183,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 183
+      },
+      "sdpa-fix-cpu.xml": {
+        "raw_sha256": "d67fc5d1fb0666e6ed3af8d25a06832cbeda81dbf47def5bc8b95105c6c6e25b",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 15,
+        "passed": 11
+      }
+    },
+    "cpu_red_before_fix": "All three CPU grad-boundary cases failed before the no_grad decorator; they recorded grad enabled during warmup/capture.",
+    "no_new_performance_measurements": true,
+    "performance_causality_limit": "Paired script always constructs/precaptures original before nested; layout is confounded with allocation order and memory placement. Observed latency increases are not attributed to nested. Reverse construction order has not been run.",
+    "upstream_status": "The Aqua request-ownership draft is public in the Amadeus PR branch; it has not been submitted as an Aqua Issue. This SDPA capture defect is PR-specific.",
+    "model_less_full_suite": {
+      "shards": [
+        {
+          "index": 0,
+          "passed": 2180,
+          "skipped": 24,
+          "runner_collected": 2203,
+          "elapsed_seconds": 486.02,
+          "status": "PASS",
+          "raw_sha256": "7294b8d84fd0d863b2e4a15760bef33deac96b2a17ba903f7e152e9742c0e99d"
+        },
+        {
+          "index": 1,
+          "passed": 1836,
+          "skipped": 10,
+          "runner_collected": 1843,
+          "elapsed_seconds": 497.28,
+          "status": "PASS",
+          "raw_sha256": "f584c28dee2c4c3c90392ca2ed208eb17d41e94bda5e0617d106161faf713a1d"
+        },
+        {
+          "index": 2,
+          "passed": 1766,
+          "skipped": 9,
+          "runner_collected": 1769,
+          "elapsed_seconds": 502.84,
+          "status": "FAIL",
+          "raw_sha256": "3b195cdc13e23050965fd0900c465638e69f963f2f38da82b4c649807481aee1"
+        }
+      ],
+      "runner_passed_total": 5782,
+      "runner_skipped_total": 43,
+      "initial_error": "One test_skill_codex_runtime.py native Skill fixture teardown error: child processes remained after the cleanup deadline. Test bodies passed; no TTS assertion failed.",
+      "isolated_failed_suite_rerun": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "passed": 2,
+        "raw_sha256": "f6336cc901992fe23ef5d5439ca567a56fea7802a7746c8e5dd2fa143ecb5a78"
+      },
+      "interpretation": "Two full shards PASS; third full shard has the recorded teardown error. Failed suite passes in an isolated rerun after other shards finish. Do not describe this initial full run as all shards PASS.",
+      "unrelated_code_changes": false
+    }
+  }
+}

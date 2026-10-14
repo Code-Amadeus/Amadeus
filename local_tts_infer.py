@@ -681,6 +681,10 @@ class TTSInferencer:
             # 无论环境变量是否显式指定，都优先补上这些常用桶，避免真实运行临时捕获。
             preferred_buckets = [448, 512, 768]
             preferred_buckets = [b for b in preferred_buckets if b in available_buckets]
+            if getattr(decoder, "kv_cache_layout", "nested") == "nested":
+                # Prepare the top of the promotion chain even with a short-bucket
+                # preference. Promotion must never capture over live request KV.
+                preferred_buckets.append(max(available_buckets))
 
             # 默认：预热所有可用的 KV Cache 桶，避免在首句推理时临时捕获造成额外延迟
             if not buckets:

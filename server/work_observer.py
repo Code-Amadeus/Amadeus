@@ -1028,6 +1028,16 @@ class WorkObserverCoordinator:
         candidates: list[tuple[int, int, str]] = []
         for index, item in enumerate(relevant):
             keypoint = WorkNarrationGovernor.keypoint_for(item)
+            item_metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            current_phase = str(current.get("phase") or "").lower()
+            if item is not current:
+                # 合并不能把历史计划或等待状态升级为当前授权/终态事实；原记录仍在 recent notes。
+                if current_phase == "checkpoint":
+                    continue
+                if current_phase == "result" and (
+                    keypoint not in {"semantic_progress", "terminal"}
+                ):
+                    continue
             summary = str(item.get("summary") or item.get("title") or "")
             if str(item.get("phase") or "").lower() != "result":
                 summary = self._trim(summary, 180)
@@ -1040,6 +1050,8 @@ class WorkObserverCoordinator:
             ):
                 continue
             if summary:
+                if item is not current and item_metadata.get("semantic_milestone") == "design":
+                    summary = "[Reported design / intent] " + summary
                 candidates.append((self._narration_note_priority(item), index, summary))
         selected: list[tuple[int, int, str]] = []
         seen_summaries: set[str] = set()
