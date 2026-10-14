@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -199,6 +200,14 @@ def semantic_progress_fact(
                 },
                 milestone="validation",
             )
+        if _tool_failed(merged):
+            return _fact(
+                "tool-failed",
+                "A tool operation failed; the requested action is not confirmed complete.",
+                "host.tool_observation",
+                identity={"tool_id": tool_identity(merged), "tool": tool},
+                milestone="diagnostic",
+            )
         if tool in _FILE_TOOLS and ok:
             files = _changed_files(merged)
             if files:
@@ -353,6 +362,22 @@ def _tool_succeeded(payload: dict[str, Any]) -> bool:
         "success",
         "succeeded",
     }
+
+
+def _tool_failed(payload: dict[str, Any]) -> bool:
+    # 失败必须有明确证据，缺少成功状态不等于失败。
+    if payload.get("ok") is False or payload.get("success") is False:
+        return True
+    if str(payload.get("status") or "").strip().lower() in {"failed", "error", "declined"}:
+        return True
+    exit_code = payload.get("exit_code")
+    if isinstance(exit_code, bool) or not isinstance(exit_code, (int, float, str)):
+        return False
+    try:
+        numeric_code = float(exit_code)
+    except (ValueError, OverflowError):
+        return False
+    return math.isfinite(numeric_code) and numeric_code != 0.0
 
 
 def _diagnostic_only(payload: dict[str, Any]) -> bool:

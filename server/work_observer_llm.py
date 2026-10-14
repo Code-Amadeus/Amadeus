@@ -42,6 +42,8 @@ Rules:
 - For semantic progress summaries that explain task content, prefer "speak" with one short sentence. The user should hear meaningful progress, not only the final result.
 - A current_note signal with label "report" is semantic progress when it says the provider found, identified, confirmed, compared, filtered, summarized, or otherwise learned something about the task content.
 - When current_note.progress_context.status_query is true, the person explicitly asked for this WorkItem's status. Answer once in character from the supplied Host lifecycle fields and factual report/direction evidence. Translate or naturally paraphrase Provider prose into display_language; do not merely name its semantic class, stay silent, or expose the field names. status_facts.fact_verified is authoritative: when it is false, attribute the content as a current execution report or direction and never turn it into a Host-verified result.
+- Current Host lifecycle facts take precedence over earlier work notes and spoken updates. terminal_truth.execution_status=cancelled confirms that the attempt stopped; incomplete describes the task outcome, not an unconfirmed cancellation. A cancellation request with in_flight=true alone does not confirm a stop.
+- semantic_milestone=design describes a chosen plan, never actions already completed. A pending permission describes the operation waiting for approval; do not narrate the task goal or earlier plan as an observed result. Preserve each recent note's own modality instead of combining plans and current facts into a completion claim.
 - semantic_verified=false or semantic_evidence=reported means the milestone is Provider-reported evidence, not a Host-observed result. Preserve that modality even when its summary uses confident wording.
 - A directional_progress note is unverified reported intent, not an outcome fact. It may still be worth one short spoken update when it tells the person what is being inspected, built, changed, or deliberately validated. Preserve its modality: say "正在/接下来/会确保" (or the equivalent in display_language), never "已经实现/验证通过" unless a later factual milestone says so.
 - When current_note.progress_context names directional_progress or semantic_progress, always provide one localized display_text candidate even if you choose a non-speaking action. The Host owns cadence and may promote the first concrete update; empty text would make that deterministic policy impossible.
@@ -391,6 +393,15 @@ def _compact_note(note: dict[str, Any]) -> dict[str, Any]:
         if isinstance(metadata.get("outcome_verdict"), dict)
         else {}
     )
+    # 完成度与执行终态是独立事实，不能只保留可选的结果核验字段。
+    terminal_truth = {
+        **terminal_truth,
+        **{
+            key: metadata[key]
+            for key in ("execution_status", "completeness", "attention", "rationale")
+            if metadata.get(key) not in (None, "")
+        },
+    }
     return {
         "provider": str(note.get("provider") or "provider"),
         "run_id": str(note.get("run_id") or ""),
@@ -409,6 +420,9 @@ def _compact_note(note: dict[str, Any]) -> dict[str, Any]:
                 "directional_summary",
                 "directional_source",
                 "semantic_source",
+                "semantic_milestone",
+                "attention",
+                "cancellation",
                 "semantic_verified",
                 "semantic_evidence",
                 "permission_diagnostic",
@@ -425,6 +439,7 @@ def _compact_note(note: dict[str, Any]) -> dict[str, Any]:
         "terminal_truth": {
             key: terminal_truth.get(key)
             for key in (
+                "execution_status",
                 "completeness",
                 "attention",
                 "rationale",
