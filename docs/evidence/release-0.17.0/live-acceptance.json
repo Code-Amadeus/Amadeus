@@ -4,8 +4,8 @@
   "date": "2026-10-14/15 Pacific/Auckland",
   "base_commit": "70267cb0907d8bc3ffdb522a72175f9c30ec169c",
   "review_followup_commit": "2f046293b37848d0c77d8572137e76d70245644d",
-  "release_accepted": false,
-  "publication": "held for maintainer re-review",
+  "release_accepted": true,
+  "publication": "maintainer authorized source Alpha publication after final CI",
   "tested_product_patch_sha256": {
     "server/cooperative_chat_ingress.py": "dc99d2332b0e0a64260d95379f56d85014ced83f618d1c75d08e23af650d0fe8",
     "examples/auip-reactor/simulation.js": "17c3c2f5eaf72f8e9050fa0206187b0482db882c0e81fcaf0d10a81d07a890e3"
@@ -761,5 +761,33 @@
     "Cross-device rendering #201/#103",
     "Consistently successful generated-app and Gomoku journeys"
   ],
-  "privacy": "Only sanitized summaries are committed. Full prompts, paths, local model files, audio, credentials and raw runtime logs are excluded."
+  "privacy": "Only sanitized summaries are committed. Full prompts, paths, local model files, audio, credentials and raw runtime logs are excluded.",
+  "all_live_runs_passed": false,
+  "release_decision": {
+    "date": "2026-10-15 Pacific/Auckland",
+    "authority": "explicit maintainer instruction after re-review",
+    "condition": "final corrected candidate CI must pass before merge and publication",
+    "scope": "v0.17.0-alpha.0 source Alpha; recorded failures and limitations remain unchanged"
+  },
+  "smoke_exit_code_followup": {
+    "boundary": "Real Electron with synthetic Host fixtures; an intentional assertion after window load, invoked via execFileSync.",
+    "before_exit_codes": {
+      "extensionSettings": 0,
+      "frameSourceSettings": 0,
+      "workArtifacts": 0
+    },
+    "after_exit_codes": {
+      "extensionSettings": 1,
+      "frameSourceSettings": 1,
+      "workArtifacts": 1
+    },
+    "normal_checks_passed": {
+      "extensionSettings": 8,
+      "frameSourceSettings": 5,
+      "workArtifacts": 10
+    },
+    "ci_regression": "electron/scripts/test-smoke-exit-codes.cjs",
+    "before_log_sha256": "4c617744b4e7d87af7f9a4b715d18c03b84d60c6125d3fbdbae1a6712c58e96f",
+    "after_log_sha256": "ce74b00b1ad7fee9c64f74dbe9355428a2ea48b0444888019e0ca1100e37c446"
+  }
 }

@@ -1,14 +1,14 @@
 # 0.17.0 Alpha: faster local voice and Work reliability
 
-Candidate tag: `v0.17.0-alpha.0`; Python `0.17.0a0`; Electron `0.17.0-alpha.0`.
-Comparison baseline: `v0.16.1-alpha.0`. This is a source Alpha candidate;
-preparation and passing checks do not themselves publish a release.
+Release tag: `v0.17.0-alpha.0`; Python `0.17.0a0`; Electron `0.17.0-alpha.0`.
+Comparison baseline: `v0.16.1-alpha.0`. This is a source Alpha release. The maintainer approved publication after
+final CI with the known limitations below; this is not a full live-suite pass.
 Desktop installers, model weights, character media, reference voices,
 Cubism Core and credentials remain separately supplied.
 
 Release tracking: [#215](https://github.com/Code-Amadeus/Amadeus/issues/215).
 Detailed [performance comparisons](alpha-0.17.0-performance.md) include measurement
-conditions, source revisions and counterexamples. Real acceptance remains open;
+conditions, source revisions and counterexamples. Some live paths remain unqualified;
 see [live results and failures](alpha-0.17.0-acceptance.md#live-product-acceptance).
 
 ## Changes since 0.16.1
@@ -19,8 +19,11 @@ see [live results and failures](alpha-0.17.0-acceptance.md#live-product-acceptan
   configuration remain authoritative; these are not universal speed guarantees.
 - Rendering selects hybrid video/static frames only with a matching installed
   package and a supported decoder, with static fallback and visible Graphics
-  status (#200). Video packages are not yet supplied through the official asset
-  distribution; current public character packages use static frames in auto mode.
+  status (#200). The separately distributed, color-corrected
+  `2026.10.14-keypoint-return-v3` character pack includes 40 video clips
+  (7,672 frames), available from the [official resource page](https://code-amadeus.github.io/#resources).
+  Matching video packs can use video in auto mode; older static-only packs retain
+  static behavior. These media files are not included in the source ZIP.
   Ambient actions are paced from speech completion (#204).
   See [the frame-source contract](frame_video_candidate.md) for budgets and limits.
 - Work preserves narration evidence and terminal facts, publishes permission
@@ -61,6 +64,15 @@ save the required values as explicit encrypted bindings; see
 
 ## Known limits and release decision
 
+- AUIP automatic Gomoku play produced `b2_candidate_not_available` during a
+  full-round test. The invalid/unavailable choice was not executed. A later run
+  completed gameplay, but consistent full-round success remains unqualified;
+  no silent retry or weaker candidate validation was added.
+- On Windows, deeply nested project/application paths can prevent a generated
+  AUIP app from loading SDK files. The observed 263–266-character paths reported
+  `ERR_FILE_NOT_FOUND` / `managed_sdk_unavailable` without identifying path length.
+  A byte-identical short-path copy passed, and a fresh short-path full control
+  journey completed. Use a shallow workspace path until this limitation is fixed.
 - [#185](https://github.com/Code-Amadeus/Amadeus/issues/185): intermittent Windows
   wallpaper placement can hide the input surface; abnormal-exit recovery still
   needs reporter-specific evidence. This is not fixed by hiding Plugins.
@@ -76,7 +88,9 @@ save the required values as explicit encrypted bindings; see
 - Existing Pi and optional-model dependency advisories remain disclosed; see
   [acceptance](alpha-0.17.0-acceptance.md). This is not a vulnerability-free release.
 
-Publish only after required final-head checks and maintainer review. If Windows
+The maintainer accepted these limitations for the source Alpha, conditional on
+all final-head CI checks passing. This decision does not turn retained failed
+live runs into passing tests. If Windows
 wallpaper reliability or continuous exclusive-MCP desktop work is a release
 promise, resolve #185/#207 before making that promise. Other new memory,
 continuity and broad provider changes are outside this release preparation.
@@ -84,9 +98,9 @@ continuity and broad provider changes are outside this release preparation.
 ## 中文摘要
 
 0.17.0 Alpha 集中发布 0.16.1 以来的本地 ASR/TTS、混合视频供帧、Work 事实与权限同步、
-MCP 环境迁移以及退出/取消修复。视频包尚未随官方资产分发；当前公开角色包在 auto 模式下仍使用静态帧。插件代码保留，主侧栏默认不显示 Plugins；设置中的管理
+MCP 环境迁移以及退出/取消修复。已校色的 `2026.10.14-keypoint-return-v3` 角色包已独立发布，包含 40 组视频、7,672 帧；匹配的视频包可在 auto 模式启用视频，旧静态包继续使用静态帧。源码 ZIP 不包含这些媒体。插件代码保留，主侧栏默认不显示 Plugins；设置中的管理
 能力仍可用于后续集成，不代表插件商店已成熟，也不会禁用已安装扩展。
 
-这仍是源码 Alpha 候选。壁纸输入框间歇失效（#185）、跨 Work 的独占 MCP 生命周期（#207）、
+这仍是源码 Alpha。壁纸输入框间歇失效（#185）、跨 Work 的独占 MCP 生命周期（#207）、
 更多设备与真实打断验收（#201）尚未闭合。#213 纳入一次有界的音频输出重试，但不宣称
-完成 AirPods 实机重连验证或全局音频重置。版本更新不代替最终 CI、复审和明确的发布决定。
+完成 AirPods 实机重连验证或全局音频重置。五子棋自动对局仍有候选不可用导致停止的已知问题；Windows 过深路径可能导致生成应用的 SDK 加载失败，建议使用浅层工作目录。维护者已同意在最终 CI 全绿后带这些明确限制发布，原始失败结果保留。

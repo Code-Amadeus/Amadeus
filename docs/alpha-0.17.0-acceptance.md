@@ -1,4 +1,4 @@
-# 0.17.0 Alpha candidate acceptance
+# 0.17.0 Alpha acceptance
 
 Recorded on 2026-10-14 (Pacific/Auckland). Baseline main:
 `7815fdf36480367a1cf57c27e2121379e12967f4`; previous release:
@@ -95,13 +95,13 @@ model-less acceptance evidence above.
 ## Live product acceptance
 
 Tracking: [#215](https://github.com/Code-Amadeus/Amadeus/issues/215); candidate
-[#214](https://github.com/Code-Amadeus/Amadeus/pull/214). **Not release-accepted.**
+[#214](https://github.com/Code-Amadeus/Amadeus/pull/214). **Maintainer accepted the source Alpha with the recorded limits, subject to final CI.**
 The short-path generated-app run completed all control stages; its retained raw
 report failed only an inapplicable spoken-progress check in no-TTS mode. A separate
 offline re-evaluation with the repaired reviewer passes all 29 control checks.
 The GUI/local-voice reactor repeat passes after repairing the example's stability boundary. The first Gomoku
 round failed; a repeat completed gameplay/history but retained an automated
-wording-oracle failure, manually reviewed below. No merge, tag or public Release is authorized before maintainer re-review.
+wording-oracle failure, manually reviewed below. On 2026-10-15 the maintainer authorized merging and publishing after the final corrections and green CI. This is a release decision with known limitations, not an assertion that every live run passed.
 
 These runs used Windows 11 x64, Python 3.12.10, the shipping Electron GUI where
 specified, DeepSeek `deepseek-v4-flash`, and the real Codex App Server 0.154.0; the second full journey selected Pi
@@ -203,7 +203,7 @@ uncommitted video-distribution work from the development checkout.
 | Finding | Candidate change and verification |
 | --- | --- |
 | Unknown Codex server request kills the SDK reader | Return the SDK's empty result and log only the unsupported method. Two local-peer tests exercise the real 0.154 reader and subsequent request; both fail before the fix. Full adapter suite: 74 passed. No model or real Codex process is used by the transport probe. |
-| Video package distribution overstatement | Release title now emphasizes local voice and Work. The notes explicitly state that official assets do not yet distribute video packages and current public packages use static frames in auto mode. |
+| Video package distribution overstatement | Release title emphasizes local voice and Work. The earlier “not distributed” wording was stale: the corrected 2026.10.14-keypoint-return-v3 pack is now published separately with 40 clips / 7,672 frames. Matching video packs may use auto video; static-only packs keep static behavior. No unfinished asset-builder changes were imported. |
 | Hidden sidebar breaks extension settings smoke | Navigate through General → Manage plugins; remove Sidebar from the Settings fixture. Real Electron smoke: 8/8; now wired into Windows Electron CI. |
 | Extension initialize reports old Host version | Read `importlib.metadata.version("amadeus")`; retain the separate Host API compatibility version. Extension/resource tests: 46 passed, including the initialize assertion. |
 | README claims wallpaper starts by default | Both READMEs now document control-panel/window default and explicit wallpaper opt-in, with #185's limits. |
@@ -215,6 +215,29 @@ Final live-driver, sample and release-tool verification: 110 passed, including
 the six new voice-mode/sample cases. The updated frontend still passes 523 tests
 and production build. GPU benchmark
 results remain historical measurements, not results fabricated from these tests.
+
+## Final re-review corrections (2026-10-15)
+
+The extension Settings smoke was genuinely passing, but destroying its last
+window before asynchronous server cleanup let Electron exit with code 0 even
+after a failed assertion. The same defect existed in the frame-source Settings
+and Work artifacts smokes. Each now handles `window-all-closed` so its existing
+explicit exit path owns the final code.
+
+`node scripts/test-smoke-exit-codes.cjs` injects an intentional assertion after
+the real window loads, then uses the same `execFileSync` invocation as CI. All
+three scripts returned 0 before the repair and 1 afterward; the test rejects
+timeouts or setup failures that never reached the injected assertion. This
+failure-path regression is now part of Windows Electron CI. Normal runs also
+passed: extension Settings 8/8, frame-source Settings 5/5, Work artifacts 10/10.
+Temporary probe scripts are removed; diagnostics are separate from normal runs.
+
+The release notes now explicitly retain the Windows long-path limitation and
+the unresolved first Gomoku automatic-choice failure. The published video-pack
+status is corrected here, in release notes and in the performance table. The
+asset publisher's verification record reports successful unmodified-mainline
+verification/clean installation at `7815fdf`; this follow-up did not rerun GPU
+benchmarks or include the uncommitted asset-builder enhancements.
 
 ## Sidebar comparison
 

@@ -63,6 +63,9 @@ jobs:
         working-directory: electron
         run: node -e "require('node:child_process').execFileSync(require('electron'), ['tests/extensionSettings.smoke.mjs'], {stdio:'inherit',windowsHide:true,timeout:120000})"
 
+      - name: Verify smoke assertion failures return nonzero
+        run: node scripts/test-smoke-exit-codes.cjs
+
       - name: Test offline startup settings GUI
         shell: pwsh
         run: |

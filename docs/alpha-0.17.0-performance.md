@@ -15,7 +15,7 @@ conversation speedup.
 | TTS semantic-history/EOS work (#205) | Fixed-work AR throughput **+1.2% to +6.0%**, depending on GPU and length | 160 measured pairs, all token/RNG matches; not an end-to-end first-sound claim. |
 | TTS shared nested KV (#206) | Unique KV storage **561 → 48 MiB**, saving **513 MiB** | Measured 24-layer FP16 checkpoint and default multi-graph configuration; not total runtime/VRAM. |
 | TTS graph reuse (#206) | Default graph count **17 → 6**; explicit common four-bucket capture **17 → 4** | Snapshot preparation timings and finite AR comparisons below, with implementation-revision boundaries. |
-| Hybrid frame supply (#200) | Matched 600 s CPU **80.99% → 47.71%** of one core (**−41.1%**) | Same code, route, 384 MiB frame budget and GC settings; no claim of an order-of-magnitude RAM/VRAM reduction. |
+| Hybrid frame supply (#200) | Matched 600 s CPU **80.99% → 47.71%** of one core (**−41.1%**) | Same code, route, 384 MiB frame budget and GC settings; no claim of an order-of-magnitude RAM/VRAM reduction. Requires matching video assets: the corrected 2026.10.14 pack is now separately [published](https://code-amadeus.github.io/#resources); this row remains a historical benchmark, not a new benchmark of that distributed pack. |
 
 ## ASR: final single-384 graph comparison
 
