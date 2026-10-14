@@ -6,6 +6,7 @@ import sys
 
 import numpy as np
 import pytest
+import psutil
 
 from server import window_capture
 
@@ -119,7 +120,7 @@ def test_timed_out_capture_cleans_up_its_worker_tree(monkeypatch):
     process.communicate.side_effect = [window_capture.subprocess.TimeoutExpired("capture", 8), (b"", b"")]
     monkeypatch.setattr(window_capture.subprocess, "Popen", Mock(return_value=process))
     child = Mock()
-    monkeypatch.setattr("psutil.Process", Mock(return_value=Mock(children=Mock(return_value=[child]))))
+    monkeypatch.setattr(psutil, "Process", Mock(return_value=Mock(children=Mock(return_value=[child]))))
     with pytest.raises(RuntimeError, match="timed out"):
         window_capture.capture_window_frame(123)
     child.kill.assert_called_once()

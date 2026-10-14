@@ -113,8 +113,8 @@ export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Pr
       onPointerCancel={handlePointerUp}
       style={{
         position: 'relative',
-        width: imageSize ? `${400 * imageSize.width / imageSize.height}px` : '100%',
-        maxWidth: '100%',
+        width: '100%',
+        maxWidth: imageSize ? `${400 * imageSize.width / imageSize.height}px` : '100%',
         minWidth: 0,
         marginInline: 'auto',
         overflow: 'hidden',
