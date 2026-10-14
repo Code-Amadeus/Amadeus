@@ -59,6 +59,7 @@ def test_new_capture_defers_before_warmup_when_asr_work_is_active():
 
 
 def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
+    from contextlib import nullcontext
     from types import SimpleNamespace
     decoder = Text2SemanticDecoder.__new__(Text2SemanticDecoder)
     decoder.cuda_graph_enabled = True
@@ -66,6 +67,7 @@ def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
     decoder.bucket_graphs = {}
     decoder.parameters = lambda: iter([SimpleNamespace(device="cuda:0")])
     decoder._get_bucket_lock = lambda _key: threading.Lock()
+    decoder._use_graph_workspace = lambda _key, _device: nullcontext()
     decoder._capture_bucket = lambda *_args: pytest.fail("Deferred capture reached GPU work")
     entered, release = threading.Event(), threading.Event()
 

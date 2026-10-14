@@ -3,6 +3,7 @@
 import math
 import os
 import threading
+from contextlib import contextmanager
 from typing import List, Optional, Tuple
 import torch
 from tqdm import tqdm
@@ -25,11 +26,12 @@ from AR.modules.transformer import TransformerEncoderLayer
 from torch import nn
 from torch.nn import functional as F
 from torchmetrics.classification import MulticlassAccuracy
-from core.cuda_execution import speech_cuda
+from core.cuda_execution import cuda_work, speech_cuda
+from config.tts_acceleration import t2s_kv_cache_layout
 
 # graph_initial_len 向上对齐到此步长，减少需要 capture 的不同 graph 数量。
 # kv_cache_len=337/345/351 均映射到 352，共享同一张 graph，消除每句重复 capture 的开销。
-# 最大引入 (stride-1)=31 个零 KV gap，对于 330+ token 的 prompt 影响可忽略。
+# 对齐只决定 Graph key；KV 始终从真实 prompt 末尾连续写入。
 _GRAPH_INITIAL_LEN_STRIDE = 32
 
 
@@ -529,24 +531,25 @@ class Text2SemanticDecoder(nn.Module):
         # retain it only as an opt-in diagnostic for graph failures.
         self.cuda_graph_replay_sync = _env_flag_enabled("CUDA_GRAPH_REPLAY_SYNC", False)
         
-        # 🔒 CUDA Graph 并发锁
-        # CUDA Graph 不支持多线程并发 replay，需要加锁保护
-        import threading
-        self.cuda_graph_lock = threading.Lock()
+        # The storage owner is also the exclusivity boundary for an entire AR
+        # request. Keep graph/bucket layouts for measured comparisons and opt-out.
+        self.kv_cache_layout = t2s_kv_cache_layout()
+        self.cuda_graph_lock = threading.RLock()
         self._bucket_locks = {}
         self._bucket_locks_guard = threading.Lock()
+        self._kv_completion_events = {}
+        self._graph_kv_roots = {}
         
         # 定义桶大小：覆盖常见的文本+prompt长度
         # 448 桶专门覆盖 initial_len 330-415 的场景（原先命中 512），
         # attention 计算量从 512 降到 448，减少约 12.5%。
         self.kv_cache_buckets = [128, 256, 448, 512, 768, 1024] if self.use_static_kv_cache else []
         
-        # 每个桶维护独立的 CUDA Graph 和静态缓冲区
+        # Graph shapes and input/output addresses remain independent. KV views
+        # may share a stable root; no graph pool or attention shape is enlarged.
         self.bucket_graphs = {}  # {bucket_size: cuda_graph}
         self.bucket_static_inputs = {}  # {bucket_size: {input_tensors}}
         self.bucket_static_outputs = {}  # {bucket_size: {output_tensors}}
-        self.bucket_k_cache_buffers = {}  # {bucket_size: [k_cache per layer]}
-        self.bucket_v_cache_buffers = {}  # {bucket_size: [v_cache per layer]}
         
         # 预热参数
         self.cuda_graph_warmup_steps = 3
@@ -686,19 +689,62 @@ class Text2SemanticDecoder(nn.Module):
         
         return padded_k_cache, padded_v_cache, current_len
     
+    def _kv_owner_key(self, graph_key):
+        if self.kv_cache_layout == "nested":
+            return None
+        if self.kv_cache_layout == "bucket" and isinstance(graph_key, tuple):
+            return graph_key[0]
+        return graph_key
+
     def _get_bucket_lock(self, bucket_key):
-        """
-        获取指定桶/graph_key 的锁，未启用桶时退回到全局锁。
-        bucket_key 可以是 int（桶大小）或 (bucket_size, initial_len) tuple。
-        """
-        if bucket_key is None:
+        owner_key = self._kv_owner_key(bucket_key)
+        if owner_key is None:
             return self.cuda_graph_lock
         with self._bucket_locks_guard:
-            lock = self._bucket_locks.get(bucket_key)
+            lock = self._bucket_locks.get(owner_key)
             if lock is None:
-                lock = threading.Lock()
-                self._bucket_locks[bucket_key] = lock
+                lock = threading.RLock()
+                self._bucket_locks[owner_key] = lock
         return lock
+
+    @contextmanager
+    def _use_graph_workspace(self, graph_key, device):
+        """Protect reset, capture, replay, sampling and fallback as one request.
+
+        A CPU lock alone cannot order queued GPU work on different streams.
+        Transfer the last owner's CUDA event to the next stream, without a
+        device-wide synchronization or excluding ordinary ASR inference.
+        """
+        owner_key = self._kv_owner_key(graph_key)
+        with self._get_bucket_lock(graph_key):
+            stream = torch.cuda.current_stream(device) if torch.device(device).type == "cuda" else None
+            previous = self._kv_completion_events.get(owner_key)
+            if stream is not None and previous is not None:
+                stream.wait_event(previous)
+            try:
+                yield
+            finally:
+                if stream is not None:
+                    completed = torch.cuda.Event()
+                    completed.record(stream)
+                    self._kv_completion_events[owner_key] = completed
+
+    def _graph_kv_views(self, graph_key, device, dtype):
+        """Allocate once per storage owner; never replace a captured address."""
+        bucket_size = graph_key[0]
+        owner_key = self._kv_owner_key(graph_key)
+        roots = self._graph_kv_roots.get(owner_key)
+        if roots is None:
+            capacity = max(self.kv_cache_buckets) if self.kv_cache_layout == "nested" else bucket_size
+            shape = (self.num_layers, 1, capacity, self.model_dim)
+            roots = (torch.zeros(shape, device=device, dtype=dtype),
+                     torch.zeros(shape, device=device, dtype=dtype))
+            self._graph_kv_roots[owner_key] = roots
+        k_root, v_root = roots
+        if k_root.device != torch.device(device) or k_root.dtype != dtype or bucket_size > k_root.shape[2]:
+            raise RuntimeError("Captured KV workspace requires a new decoder after device/dtype/capacity changes")
+        return ([layer[:, :bucket_size, :] for layer in k_root.unbind(0)],
+                [layer[:, :bucket_size, :] for layer in v_root.unbind(0)])
 
     def _warmup_and_capture_bucket(self, bucket_size, initial_len, device):
         # Ordinary ASR/TTS calls keep running concurrently. A new capture needs
@@ -712,8 +758,8 @@ class Text2SemanticDecoder(nn.Module):
     def _capture_bucket(self, bucket_size, initial_len, device):
         """
         为指定的桶大小和 initial_len 预热并捕获 CUDA Graph。
-        initial_len 是图捕获时模拟的 prompt KV 长度（写入位置固定于此），
-        应由调用方按 64 对齐动态传入，而不是硬编码为 bucket_size//2。
+        initial_len 是捕获时模拟的 prompt 长度；replay 的写入位置来自
+        持久化 pos_idx 的当前内容。调用方按 _GRAPH_INITIAL_LEN_STRIDE 对齐。
         """
         import time
         
@@ -730,11 +776,10 @@ class Text2SemanticDecoder(nn.Module):
             model_dtype = next(self.ar_predict_layer.parameters()).dtype
             print(f"[CUDA Graph] model dtype: {model_dtype}")
             
-            # 🚀 关键修复：使用固定缓冲区的 KV cache（不会 torch.cat）
-            k_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
-                      for _ in range(self.num_layers)]
-            v_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
-                      for _ in range(self.num_layers)]
+            k_cache, v_cache = self._graph_kv_views(graph_key, device, model_dtype)
+            for k, v in zip(k_cache, v_cache):
+                k.zero_()
+                v.zero_()
             
             # 模拟 prompt 后的初始状态
             for i in range(self.num_layers):
@@ -771,11 +816,9 @@ class Text2SemanticDecoder(nn.Module):
             capture_start = time.perf_counter()
             
             # 重置为固定状态（prompt 区常量，其余零）
-            k_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
-                      for _ in range(self.num_layers)]
-            v_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
-                      for _ in range(self.num_layers)]
             for i in range(self.num_layers):
+                k_cache[i].zero_()
+                v_cache[i].zero_()
                 k_cache[i][:, :initial_len, :].fill_(0.01)
                 v_cache[i][:, :initial_len, :].fill_(0.02)
             key_valid_mask = torch.zeros(
@@ -834,6 +877,7 @@ class Text2SemanticDecoder(nn.Module):
             traceback.print_exc()
             return False
 
+    @cuda_work
     def precapture_cuda_graph(self, buckets: Optional[List[int]] = None,
                               kv_len_range: Optional[tuple] = None):
         """
@@ -889,8 +933,7 @@ class Text2SemanticDecoder(nn.Module):
             bucket_ok = True
             for initial_len in initial_lens:
                 graph_key = (bucket, initial_len)
-                lock = self._get_bucket_lock(graph_key)
-                with lock:
+                with self._use_graph_workspace(graph_key, device):
                     if graph_key in self.bucket_graphs:
                         print(f"[CUDA Graph] key={graph_key} already exists; reusing")
                         continue
@@ -1357,7 +1400,30 @@ class Text2SemanticDecoder(nn.Module):
         
         return y_list, idx_list
     
+    @cuda_work
     def infer_panel_naive(
+        self, x, x_lens, prompts, bert_feature,
+        top_k: int = -100, top_p: int = 100, early_stop_num: int = -1,
+        temperature: float = 1.0, repetition_penalty: float = 1.35, **kwargs
+    ):
+        graph_enabled = kwargs.get("enable_cuda_graph", self.cuda_graph_enabled)
+        static_enabled = kwargs.get("enable_static_kv", self.use_static_kv_cache)
+        prompt_len = 0 if prompts is None else prompts.shape[1]
+        bucket = self._select_bucket(x.shape[1] + prompt_len) if (
+            graph_enabled and static_enabled and self.use_static_kv_cache
+            and x.is_cuda and x.shape[0] == 1
+        ) else None
+        args = (x, x_lens, prompts, bert_feature, top_k, top_p, early_stop_num,
+                temperature, repetition_penalty)
+        if bucket is None:
+            return self._infer_panel_naive(*args, **kwargs)
+        length = x.shape[1] + prompt_len
+        aligned = ((length + _GRAPH_INITIAL_LEN_STRIDE - 1)
+                   // _GRAPH_INITIAL_LEN_STRIDE * _GRAPH_INITIAL_LEN_STRIDE)
+        with self._use_graph_workspace((bucket, aligned), x.device):
+            return self._infer_panel_naive(*args, **kwargs)
+
+    def _infer_panel_naive(
         self,
         x:torch.LongTensor,  #####全部文本token
         x_lens:torch.LongTensor,
@@ -1425,7 +1491,10 @@ class Text2SemanticDecoder(nn.Module):
             enable_cuda_graph = False
         if not enable_static_kv:
             enable_cuda_graph = False
-        graph_run_enabled = enable_cuda_graph and bool(self.kv_cache_buckets)
+        # Captured graphs own batch-one CUDA buffers. Other requests retain
+        # private static/dynamic KV rather than broadcasting into those views.
+        graph_run_enabled = (enable_cuda_graph and bool(self.kv_cache_buckets)
+                             and x.is_cuda and bsz == 1)
 
         # 🚀 KV Cache 策略选择和初始化
         current_bucket = None
@@ -1482,38 +1551,6 @@ class Text2SemanticDecoder(nn.Module):
                         device = k_cache[0].device
                         dtype = k_cache[0].dtype
                         
-                        # 预分配固定缓冲区
-                        k_cache_static = [
-                            torch.zeros(batch_size, current_bucket, hidden_dim, dtype=dtype, device=device)
-                            for _ in range(len(k_cache))
-                        ]
-                        v_cache_static = [
-                            torch.zeros(batch_size, current_bucket, hidden_dim, dtype=dtype, device=device)
-                            for _ in range(len(v_cache))
-                        ]
-                        
-                        # 复制当前内容到缓冲区
-                        for i in range(len(k_cache)):
-                            k_cache_static[i][:, :kv_cache_len, :] = k_cache[i]
-                            v_cache_static[i][:, :kv_cache_len, :] = v_cache[i]
-                        
-                        # 替换为静态缓冲区
-                        k_cache = k_cache_static
-                        v_cache = v_cache_static
-                        current_lens = [kv_cache_len] * len(k_cache)
-                        key_valid_mask = torch.zeros(
-                            batch_size, current_bucket, dtype=torch.bool, device=device
-                        )
-                        key_valid_mask[:, :kv_cache_len] = True
-                        
-                        # 预分配 static path 用的 pos_idx（持久化，每步 fill_，避免重复分配）
-                        pos_idx_static = torch.full(
-                            (batch_size, 1, hidden_dim), kv_cache_len,
-                            dtype=torch.long, device=device
-                        )
-                        
-                        print(f"[T2S] fixed buffer initialized: bucket={current_bucket} current_len={kv_cache_len}")
-                        
                         # graph_initial_len 只用于将相近 prompt 复用到同一张 Graph。
                         # 当前句仍从真实 kv_cache_len 开始连续写入，绝不能把对齐 gap
                         # 当成有效 KV；Graph 内的 pos_idx/mask 都是持久化张量，内容可变。
@@ -1521,50 +1558,43 @@ class Text2SemanticDecoder(nn.Module):
                         graph_prompt_len = kv_cache_len
                         graph_key = None
                         if graph_run_enabled:
-                            if kv_cache_len >= current_bucket - 1:
-                                # prompt 已经占满 bucket，没有写入空间
-                                print(f"[T2S] prompt_len={kv_cache_len} >= bucket={current_bucket}; fallback to static path for this sentence")
-                                graph_run_enabled = False
-                            else:
-                                # 向上对齐到 stride 倍数，减少不同 graph key 数量
-                                _aligned = ((kv_cache_len + _GRAPH_INITIAL_LEN_STRIDE - 1)
-                                            // _GRAPH_INITIAL_LEN_STRIDE * _GRAPH_INITIAL_LEN_STRIDE)
-                                if _aligned >= current_bucket:
-                                    # 对齐后超出 bucket，退回静态模式
-                                    print(f"[T2S] aligned initial_len={_aligned} >= bucket={current_bucket}; fallback to static path for this sentence")
-                                    graph_run_enabled = False
-                                else:
-                                    graph_initial_len = _aligned
-                                    graph_key = (current_bucket, graph_initial_len)
-                                    if graph_key not in self.bucket_graphs:
-                                        bucket_lock = self._get_bucket_lock(graph_key)
-                                        # 🔒 捕获时加锁，避免多线程同时捕获同一 key
-                                        with bucket_lock:
-                                            if graph_key not in self.bucket_graphs:
-                                                success = self._warmup_and_capture_bucket(current_bucket, graph_initial_len, x.device)
-                                                if success:
-                                                    bucket_captured = True
-                                                    print(f"[CUDA Graph] captured key={graph_key}")
-                                            else:
-                                                bucket_captured = True
-                                                print(f"[CUDA Graph] key={graph_key} captured by another thread; reusing")
-                                    else:
-                                        # 本 key 已在之前的句子中捕获，直接复用
-                                        bucket_captured = True
+                            # _select_bucket already guarantees aligned + reserve < bucket.
+                            graph_initial_len = ((kv_cache_len + _GRAPH_INITIAL_LEN_STRIDE - 1)
+                                                 // _GRAPH_INITIAL_LEN_STRIDE * _GRAPH_INITIAL_LEN_STRIDE)
+                            graph_key = (current_bucket, graph_initial_len)
+                            if graph_key not in self.bucket_graphs:
+                                self._warmup_and_capture_bucket(current_bucket, graph_initial_len, device)
+                            bucket_captured = graph_key in self.bucket_graphs
 
-                                    # 新句子开始：只把真实 prompt 标为有效，所有 gap/未来位
-                                    # 都保持无效；第一步从真实 prompt 末尾连续写入。
-                                    if bucket_captured and graph_key in self.bucket_graphs:
-                                        static_in = self.bucket_static_inputs[graph_key]
-                                        for _i in range(len(static_in['k_cache'])):
-                                            # 只复制 prompt 部分，gap+生成区统一清零
-                                            static_in['k_cache'][_i][:, :kv_cache_len, :].copy_(k_cache[_i][:, :kv_cache_len, :])
-                                            static_in['v_cache'][_i][:, :kv_cache_len, :].copy_(v_cache[_i][:, :kv_cache_len, :])
-                                            static_in['k_cache'][_i][:, kv_cache_len:, :].zero_()
-                                            static_in['v_cache'][_i][:, kv_cache_len:, :].zero_()
-                                        static_in['key_valid_mask'].zero_()
-                                        static_in['key_valid_mask'][:, :kv_cache_len] = True
-                                        static_in['pos_idx'].fill_(kv_cache_len)
+                        if bucket_captured:
+                            static_in = self.bucket_static_inputs[graph_key]
+                            k_cache_static = static_in['k_cache']
+                            v_cache_static = static_in['v_cache']
+                            key_valid_mask = static_in['key_valid_mask']
+                            pos_idx_static = static_in['pos_idx']
+                        else:
+                            # Graph-disabled/deferred capture uses request-private KV.
+                            k_cache_static = [torch.zeros(batch_size, current_bucket, hidden_dim,
+                                                         dtype=dtype, device=device) for _ in k_cache]
+                            v_cache_static = [torch.zeros_like(item) for item in k_cache_static]
+                            key_valid_mask = torch.zeros(batch_size, current_bucket, dtype=torch.bool, device=device)
+                            pos_idx_static = torch.empty(batch_size, 1, hidden_dim, dtype=torch.long, device=device)
+
+                        # Copy the real prompt directly into the active workspace.
+                        # Sampling and any full-context fallback keep this request's lease.
+                        for k_target, v_target, k_prompt, v_prompt in zip(
+                            k_cache_static, v_cache_static, k_cache, v_cache
+                        ):
+                            k_target[:, :kv_cache_len].copy_(k_prompt)
+                            v_target[:, :kv_cache_len].copy_(v_prompt)
+                            k_target[:, kv_cache_len:].zero_()
+                            v_target[:, kv_cache_len:].zero_()
+                        k_cache, v_cache = k_cache_static, v_cache_static
+                        current_lens = [kv_cache_len] * len(k_cache)
+                        key_valid_mask.zero_()
+                        key_valid_mask[:, :kv_cache_len] = True
+                        pos_idx_static.fill_(kv_cache_len)
+                        print(f"[T2S] fixed buffer initialized: bucket={current_bucket} current_len={kv_cache_len}")
                     else:
                         print(f"[T2S] kv_cache_len={kv_cache_len} exceeds all buckets; using normal path")
                         static_mode_active = False

@@ -525,7 +525,15 @@ Without it, the existing PyTorch SDPA path remains active. The application does
 not install extensions automatically; see [optional extension installation and
 verification](docs/torch27_candidates.md#flashattention-wheel-inventory).
 
-Both settings accept `0` (off), `1` (request on) and `auto`. Explicit values in
+T2S CUDA Graphs keep their bucket shapes while sharing one maximum-capacity KV
+workspace by default (`TTS_KV_CACHE_LAYOUT=nested`). The workspace is exclusive
+for an entire AR request; ordinary ASR inference can still run concurrently.
+`bucket` shares within a bucket and `graph` keeps independent KV per graph for
+comparisons. Set the layout before loading the model. See the [nested KV
+evaluation](docs/tts_nested_kv_evaluation_2026-10-14.md) for measured memory and
+latency results.
+
+The graph and FlashAttention settings accept `0` (off), `1` (request on) and `auto`. Explicit values in
 existing `.env` or desktop settings keep precedence; choose **Automatic** or
 replace an old `0` to opt in. Manual requests still require compatible runtime
 capabilities. Change the desktop mode while speech is idle; restart the backend

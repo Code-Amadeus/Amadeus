@@ -4,6 +4,13 @@ from __future__ import annotations
 import os
 
 
+def t2s_kv_cache_layout() -> str:
+    layout = os.environ.get("TTS_KV_CACHE_LAYOUT", "nested").strip().lower()
+    if layout not in {"graph", "bucket", "nested"}:
+        raise ValueError("TTS_KV_CACHE_LAYOUT must be graph, bucket or nested")
+    return layout
+
+
 def acceleration_mode(key: str, *, legacy_key: str = "") -> str:
     raw = os.environ.get(key, os.environ.get(legacy_key, "auto") if legacy_key else "auto").strip().lower()
     if raw in {"", "auto"}:
