@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 
 const electronRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const output = path.join(electronRoot, '../output/diagnostics/work-artifacts-ui')
+// The smoke owns its exit code after asynchronous cleanup.
+app.on('window-all-closed', () => {})
 app.setPath('userData', path.join(output, 'electron-profile'))
 async function run() {
 await fs.mkdir(output, { recursive: true })

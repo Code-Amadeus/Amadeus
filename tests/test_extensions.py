@@ -143,6 +143,8 @@ def fast_limits(monkeypatch):
 def test_sdk_failed_initialization_runs_shutdown_once(record):
     client = RunnerClient(record)
     params = client._initialize()
+    from importlib.metadata import version
+    assert params["host"]["version"] == version("amadeus")
     params["config"] = {"mode": "initialization_failure"}
     reply = subprocess.run([record["python_path"], "-I", "-m", "amadeus_extension.runner",
         "--entry", record["manifest"]["runtime"]["entry"]],

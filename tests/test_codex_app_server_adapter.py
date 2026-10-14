@@ -2675,6 +2675,45 @@ def test_unknown_sdk_requests_are_not_sandbox_permissions(method):
     with pytest.raises(ValueError, match="Unsupported Codex server request"):
         CodexAppServerAdapter._native_approval_response(method, {}, allow=True)
 
+
+@pytest.mark.parametrize("method", ["item/tool/requestUserInput", "unknown/request"])
+def test_unknown_server_request_keeps_real_sdk_reader_alive(tmp_path, caplog, method):
+    from concurrent.futures import ThreadPoolExecutor
+    from openai_codex.client import CodexClient
+
+    peer = tmp_path / "peer.py"
+    peer.write_text(
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    request = json.loads(line)\n"
+        "    if request['method'] == 'probe/unknown':\n"
+        "        print(json.dumps({'id':'server-request', 'method':sys.argv[1], 'params':{'private':'synthetic-secret-do-not-log'}}), flush=True)\n"
+        "        response = json.loads(sys.stdin.readline())\n"
+        "        result = {'server_result':response['result']}\n"
+        "    else:\n"
+        "        result = {'echo':request['params']['value']}\n"
+        "    print(json.dumps({'id':request['id'], 'result':result}), flush=True)\n",
+        encoding="utf-8",
+    )
+    adapter = CodexAppServerAdapter()
+    client = CodexClient(CodexConfig(launch_args_override=[sys.executable, "-u", str(peer), method]),
+        approval_handler=adapter._handle_sdk_approval)
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        client.start()
+        result = pool.submit(client._request_raw, "probe/unknown", {}).result(timeout=3)
+        assert result == {"server_result": {}}
+        assert client._reader_thread.is_alive()
+        assert pool.submit(client._request_raw, "probe/echo", {"value":"still-alive"}).result(timeout=3) == {"echo":"still-alive"}
+        assert not adapter._pending_approvals
+        assert method in caplog.text
+        assert "synthetic-secret-do-not-log" not in caplog.text
+    finally:
+        client.close()
+        client._router.fail_all(TransportClosedError("test peer closed"))
+        pool.shutdown(wait=True)
+
+
 @pytest.mark.parametrize("mode", ["form", "openai/form"])
 def test_mcp_empty_confirmation_allows_descriptive_schema_metadata(mode):
     params = {"serverName": "example", "mode": mode, "message": "Allow this request?", "requestedSchema": {"type": "object", "properties": {}, "required": [], "title": "Confirmation", "description": "No fields", "additionalProperties": False}}

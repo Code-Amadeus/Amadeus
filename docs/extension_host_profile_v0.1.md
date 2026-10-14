@@ -64,13 +64,13 @@ The manager shows package identity, author-declared license (or Not declared),
 full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling
 a package. Updating an enabled package requires fresh confirmation.
-Use **Plugins** in the main navigation for the complete lifecycle. Settings →
-Extensions renders the same manager and records. Voice and Appearance settings
+Use **Settings → General → Manage plugins** for the complete lifecycle.
+Settings → Extensions renders the same manager and records. Voice and Appearance settings
 link to it; selection remains in the relevant settings page. Update confirmation
 highlights new or changed contributions, commands and OS access.
 
 These baseline screenshots use synthetic packages and the production manager
-components (main-navigation access was added in the theme pilot):
+components; the 0.17.0 sidebar entry is hidden while integration remains provisional:
 
 ![Installed packages, disclosures and saved/runtime state](images/extensions/packages.png)
 

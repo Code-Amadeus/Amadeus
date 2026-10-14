@@ -164,6 +164,11 @@ const cases = {
     at(250);
     scenario.tick(0.01);
     assert.equal(scenario.active, true, "background narration restarts the same one-minute wait");
+    scenario.setActivity("work");
+    at(260);
+    scenario.setActivity(null);
+    scenario.tick(0.01);
+    assert.equal(scenario.active, true, "silent Work completion preserves elapsed time since speech");
   },
   static_cadence() {
     const { scenario, math } = scenarioRuntime();

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const output = path.join(root, 'output/diagnostics/frame-source-settings-smoke');
+// The smoke owns its exit code after asynchronous cleanup.
+app.on('window-all-closed', () => {})
 app.setPath('userData', path.join(output, 'profile'));
 async function main() {
   const { createServer } = await import('vite');

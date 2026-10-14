@@ -2,7 +2,7 @@
 
 These source packages exercise TTS, MCP, Agent Skill and data-only theme contribution owners. They are not
 published packages or a claim of a stable SDK. Build local wheels, install them
-from **Plugins** (also in Settings → Extensions), then configure and select/enable
+from **Settings → General → Manage plugins** (also in Settings → Extensions), then configure and select/enable
 them. Pure theme packages apply immediately. Packages with backend contributions
 apply after backend restart; their frontend closes immediately on disable/removal.
 The versioned [Host profile](../../docs/extension_host_profile_v0.1.md) defines the

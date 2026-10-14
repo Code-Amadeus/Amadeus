@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client'
 import SettingsPage from '../../src/renderer/components/SettingsPage'
 import { I18nProvider } from '../../src/renderer/i18n'
 import { ThemeProvider } from '../../src/renderer/theme'
-import Sidebar from '../../src/renderer/components/Sidebar'
 import { validateThemePalette } from '../../src/shared/extensionTheme'
 import themeManifest from '../../../examples/extensions/desktop-theme/src/amadeus_example_theme/amadeus-extension.json'
 import type { ExtensionSummary, ExtensionUpdate } from '../../src/shared/extensions'
@@ -146,11 +145,9 @@ document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
 function FixtureApp() {
-  const withSidebar = query.get('presentation') === 'plugins'
-  const [page, setPage] = React.useState<'plugins' | 'settings'>(withSidebar ? 'plugins' : 'settings')
+  const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'plugins' ? 'plugins' : 'settings')
   const openSettings = (section: string) => { localStorage.setItem('amadeus.settings.section', section); setPage('settings') }
   return <ThemeProvider><I18nProvider>
-    {withSidebar && <Sidebar page={page} onNavigate={next => { if (next === 'plugins' || next === 'settings') setPage(next) }} renderActive={false} wallpaperActive={false} onToggleRender={() => {}} onToggleWallpaper={() => {}} />}
     <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
   </I18nProvider></ThemeProvider>
 }

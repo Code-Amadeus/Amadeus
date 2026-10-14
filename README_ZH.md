@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
   <a href="#系统架构"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="系统架构"/></a>
-  <a href="./docs/alpha-0.16.1.md"><img src="https://img.shields.io/badge/version-0.16.1_Alpha-b94b43?labelColor=191a1d" alt="0.16.1 Alpha"/></a>
+  <a href="./docs/alpha-0.17.0.md"><img src="https://img.shields.io/badge/version-0.17.0_Alpha-b94b43?labelColor=191a1d" alt="0.17.0 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — 参考平台"/></a>
@@ -49,7 +49,7 @@ Amadeus 试图把这些体验连成一个闭环：
 持久化与恢复。
 
 > [!IMPORTANT]
-> 本仓库包含可构建、可运行的公开源码，本分支为 **0.16.1 Alpha**，
+> 本仓库包含可构建、可运行的公开源码，本分支为 **0.17.0 Alpha**，
 > 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
 > [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
 > 第三方代码与外部资产保留各自条款。
@@ -673,9 +673,11 @@ assets/spriteforge/runtime/kurisu/
 
 Windows 下推荐用开源的
 [Lively Wallpaper](https://github.com/rocksdanister/lively) 托管 Amadeus 网页壁纸；
-Windows 现在默认自动启动壁纸模式，管理 Lively 2.2.1.0 的准备、挂载和退出恢复。
-从 Amadeus 托盘菜单选择 **Quit Amadeus** 会恢复原壁纸；`--no-wallpaper`
-可启动普通窗口。首次缺少宿主时通过 winget 安装，源码环境首次构建辅助程序需要 .NET 8 SDK。
+Windows 默认先打开控制台（`AMADEUS_WINDOWS_STARTUP_MODE=window`）。可通过侧栏
+**Wallpaper**，或在 **设置 → 常规 → 启动方式** 中选择直接进入壁纸。
+启用后，托管壁纸模式管理 Lively 2.2.1.0 的准备、挂载，并在正常选择 **Quit Amadeus** 时恢复原壁纸；
+`--no-wallpaper` 可启动普通窗口。首次缺少宿主时通过 winget 安装，源码环境首次构建辅助程序需要 .NET 8 SDK。
+输入框和异常退出限制仍见 [#185](https://github.com/Code-Amadeus/Amadeus/issues/185)。
 详见 [Windows 生命周期与实验](docs/windows_wallpaper_lifecycle.md)。
 
 Wallpaper Engine 仍保留兼容。设置 `AMADEUS_WALLPAPER_HOST=external` 可使用原有手工流程：

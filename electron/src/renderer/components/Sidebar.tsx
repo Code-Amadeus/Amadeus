@@ -64,7 +64,7 @@ export default function Sidebar({
       onClick: onToggleWallpaper,
     },
     { kind: 'page', page: 'vn', label: 'VN Player', icon: 'Movie' },
-    { kind: 'page', page: 'plugins', label: 'Plugins', icon: 'Tiles' },
+    // Keep experimental plugin management in Settings until integration is ready.
   ]
 
   const bottomItems: NavItem[] = [

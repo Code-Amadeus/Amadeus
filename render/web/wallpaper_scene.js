@@ -532,7 +532,6 @@
     lastSpeechEndedAt: null,
     asrStatus: "",
     asrSuppressesWorkSfx: false,
-    idleSeconds: 0,
     inactivitySeconds: 60,
     staticHoldSeconds: 45,
     staticHoldMaxSeconds: 60,
@@ -706,7 +705,6 @@
     },
 
     noteActivity() {
-      this.idleSeconds = 0;
       if (this.activeActivity) return;
       if (this.active) this.deactivate();
     },
@@ -718,21 +716,16 @@
       // narration that keeps the character inside a background work scene.
       if (this.speaking) {
         this.lastSpeechEndedAt = null;
-        this.idleSeconds = 0;
       } else if (wasSpeaking) {
         this.lastSpeechEndedAt = Date.now();
-        this.idleSeconds = 0;
       }
       this._updateComputerUseSfx();
       if (this.activeActivity && this._activityHoldDuringSpeech(this.activeActivity)) {
-        this.idleSeconds = 0;
         if (!this.active) this._ensureActivityScene(this.activeActivity);
         return;
       }
       if (this.speaking) {
         this.noteActivity();
-      } else {
-        this.idleSeconds = 0;
       }
     },
 
@@ -743,7 +736,6 @@
         return;
       }
       this.activeActivity = next;
-      this.idleSeconds = 0;
       this._updateComputerUseSfx();
       diag("scenario.activity", { activity: this.activeActivity || "" });
       if (this.activeActivity) {
@@ -775,9 +767,10 @@
       }
       if (!this.active) {
         if (!this.speaking) {
-          this.idleSeconds = this.lastSpeechEndedAt === null ? 0
+          // Silent Work completion does not restart the speech-owned clock.
+          const quietSeconds = this.lastSpeechEndedAt === null ? 0
             : Math.max(0, (Date.now() - this.lastSpeechEndedAt) / 1000);
-          if (this.idleSeconds >= this.inactivitySeconds) this.activate();
+          if (quietSeconds >= this.inactivitySeconds) this.activate();
         }
         return;
       }
@@ -899,7 +892,6 @@
       if (!startNode) return;
       diag("scenario.activate", { startNode: startNode.id, label: startNode.label || "" });
       this.active = true;
-      this.idleSeconds = 0;
       this._lastHeartbeatAt = 0;
       if (this.container) {
         this.container.visible = false;
@@ -1194,7 +1186,6 @@
       const current = this.currentNodeId && allowed.has(this.currentNodeId) ? this._nodeById(this.currentNodeId) : null;
       const node = current || this._activityNode(activity);
       if (!node) return;
-      this.idleSeconds = 0;
       if (!this.active) {
         this.activate(node);
         return;

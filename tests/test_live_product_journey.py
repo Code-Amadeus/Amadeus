@@ -1001,6 +1001,28 @@ def test_live_product_review_checks_every_step_and_reset() -> None:
     assert review["checks"]["reset_restored_the_initial_situation"]
 
 
+@pytest.mark.parametrize("tts_required", [False, True])
+@pytest.mark.parametrize("progress_spoken", [False, True])
+def test_spoken_provider_progress_is_required_only_for_voice_journeys(
+    tts_required: bool, progress_spoken: bool,
+) -> None:
+    identity = {"workspace_fingerprint": "same"}
+    review = _semantic_review(
+        turns=[_turn("prepare", 0, 1, runs=("run-prepare",))],
+        events=[EventRecord(0.1, "chat.observer_decision", {
+            "run_id": "run-prepare", "terminal": False,
+            "speak": progress_spoken, "narration_keypoints": ["semantic_progress"],
+        })],
+        permissions=[], expected_identity=identity, runtime_identity=identity,
+        tts_required=tts_required, journey_layer="adaptation",
+    )
+    key = "each_provider_attempt_spoke_substantive_progress"
+    if tts_required:
+        assert review["checks"][key] is progress_spoken
+    else:
+        assert key not in review["checks"]
+
+
 def test_layered_reviews_do_not_claim_skipped_creation_or_authoring() -> None:
     identity = {"workspace_fingerprint": "same"}
     common_events = [
@@ -2949,6 +2971,26 @@ def test_live_product_exception_finalizer_recovers_status_over_http() -> None:
             assert final["server_code_identity"]["commit_sha"] == "exception-sha"
 
     asyncio.run(scenario())
+
+
+def test_preview_handoff_fixture_has_verifiable_host_runtime_receipts(tmp_path):
+    from server.auip_app_source import discover_launchable_auip_app
+    from tools.e2e_work_preview_auip_handoff import (
+        _seed, _materialize_reactor, _register_bundle,
+    )
+    work_item_id, workspace = _seed(tmp_path)
+    ledger = tmp_path / "state" / "work_ledger.sqlite3"
+    with WorkLedgerStore(ledger) as store:
+        attempt = store.create_attempt(work_item_id, provider="fixture", task="Preview handoff")
+    assets = _materialize_reactor(workspace)
+    artifact_id = _register_bundle(ledger, work_item_id=work_item_id,
+        attempt_id=attempt.attempt_id, workspace=workspace, assets=assets)
+    with WorkLedgerStore(ledger) as store:
+        app = discover_launchable_auip_app(store, work_item_id)
+        assert app is not None and app["artifact_id"] == artifact_id
+        asset = Path(next(iter(assets.values()))["path"])
+        asset.write_bytes(asset.read_bytes() + b"\n// changed after Host materialization\n")
+        assert discover_launchable_auip_app(store, work_item_id) is None
 
 
 def _main() -> None:

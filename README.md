@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="Current architecture"/></a>
-  <a href="./docs/alpha-0.16.1.md"><img src="https://img.shields.io/badge/version-0.16.1_Alpha-b94b43?labelColor=191a1d" alt="0.16.1 Alpha"/></a>
+  <a href="./docs/alpha-0.17.0.md"><img src="https://img.shields.io/badge/version-0.17.0_Alpha-b94b43?labelColor=191a1d" alt="0.17.0 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — reference platform"/></a>
@@ -51,7 +51,7 @@ the Host owns identity, state, permissions, persistence, and recovery.
 
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. This branch targets
-> **0.16.1 Alpha**, not a packaged desktop release.
+> **0.17.0 Alpha**, not a packaged desktop release.
 > Amadeus first-party code is open-source under the
 > [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 > Third-party code and external assets retain their own terms.
@@ -769,11 +769,14 @@ skips identical files, and rejects unexpected overwrites. See
 
 On Windows, the open-source
 [Lively Wallpaper](https://github.com/rocksdanister/lively) is the recommended
-host for Amadeus's web wallpaper. Windows now starts in managed wallpaper mode:
-it prepares Lively 2.2.1.0, mounts the scene, and restores the previous wallpaper
-when **Quit Amadeus** is selected in the Amadeus tray menu. `--no-wallpaper`
+host for Amadeus's web wallpaper. Windows opens the control panel by default
+(`AMADEUS_WINDOWS_STARTUP_MODE=window`). Use **Wallpaper** in the sidebar or
+change **Settings → General → Startup mode** to enter wallpaper directly.
+When enabled, managed wallpaper mode prepares Lively 2.2.1.0, mounts the scene,
+and restores the previous wallpaper on normal **Quit Amadeus**. `--no-wallpaper`
 opens an ordinary window. Missing Lively is installed through winget; source
-builds need .NET 8 SDK for the helper's first build. See the
+builds need .NET 8 SDK for the helper's first build. Input-surface and abnormal-exit
+limitations remain tracked in [#185](https://github.com/Code-Amadeus/Amadeus/issues/185). See the
 [Windows lifecycle and experiments](docs/windows_wallpaper_lifecycle.md).
 
 Wallpaper Engine remains compatible. Set `AMADEUS_WALLPAPER_HOST=external` for

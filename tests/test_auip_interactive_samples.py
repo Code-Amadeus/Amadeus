@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+
+import pytest
 from pathlib import Path
 
 from server.auip_contract import parse_manifest
@@ -80,6 +84,17 @@ def test_reactor_declares_sparse_control_over_a_continuous_clock() -> None:
     assert "semanticEventCount" in script
     assert "speechSynthesis" not in script
     assert "chat.send" not in script
+
+
+@pytest.mark.parametrize("level", [2, 3])
+def test_reactor_stabilizes_inside_its_declared_safe_interval(level: int) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the reactor runtime contract")
+    subprocess.run(
+        [node, str(ROOT / "tests/auip_reactor_runtime.test.cjs"), str(level)],
+        cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
+    )
 
 
 def test_bullet_hell_separates_smooth_local_control_from_sparse_auip_facts() -> None:

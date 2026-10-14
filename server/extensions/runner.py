@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+from importlib import metadata as importlib_metadata
 import math
 import os
 import queue
@@ -98,7 +99,7 @@ class RunnerClient:
         paths = {"package": self.record["package_path"], "data": str(data), "cache": str(data / "cache"), "temp": str(data / "temp")}
         for key in ("data", "cache", "temp"):
             Path(paths[key]).mkdir(parents=True, exist_ok=True)
-        return {"protocol": "amadeus.extension-rpc/v0", "host": {"name": "amadeus", "version": "0.16.1", "host_api": "0.1"},
+        return {"protocol": "amadeus.extension-rpc/v0", "host": {"name": "amadeus", "version": importlib_metadata.version("amadeus"), "host_api": "0.1"},
                 "package": {"id": self.manifest["id"], "version": self.manifest["version"]},
                 "activation": {"id": uuid.uuid4().hex, "generation": self._token + 1},
                 "config": self.record.get("config", {}), "secrets": self.record.get("secrets", {}), "grants": [],

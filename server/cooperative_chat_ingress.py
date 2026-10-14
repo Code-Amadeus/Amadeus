@@ -1732,7 +1732,12 @@ class CooperativeChatManager:
 
             async def dispatch_deferred(decision, receipt, *,
                                         allow_independent_after_work=False):
-                if _is_planned_after_work_decision(decision):
+                # A coarse role proposal cannot create focused-app authority.
+                # Unconfirmed/no-op decisions use the existing entry rejection
+                # path, which records and presents the refusal without routing
+                # an absent control or discarding an independent result.
+                if (_is_planned_after_work_decision(decision)
+                        or not self._owns_focused_auip(decision)):
                     return await self._apply_inactive_auip_entry(
                         ingress, turn_id, text, admission, require_live_turn,
                         binding, decision, receipt, history,
