@@ -217,3 +217,64 @@ def test_batch_two_uses_private_kv_without_touching_graph_workspace(monkeypatch)
                                               top_k=1, early_stop_num=15)
         assert output.shape == (2, 17) and index == 15
         assert not model.bucket_graphs and not model._graph_kv_roots
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA request execution")
+@pytest.mark.parametrize("attention", ["sdpa", "flash"])
+@pytest.mark.parametrize("different_key", [False, True])
+def test_concurrent_requests_match_serial_logits_on_shared_workspace(monkeypatch, attention, different_key):
+    from AR.models.t2s_flash_attn import apply_flash_attn_patch, is_flash_attn_available
+    if attention == "flash" and not is_flash_attn_available():
+        pytest.skip("FlashAttention extension unavailable")
+    monkeypatch.setattr(module, "tqdm", lambda values: values)
+    monkeypatch.setattr(module, "_should_stop_on_eos", lambda *_: False)
+    local = threading.local()
+
+    def sample(logits, history, **_kwargs):
+        local.trace.append(logits.clone())
+        return torch.full((1, 1), (history.shape[1] + 3) % 62,
+                          device=logits.device, dtype=torch.int32), None
+
+    monkeypatch.setattr(module, "sample", sample)
+    device = torch.device("cuda:0")
+    with torch.cuda.device(device), torch.inference_mode():
+        model = decoder(hidden=64).half().to(device)
+        model.kv_cache_buckets = [128, 256, 512]
+        model.use_static_kv_cache = model.cuda_graph_enabled = True
+        if attention == "flash":
+            assert apply_flash_attn_patch(model)
+        shapes = [(8, 8), (65, 78) if different_key else (8, 9)]
+        requests = []
+        for text_len, prompt_len in shapes:
+            x = torch.arange(1, text_len + 1, device=device).remainder(62).unsqueeze(0)
+            prompt = torch.arange(prompt_len, device=device).remainder(62).unsqueeze(0)
+            bert = torch.zeros(1, 1024, text_len, device=device, dtype=torch.float16)
+            requests.append((x, prompt, bert))
+        torch.cuda.synchronize(device)
+
+    def run(request, gate=None):
+        with torch.cuda.device(device), torch.inference_mode():
+            stream = torch.cuda.Stream(device=device)
+            local.trace = []
+            if gate is not None:
+                gate.wait(timeout=3)
+            with torch.cuda.stream(stream):
+                x, prompt, bert = request
+                tokens, index = model.infer_panel_naive(x, None, prompt, bert, top_k=1, early_stop_num=15)
+            stream.synchronize()
+            return tokens.cpu(), index, [value.cpu() for value in local.trace]
+
+    # Capture both keys and establish per-request numerical references before
+    # threads contend for one root. Each contender uses its own CUDA stream.
+    expected = [run(request) for request in requests]
+    keys = set(model.bucket_graphs)
+    gate = threading.Barrier(2)
+    with ThreadPoolExecutor(2) as pool:
+        futures = [pool.submit(run, request, gate) for request in requests]
+        actual = [future.result(timeout=10) for future in futures]
+    assert set(model.bucket_graphs) == keys
+    for (tokens, index, trace), (want_tokens, want_index, want_trace) in zip(actual, expected):
+        assert index == want_index and len(trace) == len(want_trace) == 16
+        torch.testing.assert_close(tokens, want_tokens, rtol=0, atol=0)
+        for value, want in zip(trace, want_trace):
+            torch.testing.assert_close(value, want, rtol=2e-3, atol=2e-3)

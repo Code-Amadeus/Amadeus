@@ -5575,5 +5575,109 @@
       }
     ],
     "execution_note": "Outside Windows sandbox: restricted loopback socketpair blocked asyncio event-loop initialization in the sandbox."
+  },
+  "pr_validation": {
+    "branch": "codex/tts-nested-kv-pr",
+    "base_commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+    "isolated_model_less_environment": "uv sync --locked --extra dev; ci profile verified; no alteration of primary voice environment",
+    "gpu_checks": [
+      {
+        "name": "pr-regression.xml",
+        "tests": 173,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "sha256": "ab8110b296e85ccad6e289080f476cab70baf8fa1118ac1daa851d4e658df07a"
+      },
+      {
+        "name": "pr-explicit-gpu.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "e38178db1200750943117c652cfd685eb4ce907c9e46db19782d69caecc70cf6"
+      }
+    ],
+    "reported_model_less_totals": {
+      "passed": 5782,
+      "skipped": 43
+    },
+    "cpu_shards": [
+      {
+        "shard": 0,
+        "summary": "total                                 2180    24  2203  469.89     PASS",
+        "log_sha256": "e31d1644eb83c3bef3bbd25e964e16be2db5360cb0f40aa2c371d687e37c2f99"
+      },
+      {
+        "shard": 1,
+        "summary": "total                                 1836    10  1843  485.99     PASS",
+        "log_sha256": "1dc458821fe0f974b17cf747d2dcd2ff18967bbb04e912fb92c9b1697e8df8e2"
+      },
+      {
+        "shard": 2,
+        "summary": "total                                 1766     9  1769  481.74     PASS",
+        "log_sha256": "d0c40fdc9de0ebe0b88d07681819a5bb668993306641b7cece580064f380bffc"
+      }
+    ],
+    "source_matches_experimentally_tested_workspace": true,
+    "production_flash_unchanged": true,
+    "concurrent_request_cases": "SDPA/FA2, same/different graph key, separate CUDA streams; serial numerical references",
+    "static_checks": [
+      "ruff check .",
+      "tools/architecture/generate_views.py --check",
+      "tools/architecture/generate_readme_overview.py --check"
+    ],
+    "harness_smoke": {
+      "flash": {
+        "raw_sha256": "96ecad479af625542d0735c36d8637cf4d473fe5b92d949671db59aba13287b0",
+        "kv_bytes": 50331648,
+        "graph_count": 17,
+        "cases": [
+          {
+            "case": "short_448",
+            "steps": 64,
+            "graph_replay_steps": [
+              63
+            ]
+          },
+          {
+            "case": "overflow_dynamic",
+            "steps": 224,
+            "graph_replay_steps": [
+              177
+            ]
+          }
+        ],
+        "purpose": "post-lint correctness and memory check; timing is not used for adoption because CPU suite work was concurrent"
+      },
+      "sdpa": {
+        "raw_sha256": "c77dc1360958dba97089b00188fb1d83bcae14a9a3c860bb77947bd541ee7fdb",
+        "kv_bytes": 50331648,
+        "graph_count": 17,
+        "cases": [
+          {
+            "case": "short_448",
+            "steps": 64,
+            "graph_replay_steps": [
+              63
+            ]
+          },
+          {
+            "case": "overflow_dynamic",
+            "steps": 224,
+            "graph_replay_steps": [
+              177
+            ]
+          }
+        ],
+        "purpose": "post-lint correctness and memory check; timing is not used for adoption because CPU suite work was concurrent"
+      }
+    },
+    "public_baseline": {
+      "commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+      "path": "GPT_SoVITS/AR/models/t2s_model.py",
+      "git_blob": "d76d9f664e51bad72143b49886b7bbec7e7fbb44",
+      "matches_archived_original_baseline": true
+    }
   }
 }

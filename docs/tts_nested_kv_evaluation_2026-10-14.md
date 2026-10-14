@@ -1,6 +1,6 @@
 # T2S Nested KV 实现与实测
 
-日期：2026-10-14。分支：`codex/tts-nested-kv-evaluation`。
+日期：2026-10-14。实验分支：`codex/tts-nested-kv-evaluation`；草稿 PR 分支：`codex/tts-nested-kv-pr`（基于已包含 history/EOS 优化的最新 main）。
 
 建议在 Amadeus 当前默认预捕获、多 Graph、单用户 TTS 配置中采纳 `nested`。保留各桶计算形状，把 K/V 物理存储合并为最大容量根缓冲区。当前权重和默认 17 图配置下，KV 常驻 **561 → 48 MiB**，稳定减少 **513 MiB**。主要收益是显存；交替 A/B 的 AR 耗时变化为 −2.15%～+3.52%，没有把它作为普遍加速方案。
 
@@ -116,3 +116,16 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 实验基线包含开始工作前已有的 semantic-history/EOS 优化，双方均保留，没有将这些改动的收益计入 nested KV。原始 JSON 位于忽略的本地 `output/diagnostics/nested-kv-20261014/`；[可审阅证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)保留 source/checkpoint/raw-result hash、容量、时延和一致性检查，去掉个人路径和原始语音内容。
 
 同时准备了 [Aqua-TTS 请求所有权问题的上游报告草稿](evidence/aqua_t2s_request_ownership_upstream_draft_2026-10-14.md)，使用已核验上游 commit 的直接代码证据；尚未发布。实验结论限定在当前 v3hc 权重、两张 Ada GPU 和这组本地 runtime。多用户 workspace slot、其它权重/语言，以及独立的 CUDA Graph 内存池共享不属于本次实现。
+
+
+## 草稿 PR checkout 的补充验证
+
+PR 分支从 `ef3a54b` main 建立，只移入 nested KV，排除原实验分支的 ambient 提交。生产 decoder、FA2 与 acceleration resolver 与原实验工作区源码一致，原始实验 JSON 的 SHA-256 全部复核通过。
+
+干净 checkout 的本地 CUDA 回归为 **172 passed、1 skipped**；随后开启 `AMADEUS_RUN_GPU_TESTS=1`，此前可选的 NVIDIA 自动配置/捕获/replay probe **1 passed**。新增真实 CUDA 请求竞争测试覆盖 SDPA/FA2、同/异 Graph key，两个不同 stream 的结果与串行 logits 对照一致。Windows cu124 安装梯级及 cu128/MPS candidate 的 CI 命令已加入新模块，保证安装模型依赖的 hosted runner 也执行其 CPU 合约。
+
+隔离 checkout 执行 `uv sync --locked --extra dev` 创建独立 model-less 环境，`--profile ci` 校验通过。完整 `tools/run_tests.py` 三个分片均 PASS，runner 汇总为 **5782 passed、43 skipped**；可选依赖缺失的跳过不作为 CUDA 实验的替代。Ruff 与两项架构/README 生成检查通过。新环境没有同步或修改原语音 `.venv`。
+
+修复 benchmark 删除闭包变量导致的 F821 后，FA2/SDPA 短桶及动态续接 CLI 再次实际运行，仍得到 17 图、48 MiB KV。此次 smoke 与 CPU suite 工作同时进行，只用于正确性/计量验证，不将其时延混入前述采用建议。
+
+公开 main `ef3a54b` 的 `GPT_SoVITS/AR/models/t2s_model.py` 与原实验快照具有相同 Git blob（`d76d9f664e51bad72143b49886b7bbec7e7fbb44`），可从该提交导出 `--baseline-source`；原始对照无需依赖未公开代码。

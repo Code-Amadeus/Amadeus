@@ -224,12 +224,12 @@ def main():
                 result["summary"].append(summary)
                 print(json.dumps(summary), flush=True)
                 save()
-                del x, prompt, lens, bert
+                x = prompt = lens = bert = None
             result["memory"]["after_scenarios"] = memory()
             save()
         finally:
             module._should_stop_on_eos, module.tqdm = original_eos, original_tqdm
-        del model
+        model = None
         gc.collect()
         torch.cuda.empty_cache()
     print(f"Saved {args.output}", flush=True)

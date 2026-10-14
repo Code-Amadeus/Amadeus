@@ -210,6 +210,7 @@ jobs:
           tests/test_local_tts_semantic_guard.py
           tests/test_t2s_cuda_graph_sync_policy.py
           tests/test_t2s_static_kv_mask.py
+          tests/test_t2s_nested_kv.py
 
       - name: Return to CPU VAD and core
         shell: bash
