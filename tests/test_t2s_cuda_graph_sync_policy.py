@@ -48,17 +48,18 @@ def test_new_capture_defers_before_warmup_when_asr_work_is_active():
         future = pool.submit(asr_work)
         assert entered.wait(2)
         try:
-            assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is False
+            assert decoder._warmup_and_capture_bucket(256, "cuda:0") is False
             assert not calls
         finally:
             release.set()
         future.result(timeout=3)
-    assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is True
-    assert calls == [(256, 64, "cuda:0")]
+    assert decoder._warmup_and_capture_bucket(256, "cuda:0") is True
+    assert calls == [(256, "cuda:0")]
 
 
 
 def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
+    from contextlib import nullcontext
     from types import SimpleNamespace
     decoder = Text2SemanticDecoder.__new__(Text2SemanticDecoder)
     decoder.cuda_graph_enabled = True
@@ -66,6 +67,7 @@ def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
     decoder.bucket_graphs = {}
     decoder.parameters = lambda: iter([SimpleNamespace(device="cuda:0")])
     decoder._get_bucket_lock = lambda _key: threading.Lock()
+    decoder._use_graph_workspace = lambda _key, _device: nullcontext()
     decoder._capture_bucket = lambda *_args: pytest.fail("Deferred capture reached GPU work")
     entered, release = threading.Event(), threading.Event()
 
@@ -78,7 +80,7 @@ def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
         future = pool.submit(asr_work)
         assert entered.wait(2)
         try:
-            assert decoder.precapture_cuda_graph([256], kv_len_range=(192, 192)) == {256: False}
+            assert decoder.precapture_cuda_graph([256]) == {256: False}
         finally:
             release.set()
         future.result(timeout=3)

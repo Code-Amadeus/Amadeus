@@ -64,6 +64,7 @@ jobs:
           tests/test_local_tts_punctuation.py
           tests/test_t2s_cuda_graph_sync_policy.py
           tests/test_t2s_static_kv_mask.py
+          tests/test_t2s_nested_kv.py
           tests/test_local_model_loading.py
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
