@@ -134,7 +134,7 @@ class AgentVNTextSource:
             try:
                 self._bridge = {"status": "connecting", "lineCount": self._line_count, "source": "agent_websocket", "url": self._ws_url}
                 await self._publish()
-                async with websockets.connect(self._ws_url, open_timeout=2, ping_interval=20, ping_timeout=10) as ws:
+                async with websockets.connect(self._ws_url, open_timeout=3, ping_interval=20, ping_timeout=10) as ws:
                     self._bridge = {"status": "running", "lineCount": self._line_count, "source": "agent_websocket", "url": self._ws_url}
                     await self._publish()
                     async for raw in ws:
