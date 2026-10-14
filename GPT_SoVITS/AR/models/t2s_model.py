@@ -1454,7 +1454,14 @@ class Text2SemanticDecoder(nn.Module):
             transformer = dynamic_transformer
             print("[T2S] using dynamic KV cache mode (original torch.cat path)")
         
-        for idx in tqdm(range(1500)):
+        # Only the written prefix participates in repetition penalty. Keeping
+        # its storage fixed avoids reallocating/copying all history each step.
+        decode_limit = 1500
+        y_buffer = y.new_empty((bsz, prefix_len + decode_limit))
+        y_buffer.narrow(1, 0, prefix_len).copy_(y)
+        y = y_buffer.narrow(1, 0, prefix_len)
+
+        for idx in tqdm(range(decode_limit)):
             if xy_attn_mask is not None:
                 # 第一步：process_prompt
                 xy_dec, k_cache, v_cache = transformer.process_prompt(xy_pos, xy_attn_mask, None)
@@ -1689,13 +1696,17 @@ class Text2SemanticDecoder(nn.Module):
                 logits, y, top_k=top_k, top_p=top_p, repetition_penalty=repetition_penalty, temperature=temperature
             )[0]
 
-            y = torch.concat([y, samples], dim=1)
+            write_pos = prefix_len + idx
+            y_buffer.narrow(1, write_pos, 1).copy_(samples)
+            y = y_buffer.narrow(1, 0, write_pos + 1)
 
             if early_stop_num != -1 and (y.shape[1] - prefix_len) > early_stop_num:
                 print("use early stop num:", early_stop_num)
                 stop = True
 
-            if _should_stop_on_eos(logits, samples, self.EOS):
+            # Neither EOS condition can hold while EOS is outside the current
+            # vocabulary. Tensor shape metadata needs no device-to-host read.
+            if logits.shape[-1] > self.EOS and _should_stop_on_eos(logits, samples, self.EOS):
                 stop = True
             if stop:
                 if y.shape[1] == 0:
