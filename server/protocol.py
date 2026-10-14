@@ -128,6 +128,8 @@ class Method(str, Enum):
     VN_LAUNCH_CAPTURE    = "vn.launch.capture"
     VN_LAUNCH_OVERLAY    = "vn.launch.overlay"
     VN_LAUNCH_INSPECT    = "vn.launch.inspect"
+    VN_OCR_WINDOWS       = "vn.ocr.windows"
+    VN_OCR_PREVIEW       = "vn.ocr.preview"
 
     # Generic providers and future AUIP apps
     PROVIDER_RUN         = "provider.run"

@@ -20,6 +20,39 @@ def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool 
 
     if not hwnd:
         raise RuntimeError("The game window is unavailable.")
+    if sys.platform == "darwin":
+        project_root = Path(__file__).resolve().parents[1]
+        binary = project_root / "build" / "bin" / "mac_screen_ocr"
+        build_script = project_root / "tools" / "build_mac_screen_ocr.sh"
+        if not binary.is_file() and build_script.is_file():
+            subprocess.run([str(build_script)], check=False)
+        if not binary.is_file():
+            raise RuntimeError("mac_screen_ocr binary not available on macOS")
+        args = [str(binary), "--capture-only", "--window-id", str(hwnd)]
+        if preserve_alpha:
+            args.append("--preserve-alpha")
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            data, error = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                children = psutil.Process(process.pid).children(recursive=True)
+            except Exception:
+                children = []
+            for child in reversed(children):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+            process.kill()
+            process.communicate()
+            raise RuntimeError("Game-window capture timed out. Restore the game and try again.") from exc
+        if process.returncode or not data:
+            detail = error.decode("utf-8", errors="replace").strip()[-500:]
+            raise RuntimeError(f"Game-window capture failed ({process.returncode}). {detail}")
+        with Image.open(io.BytesIO(data)) as image:
+            return image.convert("RGBA" if preserve_alpha else "RGB")
+
     args = [sys.executable, str(Path(__file__).resolve()), str(hwnd)]
     if preserve_alpha:
         args.append("--preserve-alpha")

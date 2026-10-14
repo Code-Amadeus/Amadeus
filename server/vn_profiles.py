@@ -48,11 +48,17 @@ class LaunchProfile(BaseModel):
 
     id: str = Field(default_factory=lambda: f"game_{uuid.uuid4().hex[:12]}", pattern=r"^[a-zA-Z0-9_-]+$")
     name: str = Field(min_length=1, max_length=120)
-    textSource: Literal["agent", "luna"] = "agent"
+    textSource: Literal["agent", "luna", "ocr"] = "agent"
     gameExe: str = ""
     hookHelper: str = ""
     scriptPath: str = ""
     lunaWsUrl: str = ""
+    ocrCropRect: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.65, "w": 1.0, "h": 0.35})
+    ocrWindowName: str = ""
+    ocrWindowId: int | None = None
+    ocrAppName: str = ""
+    ocrLanguage: str = "ja,zh-Hans,en-US"
+    ocrIntervalMs: int = Field(default=700, ge=200, le=3000)
     launchGame: bool | None = None
     launchMethod: Literal["exe", "steam"] = "exe"
     steamAppId: str = Field(default="", pattern=r"^(?:[1-9][0-9]{0,9})?$")
@@ -75,13 +81,18 @@ class LaunchProfile(BaseModel):
 
     @model_validator(mode="after")
     def source_settings(self) -> "LaunchProfile":
-        if self.launchGame is None:
+        if self.textSource == "ocr":
+            self.launchGame = False
+        elif self.launchGame is None:
             self.launchGame = self.textSource == "agent"
         if self.textSource == "agent":
             if not self.gameExe or not self.hookHelper:
                 raise ValueError("Choose the game executable and its Agent hook script.")
-        else:
+        elif self.textSource == "luna":
             validate_luna_ws_url(self.lunaWsUrl)
+        elif self.textSource == "ocr":
+            # In OCR mode, gameExe is ignored and the game is captured from a running window.
+            pass
         if self.launchGame and not self.gameExe:
             raise ValueError("Choose the game executable or start the game manually.")
         if self.launchGame and self.launchMethod == "steam" and not self.steamAppId:

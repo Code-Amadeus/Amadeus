@@ -17,7 +17,12 @@ import websockets
 from server.vn_launch_manager import VNLaunchManager
 from server.handlers.vn_player_handler import VNPlayerHandler
 from server.protocol import Method
-from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, _matching_agent_pids_sync
+from server.vn_text_sources import (
+    AgentVNTextSource,
+    LunaVNTextSource,
+    MacVisionOCRTextSource,
+    _matching_agent_pids_sync,
+)
 from vn_player.runtime import VNPlayerRuntime
 
 
@@ -332,5 +337,89 @@ def test_luna_requires_a_websocket_url() -> None:
         source = LunaVNTextSource(AsyncMock(), AsyncMock())
         with pytest.raises(ValueError, match="WebSocket URL"):
             await source.start({}, {}, target_pid=None)
+
+    asyncio.run(run())
+
+
+def test_launcher_selects_ocr_without_agent_launch(tmp_path: Path) -> None:
+    class FakeSource:
+        def __init__(self, _on_line, _on_status):
+            self.start = AsyncMock()
+            self.stop = AsyncMock()
+
+        def status(self):
+            return ({"status": "running", "owned": True}, {"status": "running", "source": "mac_vision_ocr", "lineCount": 0})
+
+    async def run() -> None:
+        manager = VNLaunchManager(
+            tmp_path, runtime_start=AsyncMock(return_value={"status": "active"}),
+            runtime_stop=AsyncMock(return_value={"status": "stopped"}),
+            runtime_status=AsyncMock(return_value={"status": "active"}), runtime_line=AsyncMock(),
+        )
+        with patch("server.vn_launch_manager.MacVisionOCRTextSource", FakeSource), \
+             patch("server.vn_launch_manager.AgentVNTextSource") as agent_factory, \
+             patch("server.vn_launch_manager.LunaVNTextSource") as luna_factory:
+            profile_id = manager.save_profile({"profile": {
+                "name": "Game OCR",
+                "textSource": "ocr",
+                "launchGame": False,
+                "launchOverlay": False,
+                "ocrWindowName": "Game Window",
+            }})["profileId"]
+            started = await manager.start({
+                "profileId": profile_id,
+                "launchOverlay": False,
+            })
+            assert started["textSource"] == "ocr"
+            agent_factory.assert_not_called()
+            luna_factory.assert_not_called()
+            await manager.stop()
+
+    asyncio.run(run())
+
+
+def test_ocr_profile_ignores_game_executable_and_launch_game(tmp_path: Path) -> None:
+    from server.vn_profiles import LaunchProfile
+    profile = LaunchProfile.model_validate({
+        "name": "OCR Game",
+        "textSource": "ocr",
+        "launchGame": True,
+        "gameExe": "",
+        "ocrWindowName": "Test Window",
+    })
+    assert profile.launchGame is False
+    assert profile.textSource == "ocr"
+
+
+def test_mac_vision_ocr_parses_stream_lines() -> None:
+    received = []
+    async def on_line(payload):
+        received.append(payload)
+        return {"status": "ok", "line": payload}
+
+    status_updates = []
+    async def on_status(hook, bridge):
+        status_updates.append((hook, bridge))
+
+    source = MacVisionOCRTextSource(on_line, on_status)
+
+    async def run():
+        # Test line parsing loop logic
+        fake_stdout = asyncio.StreamReader()
+        fake_stdout.feed_data(json.dumps({"type": "status", "status": "running"}).encode("utf-8") + b"\n")
+        fake_stdout.feed_data(json.dumps({"type": "line", "text": "【红莉栖】你在看什么啊，笨蛋！", "timestamp": 123456789}).encode("utf-8") + b"\n")
+        fake_stdout.feed_eof()
+
+        fake_proc = Mock()
+        fake_proc.stdout = fake_stdout
+        fake_proc.pid = 9999
+        source._proc = fake_proc
+
+        await source._read_loop()
+        assert len(received) == 1
+        assert received[0]["text"] == "【红莉栖】你在看什么啊，笨蛋！"
+        assert received[0]["metadata"]["source"] == "mac_vision_ocr"
+        assert source.status()[1]["lineCount"] == 1
+        assert source.status()[1]["status"] == "running"
 
     asyncio.run(run())

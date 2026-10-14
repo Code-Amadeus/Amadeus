@@ -28,7 +28,7 @@ from server.local_auth import (
     LocalAuthPolicy, clear_inherited_auth_environment,
 )
 from server.protocol import Method
-from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, VNTextSourceAdapter
+from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, MacVisionOCRTextSource, VNTextSourceAdapter
 from server.vn_profiles import LaunchProfile, VNProfileStore
 from vn_player.schemas import new_id, resolve_capability_defaults
 
@@ -158,17 +158,24 @@ class VNLaunchManager:
                 raise RuntimeError("Enable player interaction before attaching a game view.")
             profile = self._profile_by_id(self._state["profileId"])
             executable = str(profile.get("gameExe") or "")
-            if not executable:
+            if not executable and sys.platform != "darwin":
                 raise RuntimeError("Select the game executable in its profile before capturing.")
             # The launcher bound this session to a specific process. Preserve
             # that identity even if another instance appears afterwards.
             pid = self._state.get("game", {}).get("pid")
-            if pid is None:
+            if pid is None and executable:
                 pid = await asyncio.to_thread(_find_game_pid, executable)
-            if pid is None:
+            if pid is None and sys.platform != "darwin":
                 raise RuntimeError("The configured game is not running.")
             from server.visual_runtime import capture_game_window
-            visual = await asyncio.to_thread(capture_game_window, pid, executable)
+            kwargs: dict[str, Any] = {}
+            if profile.get("ocrWindowId"):
+                kwargs["window_id"] = profile["ocrWindowId"]
+            if profile.get("ocrWindowName"):
+                kwargs["window_name"] = profile["ocrWindowName"]
+            if profile.get("ocrAppName"):
+                kwargs["app_name"] = profile["ocrAppName"]
+            visual = await asyncio.to_thread(capture_game_window, pid or 0, executable, **kwargs)
             return {"status": "ok", "visual_context": visual}
 
     async def set_overlay(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -211,10 +218,10 @@ class VNLaunchManager:
                    "launch_overlay": "launchOverlay", "luna_ws_url": "lunaWsUrl"}
         params = {aliases.get(key, key): value for key, value in params.items()}
         source_name = str(params.get("textSource", profile.get("textSource", "agent"))).strip().lower()
-        if source_name not in {"agent", "luna"}:
+        if source_name not in {"agent", "luna", "ocr"}:
             raise ValueError(f"unknown VN text source: {source_name}")
         params = {
-            "launchGame": profile.get("launchGame", True),
+            "launchGame": profile.get("launchGame", True) if source_name != "ocr" else profile.get("launchGame", False),
             "attachHook": source_name == "agent", "bridgeText": source_name == "agent",
             "launchOverlay": profile.get("launchOverlay", True),
             "stopWallpaper": profile.get("stopWallpaper", True), "lunaWsUrl": profile.get("lunaWsUrl", ""),
@@ -246,13 +253,13 @@ class VNLaunchManager:
         # The product's game type is authoritative even if an older caller sends
         # a stale runtime capability map. Direct runtime probes remain separate.
         runtime_params.update(prompt_pack=profile["promptPack"], capabilities=profile["capabilities"])
-        launch_game = _truthy(params.get("launchGame") or params.get("launch_game"))
+        launch_game = False if source_name == "ocr" else _truthy(params.get("launchGame") or params.get("launch_game"))
         attach_hook = _truthy(params.get("attachHook") or params.get("attach_hook"))
         stop_wallpaper = _truthy(params.get("stopWallpaper") if "stopWallpaper" in params else launch_game)
         overlay_param = params.get("launchOverlay") if "launchOverlay" in params else params.get("launch_overlay")
         launch_overlay = _truthy(overlay_param) if overlay_param is not None else (launch_game or attach_hook)
-        if source_name == "luna" and attach_hook:
-            raise ValueError("Agent injection is unavailable for the Luna text source.")
+        if source_name in {"luna", "ocr"} and attach_hook:
+            raise ValueError(f"Agent injection is unavailable for the {source_name} text source.")
         if self._game_path != str(profile.get("gameExe") or ""):
             self._game_proc = None
 
@@ -306,7 +313,7 @@ class VNLaunchManager:
                 target_pid = await asyncio.to_thread(_find_game_pid, profile["gameExe"])
                 if target_pid is None and not launch_game and attach_hook:
                     raise RuntimeError("The configured game is not running. Start it first or enable Launch game in its settings.")
-            elif profile.get("gameExe") and Path(profile["gameExe"]).is_file():
+            elif source_name != "ocr" and profile.get("gameExe") and Path(profile["gameExe"]).is_file():
                 target_pid = await asyncio.to_thread(_find_game_pid, profile["gameExe"])
             if self._game_proc is not None and self._game_proc.pid != target_pid:
                 # A game kept open from another profile is no longer this session's process.
@@ -342,10 +349,12 @@ class VNLaunchManager:
                     except psutil.NoSuchProcess:
                         self._state["game"]["status"] = "exited"
             on_line = self._capture_line if capture_only else self._runtime_line
-            self._text_source = (
-                AgentVNTextSource(on_line, self._source_status_changed)
-                if source_name == "agent" else LunaVNTextSource(on_line, self._source_status_changed)
-            )
+            if source_name == "ocr":
+                self._text_source = MacVisionOCRTextSource(on_line, self._source_status_changed)
+            elif source_name == "agent":
+                self._text_source = AgentVNTextSource(on_line, self._source_status_changed)
+            else:
+                self._text_source = LunaVNTextSource(on_line, self._source_status_changed)
             await self._text_source.start(profile, params, target_pid=target_pid)
         except asyncio.CancelledError:
             await self._cleanup_failed_start(runtime_started=runtime_started, close_game=game_started)

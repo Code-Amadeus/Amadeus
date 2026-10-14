@@ -312,31 +312,89 @@ def capture_visual_context(
                                   max_long_side=_config.max_long_side, jpeg_quality=_config.jpeg_quality)
 
 
-def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
+def capture_game_window(
+    pid: int = 0,
+    executable: str = "",
+    *,
+    window_id: int | None = None,
+    window_name: str = "",
+    app_name: str = "",
+) -> dict[str, Any]:
     """Capture only the verified game's window, without changing global vision settings."""
-    if os.name != "nt":
-        raise RuntimeError("Game-window capture currently requires Windows.")
-    import psutil
-    from server.window_capture import capture_window_frame
+    if os.name == "nt":
+        import psutil
+        from server.window_capture import capture_window_frame
 
-    actual = psutil.Process(pid).exe()
-    if os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(executable)):
-        raise RuntimeError("The game process changed. Reconnect before capturing its window.")
-    windows = [window for window in list_capture_windows(limit=120) if window["pid"] == pid]
-    if len(windows) != 1:
-        raise RuntimeError("The game must have exactly one visible window before capturing.")
-    window = windows[0]
-    hwnd = _parse_hwnd(window["hwnd"])
-    if _window_pid(hwnd) != pid:
-        raise RuntimeError("The game window changed. Try capturing again.")
-    image = capture_window_frame(hwnd)
-    if _window_pid(hwnd) != pid:
-        raise RuntimeError("The game window changed during capture. Try capturing again.")
-    result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
-                                    provider="auto", mode="on_demand", reason="vn_player",
-                                    max_long_side=960, jpeg_quality=68)
-    result["game"] = {"pid": pid, "title": window["title"], "executable": executable}
-    return result
+        if not executable or not pid:
+            raise RuntimeError("Select the game executable in its profile before capturing.")
+        actual = psutil.Process(pid).exe()
+        if os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(executable)):
+            raise RuntimeError("The game process changed. Reconnect before capturing its window.")
+        windows = [window for window in list_capture_windows(limit=120) if window["pid"] == pid]
+        if len(windows) != 1:
+            raise RuntimeError("The game must have exactly one visible window before capturing.")
+        window = windows[0]
+        hwnd = _parse_hwnd(window["hwnd"])
+        if _window_pid(hwnd) != pid:
+            raise RuntimeError("The game window changed. Try capturing again.")
+        image = capture_window_frame(hwnd)
+        if _window_pid(hwnd) != pid:
+            raise RuntimeError("The game window changed during capture. Try capturing again.")
+        result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
+                                        provider="auto", mode="on_demand", reason="vn_player",
+                                        max_long_side=960, jpeg_quality=68)
+        result["game"] = {"pid": pid, "title": window["title"], "executable": executable}
+        return result
+
+    if sys.platform == "darwin":
+        import json
+        from pathlib import Path
+        import subprocess
+        from server.window_capture import capture_window_frame
+
+        project_root = Path(__file__).resolve().parents[1]
+        binary = project_root / "build" / "bin" / "mac_screen_ocr"
+        if not binary.is_file():
+            raise RuntimeError("mac_screen_ocr binary not available on macOS")
+
+        proc = subprocess.run([str(binary), "--list-windows"], capture_output=True, text=True, check=False)
+        windows: list[dict[str, Any]] = []
+        try:
+            windows = json.loads(proc.stdout)
+        except Exception:
+            pass
+
+        target = None
+        if window_id:
+            target = next((w for w in windows if w.get("id") == window_id), None)
+        if not target and pid:
+            target = next((w for w in windows if w.get("pid") == pid), None)
+        if not target and window_name:
+            target = next((w for w in windows if window_name.lower() in (w.get("title") or "").lower()), None)
+        if not target and app_name:
+            target = next((w for w in windows if app_name.lower() in (w.get("app") or "").lower()), None)
+        if not target and executable:
+            stem = Path(executable).stem.lower()
+            target = next((w for w in windows if stem in (w.get("app") or "").lower()), None)
+
+        if not target:
+            raise RuntimeError("The game window could not be found.")
+
+        wid = int(target["id"])
+        image = capture_window_frame(wid)
+        rect = {"left": 0, "top": 0, "width": target.get("width", image.width), "height": target.get("height", image.height)}
+        result = _encode_visual_context(image, rect, requested_scope="game_window", actual_scope="game_window",
+                                        provider="auto", mode="on_demand", reason="vn_player",
+                                        max_long_side=960, jpeg_quality=68)
+        result["game"] = {
+            "pid": target.get("pid") or pid,
+            "title": target.get("title") or target.get("app") or "",
+            "executable": executable,
+            "windowId": wid,
+        }
+        return result
+
+    raise RuntimeError("Game-window capture currently requires Windows or macOS.")
 
 
 def _encode_visual_context(image, region: dict[str, Any], *, requested_scope: str, actual_scope: str,
