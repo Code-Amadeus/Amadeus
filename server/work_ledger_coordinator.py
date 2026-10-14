@@ -314,6 +314,7 @@ class WorkLedgerCoordinator:
         self._provider_snapshot_last_at = 0.0
         self._provider_snapshot_task: asyncio.Task | None = None
         self._provider_snapshot_reason = ""
+        self._provider_snapshot_dirty = False
         self._provider_fact_queue: asyncio.Queue[tuple[str, dict[str, Any]]] | None = None
         self._provider_fact_task: asyncio.Task | None = None
         self._provider_result_locks: dict[str, asyncio.Lock] = {}
@@ -847,6 +848,7 @@ class WorkLedgerCoordinator:
         if self._provider_snapshot_task is not None:
             self._provider_snapshot_task.cancel()
             self._provider_snapshot_task = None
+            self._provider_snapshot_dirty = False
         if self._provider_fact_task is not None:
             self._provider_fact_task.cancel()
             self._provider_fact_task = None
@@ -8375,31 +8377,35 @@ class WorkLedgerCoordinator:
         directly, so their ordering remains explicit.
         """
 
-        interval = self._provider_snapshot_min_interval_s
-        now = time.monotonic()
-        elapsed = now - self._provider_snapshot_last_at
         self._provider_snapshot_reason = str(reason or "provider.event")
+        self._provider_snapshot_dirty = True
         if self._provider_snapshot_task is not None and not self._provider_snapshot_task.done():
             return
-        delay = (
-            0.0
-            if interval <= 0.0
-            or self._provider_snapshot_last_at <= 0.0
-            or elapsed >= interval
-            else max(0.0, interval - elapsed)
-        )
 
         async def publish_later() -> None:
             try:
-                if delay > 0.0:
-                    await asyncio.sleep(delay)
-                self._provider_snapshot_last_at = time.monotonic()
-                await self.publish_snapshot(reason=self._provider_snapshot_reason)
+                while self._provider_snapshot_dirty:
+                    interval = self._provider_snapshot_min_interval_s
+                    elapsed = time.monotonic() - self._provider_snapshot_last_at
+                    delay = (
+                        0.0
+                        if interval <= 0.0
+                        or self._provider_snapshot_last_at <= 0.0
+                        or elapsed >= interval
+                        else max(0.0, interval - elapsed)
+                    )
+                    if delay > 0.0:
+                        await asyncio.sleep(delay)
+                    # 发布时新增的事实必须触发下一次投影，等待期间的事件仍合并。
+                    self._provider_snapshot_dirty = False
+                    self._provider_snapshot_last_at = time.monotonic()
+                    await self.publish_snapshot(reason=self._provider_snapshot_reason)
             except asyncio.CancelledError:
                 raise
             finally:
                 if self._provider_snapshot_task is asyncio.current_task():
                     self._provider_snapshot_task = None
+                    self._provider_snapshot_dirty = False
 
         self._provider_snapshot_task = asyncio.create_task(
             publish_later(),
@@ -8426,6 +8432,7 @@ class WorkLedgerCoordinator:
             ):
                 pending.cancel()
                 self._provider_snapshot_task = None
+                self._provider_snapshot_dirty = False
         if surface:
             surfaces = [str(surface)]
         else:
