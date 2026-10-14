@@ -454,11 +454,25 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
-# Optional scene and KTX2 character animation
+# Optional scene and character animation (KTX2 + matching video)
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
-uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+uv run --locked --no-sync python tools\external_assets.py verify "C:\Downloads\amadeus-character-kurisu-2026.10.14-keypoint-return-v3.zip"
+uv run --locked --no-sync python tools\external_assets.py install "C:\Downloads\amadeus-character-kurisu-2026.10.14-keypoint-return-v3.zip"
 uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+The [official resource center](https://code-amadeus.github.io/#resources) supplies
+the color-corrected `2026.10.14-keypoint-return-v3` character pack, including
+40 video clips (7,672 frames) and a new key-point return transition animation.
+For the Google Drive download, collect all 28 parts and the helper files in one
+directory, then run `Assemble-Kurisu.ps1` to reconstruct and verify the full ZIP.
+Do not pass an individual `.zip.001` part to the installer.
+
+To upgrade an older character pack, stop the backend and close rendering windows,
+back up customized assets, then append `--overwrite` to the character `install`
+command above. Old static-only packs remain supported, but do not enable the
+video path. After installation, follow the [recommended graphics setup and
+actual-source check](#recommended-017-graphics-setup).
 
 To try **Kurisu v2Pro**, install the separately supplied experimental add-on
 after the v3 voice pack. It contains the v2Pro GPT/SoVITS checkpoint pair and
@@ -505,6 +519,19 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 ```
 
 ### Recommended NVIDIA speech acceleration
+
+These local CUDA improvements require the L4 local CUDA installation profile and
+the Qwen/GPT-SoVITS assets above; L1 text, remote voice and CPU profiles do not
+receive them. Keep your complete optional-extra selection when syncing
+dependencies; see [installation profiles](docs/install_profiles.md).
+
+In **Settings → Voice → Conversation recognition**, keep **Qwen device** on
+`auto` and **Qwen CUDA Graph** enabled. The defaults are `QWEN3_ASR_DEVICE=auto`,
+`QWEN3_ASR_CUDA_GRAPH=true` and `QWEN3_ASR_FLASH_ATTN=true`. Qwen acceleration
+is independent of the TTS mode. CUDA Graph requires a supported NVIDIA runtime;
+FlashAttention additionally needs a compatible optional extension. Unsupported
+environments retain the compatible decoding/attention path. Restart the backend
+after changes and check diagnostics for the actual device and inference path.
 
 Leave **Settings → Voice → Advanced voice settings → Local TTS inference mode**
 on **Automatic (recommended)**. For `.env` configuration:
@@ -833,29 +860,51 @@ backend restart; reopen existing character and wallpaper windows afterward.
 The page shows current backend limits separately from saved choices. Wallpaper
 Engine may impose a lower FPS cap; displayed limits are not measured frame rates.
 
-#### Experimental texture sampling (off by default)
+#### Recommended 0.17 graphics setup
 
-`RENDER_TEXTURE_SAMPLING=false` preserves the existing full-frame loading and
-playback rules. On **16GB systems or other memory-constrained setups**, consider
-trying **Experimental texture sampling** in the graphics page with the 30 FPS
-power-saving profile. The toggle is independent of presets and remains off by
-default. The equivalent `.env` values are:
+Install the matching video character pack using the [asset instructions](#install-external-runtime-assets),
+then check these settings in **Settings → Graphics & performance**:
 
-```dotenv
-GRAPHICS_PROFILE=power_saving
-RENDER_TEXTURE_SAMPLING=true
-```
+| Setting | Recommended value | Equivalent configuration |
+|---|---|---|
+| Graphics profile | Standard (60 FPS) | `GRAPHICS_PROFILE=standard` |
+| Frame source | Automatic · video when available | `RENDER_FRAME_SOURCE=auto` |
+| Frame cache budget | Automatic · video 384 MiB / static 2 GiB | `RENDER_FRAME_BUDGET_MIB=auto` |
+| Sample animation textures | On | `RENDER_TEXTURE_SAMPLING=true` |
+| Reuse converted textures on disk | On | `RENDER_BC7_CACHE=true` |
 
-When enabled, character frames are sampled against the effective FPS budget,
-preserving required hold frames, animation duration and mouth-anchor indices.
-One local 30 FPS offscreen experiment reduced CPU texture buffers by about 50%
-with similar frame pacing. This is not a claim of halving total RAM or VRAM;
-16GB hardware and long-running sessions still need validation.
-See the [experiment and limitations](docs/fps_texture_sampling_experiment_2026-09-16.md).
+These match a fresh Standard-profile installation. **Upgrading preserves explicit
+choices**: an old static source, fixed cache budget or disabled sampling still
+takes precedence. Update those choices in Settings. For `.env` configuration,
+use the values in the table and check [configuration ownership](#configuration-ownership):
+desktop settings override `.env`, and parent-process values appear locked in the GUI.
 
-Restart Amadeus/the backend and reopen the wallpaper after changing this option.
-Changing the draw FPS alone does not rebuild the texture cache. To restore the
-existing behavior, set `RENDER_TEXTURE_SAMPLING=false` and restart in the same way.
+Restart the backend and reopen the character/wallpaper. Under **Actual animation
+frame source**, the active surface should report **Video with static heads ·
+384 MiB**. If it reports **Static frames**, read the accompanying reason and check
+the matching pack/decoder; selecting Automatic alone does not prove video is active.
+Without compatible video assets or decoder support, Automatic retains static
+frames with a 2 GiB cache budget. A manually selected budget applies to both paths.
+
+The frame budget bounds retained static-frame CPU/GPU payloads, not the entire
+application, voice models or decoder memory. It is not a total-VRAM cap or a
+guaranteed percentage reduction on every machine. See the [measured comparisons
+and their baselines](docs/alpha-0.17.0-performance.md).
+
+#### Animation texture sampling
+
+When not explicitly configured, texture sampling is **on at a configured 60 FPS**
+and off at other profile frame rates. Explicit on/off choices are preserved.
+Sampling skips source frames above the effective FPS budget while preserving
+required hold frames, animation duration and mouth-anchor indices. You can also
+enable it explicitly with the 30 FPS power-saving profile. The disk texture cache
+is enabled by default and targets 4 GiB of disk space; that is a disk budget.
+
+Restart the backend and reopen the character/wallpaper after changing these
+options. Changing draw FPS alone does not immediately rebuild the texture cache.
+To use full-frame loading, set `RENDER_TEXTURE_SAMPLING=false` and restart in the
+same way. The earlier [30 FPS sampling experiment](docs/fps_texture_sampling_experiment_2026-09-16.md)
+measured CPU texture buffers, not total RAM or VRAM.
 
 ## Configuration ownership
 
