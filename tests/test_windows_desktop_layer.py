@@ -173,6 +173,48 @@ def test_desktop_watch_reemits_same_layer_only_when_native_frame_changed(monkeyp
     ]
 
 
+
+def test_z_order_reconciliation_preserves_electron_geometry(monkeypatch) -> None:
+    calls = []
+    geometry = {"x": -1920, "y": 120, "width": 1920, "height": 1080}
+    before = dict(geometry)
+
+    class User32:
+        @staticmethod
+        def IsWindow(_hwnd):
+            return True
+
+        @staticmethod
+        def FindWindowW(_kind, _title):
+            return 77
+
+        @staticmethod
+        def GetWindow(_hwnd, _command):
+            return 88
+
+        @staticmethod
+        def GetWindowRect(_hwnd, pointer):
+            # Emulate a helper observing scaled coordinates on another monitor.
+            pointer._obj.left, pointer._obj.top = -1280, 80
+            pointer._obj.right, pointer._obj.bottom = 0, 800
+            return True
+
+        @staticmethod
+        def SetWindowPos(hwnd, after, x, y, width, height, flags):
+            calls.append((hwnd, after, flags))
+            if not flags & 0x0002:
+                geometry.update(x=x, y=y)
+            if not flags & 0x0001:
+                geometry.update(width=width, height=height)
+            return True
+
+    monkeypatch.setattr(desktop_layer, "_ensure_desktop_owned_window", lambda *_: (True, "unchanged"))
+    ok, mode, changed = desktop_layer._place_above_desktop_anchor(User32(), 42, 99, "desktop")
+    assert (ok, mode, changed) == (True, "desktop", True)
+    assert calls[0][:2] == (42, 88)
+    assert geometry == before
+
+
 if __name__ == "__main__":
     class _MonkeyPatch:
         def __init__(self) -> None:
@@ -191,6 +233,7 @@ if __name__ == "__main__":
     test_desktop_owner_transition_requires_the_postcondition()
     test_desktop_owner_transition_restores_popup_style_and_owner()
     for test in (
+        test_z_order_reconciliation_preserves_electron_geometry,
         test_desktop_watch_reconciles_when_the_available_layer_changes,
         test_desktop_watch_reemits_same_layer_only_when_native_frame_changed,
     ):

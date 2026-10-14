@@ -266,9 +266,9 @@ def _place_above_desktop_anchor(
     """Place top-level Slice immediately above the wallpaper's top-level host."""
     if not anchor or not user32.IsWindow(int(anchor)):
         return False, "desktop-anchor-missing", False
-    rect = wintypes.RECT()
-    if not user32.GetWindowRect(int(hwnd), ctypes.byref(rect)):
-        return False, "slice-rect-unavailable", False
+    # Electron owns geometry in per-monitor logical coordinates. This helper
+    # owns only Z-order: round-tripping HWND rectangles through a DPI-unaware
+    # process can move/resize the window on a differently scaled display.
     desktop_owner = int(user32.FindWindowW("Progman", None) or anchor)
     top_level_ok, top_level_reason = _ensure_desktop_owned_window(
         user32,
@@ -284,14 +284,13 @@ def _place_above_desktop_anchor(
         return True, mode, native_frame_changed
     SWP_NOACTIVATE = 0x0010
     SWP_FRAMECHANGED = 0x0020
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
     if user32.SetWindowPos(
         int(hwnd),
         previous,
-        rect.left,
-        rect.top,
-        max(1, rect.right - rect.left),
-        max(1, rect.bottom - rect.top),
-        SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        0, 0, 0, 0,
+        SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE,
     ):
         return True, mode, True
     return False, f"desktop-z-order-failed:{ctypes.get_last_error()}", False
