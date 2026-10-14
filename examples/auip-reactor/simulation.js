@@ -27,6 +27,7 @@
   let semanticEventCount = 0;
 
   function trend() {
+    if (status === "stabilized") return "steady";
     const delta = 2 - cooling * 1.5;
     return delta > 0 ? "rising" : delta < 0 ? "falling" : "steady";
   }
@@ -119,7 +120,10 @@
     if (status !== "running") return;
     if (attached && awaitingControl) return;
     tickCount += 1;
-    heat = Math.max(20, Math.min(100, heat + 2 - cooling * 1.5));
+    // Hold at the safe target while confirming stability; otherwise the
+    // confirmation ticks themselves would cool below the declared interval.
+    const minimumHeat = cooling >= 2 ? STABLE_HEAT : 20;
+    heat = Math.max(minimumHeat, Math.min(100, heat + 2 - cooling * 1.5));
     if (cooling >= 2 && heat <= STABLE_HEAT) stableTicks += 1;
     else stableTicks = 0;
 

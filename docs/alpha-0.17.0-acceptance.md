@@ -96,8 +96,10 @@ model-less acceptance evidence above.
 
 Tracking: [#215](https://github.com/Code-Amadeus/Amadeus/issues/215); candidate
 [#214](https://github.com/Code-Amadeus/Amadeus/pull/214). **Not release-accepted.**
-The long-path full generated-app rerun failed Host boot validation; a byte-identical
-short-path copy passes and the fresh full short-path rerun is in progress. The first Gomoku
+The short-path generated-app run completed all control stages; its retained raw
+report failed only an inapplicable spoken-progress check in no-TTS mode. A separate
+offline re-evaluation with the repaired reviewer passes all 29 control checks.
+The GUI/local-voice reactor repeat passes after repairing the example's stability boundary. The first Gomoku
 round failed; a repeat completed gameplay/history but retained an automated
 wording-oracle failure, manually reviewed below. No merge, tag or public Release is authorized before maintainer re-review.
 
@@ -120,9 +122,10 @@ hashes, boundaries and the tested product-patch hash.
 | Native shell close | 15/15 | User-facing window close and Host lifecycle agree; fixture-seeded Work/app. |
 | Implicit AUIP surface creation | 17/17 | Attach opens the correct shared native surface without an earlier Preview open; fixture-seeded Work/app. |
 | Reactor AUIP interaction | 22/22 semantic checks | Official seeded example, real model/GUI: legal cooling, accepted receipt before visible role delivery, grounded state query, leave, ordinary Chat. This example declares no AUIP reset action. |
+| Reactor GUI + local TTS | 24/24 semantic checks | Real model decisions, accepted receipt before visible delivery and speech, complete TTS lifecycle, grounded query, leave and ordinary Chat. Final sample stays inside its declared safe interval. No microphone or acoustic loopback. |
 | Local TTS playback/interrupt/recovery | 5/5 | Actual nonzero PortAudio device writes, interrupt before completion, epoch advancement, no stale writes, and subsequent speech. Production TtsHandler is used. No microphone or acoustic loopback. |
 | Local ASR Graph replay | Execution and paired consistency pass | A synthetic 3.456-second local WAV; 384-token Graph, cache hit, 16 replay steps, no fallback. One warmup and one measured call per engine have identical official/Graph text and tokens. |
-| Generated lights, full GUI | Short-path full rerun in progress | First adaptation exceeded 900 seconds. Second run hit Chromium file loading at 263–266-character SDK paths: files exist, but `ERR_FILE_NOT_FOUND` / `managed_sdk_unavailable` blocked delivery. A byte-identical short-path copy passed the same Host boot check. This identifies an environment/path-length failure; it does not yet establish full GUI acceptance. |
+| Generated lights, full GUI | 29/29 control checks after offline re-evaluation | Real creation, status, same-Work adaptation, attach, two accepted actions, query, reset, leave and ordinary Chat. Raw report remains failed solely for the repaired no-TTS spoken-progress condition. No claim of Provider speech. Earlier timeout and long-path failures remain recorded. |
 | Gomoku full round | Failed | First explicit move and four automatic replies were accepted. At revision 11 / move 10, the fifth automatic reply failed with `b2_candidate_not_available`; no unauthorized move executed. Post-round/history checks were not reached. |
 
 ASR consistency is not an accuracy pass: both routes returned
@@ -167,6 +170,18 @@ failure. Do not add a silent retry or weaken candidate validation to count it as
   “no prerequisite run required” and a misleading per-turn business-success flag.
   It now fails immediately once a Provider run exists, in every journey layer.
   The first overall run was already failed; its old per-turn success flag is not evidence.
+- **No-TTS review condition:** spoken Provider progress is now required only when
+  TTS is enabled. Four tests cover both modes and presence/absence of progress;
+  two fail before the fix. The original lights report is unchanged; the separate
+  offline review reconstructs source event indices and passes all 29 control checks.
+- **Reactor example semantics:** two GUI/voice runs reached 42 and reported
+  stabilized despite declaring a 44–70 safe interval. Refreshing the test's
+  post-speech snapshot did not solve it. Executing the sample's real clock in Node
+  reproduced both legal cooling levels ending at 42 and 37.5. The example now
+  holds the safe target during stability confirmation and reports a steady
+  terminal trend. Both runtime cases and the real GUI/voice repeat pass. The test
+  also refreshes Host state after speech; short controller leases retain their
+  separate early activation evidence.
 - **Other setup/negative results:** incompatible CLI flag combinations failed
   before launching the product; a long nested Windows path failed Git setup and
   was replaced with a shorter isolated path. Reactor correctly rejected a second
@@ -175,7 +190,8 @@ failure. Do not add a silent retry or weaken candidate validation to count it as
 
 Microphone/VAD/acoustic barge-in, AirPods reconnect, wallpaper recovery (#185),
 exclusive MCP lifetime (#207), wider-device rendering (#201/#103), and consistently
-successful generated-app/Gomoku journeys remain unqualified. Passing
+successful repeated generated-app/Gomoku journeys remain unqualified. The full
+generated-app run disabled TTS; combined speech coverage is the seeded reactor path. Passing
 packaging/CI gates does not supersede these recorded live-product results.
 
 
@@ -195,7 +211,9 @@ uncommitted video-distribution work from the development checkout.
 | Plugin documentation points at hidden sidebar | Host profile and extension examples now point to Settings → General → Manage plugins. |
 | Redundant idle-time resets | Compute quiet time directly from the speech-end timestamp; remove the misleading writable counter. Silent Work completion keeps the existing speech-based timing. Nine ambient scheduling tests pass, including that boundary. |
 
-The updated frontend still passes 523 tests and production build. GPU benchmark
+Final live-driver, sample and release-tool verification: 110 passed, including
+the six new voice-mode/sample cases. The updated frontend still passes 523 tests
+and production build. GPU benchmark
 results remain historical measurements, not results fabricated from these tests.
 
 ## Sidebar comparison

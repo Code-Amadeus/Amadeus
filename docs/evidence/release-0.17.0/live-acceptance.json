@@ -3,10 +3,12 @@
   "release": "0.17.0-alpha.0",
   "date": "2026-10-14/15 Pacific/Auckland",
   "base_commit": "70267cb0907d8bc3ffdb522a72175f9c30ec169c",
+  "review_followup_commit": "2f046293b37848d0c77d8572137e76d70245644d",
   "release_accepted": false,
   "publication": "held for maintainer re-review",
   "tested_product_patch_sha256": {
-    "server/cooperative_chat_ingress.py": "dc99d2332b0e0a64260d95379f56d85014ced83f618d1c75d08e23af650d0fe8"
+    "server/cooperative_chat_ingress.py": "dc99d2332b0e0a64260d95379f56d85014ced83f618d1c75d08e23af650d0fe8",
+    "examples/auip-reactor/simulation.js": "17c3c2f5eaf72f8e9050fa0206187b0482db882c0e81fcaf0d10a81d07a890e3"
   },
   "jobs": [
     {
@@ -263,6 +265,137 @@
       }
     },
     {
+      "name": "reactor_gui_local_voice_v0",
+      "status": "failed",
+      "boundary": "Seeded official reactor, real model and shipping GUI with local GPT-SoVITS. No microphone or acoustic loopback.",
+      "checks": {},
+      "error": "RuntimeError: accepted scalar action violated the live semantic oracle: scalar_action_moved_as_declared",
+      "turn_checks": {
+        "launch": {
+          "same_work_item": true,
+          "business_outcome_verified": true,
+          "auip_active": true,
+          "expected_situation_kind_visible": true,
+          "engagement_mode_active": true
+        },
+        "step": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "b2_receipt_precedes_tts": true,
+          "revision_advanced": true,
+          "scalar_oracle_observed_metric": true,
+          "scalar_oracle_values_are_comparable": true,
+          "scalar_oracle_knows_action_direction": true,
+          "scalar_action_moved_as_declared": false,
+          "scalar_action_matches_current_zone": true,
+          "scalar_action_did_not_cross_the_entire_safe_interval": true
+        }
+      },
+      "local_report": "build/v0/live_product_reactor_interaction_20261014T112513Z_5f54df/report.json",
+      "report_sha256": "1bc78e990e5374c863c29b82bce9bb6c138c213a602420e25c86220b2da3c3bc"
+    },
+    {
+      "name": "reactor_gui_local_voice_v1",
+      "status": "failed",
+      "boundary": "Seeded official reactor, real model and shipping GUI with local GPT-SoVITS. No microphone or acoustic loopback.",
+      "checks": {},
+      "error": "RuntimeError: accepted scalar action violated the live semantic oracle: scalar_action_moved_as_declared",
+      "turn_checks": {
+        "launch": {
+          "same_work_item": true,
+          "business_outcome_verified": true,
+          "auip_active": true,
+          "expected_situation_kind_visible": true,
+          "engagement_mode_active": true
+        },
+        "step": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "b2_receipt_precedes_tts": true,
+          "revision_advanced": true,
+          "scalar_oracle_observed_metric": true,
+          "scalar_oracle_values_are_comparable": true,
+          "scalar_oracle_knows_action_direction": true,
+          "scalar_action_moved_as_declared": false,
+          "scalar_action_matches_current_zone": true,
+          "scalar_action_did_not_cross_the_entire_safe_interval": true
+        }
+      },
+      "local_report": "build/v1/live_product_reactor_interaction_20261014T112829Z_428d3b/report.json",
+      "report_sha256": "515b58adda1c9d9e0678166fe876992dfd8a81010c1b19613472bff62152a5a8"
+    },
+    {
+      "name": "reactor_gui_local_voice_v2",
+      "status": "passed",
+      "boundary": "Seeded official reactor, real model and shipping GUI with local GPT-SoVITS. No microphone or acoustic loopback.",
+      "checks": {
+        "runtime_code_identity_matches_launcher": true,
+        "launch_turn_started_no_provider_run": true,
+        "prepare_exposed_expected_situation_kind": true,
+        "requested_engagement_mode_became_active": true,
+        "step_produced_an_application_action_request": true,
+        "explicit_step_produced_exactly_one_action_and_receipt": true,
+        "query_produced_no_application_action_request": true,
+        "query_produced_no_work_ledger_answer": true,
+        "leave_closed_the_application_session": true,
+        "post_leave_chat_returned_a_visible_role_reply": true,
+        "post_leave_chat_started_no_provider_work": true,
+        "post_leave_chat_did_not_reopen_or_operate_the_app": true,
+        "post_leave_chat_reached_first_tts": true,
+        "all_automatic_permissions_were_bounded_and_accepted": true,
+        "tts_started_and_completed_visible_speech": true,
+        "final_work_has_no_pending_permissions": true,
+        "prepare_became_active_auip": true,
+        "prepare_business_outcome_verified": true,
+        "query_respected_revision_contract": true,
+        "app_surface_has_no_uncaught_errors": true,
+        "all_explicit_steps_received_accepted_receipts": true,
+        "b2_foreground_contract_passed": true,
+        "b2_branch_collapsed_with_verified_action": true,
+        "interaction_launch_started_no_provider": true
+      },
+      "error": null,
+      "turn_checks": {
+        "launch": {
+          "same_work_item": true,
+          "business_outcome_verified": true,
+          "auip_active": true,
+          "expected_situation_kind_visible": true,
+          "engagement_mode_active": true
+        },
+        "step": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "b2_receipt_precedes_tts": true,
+          "revision_advanced": true,
+          "scalar_oracle_observed_metric": true,
+          "scalar_oracle_values_are_comparable": true,
+          "scalar_oracle_knows_action_direction": true,
+          "scalar_action_moved_as_declared": true,
+          "scalar_action_matches_current_zone": true,
+          "scalar_action_did_not_cross_the_entire_safe_interval": true
+        },
+        "query": {
+          "ambient_revision_not_regressed": true
+        },
+        "leave": {
+          "app_session_closed": true
+        },
+        "post_leave_chat": {}
+      },
+      "local_report": "build/v2/live_product_reactor_interaction_20261014T113259Z_413798/report.json",
+      "report_sha256": "463848852f6407a80b3f03160a694c1f6d38b81794df8884c711544e92d814b4"
+    },
+    {
       "name": "local_asr_graph_replay",
       "status": "passed_execution_and_paired_consistency",
       "boundary": "One synthetic 3.456-second local TTS clip; one warmup and one measured call per engine. Not an accuracy or performance qualification.",
@@ -415,7 +548,143 @@
       "report_sha256": "73db475ab29abd13e44e93ebcb547df0157993e03ec0ca70b262453798a87504"
     },
     "short_path_full_rerun": {
-      "status": "running"
+      "status": "failed",
+      "local_report": "build/l0/live_product_lights_full_20261014T105721Z_10c27f/report.json",
+      "report_sha256": "e3160f7bde98485c121d96d5cf72b76aded65240e9193c46acb99e4387f9108c",
+      "turn_checks": {
+        "create": {
+          "provider_succeeded": true,
+          "business_outcome_verified": true,
+          "terminal_narration_delivered": true
+        },
+        "status": {
+          "canonical_status_answer_visible": false,
+          "provider_query_accepted_and_reply_visible": true,
+          "active_query_reached_existing_work_owner": true
+        },
+        "prepare": {
+          "same_work_item": true,
+          "provider_succeeded": true,
+          "business_outcome_verified": true,
+          "auip_active": true,
+          "expected_situation_kind_visible": true,
+          "engagement_mode_active": true
+        },
+        "step": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "revision_advanced": true
+        },
+        "step_2": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "revision_advanced": true
+        },
+        "query": {
+          "revision_unchanged": true
+        },
+        "reset": {
+          "accepted_receipt": true,
+          "initial_situation_restored": true
+        },
+        "leave": {
+          "app_session_closed": true
+        },
+        "post_leave_chat": {}
+      },
+      "review": {
+        "status": "failed",
+        "checks": {
+          "runtime_code_identity_matches_launcher": true,
+          "create_turn_started_one_provider_run": true,
+          "creation_business_outcome_verified": true,
+          "status_turn_started_no_provider_run": true,
+          "status_query_reached_visible_or_delivered_owner": true,
+          "prepare_turn_preserved_one_work_continuation": true,
+          "prepare_business_outcome_verified": true,
+          "prepare_exposed_expected_situation_kind": true,
+          "requested_engagement_mode_became_active": true,
+          "each_provider_attempt_spoke_substantive_progress": false,
+          "step_produced_an_application_action_request": true,
+          "explicit_step_produced_exactly_one_action_and_receipt": true,
+          "reset_produced_exactly_one_action_and_receipt": true,
+          "reset_restored_the_initial_situation": true,
+          "query_produced_no_application_action_request": true,
+          "query_produced_no_work_ledger_answer": true,
+          "leave_closed_the_application_session": true,
+          "post_leave_chat_returned_a_visible_role_reply": true,
+          "post_leave_chat_started_no_provider_work": true,
+          "post_leave_chat_did_not_reopen_or_operate_the_app": true,
+          "all_automatic_permissions_were_bounded_and_accepted": true,
+          "final_work_has_no_pending_permissions": true,
+          "prepare_became_active_auip": true,
+          "query_respected_revision_contract": true,
+          "app_surface_has_no_uncaught_errors": true,
+          "all_explicit_steps_received_accepted_receipts": true,
+          "b2_foreground_contract_passed": true,
+          "b2_branch_collapsed_with_verified_action": true,
+          "creation_provider_succeeded": true,
+          "creation_terminal_narration_delivered": true
+        },
+        "failures": [
+          "a Provider attempt completed without one spoken design/direction update",
+          "acceptance check failed: each_provider_attempt_spoke_substantive_progress"
+        ],
+        "ai_review_required": [
+          "Judge whether each Japanese role reply matches the user's natural Chinese wording.",
+          "Judge whether progress and terminal narration are useful, timely and in character.",
+          "Inspect screenshots for visible Chat, permission and AUIP window state.",
+          "Check the correlated event/log packet for claims made before Provider or app receipts.",
+          "Check that state answers do not recommend actions outside the current choice/v1 actionTypes and available options."
+        ]
+      },
+      "offline_review": {
+        "schema": "amadeus.journey-offline-review.v1",
+        "original_status": "failed",
+        "original_report_sha256": "e3160f7bde98485c121d96d5cf72b76aded65240e9193c46acb99e4387f9108c",
+        "corrected_no_tts_review_status": "passed",
+        "checks": {
+          "runtime_code_identity_matches_launcher": true,
+          "create_turn_started_one_provider_run": true,
+          "creation_business_outcome_verified": true,
+          "status_turn_started_no_provider_run": true,
+          "status_query_reached_visible_or_delivered_owner": true,
+          "prepare_turn_preserved_one_work_continuation": true,
+          "prepare_business_outcome_verified": true,
+          "prepare_exposed_expected_situation_kind": true,
+          "requested_engagement_mode_became_active": true,
+          "step_produced_an_application_action_request": true,
+          "explicit_step_produced_exactly_one_action_and_receipt": true,
+          "reset_produced_exactly_one_action_and_receipt": true,
+          "reset_restored_the_initial_situation": true,
+          "query_produced_no_application_action_request": true,
+          "query_produced_no_work_ledger_answer": true,
+          "leave_closed_the_application_session": true,
+          "post_leave_chat_returned_a_visible_role_reply": true,
+          "post_leave_chat_started_no_provider_work": true,
+          "post_leave_chat_did_not_reopen_or_operate_the_app": true,
+          "all_automatic_permissions_were_bounded_and_accepted": true,
+          "final_work_has_no_pending_permissions": true,
+          "prepare_became_active_auip": true,
+          "query_respected_revision_contract": true,
+          "app_surface_has_no_uncaught_errors": true,
+          "all_explicit_steps_received_accepted_receipts": true,
+          "b2_foreground_contract_passed": true,
+          "b2_branch_collapsed_with_verified_action": true,
+          "creation_provider_succeeded": true,
+          "creation_terminal_narration_delivered": true
+        },
+        "method": "Reconstruct original stream indices from compact records and rerun the corrected semantic reviewer. Preserve other original checks and the raw report.",
+        "changed_condition": "Spoken Provider progress is required only when TTS is enabled.",
+        "limitation": "Offline re-evaluation of retained evidence, not a second live run or proof of Provider speech."
+      },
+      "offline_review_sha256": "ba37e9b7935280061b1561ed7599f0b1066907f61a41317ca1173321cad5f664"
     }
   },
   "unresolved": [
@@ -452,6 +721,18 @@
       "layer": "test_instrument",
       "observed": "Probe called only playback/pipeline halves and omitted the sentence sequence reset.",
       "repair": "Use production TtsHandler; real interrupt and recovery pass."
+    },
+    {
+      "name": "no_tts_progress_requirement",
+      "layer": "test_instrument",
+      "observed": "The no-TTS generated-app run passed 29 control checks but failed a spoken-progress check.",
+      "repair": "Require spoken Provider progress only for voice journeys. Two regression cases fail before the fix; all four voice/no-voice cases pass after. Separate offline review passes 29 checks; original raw report is unchanged."
+    },
+    {
+      "name": "reactor_terminal_outside_safe_interval",
+      "layer": "product_semantic",
+      "observed": "Two GUI/voice runs reached heat 42 and claimed stabilized despite declaring a safe interval of 44-70. Refreshing the test snapshot did not resolve the failure. Runtime tests reproduce both legal cooling levels ending outside the safe interval.",
+      "repair": "The example now holds at its declared safe target during stability confirmation and reports steady when stabilized. Test driver refreshes Host state after speech while retaining early controller-lease activation evidence. Original failed reports are retained."
     },
     {
       "name": "lights_900_second_limit",

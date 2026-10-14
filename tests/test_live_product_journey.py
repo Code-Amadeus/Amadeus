@@ -1001,6 +1001,28 @@ def test_live_product_review_checks_every_step_and_reset() -> None:
     assert review["checks"]["reset_restored_the_initial_situation"]
 
 
+@pytest.mark.parametrize("tts_required", [False, True])
+@pytest.mark.parametrize("progress_spoken", [False, True])
+def test_spoken_provider_progress_is_required_only_for_voice_journeys(
+    tts_required: bool, progress_spoken: bool,
+) -> None:
+    identity = {"workspace_fingerprint": "same"}
+    review = _semantic_review(
+        turns=[_turn("prepare", 0, 1, runs=("run-prepare",))],
+        events=[EventRecord(0.1, "chat.observer_decision", {
+            "run_id": "run-prepare", "terminal": False,
+            "speak": progress_spoken, "narration_keypoints": ["semantic_progress"],
+        })],
+        permissions=[], expected_identity=identity, runtime_identity=identity,
+        tts_required=tts_required, journey_layer="adaptation",
+    )
+    key = "each_provider_attempt_spoke_substantive_progress"
+    if tts_required:
+        assert review["checks"][key] is progress_spoken
+    else:
+        assert key not in review["checks"]
+
+
 def test_layered_reviews_do_not_claim_skipped_creation_or_authoring() -> None:
     identity = {"workspace_fingerprint": "same"}
     common_events = [
