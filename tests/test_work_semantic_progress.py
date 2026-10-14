@@ -89,6 +89,113 @@ def test_unstructured_dynamic_tool_output_never_becomes_a_progress_fact() -> Non
     assert result is None
 
 
+def test_generic_tool_failures_are_bounded_observed_diagnostics() -> None:
+    for evidence in (
+        {"ok": False},
+        {"success": False},
+        {"status": "failed"},
+        {"status": "error"},
+        {"status": "declined"},
+        {"exit_code": 7},
+        {"exit_code": -1},
+        {"exit_code": "2"},
+        {"success": True, "status": "failed"},
+    ):
+        fact = semantic_progress_fact(
+            "tool.result",
+            {"tool": "external_operation", "item_id": "failed-1", **evidence,
+             "output": "private output: C:/private/secret.json api_key_missing",
+             "command": "python C:/private/secret.py"},
+        )
+        assert fact is not None, evidence
+        assert fact.milestone == "diagnostic"
+        assert fact.verified is True
+        assert fact.evidence == "observed"
+        assert fact.source == "host.tool_observation"
+        assert fact.summary == "A tool operation failed; the requested action is not confirmed complete."
+        assert "private" not in fact.summary and "api_key_missing" not in fact.summary
+
+
+def test_generic_success_and_unknown_results_remain_mechanical() -> None:
+    for evidence in (
+        {"ok": True},
+        {"success": True},
+        {"status": "completed"},
+        {"exit_code": 0},
+        {"exit_code": "0"},
+        {},
+        {"status": "pending"},
+        {"success": None},
+        {"success": "false"},
+        {"exit_code": "unknown"},
+        {"exit_code": True},
+        {"output": "The operation failed with a nonzero exit code."},
+    ):
+        assert semantic_progress_fact(
+            "tool.result", {"tool": "external_operation", **evidence}
+        ) is None, evidence
+
+
+def test_generic_failure_reaches_verified_diagnostic_work_note() -> None:
+    async def run() -> None:
+        notes: list[dict] = []
+
+        async def capture(_method: str, params: dict) -> None:
+            notes.append(params)
+
+        coordinator = WorkActivityCoordinator()
+        bus.on(Method.CHAT_WORK_NOTE, capture)
+        try:
+            for index, evidence in enumerate((
+                {"success": False, "status": "failed"},
+                {"exit_code": 3},
+                {"success": True, "status": "completed"},
+                {},
+            )):
+                notes.clear()
+                run_id = f"generic-tool-run-{index}"
+                common = {
+                    "provider": "contract-test", "run_id": run_id,
+                    "task": "Run an external operation",
+                    "metadata": {"session_id": "semantic-session"},
+                }
+                try:
+                    await coordinator._on_provider_event(Method.PROVIDER_EVENT, {
+                        **common, "type": "tool.call", "payload": {
+                            "tool": "external_operation", "item_id": f"operation-{index}",
+                            "command": "python C:/private/secret.py",
+                        },
+                    })
+                    await coordinator._on_provider_event(Method.PROVIDER_EVENT, {
+                        **common, "type": "tool.result", "payload": {
+                            "item_id": f"operation-{index}", **evidence,
+                            "output": "C:/private/secret.json api_key_missing",
+                        },
+                    })
+                    semantic = [note for note in notes if note.get("metadata", {}).get(
+                        "narration_keypoint") == "semantic_progress"]
+                    if index >= 2:
+                        assert semantic == [], evidence
+                        continue
+                    assert len(semantic) == 1, evidence
+                    note = semantic[0]
+                    assert note["phase"] == "Work"
+                    assert note["metadata"]["semantic_source"] == "host.tool_observation"
+                    assert note["metadata"]["semantic_verified"] is True
+                    assert note["metadata"]["semantic_evidence"] == "observed"
+                    assert note["metadata"]["semantic_milestone"] == "diagnostic"
+                    assert note["summary"] == "A tool operation failed; the requested action is not confirmed complete."
+                    report = next(signal for signal in note["signals"] if signal.get("label") == "report")
+                    assert report["detail"] == "Host-observed semantic evidence"
+                    assert "private" not in note["summary"] and "api_key_missing" not in note["summary"]
+                finally:
+                    await coordinator._leave_work(run_id, reason="test")
+        finally:
+            bus.off(Method.CHAT_WORK_NOTE, capture)
+
+    asyncio.run(run())
+
+
 def test_file_results_use_correlated_context_for_both_provider_shapes() -> None:
     contexts = remember_tool_call(
         {},
@@ -276,6 +383,9 @@ def main() -> None:
     test_validation_commands_are_facts_but_ordinary_commands_are_not()
     test_untyped_assistant_update_is_candidate_evidence_only()
     test_unstructured_dynamic_tool_output_never_becomes_a_progress_fact()
+    test_generic_tool_failures_are_bounded_observed_diagnostics()
+    test_generic_success_and_unknown_results_remain_mechanical()
+    test_generic_failure_reaches_verified_diagnostic_work_note()
     test_file_results_use_correlated_context_for_both_provider_shapes()
     test_permission_and_artifact_projection_stays_truthful_and_bounded()
     test_verified_fact_reaches_provider_neutral_work_note()
