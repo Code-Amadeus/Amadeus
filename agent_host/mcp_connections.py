@@ -244,6 +244,11 @@ def codex_mcp_config_overrides(
             overrides.append(f"{prefix}.args={_toml_literal(list(connection.arguments))}")
             if connection.cwd:
                 overrides.append(f"{prefix}.cwd={_toml_literal(connection.cwd)}")
+            if connection.environment:
+                # 只转发当前连接显式绑定的变量名，密钥值不进入命令行或配置。
+                overrides.append(
+                    f"{prefix}.env_vars={_toml_literal(sorted(connection.environment))}"
+                )
         else:
             overrides.append(f"{prefix}.url={_toml_literal(connection.url)}")
             if connection.bearer_token_env_var:

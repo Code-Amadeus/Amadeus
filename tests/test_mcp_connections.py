@@ -233,3 +233,17 @@ def test_nested_http_error_redacts_resolved_bearer_token(monkeypatch):
     detail = _safe_error(ExceptionGroup('transport', [
         RuntimeError('Rejected synthetic-http-token')]), connection)
     assert detail == 'Rejected [redacted]'
+
+
+def test_codex_stdio_forwards_only_each_connections_explicit_environment():
+    import tomllib
+    left = _stdio_connection(environment={"VISION_TOKEN": "synthetic-vision"})
+    right = _stdio_connection(connection_id="other", environment={"OTHER_TOKEN": "synthetic-other"})
+    http = McpConnectionSpec("web", "Web", "http", enabled=True, provider_ids=("codex",), url="https://example.invalid/mcp", bearer_token_env_var="HTTP_TOKEN", environment={"HTTP_TOKEN": "synthetic-http"})
+    overrides = codex_mcp_config_overrides((left, right, http))
+    config = tomllib.loads("\n".join(overrides))["mcp_servers"]
+    assert config["amadeus_fixture"]["env_vars"] == ["VISION_TOKEN"]
+    assert config["other"]["env_vars"] == ["OTHER_TOKEN"]
+    assert "env_vars" not in config["web"]
+    assert config["web"]["bearer_token_env_var"] == "HTTP_TOKEN"
+    assert "synthetic-" not in "\n".join(overrides)
