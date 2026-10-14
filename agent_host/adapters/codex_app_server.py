@@ -18,6 +18,7 @@ from pathlib import Path
 import threading
 import time
 from typing import Any, Callable, cast
+from uuid import uuid4
 
 from openai_codex import ApprovalMode, AsyncCodex, CodexConfig, Sandbox
 from openai_codex._approval_mode import _approval_mode_override_settings
@@ -850,6 +851,9 @@ class CodexAppServerAdapter:
                 return {"accepted": False, "reason": "permission_request_not_pending"}
             if pending.run_id != str(run_id or "").strip():
                 return {"accepted": False, "reason": "permission_run_mismatch"}
+            if (response.allow and pending.method == "mcpServer/elicitation/request"
+                    and not self._is_mcp_confirmation(pending.params)):
+                return {"accepted": False, "reason": "mcp_elicitation_requires_form_response"}
             pending.allow = bool(response.allow)
             pending.resolution_reason = "user"
             pending.resolved.set()
@@ -1111,6 +1115,11 @@ class CodexAppServerAdapter:
     ) -> dict[str, Any]:
         """Bridge an official SDK callback to the canonical permission lane."""
 
+        if method not in {
+            "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
+            "item/permissions/requestApproval", "mcpServer/elicitation/request",
+        }:
+            raise ValueError(f"Unsupported Codex server request: {method}")
         source = dict(params or {})
         thread_id = str(source.get("threadId") or "").strip()
         turn_id = str(source.get("turnId") or "").strip()
@@ -1228,9 +1237,28 @@ class CodexAppServerAdapter:
 
     @staticmethod
     def _approval_request_id(method: str, params: dict[str, Any]) -> str:
+        if method == "mcpServer/elicitation/request":
+            return f"codex:mcp-elicitation:{uuid4().hex}"
         kind = method.rsplit("/", 2)[-2] if "/" in method else "approval"
         native_id = str(params.get("approvalId") or params.get("itemId") or "request")
         return f"codex:{params.get('turnId') or 'turn'}:{kind}:{native_id}"[:240]
+
+    @staticmethod
+    def _is_mcp_confirmation(params: dict[str, Any]) -> bool:
+        # 仅空表单能由一次允许决定完整作答，不猜测表单值或完成 URL 授权。
+        schema = params.get("requestedSchema")
+        return (
+            params.get("mode") in {"form", "openai/form"}
+            and bool(str(params.get("serverName") or "").strip())
+            and bool(str(params.get("message") or "").strip())
+            and isinstance(schema, dict)
+            and schema.get("type") == "object"
+            and schema.get("properties", {}) == {}
+            and schema.get("required", []) == []
+            and set(schema) <= {"type", "properties", "required", "title", "description", "additionalProperties"}
+            and isinstance(schema.get("additionalProperties", False), bool)
+        )
+
 
     @staticmethod
     def _permission_payload(
@@ -1238,6 +1266,23 @@ class CodexAppServerAdapter:
         params: dict[str, Any],
         request_id: str,
     ) -> dict[str, Any]:
+        if method == "mcpServer/elicitation/request":
+            confirmation = CodexAppServerAdapter._is_mcp_confirmation(params)
+            reason = str(params.get("message") or "MCP server requested input.").strip()
+            if not confirmation:
+                reason = "MCP form or URL input is not supported by this permission UI; request cannot be accepted. " + reason
+            return {
+                "request_id": request_id,
+                "capability": "mcp.elicitation",
+                "action": "confirm_mcp_request",
+                "tool": str(params.get("serverName") or "mcp"),
+                "scope": [str(params["serverName"])] if params.get("serverName") else [],
+                "reason": reason[:1000],
+                "reversibility": "unknown",
+                "options": ["allow_once", "deny"] if confirmation else ["deny"],
+                "retryRequired": False,
+                "diagnosticOnly": not confirmation,
+            }
         scope: list[str] = []
         for candidate in (params.get("cwd"), params.get("grantRoot")):
             value = str(candidate or "").strip()
@@ -1252,7 +1297,7 @@ class CodexAppServerAdapter:
         elif method == "item/fileChange/requestApproval":
             capability, action, tool = "filesystem.write", "apply_file_change", "file_change"
             fallback = str(params.get("grantRoot") or "").strip()
-        else:
+        elif method == "item/permissions/requestApproval":
             capability, action, tool = "sandbox.permissions", "grant_permissions", "sandbox"
             permissions = params.get("permissions")
             fallback = "Codex needs additional bounded sandbox permissions."
@@ -1262,6 +1307,8 @@ class CodexAppServerAdapter:
                     for value in permissions
                     if str(value).strip() and str(value) not in scope
                 )
+        else:
+            raise ValueError(f"Unsupported Codex server request: {method}")
         reason = str(params.get("reason") or "").strip()
         if not reason:
             reason = fallback[:320] or "Codex requires explicit approval to continue."
@@ -1285,12 +1332,17 @@ class CodexAppServerAdapter:
         *,
         allow: bool,
     ) -> dict[str, Any]:
+        if method == "mcpServer/elicitation/request":
+            accept = allow and CodexAppServerAdapter._is_mcp_confirmation(params)
+            return {"action": "accept" if accept else "decline", "content": {} if accept else None}
         if method == "item/permissions/requestApproval":
             return {
                 "permissions": dict(params.get("permissions") or {}) if allow else {},
                 "scope": "turn",
             }
-        return {"decision": "accept" if allow else "decline"}
+        if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval"}:
+            return {"decision": "accept" if allow else "decline"}
+        raise ValueError(f"Unsupported Codex server request: {method}")
 
     async def _open_thread(self, codex: Any, request: ProviderRunRequest, cwd: Path) -> Any:
         sandbox = self._sandbox(request)

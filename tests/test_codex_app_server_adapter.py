@@ -2599,6 +2599,89 @@ def _main() -> None:
     print("ok: official Codex SDK is a thin, provider-neutral adapter boundary")
 
 
+@pytest.mark.parametrize("decision", ["allow", "deny", "timeout", "cancel", "unsupported"])
+def test_mcp_elicitation_confirmation_uses_native_action_and_host_permission(tmp_path, decision):
+    async def scenario():
+        turn = _FakeTurn("turn-mcp", blocked=True)
+        adapter = CodexAppServerAdapter(codex=_FakeCodex([_FakeThread("thread-mcp", turn)]), approval_timeout_s=0.2 if decision == "timeout" else 2)
+        events = []
+        async def emit(event):
+            events.append(event)
+        run_task = asyncio.create_task(adapter.run(_request(tmp_path, "Read status", write=False), "run-mcp", emit))
+        await asyncio.wait_for(turn.started.wait(), timeout=2)
+        params = {"threadId": "thread-mcp", "turnId": "turn-mcp", "serverName": "example_runtime", "mode": "form", "message": 'Allow example_runtime tool "status"?', "requestedSchema": {"type": "object", "properties": {}}}
+        if decision == "unsupported":
+            params["requestedSchema"]["properties"] = {"answer": {"type": "string"}}
+        approval = asyncio.create_task(asyncio.to_thread(adapter._handle_sdk_approval, "mcpServer/elicitation/request", params))
+        try:
+            for _ in range(100):
+                requested = next((e for e in events if e.type == "permission.requested"), None)
+                if requested is not None:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("MCP request was not projected")
+            permission = requested.payload["permissionRequest"]
+            assert permission["capability"] == "mcp.elicitation"
+            assert permission["scope"] == ["example_runtime"]
+            assert params["message"] in permission["reason"]
+            assert permission["options"] == (["deny"] if decision == "unsupported" else ["allow_once", "deny"])
+            if decision == "cancel":
+                cancelled = await adapter.cancel("run-mcp")
+                assert cancelled["confirmed"] is True
+            if decision == "unsupported":
+                refused = await adapter.resolve_permission("run-mcp", ProviderPermissionResponse(request_id=permission["request_id"], allow=True))
+                assert refused == {"accepted": False, "reason": "mcp_elicitation_requires_form_response"}
+            if decision not in {"timeout", "cancel"}:
+                assert not approval.done()
+                outcome = await adapter.resolve_permission("run-mcp", ProviderPermissionResponse(request_id=permission["request_id"], allow=decision == "allow"))
+                assert outcome == {"accepted": True}
+            assert await asyncio.wait_for(approval, timeout=2) == ({"action": "accept", "content": {}} if decision == "allow" else {"action": "decline", "content": None})
+            if decision == "timeout":
+                for _ in range(100):
+                    if any(e.type == "permission.expired" for e in events):
+                        break
+                    await asyncio.sleep(0.01)
+                assert any(e.type == "permission.expired" for e in events)
+        finally:
+            adapter._release_pending_approvals("run-mcp")
+            await asyncio.wait_for(approval, timeout=2)
+            await turn.control_events.put(_turn_completed(turn.id, "completed"))
+            await asyncio.wait_for(run_task, timeout=2)
+    asyncio.run(scenario())
+
+@pytest.mark.parametrize("overrides", [
+    {"requestedSchema": {"type": "object", "properties": {"secret": {"type": "string"}}}},
+    {"mode": "url", "url": "https://example.invalid/authorize", "elicitationId": "auth-1"},
+    {"requestedSchema": {"type": "object", "properties": {}, "minProperties": 1}},
+])
+def test_mcp_elicitation_never_accepts_unanswered_forms_or_urls(overrides):
+    params = {"serverName": "example", "mode": "form", "message": "Provide information", "requestedSchema": {"type": "object", "properties": {}}, **overrides}
+    payload = CodexAppServerAdapter._permission_payload("mcpServer/elicitation/request", params, "request-1")
+    assert payload["options"] == ["deny"]
+    assert payload["diagnosticOnly"] is True
+    assert CodexAppServerAdapter._native_approval_response("mcpServer/elicitation/request", params, allow=True) == {"action": "decline", "content": None}
+
+def test_mcp_elicitation_requests_without_native_ids_remain_distinct():
+    params = {"threadId": "thread", "turnId": "turn", "serverName": "example", "mode": "form", "message": "Allow tool?", "requestedSchema": {"type": "object", "properties": {}}}
+    first = CodexAppServerAdapter._approval_request_id("mcpServer/elicitation/request", params)
+    second = CodexAppServerAdapter._approval_request_id("mcpServer/elicitation/request", params)
+    assert first != second
+
+@pytest.mark.parametrize("method", ["item/tool/requestUserInput", "unknown/request"])
+def test_unknown_sdk_requests_are_not_sandbox_permissions(method):
+    with pytest.raises(ValueError, match="Unsupported Codex server request"):
+        CodexAppServerAdapter._permission_payload(method, {}, "unhandled")
+    with pytest.raises(ValueError, match="Unsupported Codex server request"):
+        CodexAppServerAdapter._native_approval_response(method, {}, allow=True)
+
+@pytest.mark.parametrize("mode", ["form", "openai/form"])
+def test_mcp_empty_confirmation_allows_descriptive_schema_metadata(mode):
+    params = {"serverName": "example", "mode": mode, "message": "Allow this request?", "requestedSchema": {"type": "object", "properties": {}, "required": [], "title": "Confirmation", "description": "No fields", "additionalProperties": False}}
+    assert CodexAppServerAdapter._native_approval_response("mcpServer/elicitation/request", params, allow=True) == {"action": "accept", "content": {}}
+    assert CodexAppServerAdapter._permission_payload("mcpServer/elicitation/request", params, "id")["options"] == ["allow_once", "deny"]
+
+
 @pytest.mark.parametrize("mode", ["sequential", "interleaved", "streamed_final"])
 def test_agent_message_progress_is_scoped_and_finalized_per_item(tmp_path, mode) -> None:
     async def scenario() -> None:
