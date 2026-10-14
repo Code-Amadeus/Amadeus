@@ -221,6 +221,7 @@ def test_launcher_capture_uses_session_binding_not_edited_profile(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows cannot directly execute POSIX shell scripts")
 def test_helper_refreshes_existing_binary_and_reports_failed_rebuild(tmp_path, monkeypatch):
     monkeypatch.setattr(macos_capture, "__file__", str(tmp_path / "server/macos_capture.py"))
     tools = tmp_path / "tools"
