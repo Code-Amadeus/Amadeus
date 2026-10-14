@@ -17,6 +17,188 @@ from server.protocol import Method
 from server.work_ledger_coordinator import WORKSPACE_ROUTING_SURFACE, WorkLedgerCoordinator
 
 
+@pytest.mark.parametrize("change", ["second_request", "denied", "expired"])
+def test_provider_publication_refreshes_permissions_changed_while_emitting(
+    tmp_path, monkeypatch, change
+):
+    async def run():
+        bus = EventBus()
+        monkeypatch.setattr("server.work_ledger_coordinator.bus", bus)
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        with WorkLedgerStore(tmp_path / "inflight-permissions.sqlite3") as store:
+            project = store.create_or_get_project(workspace)
+            item = store.create_work_item(project.project_id, title="Permission task")
+            _, attempt = store.create_operation_attempt(
+                item.work_item_id, intent="execute", instruction="Read a file",
+                provider="fake", task="Read a file",
+            )
+            store.update_attempt(attempt.attempt_id, execution_status="running")
+            first = store.create_permission_request(
+                item.work_item_id, attempt_id=attempt.attempt_id,
+                capability="shell", action="read", options=["allow_once", "deny"],
+            )
+            owner = WorkLedgerCoordinator(store)
+            owner._provider_snapshot_min_interval_s = 0.0
+            started = asyncio.Event()
+            release = asyncio.Event()
+            updates = []
+            canvases = []
+
+            async def capture_work(_method, params):
+                updates.append(params)
+                if len(updates) == 1:
+                    started.set()
+                    await release.wait()
+
+            async def capture_canvas(_method, params):
+                canvases.append(params)
+
+            bus.on(Method.WORK_UPDATED, capture_work)
+            bus.on(Method.WALLPAPER_CANVAS, capture_canvas)
+            await owner._publish_provider_snapshot(reason="provider.event:permission.requested")
+            publication = owner._provider_snapshot_task
+            try:
+                await asyncio.wait_for(started.wait(), 2)
+                assert updates[0]["work"]["selected"]["pendingPermissionCount"] == 1
+                assert updates[0]["work"]["selected"]["pendingPermissionRequestId"] == first.request_id
+                if change == "second_request":
+                    second = store.create_permission_request(
+                        item.work_item_id, attempt_id=attempt.attempt_id,
+                        capability="shell", action="write", options=["allow_once", "deny"],
+                    )
+                    expected_count, expected_id = 2, second.request_id
+                else:
+                    store.resolve_permission_request(first.request_id, change)
+                    expected_count, expected_id = 0, ""
+                reason = f"provider.event:permission.{change}"
+                await asyncio.wait_for(owner._publish_provider_snapshot(reason=reason), 2)
+                release.set()
+                await asyncio.wait_for(publication, 2)
+
+                latest = updates[-1]["work"]
+                assert latest["selected"]["pendingPermissionCount"] == expected_count
+                assert latest["selected"]["pendingPermissionRequestId"] == expected_id
+                assert latest["revision"] != updates[0]["work"]["revision"]
+                assert updates[-1]["reason"] == reason
+                if expected_id:
+                    assert canvases[-1]["permissionRequest"]["id"] == expected_id
+                else:
+                    assert "permissionRequest" not in canvases[-1]
+                assert owner._provider_snapshot_task is None
+            finally:
+                release.set()
+                if publication is not None and not publication.done():
+                    publication.cancel()
+                    await asyncio.gather(publication, return_exceptions=True)
+
+    asyncio.run(run())
+
+
+def test_control_publication_cancels_stale_provider_delivery_and_accepts_next_update(
+    tmp_path, monkeypatch
+):
+    async def run():
+        bus = EventBus()
+        monkeypatch.setattr("server.work_ledger_coordinator.bus", bus)
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        with WorkLedgerStore(tmp_path / "control-publication.sqlite3") as store:
+            project = store.create_or_get_project(workspace)
+            item = store.create_work_item(project.project_id, title="Controlled task")
+            _, attempt = store.create_operation_attempt(
+                item.work_item_id, intent="execute", instruction="Read a file",
+                provider="fake", task="Read a file",
+            )
+            owner = WorkLedgerCoordinator(store)
+            owner._provider_snapshot_min_interval_s = 0.0
+            started = asyncio.Event()
+            release = asyncio.Event()
+            delivered = []
+
+            async def capture(_method, params):
+                if not started.is_set():
+                    started.set()
+                    await release.wait()
+                delivered.append(params)
+
+            bus.on(Method.WORK_UPDATED, capture)
+            await owner._publish_provider_snapshot(reason="provider.event:tool.started")
+            stale_publication = owner._provider_snapshot_task
+            try:
+                await asyncio.wait_for(started.wait(), 2)
+                permission = store.create_permission_request(
+                    item.work_item_id, attempt_id=attempt.attempt_id,
+                    capability="shell", action="read", options=["allow_once", "deny"],
+                )
+                await owner._publish_provider_snapshot(reason="provider.event:permission.requested")
+                current = await asyncio.wait_for(
+                    owner.publish_snapshot(reason="permission.requested"), 2
+                )
+                with pytest.raises(asyncio.CancelledError):
+                    await stale_publication
+                assert len(delivered) == 1
+                assert delivered[-1]["work"] == current
+                assert current["selected"]["pendingPermissionRequestId"] == permission.request_id
+                assert owner._provider_snapshot_task is None
+
+                store.resolve_permission_request(permission.request_id, "expired")
+                await owner._publish_provider_snapshot(reason="provider.event:permission.expired")
+                await asyncio.wait_for(owner._provider_snapshot_task, 2)
+                assert delivered[-1]["work"]["selected"]["pendingPermissionCount"] == 0
+                assert delivered[-1]["work"]["selected"]["pendingPermissionRequestId"] == ""
+            finally:
+                release.set()
+                if stale_publication is not None and not stale_publication.done():
+                    stale_publication.cancel()
+                    await asyncio.gather(stale_publication, return_exceptions=True)
+
+    asyncio.run(run())
+
+
+def test_provider_publication_error_is_visible_and_does_not_block_next_snapshot(
+    tmp_path, monkeypatch
+):
+    async def run():
+        bus = EventBus()
+        monkeypatch.setattr("server.work_ledger_coordinator.bus", bus)
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        with WorkLedgerStore(tmp_path / "failed-publication.sqlite3") as store:
+            project = store.create_or_get_project(workspace)
+            item = store.create_work_item(project.project_id, title="Recovered task")
+            owner = WorkLedgerCoordinator(store)
+            owner._provider_snapshot_min_interval_s = 0.0
+            delivered = []
+
+            async def capture(_method, params):
+                delivered.append(params)
+
+            bus.on(Method.WORK_UPDATED, capture)
+            with patch.object(owner, "_snapshots_for_surfaces", side_effect=RuntimeError("projection failed")):
+                await owner._publish_provider_snapshot(reason="provider.event:tool.started")
+                with pytest.raises(RuntimeError, match="projection failed"):
+                    await owner._provider_snapshot_task
+            assert owner._provider_snapshot_task is None
+            assert delivered == []
+
+            _, attempt = store.create_operation_attempt(
+                item.work_item_id, intent="execute", instruction="Read a file",
+                provider="fake", task="Read a file",
+            )
+            permission = store.create_permission_request(
+                item.work_item_id, attempt_id=attempt.attempt_id,
+                capability="shell", action="read", options=["allow_once", "deny"],
+            )
+            await owner._publish_provider_snapshot(reason="provider.event:permission.requested")
+            await asyncio.wait_for(owner._provider_snapshot_task, 2)
+            assert delivered[-1]["work"]["selected"]["pendingPermissionCount"] == 1
+            assert delivered[-1]["work"]["selected"]["pendingPermissionRequestId"] == permission.request_id
+            assert owner._provider_snapshot_task is None
+
+    asyncio.run(run())
+
+
 def test_sync_publication_reads_once_and_keeps_real_bus_surface_selection(tmp_path, monkeypatch):
     async def run():
         bus = EventBus()
