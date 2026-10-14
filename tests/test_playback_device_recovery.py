@@ -1,4 +1,4 @@
-"""Output-open recovery replaces stale native state and preserves real failures."""
+"""Output-open retry replaces its owner and preserves shared-state failures."""
 import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -69,3 +69,64 @@ def test_unsupported_format_is_reported_without_retry(device_factory):
     factory.assert_called_once_with()
     invalid.terminate.assert_called_once_with()
     assert player.pyaudio_instance is None and not player.is_playing
+
+
+@pytest.mark.parametrize("capture_alive", [False, True])
+@pytest.mark.parametrize("failure", ["transient", "shared_host_state"])
+def test_retry_respects_shared_portaudio_owners(monkeypatch, capture_alive, failure):
+    # Use real PyAudio wrapper lifetime methods, but no native audio device.
+    # The simulated native reference count models PortAudio's shared host state.
+    pyaudio = pytest.importorskip("pyaudio")
+    from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
+
+    references = attempts = host_resets = 0
+    stale = False
+
+    def native_initialize():
+        nonlocal references, stale
+        if references == 0:
+            stale = False
+        references += 1
+
+    def native_terminate():
+        nonlocal references, host_resets
+        assert references > 0
+        references -= 1
+        if references == 0:
+            host_resets += 1
+
+    stream = SimpleNamespace(write=Mock(), close=Mock(), stop_stream=Mock(), is_active=lambda: True)
+
+    def output_open(_owner, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if (failure == "transient" and attempts == 1) or (failure == "shared_host_state" and stale):
+            raise OSError(-9986, "Synthetic internal output failure")
+        return stream
+
+    monkeypatch.setattr(pyaudio.pa, "initialize", native_initialize)
+    monkeypatch.setattr(pyaudio.pa, "terminate", native_terminate)
+    monkeypatch.setattr(pyaudio.PyAudio, "open", output_open)
+    capture = initialize_pyaudio(pyaudio.PyAudio) if capture_alive else None
+    player = StreamPlayer(SimpleNamespace(publish_mouth_value=Mock()))
+    player.pyaudio_instance = initialize_pyaudio(pyaudio.PyAudio)
+    stale = True
+    try:
+        if capture_alive and failure == "shared_host_state":
+            with pytest.raises(OSError, match="Synthetic internal output failure"):
+                player.initialize(44100)
+            assert player.stream is None and player.pyaudio_instance is None
+            assert not player.is_playing
+            assert references == 1
+        else:
+            player.initialize(44100)
+            assert player.stream is stream and player.is_playing
+            assert references == (2 if capture_alive else 1)
+        assert attempts == 2
+        # Output recovery never releases the capture owner's reference.
+        assert host_resets == (0 if capture_alive else 1)
+    finally:
+        player.cleanup()
+        if capture is not None:
+            terminate_pyaudio(capture)
+    assert references == 0

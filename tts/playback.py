@@ -268,18 +268,18 @@ class StreamPlayer:
                         output=True,
                     )
                 except OSError as exc:
-                    # PortAudio may retain stale CoreAudio device state after
-                    # Bluetooth/output changes. Release it before reopening;
-                    # only the observed internal-device failure gets one retry.
-                    stale = self.pyaudio_instance
+                    # Retry the observed internal output-open failure once
+                    # with a new output owner. Other PyAudio owners can keep
+                    # native host state alive; this is not a global reset.
+                    failed = self.pyaudio_instance
                     self.pyaudio_instance = None
                     self.is_playing = False
                     self._current_rate = None
-                    terminate_pyaudio(stale)
+                    terminate_pyaudio(failed)
                     if attempt or exc.errno != -9986:
                         raise
                     logger.warning(
-                        "[AUDIO-RECOVERY] output open failed (%s); reinitializing PortAudio once",
+                        "[AUDIO-RECOVERY] output open failed (%s); retrying once with a new output owner",
                         exc,
                     )
                     continue
