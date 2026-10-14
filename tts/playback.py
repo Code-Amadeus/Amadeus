@@ -247,8 +247,7 @@ class StreamPlayer:
     def initialize(self, sample_rate: int) -> None:
         import pyaudio
 
-        # Own the complete open/reset transition so concurrent warmup and
-        # playback cannot publish different streams or reuse a retired instance.
+        # Keep output-owner replacement and stream publication under one lock.
         with self._stream_lock:
             current_rate = getattr(self, "_current_rate", None)
             if self.stream is not None and self.is_playing and current_rate == sample_rate:
