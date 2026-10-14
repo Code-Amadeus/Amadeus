@@ -174,10 +174,17 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
     )
     checks["backend_page_connected"] = True
 
-    await page.get_by_role('button', name='Plugins', exact=True).click()
+    await expect(page.get_by_role('button', name='Plugins', exact=True)).to_have_count(0)
+    await page.get_by_role('button', name='Collapse navigation', exact=True).click()
+    await expect(page.get_by_role('button', name='Plugins', exact=True)).to_have_count(0)
+    await page.get_by_role('button', name='Expand navigation', exact=True).click()
+    checks['experimental_plugins_hidden_from_sidebar'] = True
+    await page.get_by_role('button', name='Settings', exact=True).click()
+    await page.get_by_role('button', name='General', exact=True).click()
+    await page.get_by_role('button', name='Manage plugins', exact=True).click()
     await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
     await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
-    checks['unified_plugin_navigation_rendered'] = True
+    checks['plugin_management_retained_in_settings'] = True
 
     # Establish an actual transition, checking IPC results before any native key.
     for theme in ('classic', 'wallpaper-slice'):
