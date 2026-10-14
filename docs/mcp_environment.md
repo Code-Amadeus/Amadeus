@@ -7,8 +7,9 @@ explicit encrypted bindings, instead of arbitrary Host environment credentials.
 A service that relied on a Host token may therefore fail this probe even while
 it continues to work through Codex or ACP's independently launched MCP service.
 
-Codex/ACP launch behavior and saved version-1 records, commands, arguments and
-working directories are unchanged. Pi does not accept manual MCP connection
+Saved version-1 records, commands, arguments and working directories are unchanged.
+Codex explicitly forwards configured environment names to its stdio MCP children;
+ACP launch behavior is unchanged. Pi does not accept manual MCP connection
 bindings on main; its built-in web search uses HTTP and is unaffected by the
 stdio environment policy. Later Host-owned MCP consumers (for example extension
 execution paths) can use the same helper, but this PR does not introduce them.
@@ -42,3 +43,13 @@ Host helper verifies the bound child environment, cwd and absence of an unrelate
 Host secret; it is not a claim that mainline Pi calls this manual connection.
 Desktop tests cover encrypted persistence and restart projection. Nested-error
 and Windows/POSIX tests cover redaction, useful causes and override semantics.
+
+
+## Explicit bindings through Codex
+
+For a manually bound stdio connection, the Codex adapter supplies the configured
+environment variable names through the native per-server `env_vars` option.
+Their values remain in the provider process environment and are not written into
+command-line overrides. Only names explicitly configured on that connection are
+added; this does not restore arbitrary Host-environment forwarding. HTTP
+connections and their bearer-token binding are unchanged.
