@@ -97,7 +97,7 @@ FA2 和 SDPA 的这些常驻指标相同。每图输入/输出合计约 0.14 MiB
 | Laptop / FA2 | −1.62% | −0.76% | +1.74% |
 | Laptop / SDPA | −0.19% | +1.74% | +3.52% |
 
-180 对交替实验的 token 全部一致。笔记本 SDPA 中句保留约 3.5% 的局部耗时代价，采纳建议考虑的是 513 MiB 常驻节省与当前单用户配置，不是所有硬件/场景零回退。
+180 对交替实验的 token 全部一致。笔记本 SDPA 中句观察到约 3.5% 的配对耗时增加，不能据此认定 nested 导致了稳定回退。脚本固定先构建/预捕获 original，再构建 nested；交替执行顺序控制了部分运行漂移，却没有分离布局与显存放置/分配顺序。采纳建议考虑的是 513 MiB 常驻节省与当前单用户配置，不把这些观测差异当成已定位的因果成本，也不据此添加性能 workaround。
 
 回归阶段另观察到，hidden=32/head=2、48/96 槽的极小型 FA2 图在两个相同布局的实例之间也不能稳定逐位重复。实验开始时保存的未修改 decoder 对照同样出现首步约 0.1006 的 logits 差异，排除了 nested 作为这个现象的必要触发条件。最终 GPU 回归采用当前权重的 head dimension=32 和对齐桶，固定双方每步输入并逐步核对 logits；真实权重的采样和完整波形另外保持严格 hash 对照。小模型后端现象的底层原因未确定，临时 FA2 调试改动全部撤回，没有添加兼容分支、扩大数值容差或据此提交上游 bug。
 
@@ -124,27 +124,27 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 
 加载 ASR/TTS 权重、准备 TTS 17 图并完成真实 TTS 预热后，联合进程 allocated 为 **3430.68 → 2917.68 MiB**，减少 513 MiB。这个 snapshot 在显式 ASR Graph 捕获前；随后完成 ASR 捕获/预热并测量的全场景 peak allocated 为 **3579.18 → 3068.06 MiB**。每格只有 5 次，不能据此保证所有尾延迟改善。
 
-## 取舍修正与实际性能回退复核
+## 取舍修正与性能差异复核
 
 本节复核现有原始数据与调用路径，没有新增性能采样。当前 Graph 串行调度在变更前后相同，额外请求排队不属于本次默认产品路径的性能代价。此前将共享 KV 的独占泛化成当前并发损失的表述已修正；该限制仅涉及将来直接并发调用 decoder 或增加 workspace slot 的设计。
 
-### 已观察到的局部耗时与显存回退
+### 已观察到的局部耗时差异与显存回退
 
 交替 A/B 的每个场景有 20 对样本。下表的耗时变化是每对比例变化的中位数；样本 p95 分别取各布局排序后的第 19 个值（nearest rank），不等同于配对比例的 p95，也不作为稳定尾延迟保证。
 
-| 已观察到回退的场景 | 配对中位耗时变化 | 原实现样本 p95 ms | nested 样本 p95 ms |
+| 耗时增加的观测场景 | 配对中位耗时变化 | 原实现样本 p95 ms | nested 样本 p95 ms |
 | --- | ---: | ---: | ---: |
 | Laptop / FA2 / 768 中句 | +1.74% | 325.18 | 330.91 |
 | Laptop / SDPA / 未对齐 512 | +1.74% | 215.99 | 220.78 |
 | Laptop / SDPA / 768 中句 | +3.52% | 480.70 | 498.54 |
 
-这些差异也出现在相应样本的尾部，不能只用全场景中位数接近来宣称零回退。主卡 FA2 三个配对场景的样本 p95 均下降；笔记本短句等其它场景未显示同样的 p95 增加。未锁定 GPU 频率，20 对样本也不能确定底层原因或其它硬件的长期表现。新核算的 p95 和方法已加入[证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)的 `paired_latency`。
+这些差异也出现在相应样本的尾部，但不是已经定位到 nested 的内核回退。固定构建/预捕获顺序使布局与基地址/显存放置混在一起；反转构建顺序的对照尚未执行。不能只用全场景中位数接近来宣称零回退，也不能由这几格数字为 nested 增加未经证实的修补代码。主卡 FA2 三个配对场景的样本 p95 均下降；笔记本短句等其它场景未显示同样的 p95 增加。未锁定 GPU 频率，20 对样本也不能确定底层原因或其它硬件的长期表现。新核算的 p95 和方法已加入[证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)的 `paired_latency`。
 
 只懒捕获一张 448 图时，nested 最大根缓冲区增加 **27 MiB 常驻 KV/allocated**；该实验稳态 peak allocated 从约 **238.94 → 249.02 MiB**。这是已测到的显存回退，接近显存上限的小图部署应选择 `graph`，不能套用默认 17 图节省 513 MiB 的结论。
 
 ### ASR 重叠与首段尾部样本
 
-已有完整语音实验每格仅 5 次，nearest-rank p95 实际等于该格最大样本。它们揭示小幅局部回退，但不足以证明长期 p95/p99 无回退或改善：
+已有完整语音实验每格仅 5 次，nearest-rank p95 实际等于该格最大样本。它们记录小幅局部差异，但不能确定是 nested 的因果成本，也不足以证明长期 p95/p99 无回退或改善：
 
 | 场景 | graph 首段有声中位 / 样本 p95 ms | nested 首段有声中位 / 样本 p95 ms |
 | --- | ---: | ---: |
@@ -163,9 +163,25 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 - **FA2 可用性与模式回退不是 nested 新增的限制。** FA2 `valid` 与 nested 同时工作；`TTS_T2S_FLASH_ATTN_MODE=bucket` 的 masked SDPA 回退和扩展不可用回退属于已有行为。FA2 配对 probe 强制直接执行内核，未用自动 SDPA 回退掩盖测量；`TTS_KV_CACHE_LAYOUT=bucket` 是独立的存储设置。当前实现没有把短桶统一扩到 1024，也没有关闭 FA2。
 - **验证边界保留。** 当前只覆盖这份 v3hc 权重、两张 Ada GPU 和本地 runtime。小型 FA2/笔记本跨进程重复性异常同样出现在原实现，对应底层原因未确定；它们不是已经定位的 nested 回退。更长时间的首段/ASR p95/p99、冷懒捕获以及其它硬件仍未验证。
 
-采纳依据仍是当前已串行、默认多图路径的 513 MiB 常驻节省，同时保留短桶与 FA2。保留上述实际局部回退、稀疏图显存回退和测量空白，不以未来并发扩展边界替代当前性能取舍。
+采纳依据仍是当前已串行、默认多图路径的 513 MiB 常驻节省，同时保留短桶与 FA2。保留上述耗时观测差异、稀疏图结构性显存回退和测量空白，不以未来并发扩展边界替代当前性能取舍。没有定位稳定的热路径算子回退原因；需要独立处理的是下面已经复现的启动捕获缺陷。
 
 本次说明复核另运行现有 `tests/test_tts_acceleration.py`、`tests/test_tts_cache_backend_boundary.py`、`tests/test_tts_threading.py`，**93 passed**。确认模式选择、Graph 合成锁与语音线程合约；未改动推理实现，也未重跑 GPU 性能实验。
+
+## 审查后修复：SDPA 启动预捕获的 grad 边界
+
+审查指出并独立复现了 PR 的 P1：产品构造阶段在 grad 开启、参数 `requires_grad=True` 时调用预捕获。`unbind` 产生的共享根视图在 SDPA 预热时被需要梯度的 K/V `scatter_` 原地写入，触发 PyTorch 多输出视图限制。捕获层返回失败，导致启动本应准备好的键改到真实请求里懒捕获，或在 ASR 租约活跃时退回 eager。
+
+Torch 2.6.0+cu124 / CUDA 12.4 的两层合成模型独立对照：未修改基线在 grad 模式下成功捕获默认 17 键；修复前 `graph`、`bucket`、`nested` 都失败 17 键（零键保存），相同布局在 `no_grad` 下都成功。这是 PR 的 grad-mode 集成回归，原先包在 `inference_mode` 中的 SDPA benchmark/GPU 测试漏掉了构造阶段边界。因而此前预热后的时延不能证明产品 SDPA 启动捕获可用，`graph` 存储退路在修复前也受影响。
+
+修复在 `_capture_bucket()` 添加 `@torch.no_grad()`，使该组件自己拥有推理捕获的 grad 边界。普通 grad 调用下分配的是可在后续 `no_grad` 请求中写入的正常张量；不使用 `inference_mode` 替代，也不改 `unbind` 或参数的 `requires_grad`。另删除 replay 失败后 KV/mask 向自身 `copy_` 的空操作，直接从已有工作区有效前缀继续 eager。
+
+新增 CPU 合约记录预热/捕获中的 grad 和 inference 状态，三种布局均断言 `(False, False)`、调用者 grad 状态恢复且根是普通非 autograd 张量。这三项在修复前均失败。新增 CUDA 合约在外层 grad 开启时执行真实 SDPA，覆盖三种布局、FP16/FP32、默认 17 键，再验证 `no_grad` / `inference_mode` 请求命中四个计算桶且不产生新键；另验证模拟 replay launch 前失败后的 eager token/logits 与正常图路径一致。
+
+模块共 **26 passed**；扩大后的 CUDA/设备/语音线程回归（显式 GPU probe 开启）共 **183 passed**。另在 `CUDA_VISIBLE_DEVICES=-1` 的进程确认 **11 passed、15 CUDA cases skipped**，其中新增三项 CPU 合约实际执行。使用当前真实 checkpoint、SDPA 和普通 grad 调用另做功能验证：三种布局均捕获 17 键，后续两种请求模式均直接 replay，12 个短/中输入请求不新增键且 token hash 一致。去重 KV 仍为 graph 561 / bucket 129 / nested 48 MiB。本轮验证只检查功能与容量，没有计时；不能把 17 图的旧总准备时间除以 17 当作实测单键首声成本。
+
+本轮完整 model-less 三分片也已执行：前两个 PASS；第三个在 `test_skill_codex_runtime.py` 的原生 Skill fixture teardown 出现子进程清理期限错误，测试正文通过。runner 汇总 5782 passed / 43 skipped，另有这一个 teardown error，不能将本轮写成全部分片 PASS。其它分片结束后隔离复跑该套件得到 **2 passed / 2 optional ACP cases skipped**，未修改相关 Provider/fixture 代码。Ruff、架构生成与 README 生成检查通过。
+
+PR 继续保持 draft。新的公开配置与默认值仍需要关联 Amadeus Issue，才能进入 merge-ready 审阅；此 P1 不作为 Aqua-TTS 上游缺陷报告。
 
 ## 使用与验证入口
 
@@ -180,12 +196,12 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 
 实验基线包含开始工作前已有的 semantic-history/EOS 优化，双方均保留，没有将这些改动的收益计入 nested KV。原始 JSON 位于忽略的本地 `output/diagnostics/nested-kv-20261014/`；[可审阅证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)保留 source/checkpoint/raw-result hash、容量、时延和一致性检查，去掉个人路径和原始语音内容。
 
-同时准备了 [Aqua-TTS 请求所有权问题的上游报告草稿](evidence/aqua_t2s_request_ownership_upstream_draft_2026-10-14.md)，使用已核验上游 commit 的直接代码证据；尚未发布。实验结论限定在当前 v3hc 权重、两张 Ada GPU 和这组本地 runtime。多用户 workspace slot、其它权重/语言，以及独立的 CUDA Graph 内存池共享不属于本次实现。
+同时准备了 [Aqua-TTS 请求所有权问题的上游报告草稿](evidence/aqua_t2s_request_ownership_upstream_draft_2026-10-14.md)，使用已核验上游 commit 的直接代码证据；它已随 Amadeus PR #206 的分支公开供审阅，尚未向 Aqua-TTS 提交为 Issue。实验结论限定在当前 v3hc 权重、两张 Ada GPU 和这组本地 runtime。多用户 workspace slot、其它权重/语言，以及独立的 CUDA Graph 内存池共享不属于本次实现。
 
 
 ## 草稿 PR checkout 的补充验证
 
-PR 分支从 `ef3a54b` main 建立，只移入 nested KV，排除原实验分支的 ambient 提交。生产 decoder、FA2 与 acceleration resolver 与原实验工作区源码一致，原始实验 JSON 的 SHA-256 全部复核通过。
+PR 分支从 `ef3a54b` main 建立，只移入 nested KV，排除原实验分支的 ambient 提交。当时的 decoder、FA2 与 acceleration resolver 与原实验工作区源码一致，原始实验 JSON 的 SHA-256 全部复核通过。后续审计修复的捕获 grad 边界与回退自拷贝清理属于这些性能采样之后的变更，另列功能验证，不将旧采样声明为修复后重新计时。
 
 干净 checkout 的本地 CUDA 回归为 **172 passed、1 skipped**；随后开启 `AMADEUS_RUN_GPU_TESTS=1`，此前可选的 NVIDIA 自动配置/捕获/replay probe **1 passed**。新增真实 CUDA 请求竞争测试覆盖 SDPA/FA2、同/异 Graph key，两个不同 stream 的结果与串行 logits 对照一致。Windows cu124 安装梯级及 cu128/MPS candidate 的 CI 命令已加入新模块，保证安装模型依赖的 hosted runner 也执行其 CPU 合约。
 

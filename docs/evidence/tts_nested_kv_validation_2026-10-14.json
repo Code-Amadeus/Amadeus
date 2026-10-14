@@ -5745,5 +5745,285 @@
       "command": "python -X utf8 -m pytest tests/test_tts_adaptive_aggregation.py tests/test_deadline_aggregation.py tests/test_tts_cost_model.py -q",
       "passed": 62
     }
+  },
+  "post_review_sdpa_precapture": {
+    "reviewed_commit": "d8cd3a945aa2e583c13450ab3b7c0ae536f7d935",
+    "classification": "Capture inference/autograd ownership boundary; prior tests disabled grad at the caller and missed product initialization.",
+    "fix": "_capture_bucket owns torch.no_grad, keeping ordinary writable roots on grad-enabled startup. Removed replay fallback copies that alias their source.",
+    "updated_runtime_source_sha256": "67aa2789a658db13baf36c9b69110c585a05014468254d3878d3550f393caf87",
+    "before_reproduction": {
+      "raw_sha256": "43ce869083d43921c68e65bf6bead409c8bdbf7a5770af2230c33024a3a88ea4",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "purpose": "Functional capture reproduction only; no latency measurements.",
+      "rows": [
+        {
+          "layout": "graph",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "graph",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "bucket",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "bucket",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "nested",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": false,
+          "captured_keys": 0,
+          "capture_failures": 17,
+          "first_error": "bucket=448 initial_len=192: A view was created in no_grad mode and is being modified inplace with grad mode enabled. This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. You should replace the inplace operation by an out-of-place one.",
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "nested",
+          "caller_mode": "no_grad",
+          "all_buckets_successful": true,
+          "captured_keys": 17,
+          "capture_failures": 0,
+          "first_error": null,
+          "parameters_require_grad": true
+        },
+        {
+          "layout": "untouched_baseline",
+          "caller_mode": "grad_enabled",
+          "all_buckets_successful": true,
+          "captured_keys": 17
+        }
+      ]
+    },
+    "real_checkpoint_functional_validation": {
+      "raw_sha256": "b2a2314abc1cc089746f338739b76fee9c0d51fd05432ef9f01aeed2f097ccaa",
+      "purpose": "Real-checkpoint SDPA startup/reuse functional validation only; no timing.",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "checkpoint_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "rows": [
+        {
+          "layout": "graph",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 588251136,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        },
+        {
+          "layout": "bucket",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 135266304,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        },
+        {
+          "layout": "nested",
+          "caller_grad_enabled": true,
+          "captured_keys": 17,
+          "roots_are_normal_non_autograd_tensors": true,
+          "kv_bytes": 50331648,
+          "requests": [
+            {
+              "initial_kv": 288,
+              "request_mode": "no_grad",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 288,
+              "request_mode": "inference_mode",
+              "token_sha256": "8c677efd95e215407b4e6b109e940da94ea87a433d48269e6db23b00e4dda032",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "no_grad",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            },
+            {
+              "initial_kv": 432,
+              "request_mode": "inference_mode",
+              "token_sha256": "5c741b511d5526f3882a045a7f26f60cca5339aa5aa37ce9e1f43efea7260571",
+              "tokens_match_graph_reference": true,
+              "graph_replay_steps": 31,
+              "new_graph_keys": 0
+            }
+          ]
+        }
+      ]
+    },
+    "test_results": {
+      "sdpa-precapture-fix-tests.xml": {
+        "raw_sha256": "38c60cd2697fdca615b142550030d8f4ac7c770ffeccf98055f57ebf046bd27e",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 26
+      },
+      "sdpa-fix-regression.xml": {
+        "raw_sha256": "7f6a0f6ef52c4e1744171063c1804d4f605993abd26a9534bf6c5ba241befcf1",
+        "tests": 183,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 183
+      },
+      "sdpa-fix-cpu.xml": {
+        "raw_sha256": "d67fc5d1fb0666e6ed3af8d25a06832cbeda81dbf47def5bc8b95105c6c6e25b",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 15,
+        "passed": 11
+      }
+    },
+    "cpu_red_before_fix": "All three CPU grad-boundary cases failed before the no_grad decorator; they recorded grad enabled during warmup/capture.",
+    "no_new_performance_measurements": true,
+    "performance_causality_limit": "Paired script always constructs/precaptures original before nested; layout is confounded with allocation order and memory placement. Observed latency increases are not attributed to nested. Reverse construction order has not been run.",
+    "upstream_status": "The Aqua request-ownership draft is public in the Amadeus PR branch; it has not been submitted as an Aqua Issue. This SDPA capture defect is PR-specific.",
+    "model_less_full_suite": {
+      "shards": [
+        {
+          "index": 0,
+          "passed": 2180,
+          "skipped": 24,
+          "runner_collected": 2203,
+          "elapsed_seconds": 486.02,
+          "status": "PASS",
+          "raw_sha256": "7294b8d84fd0d863b2e4a15760bef33deac96b2a17ba903f7e152e9742c0e99d"
+        },
+        {
+          "index": 1,
+          "passed": 1836,
+          "skipped": 10,
+          "runner_collected": 1843,
+          "elapsed_seconds": 497.28,
+          "status": "PASS",
+          "raw_sha256": "f584c28dee2c4c3c90392ca2ed208eb17d41e94bda5e0617d106161faf713a1d"
+        },
+        {
+          "index": 2,
+          "passed": 1766,
+          "skipped": 9,
+          "runner_collected": 1769,
+          "elapsed_seconds": 502.84,
+          "status": "FAIL",
+          "raw_sha256": "3b195cdc13e23050965fd0900c465638e69f963f2f38da82b4c649807481aee1"
+        }
+      ],
+      "runner_passed_total": 5782,
+      "runner_skipped_total": 43,
+      "initial_error": "One test_skill_codex_runtime.py native Skill fixture teardown error: child processes remained after the cleanup deadline. Test bodies passed; no TTS assertion failed.",
+      "isolated_failed_suite_rerun": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "passed": 2,
+        "raw_sha256": "f6336cc901992fe23ef5d5439ca567a56fea7802a7746c8e5dd2fa143ecb5a78"
+      },
+      "interpretation": "Two full shards PASS; third full shard has the recorded teardown error. Failed suite passes in an isolated rerun after other shards finish. Do not describe this initial full run as all shards PASS.",
+      "unrelated_code_changes": false
+    }
   }
 }

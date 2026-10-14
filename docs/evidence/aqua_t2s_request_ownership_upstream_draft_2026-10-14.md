@@ -1,6 +1,6 @@
-# Aqua-TTS Graph 请求所有权问题：本地上游报告草稿
+# Aqua-TTS Graph 请求所有权问题：待提交的上游 Issue 草稿
 
-目标仓库：`Lucas1479/Aqua-TTS`。以下是待审阅的英文 issue 正文，尚未发布。此报告只讨论单个 decoder 实例的并发调用；不涉及模型质量或不同实例之间的共享。
+目标仓库：`Lucas1479/Aqua-TTS`。以下是待审阅的英文 issue 正文，已随 Amadeus PR #206 的公开分支提供；尚未向 Aqua-TTS 提交为 Issue。此报告只讨论单个 decoder 实例的并发调用；不涉及模型质量或不同实例之间的共享。
 
 ## Problem
 

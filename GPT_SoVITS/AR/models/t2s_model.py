@@ -755,6 +755,7 @@ class Text2SemanticDecoder(nn.Module):
                 return False
             return self._capture_bucket(bucket_size, initial_len, device)
 
+    @torch.no_grad()
     def _capture_bucket(self, bucket_size, initial_len, device):
         """
         为指定的桶大小和 initial_len 预热并捕获 CUDA Graph。
@@ -1673,13 +1674,8 @@ class Text2SemanticDecoder(nn.Module):
                             bucket_captured = False
                             print(f"[CUDA Graph] replay failed; fallback to static path: {repr(e)}")
                     if replay_failed:
-                        # fallback：从 static buffer 恢复 k_cache，接续 static path
-                        static_inputs = self.bucket_static_inputs[graph_key]
-                        for i in range(len(k_cache)):
-                            k_cache[i].copy_(static_inputs['k_cache'][i])
-                            v_cache[i].copy_(static_inputs['v_cache'][i])
-                        if key_valid_mask is not None:
-                            key_valid_mask.copy_(static_inputs['key_valid_mask'])
+                        # KV and mask already alias this graph's active workspace.
+                        # Continue eager decoding from its current valid prefix.
                         _fallback_len = graph_prompt_len + graph_step_count
                         current_lens = [_fallback_len] * len(k_cache)
                         if pos_idx_static is not None:

@@ -1,5 +1,6 @@
 """Storage ownership, request lifetime and bucket-shape contracts for T2S KV."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -118,6 +119,87 @@ def test_independent_storage_owners_can_progress_concurrently(layout, keys):
     with ThreadPoolExecutor(2) as pool:
         for future in [pool.submit(work, key) for key in keys]:
             future.result(timeout=3)
+
+
+@pytest.mark.parametrize("layout", ["graph", "bucket", "nested"])
+def test_capture_disables_grad_and_keeps_normal_workspace_tensors(monkeypatch, layout):
+    model = decoder(layout)
+    observed_modes = []
+
+    def decode(x, k, v, *_args):
+        observed_modes.append((torch.is_grad_enabled(), torch.is_inference_mode_enabled()))
+        return x, k, v
+
+    monkeypatch.setattr(model, "t2s_transformer_static", SimpleNamespace(
+        decode_next_token_with_static_cache=decode))
+    monkeypatch.setattr(torch.cuda, "device", lambda _device: nullcontext())
+    monkeypatch.setattr(torch.cuda, "CUDAGraph", lambda: object())
+    monkeypatch.setattr(torch.cuda, "graph", lambda *_args, **_kwargs: nullcontext())
+    # Product initialization calls capture with grad enabled and trainable
+    # parameters. Inference tensors would reject a later no_grad prompt write.
+    with torch.enable_grad():
+        assert all(parameter.requires_grad for parameter in model.parameters())
+        assert model._capture_bucket(48, 32, "cpu")
+        assert torch.is_grad_enabled()
+    assert observed_modes == [(False, False)] * (model.cuda_graph_warmup_steps + 1)
+    for roots in model._graph_kv_roots.values():
+        for root in roots:
+            assert not root.requires_grad and root.grad_fn is None
+            assert not torch.is_inference(root)
+    with torch.no_grad():
+        for view in model.bucket_static_inputs[(48, 32)]['k_cache']:
+            view[:, :16].fill_(1)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA precapture and replay")
+@pytest.mark.parametrize("layout", ["graph", "bucket", "nested"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_sdpa_startup_precapture_reuses_graphs_across_request_modes(monkeypatch, layout, dtype):
+    monkeypatch.setattr(module, "tqdm", lambda values: values)
+    monkeypatch.setattr(module, "_should_stop_on_eos", lambda *_: False)
+    trace = []
+
+    def sample(logits, history, **_kwargs):
+        trace.append(logits.clone())
+        return torch.full((1, 1), (history.shape[1] + 3) % 62,
+                          device=logits.device, dtype=torch.int32), None
+
+    monkeypatch.setattr(module, "sample", sample)
+    device = torch.device("cuda:0")
+    with torch.cuda.device(device), torch.enable_grad():
+        model = decoder(layout, hidden=64).to(device=device, dtype=dtype)
+        model.kv_cache_buckets = [128, 256, 448, 512, 768, 1024]
+        model._BUCKET_MIN_GEN_SLOTS = 96
+        model.use_static_kv_cache = model.cuda_graph_enabled = True
+        assert not model.use_flash_attn_kvcache
+        assert all(parameter.requires_grad for parameter in model.parameters())
+        assert all(model.precapture_cuda_graph(model.kv_cache_buckets).values())
+        assert torch.is_grad_enabled()
+        keys = set(model.bucket_graphs)
+        assert len(keys) == 17
+        for roots in model._graph_kv_roots.values():
+            assert all(not torch.is_inference(root) and not root.requires_grad
+                       and root.grad_fn is None for root in roots)
+        # Exercise every precaptured computation bucket using ordinary tensors.
+        for text_len, prompt_len in [(32, 256), (32, 303), (128, 304), (400, 304)]:
+            x = torch.arange(1, text_len + 1, device=device).remainder(62).unsqueeze(0)
+            prompt = torch.arange(prompt_len, device=device).remainder(62).unsqueeze(0)
+            bert = torch.zeros(1, 1024, text_len, device=device, dtype=dtype)
+            results = []
+            for context in (torch.no_grad, torch.inference_mode):
+                trace.clear()
+                with context():
+                    tokens, index = model.infer_panel_naive(
+                        x, None, prompt, bert, top_k=1, early_stop_num=15)
+                    torch.cuda.synchronize(device)
+                    results.append((tokens.cpu(), index, [value.cpu() for value in trace]))
+                assert set(model.bucket_graphs) == keys
+                assert model.cuda_graph_stats['graph_replay_steps'] == 15
+            assert results[0][1] == results[1][1]
+            torch.testing.assert_close(results[0][0], results[1][0], rtol=0, atol=0)
+            assert len(results[0][2]) == len(results[1][2]) == 16
+            for expected, actual in zip(results[0][2], results[1][2]):
+                torch.testing.assert_close(expected, actual, rtol=2e-3, atol=2e-3)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA Graph execution")
@@ -278,3 +360,50 @@ def test_concurrent_requests_match_serial_logits_on_shared_workspace(monkeypatch
         torch.testing.assert_close(tokens, want_tokens, rtol=0, atol=0)
         for value, want in zip(trace, want_trace):
             torch.testing.assert_close(value, want, rtol=2e-3, atol=2e-3)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA replay fallback")
+def test_replay_failure_continues_from_active_workspace(monkeypatch):
+    monkeypatch.setattr(module, "tqdm", lambda values: values)
+    monkeypatch.setattr(module, "_should_stop_on_eos", lambda *_: False)
+    trace = []
+
+    def sample(logits, history, **_kwargs):
+        trace.append(logits.clone())
+        return torch.full((1, 1), (history.shape[1] + 3) % 62,
+                          device=logits.device, dtype=torch.int32), None
+
+    monkeypatch.setattr(module, "sample", sample)
+    device = torch.device("cuda:0")
+    with torch.cuda.device(device):
+        model = decoder(hidden=64).half().to(device)
+        model.kv_cache_buckets = [512]
+        model.use_static_kv_cache = model.cuda_graph_enabled = True
+        assert model.precapture_cuda_graph([512], kv_len_range=(192, 192)) == {512: True}
+        keys = set(model.bucket_graphs)
+        x = torch.arange(1, 97, device=device).remainder(62).unsqueeze(0)
+        prompt = torch.arange(96, device=device).remainder(62).unsqueeze(0)
+        bert = torch.zeros(1, 1024, 96, device=device, dtype=torch.float16)
+        results = []
+        calls = []
+
+        def fail_before_launch(*_args):
+            calls.append(True)
+            raise RuntimeError("synthetic replay failure before launch")
+
+        for fail in (False, True):
+            trace.clear()
+            if fail:
+                monkeypatch.setattr(model, "_replay_cuda_graph", fail_before_launch)
+            with torch.no_grad():
+                tokens, index = model.infer_panel_naive(
+                    x, None, prompt, bert, top_k=1, early_stop_num=15)
+                torch.cuda.synchronize(device)
+                results.append((tokens.cpu(), index, [value.cpu() for value in trace]))
+            assert set(model.bucket_graphs) == keys
+        assert len(calls) == 1 and model.cuda_graph_stats['graph_replay_steps'] == 0
+        assert results[0][1] == results[1][1]
+        torch.testing.assert_close(results[0][0], results[1][0], rtol=0, atol=0)
+        assert len(results[0][2]) == len(results[1][2]) == 16
+        for expected, actual in zip(results[0][2], results[1][2]):
+            torch.testing.assert_close(expected, actual, rtol=2e-3, atol=2e-3)
