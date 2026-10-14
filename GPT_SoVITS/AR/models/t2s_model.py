@@ -901,6 +901,11 @@ class Text2SemanticDecoder(nn.Module):
         for bucket in sorted(self.bucket_graphs):
             if bucket > current_bucket and valid_kv_len < bucket:
                 inputs = self.bucket_static_inputs[bucket]
+                # The old view is full. Keep its valid prefix intact and clear
+                # the newly exposed tail: a masked NaN/Inf can still poison SDPA.
+                for k, v in zip(inputs['k_cache'], inputs['v_cache']):
+                    k[:, current_bucket:].zero_()
+                    v[:, current_bucket:].zero_()
                 inputs['key_valid_mask'].zero_()
                 inputs['key_valid_mask'][:, :valid_kv_len] = True
                 inputs['pos_idx'].fill_(valid_kv_len)

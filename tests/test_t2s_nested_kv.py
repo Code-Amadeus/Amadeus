@@ -169,12 +169,18 @@ def test_precapture_prepares_one_graph_per_bucket_without_length_ranges(monkeypa
 
 
 @pytest.mark.parametrize("layout", ["bucket", "nested"])
-def test_promotion_changes_only_mask_position_of_prepared_nested_target(monkeypatch, layout):
+@pytest.mark.parametrize("poison", [float("nan"), float("inf")], ids=["nan", "inf"])
+def test_promotion_preserves_prefix_and_clears_newly_exposed_prepared_view(monkeypatch, layout, poison):
     model = decoder(layout)
     old_k, old_v = model._graph_kv_views(48, "cpu", torch.float32)
     new_k, new_v = model._graph_kv_views(96, "cpu", torch.float32)
+    for roots in model._graph_kv_roots.values():
+        for root in roots:
+            root.fill_(7)
     for tensor in old_k + old_v:
         tensor.fill_(17)
+    for tensor in new_k + new_v:
+        tensor[:, 48:].fill_(poison)
     roots_before = [[root.clone() for root in roots] for roots in model._graph_kv_roots.values()]
     mask = torch.ones(1, 96, dtype=torch.bool)
     position = torch.full((1, 1, 32), -1, dtype=torch.long)
@@ -188,11 +194,15 @@ def test_promotion_changes_only_mask_position_of_prepared_nested_target(monkeypa
         assert mask[:, :48].all() and not mask[:, 48:].any()
         assert position.eq(48).all()
         assert all(old.data_ptr() == new.data_ptr() for old, new in zip(old_k, new_k))
+        assert all(tensor[:, :48].eq(17).all() and tensor[:, 48:].eq(0).all()
+                   for tensor in new_k + new_v)
+        for expected in roots_before[0]:
+            expected[:, :, 48:96, :] = 0
     else:
         assert mask.all() and position.eq(-1).all()
     for before, roots in zip(roots_before, model._graph_kv_roots.values()):
         for expected, actual in zip(before, roots):
-            torch.testing.assert_close(expected, actual, rtol=0, atol=0)
+            torch.testing.assert_close(expected, actual, rtol=0, atol=0, equal_nan=True)
     assert model._promote_graph_workspace(96, 96) is None
 
 
@@ -532,3 +542,70 @@ def test_nested_promotion_and_missing_or_maximum_fallback_match_full_bucket(
         assert f"promotions={stats['promotions']}" in messages[-1]
         assert f"generated_tokens={steps - 1}" in messages[-1]
         assert f"dynamic_steps={stats['dynamic_steps']}" in messages[-1]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA graph promotion")
+@pytest.mark.parametrize("attention", ["sdpa", "flash"])
+@pytest.mark.parametrize("poison", [float("nan"), float("inf")], ids=["nan", "inf"])
+def test_promotion_discards_nonfinite_previous_request_tail(monkeypatch, attention, poison):
+    from AR.models.t2s_flash_attn import apply_flash_attn_patch, is_flash_attn_available
+    if attention == "flash" and not is_flash_attn_available():
+        pytest.skip("FlashAttention extension unavailable")
+    monkeypatch.setattr(module, "tqdm", lambda values: values)
+    monkeypatch.setattr(module, "_should_stop_on_eos", lambda *_: False)
+    trace = []
+
+    def sample(logits, _history, **_kwargs):
+        trace.append(logits.clone())
+        return logits.argmax(-1, keepdim=True).to(torch.int32), None
+
+    monkeypatch.setattr(module, "sample", sample)
+    device = torch.device("cuda:0")
+    with torch.cuda.device(device), torch.no_grad():
+        candidate = decoder(hidden=64).half().to(device)
+        reference = decoder(hidden=64).half().to(device)
+        candidate.kv_cache_buckets = [256, 512]
+        reference.kv_cache_buckets = [512]
+        for model in (candidate, reference):
+            model.use_static_kv_cache = model.cuda_graph_enabled = True
+            if attention == "flash":
+                assert apply_flash_attn_patch(model)
+                for block in model.t2s_transformer_static.blocks:
+                    def strict_decode(x, k, v, pos, mask, valid=-1, sdpa=True, block=block):
+                        return block._finish_attention(x, block._flash_valid_len(x, k, v, pos)), k, v
+                    block.decode_next_token_with_static_cache = strict_decode
+            assert all(model.precapture_cuda_graph().values())
+        keys = set(candidate.bucket_graphs)
+        roots = [root.data_ptr() for root in candidate._graph_kv_roots[None]]
+        # Simulate a previous request's nonfinite value outside the new
+        # request's initial view and final valid prefix. A bool SDPA mask
+        # cannot make a NaN/Inf value safe when it reads the whole larger view.
+        for root in candidate._graph_kv_roots[None]:
+            root[:, :, 400, :] = poison
+        monkeypatch.setattr(candidate, "_warmup_and_capture_bucket",
+                            lambda *_: pytest.fail("request tried to capture over live KV"))
+        x = torch.arange(1, 51, device=device).remainder(62).unsqueeze(0)
+        prompt = torch.arange(50, device=device).remainder(62).unsqueeze(0)
+        bert = torch.zeros(1, 1024, 50, dtype=torch.float16, device=device)
+        results = []
+        for model in (reference, candidate):
+            trace.clear()
+            tokens, index = model.infer_panel_naive(x, None, prompt, bert,
+                                                  top_k=1, early_stop_num=199)
+            torch.cuda.synchronize(device)
+            results.append((tokens.cpu(), index, [logits.cpu() for logits in trace]))
+        bad_steps = [index for index, logits in enumerate(results[1][2])
+                     if not torch.isfinite(logits).all()]
+        assert not bad_steps, f"nonfinite logits at zero-based decode steps {bad_steps}"
+        torch.testing.assert_close(results[0][0], results[1][0], rtol=0, atol=0)
+        assert results[0][1] == results[1][1] == 199
+        assert len(results[0][2]) == len(results[1][2]) == 200
+        for expected, actual in zip(results[0][2], results[1][2]):
+            torch.testing.assert_close(expected, actual, rtol=2e-3, atol=2e-3)
+        assert keys == set(candidate.bucket_graphs)
+        assert roots == [root.data_ptr() for root in candidate._graph_kv_roots[None]]
+        stats = candidate.cuda_graph_stats
+        assert stats['start_bucket'] == 256 and stats['final_bucket'] == 512
+        assert stats['promotions'] == 1 and stats['graph_replay_steps'] == 199
+        assert stats['capture_attempts'] == stats['static_steps'] == stats['dynamic_steps'] == 0
+        assert stats['final_kv'] == 299

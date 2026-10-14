@@ -1,10 +1,10 @@
 # Nested KV、每桶 Graph 复用与长句升桶
 
-日期：2026-10-14。当前草稿 PR：[#206](https://github.com/Code-Amadeus/Amadeus/pull/206)，分支 `codex/tts-nested-kv-pr`。
+日期：2026-10-14。当前 PR：[#206](https://github.com/Code-Amadeus/Amadeus/pull/206)，分支 `codex/tts-nested-kv-pr`。
 
 外部审计提出的每桶一图和零拷贝升桶方案可以采纳，现已实现。初始选桶不变，短桶的 Attention 形状和 FA2 valid 都保留；共享根容量仍为 1024，当前权重 KV 合计仍为 **48 MiB**。默认全桶准备由旧版 **17 图降为 6 图**；显式配置 `CUDA_GRAPH_PRECAPTURE_BUCKETS=512,768` 时准备 **448/512/768/1024 四图**，1024 在初始化补齐。
 
-一个实测取舍必须保留：**升桶后继续 FA2，与旧版桶满后转 SDPA 动态解码，部分长句不会逐位相同。** 83 字真实聚合输入的五组 seed 中两组 token、停止位置和波形不同。相同 FA2 算子的全程大桶对照则与升桶完全一致。该结果支持 KV 状态正确，却不能替代语音质量评估；采纳结论不包含所有长句波形不变的承诺。
+一个实测取舍必须保留：**升桶后继续 FA2，与旧版桶满后转 SDPA 动态解码，部分长句不会逐位相同。** 83 字真实聚合输入的五组 seed 中两组 token、停止位置和波形不同。相同 FA2 算子的全程大桶对照则与升桶完全一致。该结果支持 KV 状态正确。复审确认这是旧版中途切换 FA2→动态 SDPA 后的 FP16 舍入与采样分叉，不是已发现的质量缺陷，不需要新增专项音质评估作为合并门槛；常规试听即可。仍不承诺所有长句与旧溢出路径波形逐位相同。
 
 ## 当前实现与不变量
 
@@ -12,7 +12,7 @@
 
 - Graph key 由 `(bucket, aligned initial_len)` 简化为 `bucket`。捕获仅使用合成 KV/位置输入，无需文本；`_capture_bucket()` 保留 `@torch.no_grad()`，普通启动不会创建禁止后续写入的 inference tensor。
 - 起步路由仍为 `ceil(KV/32)*32 + 96 < bucket`。32 对齐只用于选桶，真实 KV 连续写入；没有改成统一 1024 计算。
-- 只有持有 nested 根的 Graph 请求能升桶：当前视图写满且需要下一步时，选择已捕获的最小更大桶，切换 KV 前缀视图，仅重置目标 mask 和位置。可以跳过未准备的中间桶；不复制、清零或重新分配已写 KV。
+- 只有持有 nested 根的 Graph 请求能升桶：当前视图写满且需要下一步时，选择已捕获的最小更大桶，切换 KV 前缀视图，清零新暴露的未写区间，再重置目标 mask 和位置。可以跳过未准备的中间桶；不复制、清零或重新分配已写 KV。
 - **升桶绝不捕获。** 捕获会重置共享根，不能在进行中的 KV 上运行。没有准备好的目标、最大可用图写满、Graph replay 失败或未进入共享 Graph 路径时，继续既有 eager/完整历史动态路径。初始 Graph miss 仍可在真实前缀尚未安装到根前懒捕获。
 - 每个 AR 请求用 logger 记录 `initial_kv/start_bucket/final_bucket/promotions/generated_tokens/graph_steps/static_steps/dynamic_steps/capture_attempts/final_kv`，不记录原文、身份或 prompt。`generated_tokens` 对应返回序列中新增的 semantic token 数；prefill 单独一轮，不计入 replay。
 - 配置简化为 `TTS_KV_CACHE_LAYOUT=nested|bucket`，默认 nested。每桶一图后，草稿中原 `graph` 与 `bucket` 存储完全等价，移除尚未发布的重复选项；`bucket` 保留独立工作区和原桶满动态续接行为。
@@ -72,17 +72,44 @@
 - 224/600 步固定工作量各十对，共 **20/20 token 相同**。
 - 同样四类真实 TTS job 各五对，共 **20/20 token、停止位置和完整 PCM hash 相同**，包括 83 字三片段任务。
 
-SDPA 旧新版完整八场景共 **80/80 固定工作量 token 相同**，包含多次升桶及最终溢出；这是本组输入上的结果，不是所有权重/硬件的数值一致性保证。采样和 EOS 规则未改，数值不同仍可能改变采样轨迹及 EOS 位置。尚未做听感或长句语义质量定论，外部复审应明确检查这项取舍；需要原桶满路径的部署可以选择 bucket。
+SDPA 旧新版完整八场景共 **80/80 固定工作量 token 相同**，包含多次升桶及最终溢出；这是本组输入上的结果，不是所有权重/硬件的数值一致性保证。采样和 EOS 规则未改，数值不同仍可能改变采样轨迹及 EOS 位置。尚未做专项听感或长句语义质量测量。复审指出：新路径与全程 FA2 大桶相同，旧路径的中途后端切换不能作为唯一基准；这项采样轨迹差异不作为缺陷或新增合并门槛，常规试听足够。需要原桶满路径的部署仍可选择 bucket。
 
 ## 本轮验证与复审入口
 
-最终本地 CUDA/设备/线程/mask/history/EOS/聚合回归 **255 passed**，显式 NVIDIA probe 已执行。CPU-only 最终 **61 passed / 22 CUDA cases skipped**，含 CPU grad/Graph identity/history 合约。测试覆盖 grad-enabled SDPA FP16/FP32 启动、608/800 长前缀复用、多次升桶、跳过未捕获的中间桶、禁止在活跃 KV 上捕获、缺失目标/最大桶完整历史回退、replay 失败、跨 stream owner 和 batch>1。
+`e35d58a` 阶段本地 CUDA/设备/线程/mask/history/EOS/聚合回归 **255 passed**，显式 NVIDIA probe 已执行。CPU-only 最终 **61 passed / 22 CUDA cases skipped**，含 CPU grad/Graph identity/history 合约。测试覆盖 grad-enabled SDPA FP16/FP32 启动、608/800 长前缀复用、多次升桶、跳过未捕获的中间桶、禁止在活跃 KV 上捕获、缺失目标/最大桶完整历史回退、replay 失败、跨 stream owner 和 batch>1。
 
 完整 model-less 三分片已跑：两个 PASS；第三个有一项现有 texture-cache HTTP 测试遇到 WinError 10053 连接中断，隔离复跑该整套 **25 passed**。原始整轮为 5781 passed / 43 skipped，另有一项失败，未标为全绿；没有改动 texture 代码。Ruff、架构和 README 生成检查通过。测量之后仅修正日志 final_kv 从实际缓存实体读取为初始长度加 decode 步数，避免给采样/history 合约替身增加无关假设；最终回归验证该源码，性能采样 hash 与最终 hash 分列记录。
 
 复现入口：`benchmark_t2s_nested_kv.py` 测独立显存；`benchmark_t2s_nested_kv_paired.py` 支持 `--construction-order`、`--precapture-buckets`、`--baseline-buckets 1024` 和 `--teacher-forced`；`benchmark_t2s_nested_aggregation.py` 检查真实聚合 profile。诊断脚本可用 `--asset-root` 指向已有模型安装，旧 nested baseline 从 `4ef8e7:GPT_SoVITS/AR/models/t2s_model.py` 导出 UTF-8 快照。没有下载模型或改变安装配置。
 
-PR 继续 draft；新的公开设置/默认值仍待关联 Amadeus Issue 后进入 merge-ready 审阅。本轮没有提交任何上游 Issue。
+PR 已被 maintainer 标为 ready；公开设置/默认值已关联 [Amadeus Issue #212](https://github.com/Code-Amadeus/Amadeus/issues/212)。没有向 Aqua-TTS 提交上游 Issue。本次 Low 修复的新 head 仍需单独完成 CI 与最终 maintainer 审阅后再合并。
+
+## 复审修复：清零升桶新暴露的 KV 区间
+
+复审 head `e35d58a` 新发现 Low：起步桶之外可能留有前一个请求的 NaN/Inf。SDPA Graph 读取目标桶的完整形状，mask 不能保证这些非有限值的贡献为零；FA2 valid 只读有效前缀，本轮注入复现不受影响。
+
+独立复现使用两层、hidden=64、FP16 合成模型：初始 KV=100，从 256 桶起步，在共享根第 400 位的 K/V 注入 NaN 或 Inf，运行 200 步。在修复前，SDPA 两种注入均从零基步骤 157 开始产生非有限 logits；FA2 两种均通过。新增 CPU 边界契约也确认旧版没有清零新暴露区间。修复前八项为 4 failed / 4 passed。
+
+修复归属 `_promote_graph_workspace()`：在目标 mask/position 重置前，对每层目标 K/V 视图的 `[:, current_bucket:]` 执行 `zero_()`。只写 `[旧桶, 新桶)`，保留已写前缀及目标桶外的根区间，不复制有效 KV，不分配/替换根，不捕获新图。所有 Attention 后端遵守同一个“暴露给当前桶的未写区域为零”不变量。
+
+修复后同样八项 **8 passed**。CUDA 200 步的 logits 始终有限，token 和逐步 logits 匹配全程 512 参考图；CPU 契约验证前缀保留、尾部清零、目标桶外根区间不变，bucket 布局不受影响。请求内没有捕获，根地址和键保持稳定。新增测试同时覆盖 NaN 和 Inf、SDPA 和 FA2。
+
+修复后扩大 CUDA/语义/线程/聚合回归 **261 passed**（显式 NVIDIA probe 开启）；CPU-only **63 passed / 26 CUDA skipped**。仓库正式 Ruff 与架构/README 生成检查通过。
+
+相同真实权重、每格十对、e35d58a 与清零修复配对：
+
+| 后端 / 场景 | e35d58a 中位 ms | 修复后中位 ms | 逐对比例变化中位 |
+| --- | ---: | ---: | ---: |
+| FA2 / 无升桶 96 步 | 140.59 | 140.71 | −0.45% |
+| FA2 / 一次升桶 224 步 | 310.69 | 316.46 | +2.11% |
+| FA2 / 多次升桶 600 步 | 795.07 | 807.45 | +1.46% |
+| SDPA / 无升桶 96 步 | 234.98 | 222.10 | −5.38% |
+| SDPA / 一次升桶 224 步 | 538.66 | 515.87 | −3.81% |
+| SDPA / 多次升桶 600 步 | 1540.41 | 1538.76 | −0.46% |
+
+两种后端共 **60/60 对 token 完全一致**，KV 仍为 48 MiB。清零每次升桶增加 48 个 K/V zero kernel（当前 24 层）；不是零成本，但不增加逐 token 操作。未锁频、每种后端只做一个构建顺序，因此这些小幅差异含放置/运行噪声，不能全部归因于清零。逐对比例中位数与两个独立耗时中位数的比例不是同一统计量。本轮不重测端到端试听，也不将数值轨迹差异提升为新合并门槛。
+
+性能数据与最终扩大回归另见 [尾部清零证据](evidence/tts_nested_kv_tail_clear_validation_2026-10-14.json)。该文件独立记录本轮修复；前面每桶一图/升桶的性能采样仍属于 `e35d58a` 阶段，未改写为本轮结果。
 
 ## 早期 17 图方案的历史实验记录
 
