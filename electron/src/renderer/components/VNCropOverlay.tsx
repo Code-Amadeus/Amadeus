@@ -115,6 +115,7 @@ export default function VNCropOverlay({ imageSrc, crop, onChange, disabled }: Pr
         position: 'relative',
         width: imageSize ? `${400 * imageSize.width / imageSize.height}px` : '100%',
         maxWidth: '100%',
+        minWidth: 0,
         marginInline: 'auto',
         overflow: 'hidden',
         borderRadius: '8px',

@@ -39,3 +39,8 @@ recompiles when either Swift source or the script is newer than the helper,
 targets the machine's architecture, and replaces the executable only after a
 successful compilation. Failed builds are reported instead of using a stale
 helper. The generated executable lives under `build/bin/`.
+
+The optional portrait overlay resolves bundled Tcl/Tk libraries from the base
+interpreter when launched from a virtual environment. Frames use Tk's native PNG
+decoder, so older Python distributions do not need Pillow's Tcl ABI bridge.
+Overlay startup failures report the exit code and final error message.
