@@ -149,7 +149,7 @@ class _StreamState:
     native_events: int = 0
     tool_failures: int = 0
     terminal_observed: bool = False
-    progress_pending: str = ""
+    progress_pending: dict[str, str] = field(default_factory=dict)
     plan_pending: dict[str, str] = field(default_factory=dict)
     milestones: set[tuple[str, str]] = field(default_factory=set)
     execution_items: set[str] = field(default_factory=set)
@@ -1381,16 +1381,17 @@ class CodexAppServerAdapter:
                 active.terminal_status = self._turn_status(payload)
                 active.terminal.set()
         if state.progress_pending and not active.cancel_requested:
-            visible, milestones, _pending = split_progress_stream(
-                state.progress_pending,
-                "",
-                final=True,
-            )
-            if visible:
-                await emit(self._event(active, "assistant.delta", {"text": visible}))
-            for event in self._record_progress_milestones(active, state, milestones):
-                await emit(event)
-            state.progress_pending = ""
+            for pending in state.progress_pending.values():
+                visible, milestones, _pending = split_progress_stream(
+                    pending,
+                    "",
+                    final=True,
+                )
+                if visible:
+                    await emit(self._event(active, "assistant.delta", {"text": visible}))
+                for event in self._record_progress_milestones(active, state, milestones):
+                    await emit(event)
+            state.progress_pending.clear()
         if not terminal_payload:
             raise RuntimeError("Codex stream ended without turn/completed")
         return terminal_payload
@@ -1489,11 +1490,15 @@ class CodexAppServerAdapter:
             )
 
         if method == "item/agentMessage/delta":
+            item_id = str(payload.get("itemId") or payload.get("item_id") or "")
             visible, milestones, pending = split_progress_stream(
-                state.progress_pending,
+                state.progress_pending.get(item_id, ""),
                 str(payload.get("delta") or ""),
             )
-            state.progress_pending = pending
+            if pending:
+                state.progress_pending[item_id] = pending
+            else:
+                state.progress_pending.pop(item_id, None)
             events: list[ProviderEvent] = []
             if visible:
                 events.append(self._event(active, "assistant.delta", {"text": visible}))
@@ -1512,14 +1517,15 @@ class CodexAppServerAdapter:
             state.plan_pending.pop(item_id, None)
             return self._native_plan_milestone(active, state, text)
         if item_type == "agentMessage" and method == "item/completed":
+            # 完成即消费本消息的尾片段，不能跨消息拼接或在终态重发旧计划。
+            pending = state.progress_pending.pop(item_id, "")
             visible, milestones = self._without_progress_markers(
-                str(item.get("text") or "")
+                str(item.get("text") or pending)
             )
             events = self._record_progress_milestones(
                 active,
                 state,
                 milestones,
-                dedupe_kind=True,
             )
             phase = str(item.get("phase") or "").strip().lower()
             if phase == "final_answer":
@@ -1644,8 +1650,6 @@ class CodexAppServerAdapter:
         active: _ActiveTurn,
         state: _StreamState,
         milestones: list[dict[str, Any]],
-        *,
-        dedupe_kind: bool = False,
     ) -> list[ProviderEvent]:
         events: list[ProviderEvent] = []
         for milestone in milestones:
@@ -1654,11 +1658,6 @@ class CodexAppServerAdapter:
                 str(milestone.get("milestone") or ""),
                 summary,
             )
-            if dedupe_kind and any(
-                existing_kind == identity[0]
-                for existing_kind, _summary in state.milestones
-            ):
-                continue
             if any(
                 existing_kind == identity[0]
                 and (
