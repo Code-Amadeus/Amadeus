@@ -49,7 +49,9 @@ def test_agent_default_reconnect_never_reads_clipboard_and_preserves_repetition(
         port = reservation.getsockname()[1]
         try:
             await source.start({}, {"agentWsPort": port}, target_pid=None)
-            await asyncio.wait_for(waiting.wait(), 3)
+            # The default connection attempt can consume three seconds before
+            # publishing waiting; the observer's watchdog must outlive it.
+            await asyncio.wait_for(waiting.wait(), 5)
             assert received == []
             clipboard.assert_not_called()
             reservation.close()
