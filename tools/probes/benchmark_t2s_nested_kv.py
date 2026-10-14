@@ -1,4 +1,4 @@
-"""Compare KV storage owners with unchanged bucket graphs and fixed AR work.
+"""Compare KV layouts and prepared bucket graphs with fixed AR work.
 
 Run each layout/device/attention in a fresh process. --baseline-source accepts
 an untouched local snapshot for the original implementation; it is never
@@ -32,6 +32,10 @@ CASES = [
     ("medium_768", 304, 128, 192, 1),
     ("long_1024", 304, 400, 192, 1),
     ("overflow_dynamic", 303, 32, 224, 1),
+    ("long_prefix_768", 480, 128, 96, 1),
+    ("long_prefix_1024", 672, 128, 96, 1),
+    ("multiple_promotions", 256, 32, 600, 1),
+    ("maximum_overflow", 304, 400, 352, 1),
     ("prompt_outside_buckets", 928, 32, 32, 1),
     ("reference_free", 0, 64, 32, 1),
     ("batch_two", 256, 32, 32, 2),
@@ -45,8 +49,9 @@ def digest(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--layout", choices=["original", "graph", "bucket", "nested"], required=True)
+    parser.add_argument("--layout", choices=["original", "bucket", "nested"], required=True)
     parser.add_argument("--attention", choices=["flash", "sdpa"], default="flash")
+    parser.add_argument("--asset-root", type=Path, help="Load model paths from an existing installation .env")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--baseline-source", type=Path)
@@ -57,6 +62,9 @@ def main():
                         help="Measure lazy capture, including the one-short-graph memory tradeoff")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.asset_root:
+        from dotenv import load_dotenv
+        load_dotenv(args.asset_root / ".env", override=False)
     if args.repeats < 1 or (args.layout == "original" and not args.baseline_source):
         parser.error("positive repeats and --baseline-source for original are required")
     cases = [case for case in CASES if not args.cases or case[0] in args.cases]
@@ -64,7 +72,7 @@ def main():
         parser.error("no matching cases")
     if args.buckets and (min(args.buckets) < 1 or args.buckets != sorted(set(args.buckets))):
         parser.error("--buckets must be positive and strictly increasing")
-    os.environ["TTS_KV_CACHE_LAYOUT"] = "graph" if args.layout == "original" else args.layout
+    os.environ["TTS_KV_CACHE_LAYOUT"] = "bucket" if args.layout == "original" else args.layout
     import torch
     from config.settings import TTS_GPT_MODEL_PATH
     import AR.models.t2s_model as module
@@ -148,7 +156,7 @@ def main():
                     "kv_storage_count": len(kv_storages),
                     "graph_io_storage_bytes": sum(external_storages.values()),
                     "graph_count": len(model.bucket_graphs),
-                    "graph_keys": sorted([list(key) for key in model.bucket_graphs])}
+                    "graph_keys": sorted([list(key) if isinstance(key, tuple) else key for key in model.bucket_graphs])}
 
         torch.cuda.synchronize(device)
         torch.cuda.empty_cache()
@@ -200,6 +208,9 @@ def main():
                             "wall_ms": wall_ms, "stream_ms": start.elapsed_time(end),
                             "steps_per_second": steps * 1000 / wall_ms,
                             "graph_replay_steps": model.cuda_graph_stats["graph_replay_steps"],
+                            "request_stats": {key: model.cuda_graph_stats.get(key) for key in
+                                              ["initial_kv", "start_bucket", "final_bucket", "promotions",
+                                               "generated_tokens", "static_steps", "dynamic_steps", "capture_attempts"]},
                             "token_sha256": token_hash, "memory": memory()}
 
                 try:

@@ -48,13 +48,13 @@ def test_new_capture_defers_before_warmup_when_asr_work_is_active():
         future = pool.submit(asr_work)
         assert entered.wait(2)
         try:
-            assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is False
+            assert decoder._warmup_and_capture_bucket(256, "cuda:0") is False
             assert not calls
         finally:
             release.set()
         future.result(timeout=3)
-    assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is True
-    assert calls == [(256, 64, "cuda:0")]
+    assert decoder._warmup_and_capture_bucket(256, "cuda:0") is True
+    assert calls == [(256, "cuda:0")]
 
 
 
@@ -80,7 +80,7 @@ def test_deferred_precapture_does_not_report_a_capture_failure(capsys):
         future = pool.submit(asr_work)
         assert entered.wait(2)
         try:
-            assert decoder.precapture_cuda_graph([256], kv_len_range=(192, 192)) == {256: False}
+            assert decoder.precapture_cuda_graph([256]) == {256: False}
         finally:
             release.set()
         future.result(timeout=3)

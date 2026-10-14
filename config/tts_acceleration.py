@@ -6,8 +6,8 @@ import os
 
 def t2s_kv_cache_layout() -> str:
     layout = os.environ.get("TTS_KV_CACHE_LAYOUT", "nested").strip().lower()
-    if layout not in {"graph", "bucket", "nested"}:
-        raise ValueError("TTS_KV_CACHE_LAYOUT must be graph, bucket or nested")
+    if layout not in {"bucket", "nested"}:
+        raise ValueError("TTS_KV_CACHE_LAYOUT must be bucket or nested")
     return layout
 
 

@@ -1,4 +1,92 @@
-# T2S Nested KV 实现与实测
+# Nested KV、每桶 Graph 复用与长句升桶
+
+日期：2026-10-14。当前草稿 PR：[#206](https://github.com/Code-Amadeus/Amadeus/pull/206)，分支 `codex/tts-nested-kv-pr`。
+
+外部审计提出的每桶一图和零拷贝升桶方案可以采纳，现已实现。初始选桶不变，短桶的 Attention 形状和 FA2 valid 都保留；共享根容量仍为 1024，当前权重 KV 合计仍为 **48 MiB**。默认全桶准备由旧版 **17 图降为 6 图**；显式配置 `CUDA_GRAPH_PRECAPTURE_BUCKETS=512,768` 时准备 **448/512/768/1024 四图**，1024 在初始化补齐。
+
+一个实测取舍必须保留：**升桶后继续 FA2，与旧版桶满后转 SDPA 动态解码，部分长句不会逐位相同。** 83 字真实聚合输入的五组 seed 中两组 token、停止位置和波形不同。相同 FA2 算子的全程大桶对照则与升桶完全一致。该结果支持 KV 状态正确，却不能替代语音质量评估；采纳结论不包含所有长句波形不变的承诺。
+
+## 当前实现与不变量
+
+问题归类为 decoder 的 Graph 身份与共享存储生命周期。Graph 计算形状只由桶决定，真实前缀长度由 GPU 上的 `pos_idx` 和有效位 mask 决定。
+
+- Graph key 由 `(bucket, aligned initial_len)` 简化为 `bucket`。捕获仅使用合成 KV/位置输入，无需文本；`_capture_bucket()` 保留 `@torch.no_grad()`，普通启动不会创建禁止后续写入的 inference tensor。
+- 起步路由仍为 `ceil(KV/32)*32 + 96 < bucket`。32 对齐只用于选桶，真实 KV 连续写入；没有改成统一 1024 计算。
+- 只有持有 nested 根的 Graph 请求能升桶：当前视图写满且需要下一步时，选择已捕获的最小更大桶，切换 KV 前缀视图，仅重置目标 mask 和位置。可以跳过未准备的中间桶；不复制、清零或重新分配已写 KV。
+- **升桶绝不捕获。** 捕获会重置共享根，不能在进行中的 KV 上运行。没有准备好的目标、最大可用图写满、Graph replay 失败或未进入共享 Graph 路径时，继续既有 eager/完整历史动态路径。初始 Graph miss 仍可在真实前缀尚未安装到根前懒捕获。
+- 每个 AR 请求用 logger 记录 `initial_kv/start_bucket/final_bucket/promotions/generated_tokens/graph_steps/static_steps/dynamic_steps/capture_attempts/final_kv`，不记录原文、身份或 prompt。`generated_tokens` 对应返回序列中新增的 semantic token 数；prefill 单独一轮，不计入 replay。
+- 配置简化为 `TTS_KV_CACHE_LAYOUT=nested|bucket`，默认 nested。每桶一图后，草稿中原 `graph` 与 `bucket` 存储完全等价，移除尚未发布的重复选项；`bucket` 保留独立工作区和原桶满动态续接行为。
+
+产品的 CUDA Graph 合成路径在改动前已持有完整合成请求的 `graph_tts_lock`，并发度为 1；nested 和升桶没有新增产品串行代价。decoder 请求级 owner 锁与 CUDA event 仍覆盖 prefill、捕获、所有 replay、升桶和动态续接，普通 ASR 推理与播放可重叠；Parallel ×2 关闭 Graph，使用请求私有 KV。
+
+不保证全部请求 100% Graph：prefill、batch>1、Graph 关闭/捕获推迟、未准备的目标、最大桶溢出仍有其它路径。按保留的预留规则，初始 KV >=897 即无法选桶，即使最终总长未超过 1024 也不能据此宣称 Graph 覆盖。
+
+## 先核对已有聚合日志
+
+只读两份已有会话日志，匿名 source SHA-256 和 numeric inventory 见[本轮证据](evidence/tts_bucket_graph_reuse_validation_2026-10-14.json)，未发布原始文本、音频或日志。
+
+| 任务 | 数量 | 平均字数 | 最长 | >=45 字 |
+| --- | ---: | ---: | ---: | ---: |
+| 单片段 | 151 | 16.51 | 45 | 1 |
+| 聚合 | 100 | 39.54 | 89 | 31 |
+
+251 个任务中，片段数 1/2/3/4 分别为 151/79/14/7。两份日志的启动目标均是 448/512/768，全部成功。另有 282 条 AR 切分记录，全部 split into 1 sentence；这些记录没有和 251 个任务逐一配对，不能排除预热或重试。日志没有实测 KV 长度、semantic token 数和溢出计数，因此审计中按字数推算的溢出率与额外耗时仍只是估计。
+
+## 新版容量、初始化与图复用
+
+与本轮前的 PR `4ef8e7` nested 比较，KV 根仍为 48 MiB；与原 main 的独立 Graph KV 比较，旧默认 561 MiB 的 KV 节省仍为 **513 MiB**。每桶一图主要减少捕获次数，不把 Graph 中间池等都计为 KV。
+
+独立进程、真实 24 层 FP16 权重、默认六桶准备：
+
+| 当前 nested | 图数 | 去重 KV MiB | allocated MiB | reserved MiB | 准备秒 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FA2 / Ti SUPER | 6 | 48.00 | 214.39 | 258.00 | 1.383 |
+| SDPA / Laptop | 6 | 48.00 | 214.39 | 258.00 | 1.260 |
+
+这些是 PyTorch 进程 allocator 指标，不是整卡占用。当前 bucket 若准备四个常用桶，KV 为 129 MiB；若准备全部六桶，则为 147 MiB。只使用一张 448 图时 bucket 是 21 MiB，nested 仍为 48 MiB，稀疏图部署的 +27 MiB 结构性取舍保留。
+
+配对脚本显式准备四个常用桶：旧 nested 得到 17 张图，新版得到 4 张。主卡 FA2 两种构建顺序中，旧准备 3.922/3.689 秒，新版 0.815/1.183 秒；笔记本 SDPA 单次 3.810→1.088 秒。它们是每个构建顺序的一次准备记录，不能推为长期冷启动/首声分位数。完整 inferencer 也实际初始化准备四桶成功，无真实文本参与捕获。
+
+真实权重固定 AR 输入的 initial KV 608/800，旧版分别新增 `(768,608)` / `(1024,800)` 键；新版复用现有桶图，四张图数量不变、capture_attempts=0。KV 335、224 步场景，新版 512→768，全部 223 个 decode 步为 replay，旧版只有 177 replay、后续动态续接。主卡 FA2 本轮中位 wall 798.59→350.67 ms；笔记本 SDPA 925.98→579.13 ms，各十对 token 一致。未锁频，部分固定 AR 采样与 CPU CI 同时运行，因此这是有限样本观测，不是产品时延保证。
+
+## 真实聚合全链路与数值取舍
+
+新增 `benchmark_t2s_nested_aggregation.py` 使用真实 utterance scheduler、日语前端、GPT/SoVITS/CNHubert/BigVGAN，按相同 seed 交替运行旧 nested 和新版，共四类任务各五对。使用已就绪的合成文本队列，deadline 关闭以固定 job 分组；未模拟实时 LLM、播放覆盖预算、物理扬声器或 ASR 重叠。首句保留 4 步 profile；后续短任务 16 步，83 字三片段聚合保留 32 步与“凑四句一切”，观测为一次 AR。
+
+预热后首个有声**生成 PCM chunk**的中位 ms：
+
+| 任务 | 旧 nested | 新版 | token/PCM 完全一致 |
+| --- | ---: | ---: | ---: |
+| 首句，10 字 | 300.09 | 299.12 | 5/5 |
+| 两片段，31 字 | 1123.04 | 1100.35 | 5/5 |
+| 三片段，83 字 | 5469.72 | 4506.73 | 3/5 |
+| 后续单句，12 字 | 640.19 | 672.92 | 5/5 |
+
+新版所有这些请求都没有新增 Graph key、没有懒捕获。83 字初始 KV=522，768→1024 一次升桶，363–377 个生成 token 全部 replay，无 static/dynamic 步。该行的两组输出长度不同，不能用其耗时作为严格相同工作量的加速比；后续单句也观察到约 33 ms 局部增加，五对样本不足以归因或判断长期尾延迟。
+
+另一个 600 步合成 AR 场景，旧 FA2→动态 SDPA 与新版多次升桶有 6/10 对 token 不同。按双方完全相同的强制输入逐步核查，前 161 步 logits 完全相同，第一处差异就在旧版转动态 SDPA 的第 161（零基）步，最大绝对差异 0.11328125。这说明差异与避免后端路径切换相符，不等同于证明语音质量没有变化。
+
+为隔离升桶状态，使用**全程 1024 FA2 Graph**作对照：
+
+- 600 步真实权重、相同强制输入的全部 logits **逐位相同，最大误差 0**。
+- 224/600 步固定工作量各十对，共 **20/20 token 相同**。
+- 同样四类真实 TTS job 各五对，共 **20/20 token、停止位置和完整 PCM hash 相同**，包括 83 字三片段任务。
+
+SDPA 旧新版完整八场景共 **80/80 固定工作量 token 相同**，包含多次升桶及最终溢出；这是本组输入上的结果，不是所有权重/硬件的数值一致性保证。采样和 EOS 规则未改，数值不同仍可能改变采样轨迹及 EOS 位置。尚未做听感或长句语义质量定论，外部复审应明确检查这项取舍；需要原桶满路径的部署可以选择 bucket。
+
+## 本轮验证与复审入口
+
+最终本地 CUDA/设备/线程/mask/history/EOS/聚合回归 **255 passed**，显式 NVIDIA probe 已执行。CPU-only 最终 **61 passed / 22 CUDA cases skipped**，含 CPU grad/Graph identity/history 合约。测试覆盖 grad-enabled SDPA FP16/FP32 启动、608/800 长前缀复用、多次升桶、跳过未捕获的中间桶、禁止在活跃 KV 上捕获、缺失目标/最大桶完整历史回退、replay 失败、跨 stream owner 和 batch>1。
+
+完整 model-less 三分片已跑：两个 PASS；第三个有一项现有 texture-cache HTTP 测试遇到 WinError 10053 连接中断，隔离复跑该整套 **25 passed**。原始整轮为 5781 passed / 43 skipped，另有一项失败，未标为全绿；没有改动 texture 代码。Ruff、架构和 README 生成检查通过。测量之后仅修正日志 final_kv 从实际缓存实体读取为初始长度加 decode 步数，避免给采样/history 合约替身增加无关假设；最终回归验证该源码，性能采样 hash 与最终 hash 分列记录。
+
+复现入口：`benchmark_t2s_nested_kv.py` 测独立显存；`benchmark_t2s_nested_kv_paired.py` 支持 `--construction-order`、`--precapture-buckets`、`--baseline-buckets 1024` 和 `--teacher-forced`；`benchmark_t2s_nested_aggregation.py` 检查真实聚合 profile。诊断脚本可用 `--asset-root` 指向已有模型安装，旧 nested baseline 从 `4ef8e7:GPT_SoVITS/AR/models/t2s_model.py` 导出 UTF-8 快照。没有下载模型或改变安装配置。
+
+PR 继续 draft；新的公开设置/默认值仍待关联 Amadeus Issue 后进入 merge-ready 审阅。本轮没有提交任何上游 Issue。
+
+## 早期 17 图方案的历史实验记录
+
+**以下保留早期实现及审查阶段的原始报告，不是当前接口说明。** 其中 `(bucket, initial_len)` key、`graph` 配置、17 图预捕获与“桶满转动态”描述均属于早期方案；当前行为、最终测试与长句输出差异以以上各节及本轮独立证据为准。旧的原始数据和 source hash 没有改写为新版结果。
 
 日期：2026-10-14。实验分支：`codex/tts-nested-kv-evaluation`；草稿 PR 分支：`codex/tts-nested-kv-pr`（基于已包含 history/EOS 优化的最新 main）。
 

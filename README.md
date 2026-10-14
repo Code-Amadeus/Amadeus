@@ -530,8 +530,11 @@ workspace by default (`TTS_KV_CACHE_LAYOUT=nested`). The existing CUDA Graph
 pipeline already serializes complete TTS synthesis requests, so sharing KV does
 not reduce concurrency in that mode. The decoder also holds the workspace for
 an entire AR request; ordinary ASR inference and audio playback can still overlap.
-`bucket` shares within a bucket and `graph` keeps independent KV per graph for
-comparisons. Set the layout before loading the model. See the [nested KV
+Each bucket has one Graph, reused for any valid prefix length. Nested requests
+promote to an already captured larger bucket when full, without copying KV;
+missing targets or a full maximum bucket retain full-context dynamic fallback.
+`bucket` keeps independent per-bucket KV and does not promote. Set the layout
+before loading the model. See the [nested KV
 evaluation](docs/tts_nested_kv_evaluation_2026-10-14.md) for measured memory and
 latency results.
 

@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+import logging
 import sys
 import threading
 
@@ -28,17 +29,17 @@ def decoder(layout="nested", hidden=32):
     return result
 
 
-@pytest.mark.parametrize("layout,owners", [("graph", 3), ("bucket", 2), ("nested", 1)])
+@pytest.mark.parametrize("layout,owners", [("bucket", 2), ("nested", 1)])
 def test_layout_shares_storage_without_enlarging_attention_shape(layout, owners):
     model = decoder(layout)
-    keys = [(48, 16), (48, 32), (96, 64)]
+    keys = [48, 48, 96]
     views = [model._graph_kv_views(key, "cpu", torch.float16) for key in keys]
     assert len(model._graph_kv_roots) == owners
     for key, (k, v) in zip(keys, views):
         assert len(k) == len(v) == 2
-        assert all(item.shape == (1, key[0], 32) for item in k + v)
+        assert all(item.shape == (1, key, 32) for item in k + v)
         # FA2 can split hidden into heads without a contiguous copy.
-        assert all(item.view(1, key[0], 2, 16).data_ptr() == item.data_ptr() for item in k + v)
+        assert all(item.view(1, key, 2, 16).data_ptr() == item.data_ptr() for item in k + v)
     pointers = [k[0].untyped_storage().data_ptr() for k, _ in views]
     assert len(set(pointers)) == owners
     if layout == "nested":
@@ -51,15 +52,16 @@ def test_layout_shares_storage_without_enlarging_attention_shape(layout, owners)
 
 def test_captured_storage_cannot_be_replaced_on_dtype_or_capacity_change():
     model = decoder()
-    model._graph_kv_views((48, 32), "cpu", torch.float16)
+    model._graph_kv_views(48, "cpu", torch.float16)
     with pytest.raises(RuntimeError, match="new decoder"):
-        model._graph_kv_views((48, 32), "cpu", torch.float32)
+        model._graph_kv_views(48, "cpu", torch.float32)
     with pytest.raises(RuntimeError, match="new decoder"):
-        model._graph_kv_views((256, 192), "cpu", torch.float16)
+        model._graph_kv_views(256, "cpu", torch.float16)
 
 
-def test_invalid_layout_is_observable(monkeypatch):
-    monkeypatch.setenv("TTS_KV_CACHE_LAYOUT", "typo")
+@pytest.mark.parametrize("value", ["typo", "graph"])
+def test_invalid_layout_is_observable(monkeypatch, value):
+    monkeypatch.setenv("TTS_KV_CACHE_LAYOUT", value)
     with pytest.raises(ValueError, match="TTS_KV_CACHE_LAYOUT"):
         decoder()
 
@@ -104,10 +106,7 @@ def test_entire_request_is_exclusive_and_exception_releases_it(monkeypatch):
         assert future.result(timeout=3) == "second request"
 
 
-@pytest.mark.parametrize("layout,keys", [
-    ("graph", [(48, 16), (48, 32)]),
-    ("bucket", [(48, 32), (96, 64)]),
-])
+@pytest.mark.parametrize("layout,keys", [("bucket", [48, 96])])
 def test_independent_storage_owners_can_progress_concurrently(layout, keys):
     model = decoder(layout)
     barrier = threading.Barrier(2, timeout=2)
@@ -121,7 +120,7 @@ def test_independent_storage_owners_can_progress_concurrently(layout, keys):
             future.result(timeout=3)
 
 
-@pytest.mark.parametrize("layout", ["graph", "bucket", "nested"])
+@pytest.mark.parametrize("layout", ["bucket", "nested"])
 def test_capture_disables_grad_and_keeps_normal_workspace_tensors(monkeypatch, layout):
     model = decoder(layout)
     observed_modes = []
@@ -139,7 +138,7 @@ def test_capture_disables_grad_and_keeps_normal_workspace_tensors(monkeypatch, l
     # parameters. Inference tensors would reject a later no_grad prompt write.
     with torch.enable_grad():
         assert all(parameter.requires_grad for parameter in model.parameters())
-        assert model._capture_bucket(48, 32, "cpu")
+        assert model._capture_bucket(48, "cpu")
         assert torch.is_grad_enabled()
     assert observed_modes == [(False, False)] * (model.cuda_graph_warmup_steps + 1)
     for roots in model._graph_kv_roots.values():
@@ -147,12 +146,58 @@ def test_capture_disables_grad_and_keeps_normal_workspace_tensors(monkeypatch, l
             assert not root.requires_grad and root.grad_fn is None
             assert not torch.is_inference(root)
     with torch.no_grad():
-        for view in model.bucket_static_inputs[(48, 32)]['k_cache']:
+        for view in model.bucket_static_inputs[48]['k_cache']:
             view[:, :16].fill_(1)
 
 
+@pytest.mark.parametrize("layout", ["bucket", "nested"])
+def test_precapture_prepares_one_graph_per_bucket_without_length_ranges(monkeypatch, layout):
+    model = decoder(layout)
+    model.cuda_graph_enabled = True
+    calls = []
+
+    def capture(bucket, device):
+        calls.append(bucket)
+        model.bucket_graphs[bucket] = object()
+        return True
+
+    monkeypatch.setattr(model, "_warmup_and_capture_bucket", capture)
+    assert model.precapture_cuda_graph([48, 48, 96]) == {48: True, 96: True}
+    assert model.precapture_cuda_graph() == {48: True, 96: True, 128: True}
+    assert calls == [48, 96, 128]
+    assert model.precapture_cuda_graph([999]) == {999: False}
+
+
+@pytest.mark.parametrize("layout", ["bucket", "nested"])
+def test_promotion_changes_only_mask_position_of_prepared_nested_target(monkeypatch, layout):
+    model = decoder(layout)
+    old_k, old_v = model._graph_kv_views(48, "cpu", torch.float32)
+    new_k, new_v = model._graph_kv_views(96, "cpu", torch.float32)
+    for tensor in old_k + old_v:
+        tensor.fill_(17)
+    roots_before = [[root.clone() for root in roots] for roots in model._graph_kv_roots.values()]
+    mask = torch.ones(1, 96, dtype=torch.bool)
+    position = torch.full((1, 1, 32), -1, dtype=torch.long)
+    model.bucket_graphs = {48: object(), 96: object()}
+    model.bucket_static_inputs[96] = {'k_cache': new_k, 'v_cache': new_v,
+                                      'key_valid_mask': mask, 'pos_idx': position}
+    monkeypatch.setattr(model, "_capture_bucket", lambda *_: pytest.fail("promotion captured live KV"))
+    promoted = model._promote_graph_workspace(48, 48)
+    assert promoted == (96 if layout == "nested" else None)
+    if layout == "nested":
+        assert mask[:, :48].all() and not mask[:, 48:].any()
+        assert position.eq(48).all()
+        assert all(old.data_ptr() == new.data_ptr() for old, new in zip(old_k, new_k))
+    else:
+        assert mask.all() and position.eq(-1).all()
+    for before, roots in zip(roots_before, model._graph_kv_roots.values()):
+        for expected, actual in zip(before, roots):
+            torch.testing.assert_close(expected, actual, rtol=0, atol=0)
+    assert model._promote_graph_workspace(96, 96) is None
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA precapture and replay")
-@pytest.mark.parametrize("layout", ["graph", "bucket", "nested"])
+@pytest.mark.parametrize("layout", ["bucket", "nested"])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
 def test_sdpa_startup_precapture_reuses_graphs_across_request_modes(monkeypatch, layout, dtype):
     monkeypatch.setattr(module, "tqdm", lambda values: values)
@@ -176,12 +221,13 @@ def test_sdpa_startup_precapture_reuses_graphs_across_request_modes(monkeypatch,
         assert all(model.precapture_cuda_graph(model.kv_cache_buckets).values())
         assert torch.is_grad_enabled()
         keys = set(model.bucket_graphs)
-        assert len(keys) == 17
+        assert keys == set(model.kv_cache_buckets)
         for roots in model._graph_kv_roots.values():
             assert all(not torch.is_inference(root) and not root.requires_grad
                        and root.grad_fn is None for root in roots)
         # Exercise every precaptured computation bucket using ordinary tensors.
-        for text_len, prompt_len in [(32, 256), (32, 303), (128, 304), (400, 304)]:
+        for text_len, prompt_len in [(32, 256), (32, 303), (128, 304), (400, 304),
+                                     (128, 480), (128, 672)]:
             x = torch.arange(1, text_len + 1, device=device).remainder(62).unsqueeze(0)
             prompt = torch.arange(prompt_len, device=device).remainder(62).unsqueeze(0)
             bert = torch.zeros(1, 1024, text_len, device=device, dtype=dtype)
@@ -215,7 +261,7 @@ def test_cuda_views_match_independent_graphs_across_requests_and_overflow(monkey
         # Match the production head dimension (32) and aligned CUDA buckets.
         # Tiny head_dim=16/48-slot FA2 graphs are not numerically repeatable
         # even between two untouched original decoders on this runtime.
-        models = [decoder(layout, hidden=64).half().to(device) for layout in ("graph", "nested")]
+        models = [decoder(layout, hidden=64).half().to(device) for layout in ("bucket", "nested")]
         for name, value in models[0].state_dict().items():
             torch.testing.assert_close(value, models[1].state_dict()[name], rtol=0, atol=0)
         for model in models:
@@ -269,16 +315,16 @@ def test_workspace_handoff_orders_pending_gpu_writes():
     device = torch.device("cuda:0")
     with torch.cuda.device(device), torch.inference_mode():
         model = decoder()
-        k, _ = model._graph_kv_views((48, 32), device, torch.float16)
+        k, _ = model._graph_kv_views(48, device, torch.float16)
         first, second = [torch.cuda.Stream(device=device) for _ in range(2)]
         first.wait_stream(torch.cuda.current_stream(device))
         second.wait_stream(torch.cuda.current_stream(device))
-        with torch.cuda.stream(first), model._use_graph_workspace((48, 32), device):
+        with torch.cuda.stream(first), model._use_graph_workspace(48, device):
             torch.cuda._sleep(5_000_000)
             k[0].fill_(17)
         # No host synchronization between requests. The second lease's wait
         # must order this mutation after the first stream's delayed write.
-        with torch.cuda.stream(second), model._use_graph_workspace((96, 64), device):
+        with torch.cuda.stream(second), model._use_graph_workspace(96, device):
             k[0].mul_(2)
         second.synchronize()
         assert k[0].eq(34).all()
@@ -379,7 +425,7 @@ def test_replay_failure_continues_from_active_workspace(monkeypatch):
         model = decoder(hidden=64).half().to(device)
         model.kv_cache_buckets = [512]
         model.use_static_kv_cache = model.cuda_graph_enabled = True
-        assert model.precapture_cuda_graph([512], kv_len_range=(192, 192)) == {512: True}
+        assert model.precapture_cuda_graph([512]) == {512: True}
         keys = set(model.bucket_graphs)
         x = torch.arange(1, 97, device=device).remainder(62).unsqueeze(0)
         prompt = torch.arange(96, device=device).remainder(62).unsqueeze(0)
@@ -407,3 +453,82 @@ def test_replay_failure_continues_from_active_workspace(monkeypatch):
         assert len(results[0][2]) == len(results[1][2]) == 16
         for expected, actual in zip(results[0][2], results[1][2]):
             torch.testing.assert_close(expected, actual, rtol=2e-3, atol=2e-3)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA graph promotion")
+@pytest.mark.parametrize("attention", ["sdpa", "flash"])
+@pytest.mark.parametrize("prepared,steps", [([256, 448, 512, 768, 1024], 700),
+                                           ([256], 160), ([256, 512], 350),
+                                           ([256, 512, 1024], 700)])
+def test_nested_promotion_and_missing_or_maximum_fallback_match_full_bucket(
+        monkeypatch, caplog, attention, prepared, steps):
+    from AR.models.t2s_flash_attn import apply_flash_attn_patch, is_flash_attn_available
+    if attention == "flash" and not is_flash_attn_available():
+        pytest.skip("FlashAttention extension unavailable")
+    monkeypatch.setattr(module, "tqdm", lambda values: values)
+    monkeypatch.setattr(module, "_should_stop_on_eos", lambda *_: False)
+    trace = []
+
+    def sample(logits, _history, **_kwargs):
+        trace.append(logits.clone())
+        return logits.argmax(-1, keepdim=True).to(torch.int32), None
+
+    monkeypatch.setattr(module, "sample", sample)
+    device = torch.device("cuda:0")
+    with torch.cuda.device(device), torch.no_grad():
+        candidate = decoder(hidden=64).half().to(device)
+        reference = decoder(hidden=64).half().to(device)
+        candidate.kv_cache_buckets = [256, 448, 512, 768, 1024] if 1024 in prepared else [256, 448, 512]
+        reference.kv_cache_buckets = [max(candidate.kv_cache_buckets)]
+        for model in (candidate, reference):
+            model.use_static_kv_cache = model.cuda_graph_enabled = True
+            if attention == "flash":
+                assert apply_flash_attn_patch(model)
+                for block in model.t2s_transformer_static.blocks:
+                    def strict_decode(x, k, v, pos, mask, valid=-1, sdpa=True, block=block):
+                        return block._finish_attention(x, block._flash_valid_len(x, k, v, pos)), k, v
+                    block.decode_next_token_with_static_cache = strict_decode
+        assert all(candidate.precapture_cuda_graph(prepared).values())
+        assert all(reference.precapture_cuda_graph().values())
+        roots = [root.data_ptr() for root in candidate._graph_kv_roots[None]]
+        keys = set(candidate.bucket_graphs)
+        monkeypatch.setattr(candidate, "_warmup_and_capture_bucket",
+                            lambda *_: pytest.fail("request tried to capture over live KV"))
+        x = torch.arange(1, 97, device=device).remainder(62).unsqueeze(0)
+        prompt = torch.arange(96, device=device).remainder(62).unsqueeze(0)
+        bert = torch.zeros(1, 1024, 96, dtype=torch.float16, device=device)
+        results = []
+        with caplog.at_level(logging.INFO, logger=module.__name__):
+            for model in (reference, candidate):
+                trace.clear()
+                tokens, index = model.infer_panel_naive(x, None, prompt, bert,
+                                                      top_k=1, early_stop_num=steps - 1)
+                torch.cuda.synchronize(device)
+                results.append((tokens.cpu(), index, [value.cpu() for value in trace]))
+        torch.testing.assert_close(results[0][0], results[1][0], rtol=0, atol=0)
+        assert results[0][1] == results[1][1]
+        assert len(results[0][2]) == len(results[1][2]) == steps
+        for expected, actual in zip(results[0][2], results[1][2]):
+            torch.testing.assert_close(expected, actual, rtol=2e-3, atol=2e-3)
+        assert roots == [root.data_ptr() for root in candidate._graph_kv_roots[None]]
+        assert keys == set(candidate.bucket_graphs)
+        stats = candidate.cuda_graph_stats
+        assert stats['start_bucket'] == 256 and stats['capture_attempts'] == 0
+        assert stats['generated_tokens'] == steps - 1
+        assert stats['total_steps'] == 1 + stats['graph_replay_steps'] + stats['static_steps'] + stats['dynamic_steps']
+        if len(prepared) == 5:
+            assert stats['promotions'] == 4 and stats['final_bucket'] == 1024
+            assert stats['dynamic_steps'] == stats['static_steps'] == 0
+        elif 1024 in prepared:
+            assert stats['promotions'] == 2 and stats['final_bucket'] == 1024
+            assert stats['dynamic_steps'] == stats['static_steps'] == 0
+        elif len(prepared) == 1:
+            assert stats['promotions'] == 0 and stats['dynamic_steps'] > 0
+        else:
+            assert stats['promotions'] == 1 and stats['final_bucket'] == 512
+            assert stats['dynamic_steps'] > 0
+        messages = [record.getMessage() for record in caplog.records if '[T2S request]' in record.getMessage()]
+        assert len(messages) == 2
+        assert f"promotions={stats['promotions']}" in messages[-1]
+        assert f"generated_tokens={steps - 1}" in messages[-1]
+        assert f"dynamic_steps={stats['dynamic_steps']}" in messages[-1]
