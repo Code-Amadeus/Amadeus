@@ -4484,7 +4484,9 @@
           "original_median_ms": 91.22479999496136,
           "nested_median_ms": 88.65760000480805,
           "paired_median_elapsed_change_percent": -2.1465061590159316,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 93.68340001674369,
+          "nested_p95_ms": 91.31780001916923
         },
         {
           "case": "unaligned_512",
@@ -4492,7 +4494,9 @@
           "original_median_ms": 130.96899999072775,
           "nested_median_ms": 129.28254999860656,
           "paired_median_elapsed_change_percent": -1.2111054687287626,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 134.78069999837317,
+          "nested_p95_ms": 133.49629999720491
         },
         {
           "case": "medium_768",
@@ -4500,9 +4504,12 @@
           "original_median_ms": 252.72689999837894,
           "nested_median_ms": 252.63774998893496,
           "paired_median_elapsed_change_percent": -0.11169935539223075,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 257.4488999962341,
+          "nested_p95_ms": 255.69150000228547
         }
-      ]
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
     },
     "paired-flash-device1.json": {
       "raw_sha256": "1f05f85d7671d0ef5002f986832f3ec81a37f5a3c7c18575b2334705c9f8b0c1",
@@ -4515,7 +4522,9 @@
           "original_median_ms": 107.36394999548793,
           "nested_median_ms": 105.75580000295304,
           "paired_median_elapsed_change_percent": -1.6172914375939929,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 108.80829999223351,
+          "nested_p95_ms": 106.75769997760653
         },
         {
           "case": "unaligned_512",
@@ -4523,7 +4532,9 @@
           "original_median_ms": 158.12459998414852,
           "nested_median_ms": 156.8783499969868,
           "paired_median_elapsed_change_percent": -0.763301849612269,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 160.36919999169186,
+          "nested_p95_ms": 159.7135000047274
         },
         {
           "case": "medium_768",
@@ -4531,9 +4542,12 @@
           "original_median_ms": 323.27985001029447,
           "nested_median_ms": 328.85399999213405,
           "paired_median_elapsed_change_percent": 1.7434861516505307,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 325.18179999897256,
+          "nested_p95_ms": 330.9086000081152
         }
-      ]
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
     },
     "paired-sdpa-device1.json": {
       "raw_sha256": "92589bcc8253a2de7a81139e012a9a64e4d6d08b927c4fd60ac55ec6c0480165",
@@ -4546,7 +4560,9 @@
           "original_median_ms": 138.6752999969758,
           "nested_median_ms": 139.0005499997642,
           "paired_median_elapsed_change_percent": -0.18774893272837656,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 141.7284000199288,
+          "nested_p95_ms": 141.2856999959331
         },
         {
           "case": "unaligned_512",
@@ -4554,7 +4570,9 @@
           "original_median_ms": 212.43189998494927,
           "nested_median_ms": 216.23605000786483,
           "paired_median_elapsed_change_percent": 1.7399338403449427,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 215.99480000440963,
+          "nested_p95_ms": 220.78410000540316
         },
         {
           "case": "medium_768",
@@ -4562,9 +4580,12 @@
           "original_median_ms": 478.8196500012418,
           "nested_median_ms": 495.8444499934558,
           "paired_median_elapsed_change_percent": 3.5199645938884583,
-          "all_tokens_equal": true
+          "all_tokens_equal": true,
+          "original_p95_ms": 480.7003000169061,
+          "nested_p95_ms": 498.54440000490285
         }
-      ]
+      ],
+      "percentile_method": "Nearest rank per layout; 20 samples per case; p95 is sorted sample 19. Not p95 of paired elapsed changes or a long-run tail guarantee."
     }
   },
   "baseline_repeat": {
@@ -5678,6 +5699,29 @@
       "path": "GPT_SoVITS/AR/models/t2s_model.py",
       "git_blob": "d76d9f664e51bad72143b49886b7bbec7e7fbb44",
       "matches_archived_original_baseline": true
+    }
+  },
+  "performance_tradeoff_review": {
+    "date": "2026-10-14",
+    "runtime_commit": "115129002e74003b29788ae1fcc8f6595a2ef459",
+    "preexisting_serial_policy_commit": "ef3a54b5c6ddacd994081b8129450b7e499d2679",
+    "serial_policy_sources": [
+      "tts/synthesis_backend.py:select_synthesis",
+      "tts/pipeline.py:speak_stream_graph_serial",
+      "tts/pipeline.py:reconfigure_tts_mode_name"
+    ],
+    "concurrency": "The existing CUDA Graph product pipeline already serializes complete TTS synthesis requests. Nested KV does not introduce another loss of request concurrency on this path. Direct concurrent decoder callers still require workspace ownership.",
+    "measurement_scope": "Reanalysis of saved raw samples plus code inspection; no new performance runs. Raw hashes verified before deriving paired p95.",
+    "unmeasured": [
+      "Isolated cold root allocation/lazy first capture latency",
+      "Long-run first-voiced/ASR p95 and p99",
+      "Independent CPU-lock/CUDA-event timing breakdown",
+      "Cold graph misses or deferred-capture performance comparison"
+    ],
+    "contract_validation": {
+      "command": "python -X utf8 -m pytest tests/test_tts_acceleration.py tests/test_tts_cache_backend_boundary.py tests/test_tts_threading.py -q",
+      "passed": 93,
+      "scope": "Existing mode selection, Graph synthesis lock and voice-thread contracts; runtime implementation unchanged."
     }
   }
 }

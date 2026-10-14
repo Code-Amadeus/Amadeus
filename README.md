@@ -526,8 +526,10 @@ not install extensions automatically; see [optional extension installation and
 verification](docs/torch27_candidates.md#flashattention-wheel-inventory).
 
 T2S CUDA Graphs keep their bucket shapes while sharing one maximum-capacity KV
-workspace by default (`TTS_KV_CACHE_LAYOUT=nested`). The workspace is exclusive
-for an entire AR request; ordinary ASR inference can still run concurrently.
+workspace by default (`TTS_KV_CACHE_LAYOUT=nested`). The existing CUDA Graph
+pipeline already serializes complete TTS synthesis requests, so sharing KV does
+not reduce concurrency in that mode. The decoder also holds the workspace for
+an entire AR request; ordinary ASR inference and audio playback can still overlap.
 `bucket` shares within a bucket and `graph` keeps independent KV per graph for
 comparisons. Set the layout before loading the model. See the [nested KV
 evaluation](docs/tts_nested_kv_evaluation_2026-10-14.md) for measured memory and
