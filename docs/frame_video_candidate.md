@@ -31,8 +31,8 @@ observations through the existing authenticated visual-status channel. Pending
 codec checks and fallback reasons remain visible. Saving uses the existing
 backend-restart flow. The launcher must not inject hidden graphics overrides.
 
-![Old-pack automatic policy](images/frame-source/static-default.png)
-![Video-active automatic policy](images/frame-source/video-active.png)
+![Old-pack automatic policy](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/images/frame-source/static-default.png)
+![Video-active automatic policy](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/images/frame-source/video-active.png)
 
 These screenshots use synthetic Host status with the real Settings components;
 they contain no character media.
@@ -119,9 +119,9 @@ CPU once both paths already use the reduced budget and GC policy. The whole
 upgrade combines resource policy with video supply; encoding alone is not an
 order-of-magnitude memory reduction.
 
-See the [historical record and hashes](evidence/frame-video-historical-default-2026-10-13.json),
-[frozen full-pack report](frame_video_full_acceptance_2026-10-13.md), and
-[full-pack structured evidence](evidence/frame-video-full-acceptance-2026-10-13.json).
+See the [historical record and hashes](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/frame-video-historical-default-2026-10-13.json),
+[frozen full-pack report](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/frame_video_full_acceptance_2026-10-13.md), and
+[full-pack structured evidence](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/frame-video-full-acceptance-2026-10-13.json).
 All historical metrics retain their original source revision; they are not newly
 measured performance claims for this PR head.
 

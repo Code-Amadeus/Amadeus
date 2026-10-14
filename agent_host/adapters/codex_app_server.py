@@ -1119,7 +1119,12 @@ class CodexAppServerAdapter:
             "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
             "item/permissions/requestApproval", "mcpServer/elicitation/request",
         }:
-            raise ValueError(f"Unsupported Codex server request: {method}")
+            # This callback runs on the SDK's sole reader thread. Raising here
+            # kills routing for every later Work on the cached connection.
+            # Match the SDK's empty result for unsupported requests; it grants
+            # no permission and leaves any method-specific rejection to Codex.
+            logger.warning("Unsupported Codex server request; returning empty result: %r", str(method)[:240])
+            return {}
         source = dict(params or {})
         thread_id = str(source.get("threadId") or "").strip()
         turn_id = str(source.get("turnId") or "").strip()

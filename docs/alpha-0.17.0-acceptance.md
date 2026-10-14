@@ -5,6 +5,9 @@ Recorded on 2026-10-14 (Pacific/Auckland). Baseline main:
 `v0.16.1-alpha.0` (`6147acbc36e2b16faa5d8192a873d40a7feb5965`).
 The interval has 16 mainline commits before #208 and release preparation.
 
+Release tracker: [#215](https://github.com/Code-Amadeus/Amadeus/issues/215).
+Full measurements: [performance evidence](alpha-0.17.0-performance.md).
+
 ## Deterministic and desktop evidence
 
 - Main at the baseline has successful Windows Python/Electron, Linux, macOS,
@@ -84,10 +87,116 @@ No optional-model bulk upgrade or new vulnerability-free claim is made.
 | #190 / #142 / #110 / #64 / #61 | Feature, platform or longer acceptance work; retain the existing scope and avoid treating this release as completion. |
 | #176 / #81 / #6 / #4 | Historical release/community tracking; not independent code merge blockers. |
 
-No issue or contributor PR was automatically closed by this triage. Real audio,
+No issue or contributor PR was automatically closed by this triage.
 AirPods reconnect, sustained wallpaper interaction, multi-monitor behavior,
 exclusive MCP cleanup and broader GPU/device qualification remain outside the
 model-less acceptance evidence above.
+
+## Live product acceptance
+
+Tracking: [#215](https://github.com/Code-Amadeus/Amadeus/issues/215); candidate
+[#214](https://github.com/Code-Amadeus/Amadeus/pull/214). **Not release-accepted.**
+The long-path full generated-app rerun failed Host boot validation; a byte-identical
+short-path copy passes and the fresh full short-path rerun is in progress. The first Gomoku
+round failed; a repeat completed gameplay/history but retained an automated
+wording-oracle failure, manually reviewed below. No merge, tag or public Release is authorized before maintainer re-review.
+
+These runs used Windows 11 x64, Python 3.12.10, the shipping Electron GUI where
+specified, DeepSeek `deepseek-v4-flash`, and the real Codex App Server 0.154.0; the second full journey selected Pi
+for adaptation after Codex created the game.
+Tasks, sessions, project directories and desktop output were isolated and synthetic.
+Voice used existing local models on RTX 4070 Ti SUPER, Torch 2.6.0+cu124 and
+Transformers 4.57.6. Raw reports remain local; the committed
+[sanitized record](evidence/release-0.17.0/live-acceptance.json) includes report
+hashes, boundaries and the tested product-patch hash.
+
+| Real path | Result | What it establishes |
+| --- | --- | --- |
+| Native Codex permission deny | 8/8 checks | Actionable card, durable deny, same run/attempt continuation, no denied write, terminal completion. |
+| Chat → Work status and native steer | 10/10 | Status starts no second run; amendment reaches the same run; one WorkItem/attempt; exact `STEERED` result. |
+| Work create/amend/scratch/restart | 23/23 | Real `phase-one` → `phase-two` → restart → `phase-three`, independent scratch, durable project focus, host-owned diff and completion facts. |
+| Work cancel/retry | 6/6 | Cancel an actually running native tool, persist `cancelled`, retain one WorkItem with a new successful attempt and exact output. Two bounded writes were approved once. |
+| Native Preview → AUIP → leave/thaw | 15/15 | Same real Windows surface; fixture-seeded Work/app, no real authoring provider. |
+| Native shell close | 15/15 | User-facing window close and Host lifecycle agree; fixture-seeded Work/app. |
+| Implicit AUIP surface creation | 17/17 | Attach opens the correct shared native surface without an earlier Preview open; fixture-seeded Work/app. |
+| Reactor AUIP interaction | 22/22 semantic checks | Official seeded example, real model/GUI: legal cooling, accepted receipt before visible role delivery, grounded state query, leave, ordinary Chat. This example declares no AUIP reset action. |
+| Local TTS playback/interrupt/recovery | 5/5 | Actual nonzero PortAudio device writes, interrupt before completion, epoch advancement, no stale writes, and subsequent speech. Production TtsHandler is used. No microphone or acoustic loopback. |
+| Local ASR Graph replay | Execution and paired consistency pass | A synthetic 3.456-second local WAV; 384-token Graph, cache hit, 16 replay steps, no fallback. One warmup and one measured call per engine have identical official/Graph text and tokens. |
+| Generated lights, full GUI | Short-path full rerun in progress | First adaptation exceeded 900 seconds. Second run hit Chromium file loading at 263–266-character SDK paths: files exist, but `ERR_FILE_NOT_FOUND` / `managed_sdk_unavailable` blocked delivery. A byte-identical short-path copy passed the same Host boot check. This identifies an environment/path-length failure; it does not yet establish full GUI acceptance. |
+| Gomoku full round | Failed | First explicit move and four automatic replies were accepted. At revision 11 / move 10, the fifth automatic reply failed with `b2_candidate_not_available`; no unauthorized move executed. Post-round/history checks were not reached. |
+
+ASR consistency is not an accuracy pass: both routes returned
+`再開できた。本性の確認はこれで終わり。` for TTS input
+`再開できたわ。音声の確認はこれで終わり。`. The shared mismatch cannot be attributed
+to CUDA Graph, or separated into TTS/ASR error without acoustic review. The small
+probe is not a new performance benchmark; published comparisons and their full
+baselines are in [performance evidence](alpha-0.17.0-performance.md).
+
+The Gomoku repeat completed a nine-move round, restart, automatic first move,
+resignation, finish-experience, leave and all seven history/capsule checks.
+Its raw report remains `failed` only for two grounding checks driven by the same
+wording matcher: it recognizes `対局は終わ` but misses `対局はすでに終わ`.
+Manual review confirms that the reply's white winner, completed game, resignation
+and one remaining stone match the accepted post-restart state. This is a
+wording-oracle false negative, not evidence of an incorrect answer; the raw report
+was not rewritten and no phrase-specific alias was added.
+
+The first Gomoku failure remains open. Three later real choices at the captured board
+returned legal candidates, but used empty branch history and executed no app
+action. They neither reproduce the exact failed request nor clear the full-round
+failure. Do not add a silent retry or weaken candidate validation to count it as a pass.
+
+### Failures retained and repairs
+
+- **Product authority boundary:** a coarse role-level AUIP proposal could be
+  dispatched even when the source-local decision contained no control/read.
+  `None` reached the action router and caused `TypeError`. Such proposals now
+  reuse the existing entry-refusal path, recording and presenting the refusal
+  without creating an action. A new regression fails before the fix; 162 related
+  routing, read, action, launch and independent-Work tests pass after it.
+- **Work test entry:** the old combined “switch context and create” prompt opened
+  a legitimate selection card. The harness now binds the project through existing
+  `session.create(project_id=...)` before requesting Work; all 23 real checks pass.
+- **Preview fixture:** Attach correctly rejected missing Host SDK hash receipts.
+  The fixture now stores the hashes returned by real materialization. All three
+  native surface runs pass; a contract test also rejects changed SDK bytes.
+- **TTS probe:** the first probe called only pipeline/playback interruption and
+  missed sentence-sequence reset. It is retained as a test-instrument failure;
+  using the complete production TtsHandler passed actual interrupt/recovery.
+- **Full-journey timeout reporting:** a started adaptation timeout used to record
+  “no prerequisite run required” and a misleading per-turn business-success flag.
+  It now fails immediately once a Provider run exists, in every journey layer.
+  The first overall run was already failed; its old per-turn success flag is not evidence.
+- **Other setup/negative results:** incompatible CLI flag combinations failed
+  before launching the product; a long nested Windows path failed Git setup and
+  was replaced with a shorter isolated path. Reactor correctly rejected a second
+  operation after all cooling choices became unavailable. Its missing AUIP reset
+  capability is separate from the no-control crash above.
+
+Microphone/VAD/acoustic barge-in, AirPods reconnect, wallpaper recovery (#185),
+exclusive MCP lifetime (#207), wider-device rendering (#201/#103), and consistently
+successful generated-app/Gomoku journeys remain unqualified. Passing
+packaging/CI gates does not supersede these recorded live-product results.
+
+
+## External review follow-up (2026-10-15)
+
+The eight review findings are addressed in this candidate, without importing the
+uncommitted video-distribution work from the development checkout.
+
+| Finding | Candidate change and verification |
+| --- | --- |
+| Unknown Codex server request kills the SDK reader | Return the SDK's empty result and log only the unsupported method. Two local-peer tests exercise the real 0.154 reader and subsequent request; both fail before the fix. Full adapter suite: 74 passed. No model or real Codex process is used by the transport probe. |
+| Video package distribution overstatement | Release title now emphasizes local voice and Work. The notes explicitly state that official assets do not yet distribute video packages and current public packages use static frames in auto mode. |
+| Hidden sidebar breaks extension settings smoke | Navigate through General → Manage plugins; remove Sidebar from the Settings fixture. Real Electron smoke: 8/8; now wired into Windows Electron CI. |
+| Extension initialize reports old Host version | Read `importlib.metadata.version("amadeus")`; retain the separate Host API compatibility version. Extension/resource tests: 46 passed, including the initialize assertion. |
+| README claims wallpaper starts by default | Both READMEs now document control-panel/window default and explicit wallpaper opt-in, with #185's limits. |
+| Source archive documentation links | Include `frame_video_candidate.md` and `tts_nested_kv_evaluation_2026-10-14.md`; historical evidence/media references use fixed public commit URLs. Both requested text-document links resolve within the selected source tree. Existing separately distributed README media exclusions are unchanged. |
+| Plugin documentation points at hidden sidebar | Host profile and extension examples now point to Settings → General → Manage plugins. |
+| Redundant idle-time resets | Compute quiet time directly from the speech-end timestamp; remove the misleading writable counter. Silent Work completion keeps the existing speech-based timing. Nine ambient scheduling tests pass, including that boundary. |
+
+The updated frontend still passes 523 tests and production build. GPU benchmark
+results remain historical measurements, not results fabricated from these tests.
 
 ## Sidebar comparison
 

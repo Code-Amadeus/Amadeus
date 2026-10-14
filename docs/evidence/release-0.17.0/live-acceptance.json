@@ -1,0 +1,484 @@
+{
+  "schema": "amadeus.release-live-acceptance.v1",
+  "release": "0.17.0-alpha.0",
+  "date": "2026-10-14/15 Pacific/Auckland",
+  "base_commit": "70267cb0907d8bc3ffdb522a72175f9c30ec169c",
+  "release_accepted": false,
+  "publication": "held for maintainer re-review",
+  "tested_product_patch_sha256": {
+    "server/cooperative_chat_ingress.py": "dc99d2332b0e0a64260d95379f56d85014ced83f618d1c75d08e23af650d0fe8"
+  },
+  "jobs": [
+    {
+      "name": "native_permission_deny",
+      "status": "passed",
+      "checks": {
+        "native_requests_became_actionable_cards": true,
+        "host_decisions_were_accepted": true,
+        "same_run_continued": true,
+        "same_work_item_attempt": true,
+        "card_closed_after_resolution": true,
+        "permissions_are_durable_denied": true,
+        "denied_effect_did_not_happen": true,
+        "native_turn_terminated": true
+      },
+      "boundary": "Real Codex App Server and DeepSeek; deny persisted; denied write absent; no GUI.",
+      "local_report": "build/release-live/permission-deny/codex_app_server_permission_20261014T100714Z_0eccdd.json",
+      "report_sha256": "5f5e1a39c9b2b92db95ec4738c40943c7b486ed21f2b1242e5794926fc8ecc6c"
+    },
+    {
+      "name": "same_run_status_and_steer",
+      "status": "passed",
+      "checks": {
+        "initial_run_started_once": true,
+        "status_was_host_read_only": true,
+        "status_reply_is_visible": true,
+        "amendment_delivered_to_same_run": true,
+        "amend_did_not_start_second_run": true,
+        "one_work_item_one_attempt": true,
+        "steered_result_is_current": true,
+        "original_result_was_not_written": true,
+        "terminal_succeeded": true,
+        "ui_projection_succeeded": true
+      },
+      "boundary": "Real Chat/Host/Codex; same run, one WorkItem and one attempt; exact STEERED output.",
+      "local_report": "build/release-live/work-steer/codex_app_server_control_20261014T101516Z_8d5401.json",
+      "report_sha256": "42e427b4d8211d05ad8a2c7b8361831f789e8628615d2726adc9e3e23c88d16d"
+    },
+    {
+      "name": "work_restart_continuation",
+      "status": "passed",
+      "checks": {
+        "bootstrap_registered_ready_codex": true,
+        "codex_attempt_diff_is_host_owned": true,
+        "codex_workspace_status_is_host_owned": true,
+        "all_real_codex_runs_succeeded": true,
+        "project_create_wrote_real_file": true,
+        "amend_matches_transport_continuity_contract": true,
+        "amend_content_is_current": true,
+        "scratch_created_independent_work_item": true,
+        "scratch_is_under_host_root": true,
+        "scratch_file_is_real": true,
+        "all_attempts_are_codex": true,
+        "ledger_completion_succeeded": true,
+        "completion_truth_matches_tool_evidence": true,
+        "project_git_ownership": true,
+        "host_worktree_policy_applied": true,
+        "project_checkout_isolated": true,
+        "scratch_git_ownership": true,
+        "canonical_provider_events_visible": true,
+        "ui_projection_visible": true,
+        "restart_registered_ready_codex": true,
+        "restart_restored_project_focus": true,
+        "runtime_status_exposes_availability": true,
+        "source_checkout_untouched": true
+      },
+      "boundary": "Real create/amend/scratch and owned backend restart; exact phase-three output; selected project API.",
+      "local_report": "build/release-live/work-restart-selected/direct_codex_full_host_20261014T101546Z_bd14f5.json",
+      "report_sha256": "4d60dbd5514cde78e84bcc09a8697a1d8c757b86796284d41801539fdc2ef1d7"
+    },
+    {
+      "name": "work_cancel_retry",
+      "status": "passed",
+      "checks": {
+        "real_tool_started_before_cancel": true,
+        "cancelled_attempt_durable": true,
+        "output_not_written_before_retry": true,
+        "same_work_new_attempt": true,
+        "retry_succeeded": true,
+        "exact_output_after_retry": true
+      },
+      "boundary": "Real slow native tool cancelled, durable cancelled attempt, same WorkItem new attempt succeeds; two bounded allow_once decisions.",
+      "local_report": "build/release-live/work-cancel-retry/cancel-retry-20261014T101736Z.json",
+      "report_sha256": "ee508108105d2e982172f4d5e20640580e8478687ee6764515017d294a4c2fbe"
+    },
+    {
+      "name": "local_tts_interrupt_recovery",
+      "status": "passed",
+      "checks": {
+        "initial_nonzero_device_audio": true,
+        "interrupted_before_completion": true,
+        "epoch_advanced": true,
+        "old_audio_stopped": true,
+        "recovery_nonzero_device_audio": true
+      },
+      "boundary": "Existing local GPT-SoVITS assets, CUDA, production bridge and TtsHandler; real PortAudio writes. No microphone/acoustic loopback.",
+      "local_report": "build/release-live/local-tts-handler/report.json",
+      "report_sha256": "24a40e9ee67a540279f0eb411c2a5404b8a3e92cd7d96c03d47f9e4540b99ab2",
+      "observations": [
+        {
+          "phase": "initial",
+          "samples": 81104,
+          "peak": 0.53857421875,
+          "first_write_seconds": 2.375
+        },
+        {
+          "phase": "interrupted",
+          "samples": 2640,
+          "peak": 0.242431640625,
+          "first_write_seconds": 0.5150000000003274,
+          "interrupt_seconds": 0.10900000000037835
+        },
+        {
+          "phase": "recovery",
+          "samples": 87680,
+          "peak": 0.66845703125,
+          "first_write_seconds": 0.4849999999996726
+        }
+      ]
+    },
+    {
+      "name": "native_surface_explicit",
+      "status": "passed",
+      "checks": {
+        "ordinary_live_preview_opened": true,
+        "preview_shell_has_one_native_window": true,
+        "same_attempt_entered_assembling": true,
+        "assembling_released_preview_server": true,
+        "attach_prepare_bound_exact_work_attempt": true,
+        "auip_registered_active": true,
+        "preview_shell_identity_preserved": true,
+        "auip_child_shared_native_window": true,
+        "preview_child_retained_for_thaw": true,
+        "no_standalone_auip_window": true,
+        "host_committed_attached_lifecycle": true,
+        "exact_leave_closed_auip_child": true,
+        "host_froze_after_surface_receipt": true,
+        "new_attempt_thawed_same_preview_child": true,
+        "thawed_preview_kept_native_window": true
+      },
+      "boundary": "Real shipping Electron windows with a fixture-seeded WorkItem and example app; not real provider authoring.",
+      "local_report": "runtime/work_preview_journeys/work_preview_auip_handoff_explicit_20261014T103625Z/report.json",
+      "report_sha256": "d17d482668e8c829084559407f51fe33036463056b9d9227b554f277d01560a2"
+    },
+    {
+      "name": "native_surface_shell-close",
+      "status": "passed",
+      "checks": {
+        "ordinary_live_preview_opened": true,
+        "preview_shell_has_one_native_window": true,
+        "same_attempt_entered_assembling": true,
+        "assembling_released_preview_server": true,
+        "attach_prepare_bound_exact_work_attempt": true,
+        "auip_registered_active": true,
+        "preview_shell_identity_preserved": true,
+        "auip_child_shared_native_window": true,
+        "preview_child_retained_for_thaw": true,
+        "no_standalone_auip_window": true,
+        "host_committed_attached_lifecycle": true,
+        "shell_close_sent_exact_auip_leave": true,
+        "shell_close_received_exact_surface_receipt": true,
+        "shell_close_reclaimed_host_preview": true,
+        "shell_window_really_closed": true
+      },
+      "boundary": "Real shipping Electron windows with a fixture-seeded WorkItem and example app; not real provider authoring.",
+      "local_report": "runtime/work_preview_journeys/work_preview_auip_handoff_shell-close_20261014T103712Z/report.json",
+      "report_sha256": "3ae5d8712bc2adac8b0a5873a04ea94bdf7f003c64e6eb5c64f38aa3775f66fe"
+    },
+    {
+      "name": "native_surface_implicit",
+      "status": "passed",
+      "checks": {
+        "implicit_surface_started_closed": true,
+        "no_explicit_preview_open_was_sent": true,
+        "attach_prepare_created_shared_app_surface": true,
+        "implicit_surface_opened_in_assembling": true,
+        "implicit_surface_reached_handoff": true,
+        "only_one_expected_native_surface_was_added": true,
+        "attach_prepare_bound_exact_work_attempt": true,
+        "auip_registered_active": true,
+        "preview_shell_identity_preserved": true,
+        "auip_child_shared_native_window": true,
+        "preview_child_retained_for_thaw": true,
+        "no_standalone_auip_window": true,
+        "host_committed_attached_lifecycle": true,
+        "exact_leave_closed_auip_child": true,
+        "host_froze_after_surface_receipt": true,
+        "new_attempt_thawed_same_preview_child": true,
+        "thawed_preview_kept_native_window": true
+      },
+      "boundary": "Real shipping Electron windows with a fixture-seeded WorkItem and example app; not real provider authoring.",
+      "local_report": "runtime/work_preview_journeys/work_preview_auip_handoff_implicit_20261014T103727Z/report.json",
+      "report_sha256": "15fdf4f98f5128001ae198a56be09d59576924aebfe457b3949538af192d74f6"
+    },
+    {
+      "name": "reactor_live_interaction",
+      "status": "passed",
+      "checks": {
+        "runtime_code_identity_matches_launcher": true,
+        "launch_turn_started_no_provider_run": true,
+        "prepare_exposed_expected_situation_kind": true,
+        "requested_engagement_mode_became_active": true,
+        "step_produced_an_application_action_request": true,
+        "explicit_step_produced_exactly_one_action_and_receipt": true,
+        "query_produced_no_application_action_request": true,
+        "query_produced_no_work_ledger_answer": true,
+        "leave_closed_the_application_session": true,
+        "post_leave_chat_returned_a_visible_role_reply": true,
+        "post_leave_chat_started_no_provider_work": true,
+        "post_leave_chat_did_not_reopen_or_operate_the_app": true,
+        "all_automatic_permissions_were_bounded_and_accepted": true,
+        "final_work_has_no_pending_permissions": true,
+        "prepare_became_active_auip": true,
+        "prepare_business_outcome_verified": true,
+        "query_respected_revision_contract": true,
+        "app_surface_has_no_uncaught_errors": true,
+        "all_explicit_steps_received_accepted_receipts": true,
+        "b2_foreground_contract_passed": true,
+        "b2_branch_collapsed_with_verified_action": true,
+        "interaction_launch_started_no_provider": true
+      },
+      "boundary": "Seeded official example; real DeepSeek decisions and native GUI. One cooling action, grounded query, leave and ordinary Chat. No AUIP reset is declared by this example.",
+      "local_report": "build/live/reactor-fixed/live_product_reactor_interaction_20261014T103834Z_fa8a61/report.json",
+      "report_sha256": "fb3ec925faecbd23237299373f0e48f72e105d811b302cea409e8da878a68084",
+      "turn_checks": {
+        "launch": {
+          "same_work_item": true,
+          "business_outcome_verified": true,
+          "auip_active": true,
+          "expected_situation_kind_visible": true,
+          "engagement_mode_active": true
+        },
+        "step": {
+          "accepted_receipt": true,
+          "b2_action_request_path": true,
+          "b2_candidate_receipt_linked": true,
+          "b2_visible_delivery_recorded": true,
+          "b2_receipt_precedes_visible_chat": true,
+          "revision_advanced": true,
+          "scalar_oracle_observed_metric": true,
+          "scalar_oracle_values_are_comparable": true,
+          "scalar_oracle_knows_action_direction": true,
+          "scalar_action_moved_as_declared": true,
+          "scalar_action_matches_current_zone": true,
+          "scalar_action_did_not_cross_the_entire_safe_interval": true
+        },
+        "query": {
+          "ambient_revision_not_regressed": true
+        },
+        "leave": {
+          "app_session_closed": true
+        },
+        "post_leave_chat": {}
+      }
+    },
+    {
+      "name": "local_asr_graph_replay",
+      "status": "passed_execution_and_paired_consistency",
+      "boundary": "One synthetic 3.456-second local TTS clip; one warmup and one measured call per engine. Not an accuracy or performance qualification.",
+      "checks": {
+        "all_text_equal_to_official": true,
+        "all_tokens_equal_to_official": true,
+        "graph_replayed_without_fallback": true
+      },
+      "expected_tts_text": "再開できたわ。音声の確認はこれで終わり。",
+      "recognized_by_both_engines": "再開できた。本性の確認はこれで終わり。",
+      "limitation": "Both engines misrecognize part of the synthetic source; without acoustic isolation this does not identify an ASR-only or TTS-only defect.",
+      "local_report": "build/release-live/local-asr/report-compare.json",
+      "report_sha256": "9267b0d5388d2839bd13cf39fca533ceac678ddb27631be70bb1bb9a52a0951c"
+    },
+    {
+      "name": "gomoku_round_repeat",
+      "status": "failed",
+      "boundary": "Official seeded app; real model and GUI. First failed run is retained separately.",
+      "checks": {
+        "runtime_code_identity_matches_launcher": true,
+        "launch_turn_started_no_provider_run": true,
+        "prepare_exposed_expected_situation_kind": true,
+        "requested_engagement_mode_became_active": true,
+        "step_produced_an_application_action_request": true,
+        "explicit_step_produced_exactly_one_action_and_receipt": true,
+        "query_produced_no_application_action_request": true,
+        "query_produced_no_work_ledger_answer": true,
+        "query_answer_was_grounded_in_current_state": false,
+        "leave_closed_the_application_session": true,
+        "post_leave_chat_returned_a_visible_role_reply": true,
+        "post_leave_chat_started_no_provider_work": true,
+        "post_leave_chat_did_not_reopen_or_operate_the_app": true,
+        "all_automatic_permissions_were_bounded_and_accepted": true,
+        "final_work_has_no_pending_permissions": true,
+        "prepare_became_active_auip": true,
+        "prepare_business_outcome_verified": true,
+        "query_respected_revision_contract": true,
+        "app_surface_has_no_uncaught_errors": true,
+        "query_answer_grounded_in_state": false,
+        "all_explicit_steps_received_accepted_receipts": true,
+        "b2_foreground_contract_passed": true,
+        "b2_branch_collapsed_with_verified_action": true,
+        "gomoku_round_reached_terminal_result": true,
+        "gomoku_automatic_b2_replied_without_chat_nudges": true,
+        "gomoku_restart_round_was_accepted": true,
+        "gomoku_restart_triggered_automatic_b2_move": true,
+        "gomoku_resignation_was_accepted": true,
+        "gomoku_experience_finished_and_collapsed": true,
+        "interaction_launch_started_no_provider": true,
+        "experience_capsule_kept_exact_app_identity": true,
+        "experience_capsule_retained_terminal_result": true,
+        "experience_capsule_dialogue_is_bounded": true,
+        "experience_capsule_directives_are_bounded": true,
+        "experience_capsule_actions_are_bounded": true,
+        "experience_capsule_actions_match_accepted_app_receipts": true,
+        "post_leave_turn_retained_in_session_history": true
+      },
+      "round": {
+        "completed": true,
+        "lifecycle": "round_finished",
+        "winner": "black",
+        "move_count": 9,
+        "human_turns": 4,
+        "b2_turns": 4,
+        "presentation": {
+          "automatic_action_count": 5,
+          "routine_source_event_count": 5,
+          "narrated_routine_action_count": 0,
+          "narrated_routine_event_ids": [],
+          "outcome_narration_count": 0,
+          "outcome_narration_event_ids": []
+        }
+      },
+      "post_round": {
+        "restart_accepted": true,
+        "automatic_first_move_accepted": true,
+        "resignation_accepted": true,
+        "finish_experience_accepted": true,
+        "final_status": "completed",
+        "final_lifecycle": "concluded"
+      },
+      "experience_history_checks": {
+        "experience_capsule_kept_exact_app_identity": true,
+        "experience_capsule_retained_terminal_result": true,
+        "experience_capsule_dialogue_is_bounded": true,
+        "experience_capsule_directives_are_bounded": true,
+        "experience_capsule_actions_are_bounded": true,
+        "experience_capsule_actions_match_accepted_app_receipts": true,
+        "post_leave_turn_retained_in_session_history": true
+      },
+      "automatic_failures": [
+        "the AUIP state question did not report the current standard situation fact",
+        "acceptance check failed: query_answer_grounded_in_state",
+        "acceptance check failed: query_answer_was_grounded_in_current_state"
+      ],
+      "manual_query_review": {
+        "result": "grounded",
+        "actual_state": {
+          "winner": "white",
+          "lifecycle": "concluded",
+          "moveCount": 1
+        },
+        "observed_reply": "対局はすでに終わってるわ。勝者は白…理由は私の投了…石はまだ1個",
+        "oracle_limitation": "The literal lifecycle alias matcher accepts 対局は終わ but misses 対局はすでに終わ. Raw automatic failure is retained; no alias patch or success rewrite."
+      },
+      "local_report": "build/live/gomoku-repeat/live_product_gomoku_interaction_20261014T104937Z_e1c1d9/report.json",
+      "report_sha256": "de8f91dfd2a5f4f98d5a0981d5e72b5f8d98dac21dd18e2fdd30b433f2304bde"
+    }
+  ],
+  "full_generated_app_journey": {
+    "status": "failed",
+    "boundary": "Fresh full real GUI journey, default 1800-second Provider budget; first 900-second attempt remains failed.",
+    "local_report": "build/live/lights-final/live_product_lights_full_20261014T104150Z_244100/report.json",
+    "report_sha256": "18fda7d3030852de2bee45dabee77f4a0724ada70872b412547aff8d2ba91e03",
+    "turn_checks": {
+      "create": {
+        "provider_succeeded": true,
+        "business_outcome_verified": true,
+        "terminal_narration_delivered": true
+      },
+      "status": {
+        "canonical_status_answer_visible": false,
+        "provider_query_accepted_and_reply_visible": true,
+        "active_query_reached_existing_work_owner": true
+      },
+      "prepare": {
+        "same_work_item": true,
+        "provider_succeeded": true
+      }
+    },
+    "review": {},
+    "provider_sequence": [
+      "codex",
+      "pi"
+    ],
+    "host_validation": {
+      "verified": false,
+      "code": "console_error",
+      "boot_kind": "app_error",
+      "diagnostics": [
+        "managed-v0.js: ERR_FILE_NOT_FOUND",
+        "situations-v0.js: ERR_FILE_NOT_FOUND",
+        "managed_sdk_unavailable"
+      ],
+      "diagnosis": "Files exist at 263-266 character paths; byte-identical copy passes the same Host boot check under a shorter path. Environment/path-length failure, not proved missing generated assets."
+    },
+    "short_path_boot_probe": {
+      "verified": true,
+      "identical_file_bytes": true,
+      "report_sha256": "73db475ab29abd13e44e93ebcb547df0157993e03ec0ca70b262453798a87504"
+    },
+    "short_path_full_rerun": {
+      "status": "running"
+    }
+  },
+  "unresolved": [
+    {
+      "name": "gomoku_full_round",
+      "status": "failed",
+      "revision": 11,
+      "moves": 10,
+      "reason": "b2_candidate_not_available on the fifth automatic reply; no action executed; full round/post-round/history gate not reached.",
+      "followup": "Three real choices at captured state with empty branch history returned legal candidates. Not an exact request replay and not a full-round pass."
+    }
+  ],
+  "first_failures_and_repairs": [
+    {
+      "name": "work_project_selection",
+      "layer": "test_instrument",
+      "observed": "Old compound switch-and-create prompt opened a context selection card; script did not answer it.",
+      "repair": "Use existing session.create project_id before asking for work; 23 live checks pass."
+    },
+    {
+      "name": "focused_no_control",
+      "layer": "authority_boundary",
+      "observed": "A coarse role AUIP proposal reached focused control despite a no-op source-local decision, routing None and raising TypeError.",
+      "repair": "Reuse existing entry refusal path when focused owner has no control; new regression fails before fix; 162 related tests pass."
+    },
+    {
+      "name": "preview_hash_receipts",
+      "layer": "test_instrument",
+      "observed": "Fixture omitted Host SDK hash receipts; Attach correctly rejected it.",
+      "repair": "Record hashes returned by materialization; all three native surface journeys pass."
+    },
+    {
+      "name": "tts_probe_interrupt",
+      "layer": "test_instrument",
+      "observed": "Probe called only playback/pipeline halves and omitted the sentence sequence reset.",
+      "repair": "Use production TtsHandler; real interrupt and recovery pass."
+    },
+    {
+      "name": "lights_900_second_limit",
+      "layer": "incomplete_acceptance",
+      "observed": "Authoring remained active; first run timed out before attach. Its old business_outcome_verified flag is invalid evidence.",
+      "repair": "Started authoring timeout now fails immediately in every layer; rerun with original 1800-second budget."
+    },
+    {
+      "name": "reactor_second_action_and_reset",
+      "layer": "test_instrument",
+      "observed": "A second action after stabilization had no legal options; the example has no AUIP reset action.",
+      "repair": "One declared cooling action plus query/leave; refusal retained and no-op crash separately fixed."
+    },
+    {
+      "name": "windows_long_path",
+      "layer": "environment",
+      "observed": "Long nested reactor report path prevented Git object creation before application launch.",
+      "repair": "Use a shorter isolated report directory; retain original failure log."
+    }
+  ],
+  "not_qualified": [
+    "Real microphone/VAD/acoustic barge-in",
+    "macOS AirPods reconnect",
+    "Windows wallpaper recovery #185",
+    "Exclusive MCP lifetime #207",
+    "Cross-device rendering #201/#103",
+    "Consistently successful generated-app and Gomoku journeys"
+  ],
+  "privacy": "Only sanitized summaries are committed. Full prompts, paths, local model files, audio, credentials and raw runtime logs are excluded."
+}

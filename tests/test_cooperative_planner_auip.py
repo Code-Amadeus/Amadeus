@@ -329,3 +329,41 @@ async def test_subsumed_app_cannot_veto_work_and_app_only_adds_no_planner(
     finally:
         context.host.adapter.release.set()
         await context.finish()
+
+
+async def test_focused_no_control_decision_rejects_coarse_role_proposal(composition):
+    """A conversational/no-op app decision must never reach the action router."""
+    from types import SimpleNamespace
+    from server.auip_control_decision import AuipControlDecision
+
+    context, _state, *_unused, publisher = composition
+    decision = AuipControlDecision(status="ok", action="none",
+        app_session_id="current-app", work_relation="subsumed")
+    context.manager.auip_decider = SimpleNamespace(capture=lambda **_kwargs:decision)
+    context.manager.work_planner = lambda *_args, **_kwargs:pytest.fail(
+        "a coarse app proposal is not independent Work")
+    reply = "今は実行できる操作がないわ。"
+
+    async def query(messages, **_kwargs):
+        frame = json.loads(messages[-1]["content"])
+        if frame["source_kind"] == "user":
+            return json.dumps({"action":{"op":"auip"}, "say":"確認するわ。"}, ensure_ascii=False)
+        assert frame["current"]["state"] == "auip_rejected"
+        assert frame["current"]["outcome"]["error"] == "app_entry_not_confirmed"
+        return reply
+
+    context.manager.query = query
+    try:
+        await context.handler.send_text("今できる操作がなければそのままで。",
+            session_id=context.session_id, turn_id="app-no-control")
+        await context.handler._stream_task
+        receipt = context.manager.ingresses[context.session_id].receipts["app-no-control"]
+        assert receipt["state"] == "auip_rejected"
+        assert receipt["outcome"]["ok"] is False
+        context.manager.auip_router.assert_not_awaited()
+        assert context.host.adapter.calls == 0
+        assert len(publisher.receipts) == len(context.spoken) == 1
+        assert context.spoken[0]["display_text"] == reply
+    finally:
+        context.host.adapter.release.set()
+        await context.finish()

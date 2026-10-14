@@ -23,7 +23,7 @@
 
 ## 先核对已有聚合日志
 
-只读两份已有会话日志，匿名 source SHA-256 和 numeric inventory 见[本轮证据](evidence/tts_bucket_graph_reuse_validation_2026-10-14.json)，未发布原始文本、音频或日志。
+只读两份已有会话日志，匿名 source SHA-256 和 numeric inventory 见[本轮证据](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/tts_bucket_graph_reuse_validation_2026-10-14.json)，未发布原始文本、音频或日志。
 
 | 任务 | 数量 | 平均字数 | 最长 | >=45 字 |
 | --- | ---: | ---: | ---: | ---: |
@@ -109,7 +109,7 @@ PR 已被 maintainer 标为 ready；公开设置/默认值已关联 [Amadeus Iss
 
 两种后端共 **60/60 对 token 完全一致**，KV 仍为 48 MiB。清零每次升桶增加 48 个 K/V zero kernel（当前 24 层）；不是零成本，但不增加逐 token 操作。未锁频、每种后端只做一个构建顺序，因此这些小幅差异含放置/运行噪声，不能全部归因于清零。逐对比例中位数与两个独立耗时中位数的比例不是同一统计量。本轮不重测端到端试听，也不将数值轨迹差异提升为新合并门槛。
 
-性能数据与最终扩大回归另见 [尾部清零证据](evidence/tts_nested_kv_tail_clear_validation_2026-10-14.json)。该文件独立记录本轮修复；前面每桶一图/升桶的性能采样仍属于 `e35d58a` 阶段，未改写为本轮结果。
+性能数据与最终扩大回归另见 [尾部清零证据](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/tts_nested_kv_tail_clear_validation_2026-10-14.json)。该文件独立记录本轮修复；前面每桶一图/升桶的性能采样仍属于 `e35d58a` 阶段，未改写为本轮结果。
 
 ## 早期 17 图方案的历史实验记录
 
@@ -216,7 +216,7 @@ FA2 和 SDPA 的这些常驻指标相同。每图输入/输出合计约 0.14 MiB
 
 回归阶段另观察到，hidden=32/head=2、48/96 槽的极小型 FA2 图在两个相同布局的实例之间也不能稳定逐位重复。实验开始时保存的未修改 decoder 对照同样出现首步约 0.1006 的 logits 差异，排除了 nested 作为这个现象的必要触发条件。最终 GPU 回归采用当前权重的 head dimension=32 和对齐桶，固定双方每步输入并逐步核对 logits；真实权重的采样和完整波形另外保持严格 hash 对照。小模型后端现象的底层原因未确定，临时 FA2 调试改动全部撤回，没有添加兼容分支、扩大数值容差或据此提交上游 bug。
 
-笔记本 FA2 初轮分进程有 4/28 个 token hash 差异。未修改的原实现以同样源码、权重和 seed 再跑，也在相同四项出现差异；nested 与这次重复原基线 28/28 一致。交替实验另外验证了 60/60 对 FA2 token 一致。因此不把初轮跨进程差异归因于共享 KV；底层数值差异原因没有进一步确定，保留在[证据](evidence/tts_nested_kv_validation_2026-10-14.json)中。
+笔记本 FA2 初轮分进程有 4/28 个 token hash 差异。未修改的原实现以同样源码、权重和 seed 再跑，也在相同四项出现差异；nested 与这次重复原基线 28/28 一致。交替实验另外验证了 60/60 对 FA2 token 一致。因此不把初轮跨进程差异归因于共享 KV；底层数值差异原因没有进一步确定，保留在[证据](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/tts_nested_kv_validation_2026-10-14.json)中。
 
 ## 共享物理容量与最大计算桶的消融
 
@@ -253,7 +253,7 @@ SDPA 的 448/512 短场景 wall time 增加约 **29%–30%**，768 中场景增�
 | Laptop / SDPA / 未对齐 512 | +1.74% | 215.99 | 220.78 |
 | Laptop / SDPA / 768 中句 | +3.52% | 480.70 | 498.54 |
 
-这些差异也出现在相应样本的尾部，但不是已经定位到 nested 的内核回退。固定构建/预捕获顺序使布局与基地址/显存放置混在一起；反转构建顺序的对照尚未执行。不能只用全场景中位数接近来宣称零回退，也不能由这几格数字为 nested 增加未经证实的修补代码。主卡 FA2 三个配对场景的样本 p95 均下降；笔记本短句等其它场景未显示同样的 p95 增加。未锁定 GPU 频率，20 对样本也不能确定底层原因或其它硬件的长期表现。新核算的 p95 和方法已加入[证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)的 `paired_latency`。
+这些差异也出现在相应样本的尾部，但不是已经定位到 nested 的内核回退。固定构建/预捕获顺序使布局与基地址/显存放置混在一起；反转构建顺序的对照尚未执行。不能只用全场景中位数接近来宣称零回退，也不能由这几格数字为 nested 增加未经证实的修补代码。主卡 FA2 三个配对场景的样本 p95 均下降；笔记本短句等其它场景未显示同样的 p95 增加。未锁定 GPU 频率，20 对样本也不能确定底层原因或其它硬件的长期表现。新核算的 p95 和方法已加入[证据汇总](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/tts_nested_kv_validation_2026-10-14.json)的 `paired_latency`。
 
 只懒捕获一张 448 图时，nested 最大根缓冲区增加 **27 MiB 常驻 KV/allocated**；该实验稳态 peak allocated 从约 **238.94 → 249.02 MiB**。这是已测到的显存回退，接近显存上限的小图部署应选择 `graph`，不能套用默认 17 图节省 513 MiB 的结论。
 
@@ -309,9 +309,9 @@ PR 继续保持 draft。新的公开配置与默认值仍需要关联 Amadeus Is
 
 最终该组回归 **168 passed、1 skipped**。跳过的是需要显式 opt-in 的旧 NVIDIA kernel probe；本次新增 CUDA 测试及真实权重 FA2/Graph/BigVGAN 实验均已执行。语音线程测试在 Windows 沙箱内的 asyncio 本地 socketpair 初始化处阻塞，定位后在沙箱外完成该组回归，没有为测试改变应用代码。
 
-实验基线包含开始工作前已有的 semantic-history/EOS 优化，双方均保留，没有将这些改动的收益计入 nested KV。原始 JSON 位于忽略的本地 `output/diagnostics/nested-kv-20261014/`；[可审阅证据汇总](evidence/tts_nested_kv_validation_2026-10-14.json)保留 source/checkpoint/raw-result hash、容量、时延和一致性检查，去掉个人路径和原始语音内容。
+实验基线包含开始工作前已有的 semantic-history/EOS 优化，双方均保留，没有将这些改动的收益计入 nested KV。原始 JSON 位于忽略的本地 `output/diagnostics/nested-kv-20261014/`；[可审阅证据汇总](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/tts_nested_kv_validation_2026-10-14.json)保留 source/checkpoint/raw-result hash、容量、时延和一致性检查，去掉个人路径和原始语音内容。
 
-同时准备了 [Aqua-TTS 请求所有权问题的上游报告草稿](evidence/aqua_t2s_request_ownership_upstream_draft_2026-10-14.md)，使用已核验上游 commit 的直接代码证据；它已随 Amadeus PR #206 的分支公开供审阅，尚未向 Aqua-TTS 提交为 Issue。实验结论限定在当前 v3hc 权重、两张 Ada GPU 和这组本地 runtime。多用户 workspace slot、其它权重/语言，以及独立的 CUDA Graph 内存池共享不属于本次实现。
+同时准备了 [Aqua-TTS 请求所有权问题的上游报告草稿](https://github.com/Code-Amadeus/Amadeus/blob/fd145ee29454389dcade8c64712b1ebeeb349079/docs/evidence/aqua_t2s_request_ownership_upstream_draft_2026-10-14.md)，使用已核验上游 commit 的直接代码证据；它已随 Amadeus PR #206 的分支公开供审阅，尚未向 Aqua-TTS 提交为 Issue。实验结论限定在当前 v3hc 权重、两张 Ada GPU 和这组本地 runtime。多用户 workspace slot、其它权重/语言，以及独立的 CUDA Graph 内存池共享不属于本次实现。
 
 
 ## 草稿 PR checkout 的补充验证

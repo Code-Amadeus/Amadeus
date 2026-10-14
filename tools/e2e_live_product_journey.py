@@ -5630,12 +5630,15 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     # the stronger business-outcome proof.
                     prepare.checks["business_outcome_verified"] = False
                 except TimeoutError as exc:
+                    # Once authoring started, a timeout is incomplete acceptance
+                    # in every Journey layer; it is not evidence that no work
+                    # was required before attachment.
+                    if prepare.run_ids:
+                        raise RuntimeError(
+                            f"{journey_layer} AUIP preparation Provider run did not finish within "
+                            f"{float(args.provider_timeout):.0f}s: {prepare.run_ids[0]}"
+                        ) from exc
                     if journey_layer == "adaptation":
-                        if prepare.run_ids:
-                            raise RuntimeError(
-                                "adaptation Provider run did not finish within "
-                                f"{float(args.provider_timeout):.0f}s: {prepare.run_ids[0]}"
-                            ) from exc
                         raise RuntimeError(
                             "adaptation Journey did not start fresh AUIP authoring"
                         ) from exc

@@ -2951,6 +2951,26 @@ def test_live_product_exception_finalizer_recovers_status_over_http() -> None:
     asyncio.run(scenario())
 
 
+def test_preview_handoff_fixture_has_verifiable_host_runtime_receipts(tmp_path):
+    from server.auip_app_source import discover_launchable_auip_app
+    from tools.e2e_work_preview_auip_handoff import (
+        _seed, _materialize_reactor, _register_bundle,
+    )
+    work_item_id, workspace = _seed(tmp_path)
+    ledger = tmp_path / "state" / "work_ledger.sqlite3"
+    with WorkLedgerStore(ledger) as store:
+        attempt = store.create_attempt(work_item_id, provider="fixture", task="Preview handoff")
+    assets = _materialize_reactor(workspace)
+    artifact_id = _register_bundle(ledger, work_item_id=work_item_id,
+        attempt_id=attempt.attempt_id, workspace=workspace, assets=assets)
+    with WorkLedgerStore(ledger) as store:
+        app = discover_launchable_auip_app(store, work_item_id)
+        assert app is not None and app["artifact_id"] == artifact_id
+        asset = Path(next(iter(assets.values()))["path"])
+        asset.write_bytes(asset.read_bytes() + b"\n// changed after Host materialization\n")
+        assert discover_launchable_auip_app(store, work_item_id) is None
+
+
 def _main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

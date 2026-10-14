@@ -145,10 +145,11 @@ try {
   await click('Open voice settings')
   await until("document.querySelector('.settings-page-title')?.textContent === 'Settings'", 'Voice link did not open Settings')
   assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'voice')
-  await click('Plugins')
+  await click('General')
+  await click('Manage plugins')
   await until("document.body.textContent.includes('Community extensions')", 'Could not return to Plugins')
-  assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'voice')
-  report.checks.push('Plugin voice link opens navigable Settings; returning to Plugins preserves the remembered Settings section')
+  assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'general')
+  report.checks.push('Plugin voice link opens Voice settings; General Manage plugins returns to the manager and preserves General')
   report.passed = true
   console.log(JSON.stringify(report, null, 2))
 } catch (error) {

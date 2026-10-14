@@ -474,7 +474,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             providers_before = await probe.request("provider.list", {})
             await probe.request(
                 "session.create",
-                {"session_id": session_id, "title": "Direct Codex full-host probe"},
+                {"session_id": session_id, "title": "Direct Codex full-host probe",
+                 "project_id": project_record.project_id},
             )
             create_turn = await _chat_run(
                 probe,
@@ -484,7 +485,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 provider_timeout=args.provider_timeout,
                 label="project-create",
                 text=(
-                    "切换到 direct-host 项目，并明确交给 codex 完成这个编码任务："
+                    "在当前 direct-host 项目中，明确交给 codex 完成这个编码任务："
                     "在项目根目录创建 direct_host.txt，内容必须恰好是 phase-one 加一个换行。"
                     "不要在主对话里直接做，也不要要求我提供路径。"
                 ),

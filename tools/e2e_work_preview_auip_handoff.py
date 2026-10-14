@@ -128,6 +128,13 @@ def _register_bundle(
                 "auip_bundle_root": str(workspace),
                 "auip_host_validates_bundle": True,
                 "auip_host_materialized_files": sorted(assets),
+                "auip_host_materialized_assets": {
+                    filename: {
+                        "sha256": identity["sha256"],
+                        "size_bytes": Path(identity["path"]).stat().st_size,
+                    }
+                    for filename, identity in assets.items()
+                },
             },
         )
         entry = workspace / "index.html"

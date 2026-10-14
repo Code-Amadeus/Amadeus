@@ -673,9 +673,11 @@ assets/spriteforge/runtime/kurisu/
 
 Windows 下推荐用开源的
 [Lively Wallpaper](https://github.com/rocksdanister/lively) 托管 Amadeus 网页壁纸；
-Windows 现在默认自动启动壁纸模式，管理 Lively 2.2.1.0 的准备、挂载和退出恢复。
-从 Amadeus 托盘菜单选择 **Quit Amadeus** 会恢复原壁纸；`--no-wallpaper`
-可启动普通窗口。首次缺少宿主时通过 winget 安装，源码环境首次构建辅助程序需要 .NET 8 SDK。
+Windows 默认先打开控制台（`AMADEUS_WINDOWS_STARTUP_MODE=window`）。可通过侧栏
+**Wallpaper**，或在 **设置 → 常规 → 启动方式** 中选择直接进入壁纸。
+启用后，托管壁纸模式管理 Lively 2.2.1.0 的准备、挂载，并在正常选择 **Quit Amadeus** 时恢复原壁纸；
+`--no-wallpaper` 可启动普通窗口。首次缺少宿主时通过 winget 安装，源码环境首次构建辅助程序需要 .NET 8 SDK。
+输入框和异常退出限制仍见 [#185](https://github.com/Code-Amadeus/Amadeus/issues/185)。
 详见 [Windows 生命周期与实验](docs/windows_wallpaper_lifecycle.md)。
 
 Wallpaper Engine 仍保留兼容。设置 `AMADEUS_WALLPAPER_HOST=external` 可使用原有手工流程：
