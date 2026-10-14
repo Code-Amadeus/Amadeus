@@ -23,6 +23,10 @@ Cubism Core and credentials remain separately supplied.
   Codex forwards the configured stdio environment names (#197, #211). Codex MCP
   empty-form confirmations use native action/content responses (#208), while
   unsupported form/URL input cannot be accepted by the existing permission UI.
+- Audio output retries PortAudio `-9986` once with a new output owner, and
+  propagates persistent or unsupported-format failures (#213, incorporating #199).
+  Other active capture owners retain their references; this is not a global
+  audio reset or a qualified AirPods reconnect repair.
 - Owned backend shutdown/restart reports unresolved child lifetime explicitly
   (#198); development startup/shutdown and cancelled VN translation streams
   have focused fixes (#186, #183).
@@ -59,10 +63,9 @@ save the required values as explicit encrypted bindings; see
 - [#201](https://github.com/Code-Amadeus/Amadeus/issues/201): real microphone/LLM
   interruption, final-display visual acceptance and wider GPU/webview coverage
   remain open. Synthetic rendering tests do not close those checks.
-- [#199](https://github.com/Code-Amadeus/Amadeus/pull/199) and its bounded follow-up
-  [#213](https://github.com/Code-Amadeus/Amadeus/pull/213) require separate review.
-  Their output-device retry is not included in this candidate and is not a
-  demonstrated AirPods/shared-host-state repair.
+- [#213](https://github.com/Code-Amadeus/Amadeus/pull/213) includes the narrowed
+  output-device retry from #199. Actual same-process macOS/AirPods reconnect
+  remains untested; capture-owned shared host state is not forcibly reset.
 - Existing Pi and optional-model dependency advisories remain disclosed; see
   [acceptance](alpha-0.17.0-acceptance.md). This is not a vulnerability-free release.
 
@@ -78,5 +81,5 @@ MCP 环境迁移以及退出/取消修复。插件代码保留，主侧栏默认
 能力仍可用于后续集成，不代表插件商店已成熟，也不会禁用已安装扩展。
 
 这仍是源码 Alpha 候选。壁纸输入框间歇失效（#185）、跨 Work 的独占 MCP 生命周期（#207）、
-更多设备与真实打断验收（#201）尚未闭合。音频设备重试另见待复审的 #213，本候选不宣称
-已包含该修复。版本更新不代替最终 CI、复审和明确的发布决定。
+更多设备与真实打断验收（#201）尚未闭合。#213 纳入一次有界的音频输出重试，但不宣称
+完成 AirPods 实机重连验证或全局音频重置。版本更新不代替最终 CI、复审和明确的发布决定。
