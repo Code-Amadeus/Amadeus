@@ -407,11 +407,21 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
-# 可选：场景与 KTX2 角色动画
+# 可选：场景与角色动画（KTX2 + 配套视频）
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
-uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+uv run --locked --no-sync python tools\external_assets.py verify "C:\Downloads\amadeus-character-kurisu-2026.10.14-keypoint-return-v3.zip"
+uv run --locked --no-sync python tools\external_assets.py install "C:\Downloads\amadeus-character-kurisu-2026.10.14-keypoint-return-v3.zip"
 uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+[官网资源中心](https://code-amadeus.github.io/#resources)已提供重新校色的
+`2026.10.14-keypoint-return-v3` 角色包，包含 40 组视频（7,672 帧），并新增
+key point 返回过渡动画。Google Drive 下载需将 28 个分卷及辅助文件放在同一目录，
+运行 `Assemble-Kurisu.ps1` 合并并校验完整 ZIP；不能将单个 `.zip.001` 分卷传给安装器。
+
+升级旧角色包时，先停止后端、关闭渲染窗口并备份自定义素材，再给上面的角色
+`install` 命令添加 `--overwrite`。旧静态包继续受支持，但不会启用视频路径。
+安装后请按[0.17 推荐图形设置与生效检查](#017-推荐图形设置与生效检查)确认实际帧源。
 
 要试用 **Kurisu v2Pro**，先安装上面的 v3 语音包，再安装独立提供的实验附加包。
 附加包包含 v2Pro GPT/SoVITS 权重组合和 ERes2Net 说话人编码器，复用 v3 包中的
@@ -452,6 +462,17 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 ```
 
 ### 推荐的 NVIDIA 语音加速配置
+
+这些本地 CUDA 优化需要 L4 本地 CUDA 安装配置及上面的 Qwen/GPT-SoVITS 资产；
+L1 纯文字、远程语音和 CPU 配置不享有这些 CUDA 优化。同步依赖时保留完整的
+optional-extra 组合，见[安装配置说明](docs/install_profiles.md)。
+
+在 **设置 → 语音 → 对话语音识别** 中，保持 **Qwen 设备**为 `auto`、
+**Qwen CUDA Graph** 开启。默认值为 `QWEN3_ASR_DEVICE=auto`、
+`QWEN3_ASR_CUDA_GRAPH=true` 和 `QWEN3_ASR_FLASH_ATTN=true`。
+Qwen 加速独立于 TTS 模式；CUDA Graph 需要受支持的 NVIDIA 运行环境，
+FlashAttention 还需要兼容的可选扩展。不支持时继续使用兼容的解码/注意力路径。
+修改后重启后端，通过诊断确认实际设备与推理路径。
 
 建议保持 **Settings → Voice → Advanced voice settings → Local TTS inference mode**
 为 **自动（推荐）**。使用 `.env` 时：
@@ -727,24 +748,43 @@ Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile�
 保存后需重启后端，再重新打开现有角色与壁纸窗口。页面会单独显示当前后端的渲染上限，
 不会将尚未应用的设置显示成已生效。这些上限不是实测帧率，Wallpaper Engine 还可能进一步降低帧率。
 
-#### 实验性纹理采样（默认关闭）
+#### 0.17 推荐图形设置与生效检查
 
-`RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
-**16GB 或其他内存压力较大的设备**，可在图形页展开“实验性纹理采样”并试用 30 FPS 节能档。
-开关独立于预设，默认仍关闭。等效 `.env` 配置为：
+先按[资产安装说明](#安装外部运行资产)安装配套的视频角色包，再在
+**设置 → 图形与性能** 中核对：
 
-```dotenv
-GRAPHICS_PROFILE=power_saving
-RENDER_TEXTURE_SAMPLING=true
-```
+| 设置 | 推荐值 | 对应配置 |
+|---|---|---|
+| 图形预设 | 标准（60 FPS） | `GRAPHICS_PROFILE=standard` |
+| 帧源选择 | 自动 · 可用时优先视频 | `RENDER_FRAME_SOURCE=auto` |
+| 帧缓存预算 | 自动 · 视频 384 MiB / 静态 2 GiB | `RENDER_FRAME_BUDGET_MIB=auto` |
+| 启用动画纹理采样 | 开启 | `RENDER_TEXTURE_SAMPLING=true` |
+| 复用磁盘中的已转码纹理 | 开启 | `RENDER_BC7_CACHE=true` |
 
-开启后，角色动画按有效帧率选择要加载的源帧，保留关键停留帧、动作时长与嘴型索引。
-本机 30 FPS 离屏实验中，CPU 纹理缓冲约减少 50%，播放帧间隔与原版接近；
-这不代表整机 RAM 或显存减半，16GB 实机及长期运行仍待验证。
-详见[实验数据与限制](docs/fps_texture_sampling_experiment_2026-09-16.md)。
+新安装的标准预设默认采用这组配置。**升级会保留手动选择**：旧的静态帧、固定预算或
+关闭采样等设置不会自动被替换，请在设置中核对。使用 `.env` 时可填写表中配置，
+但需注意[配置优先级](#配置所有权)：桌面设置优先于 `.env`，父进程环境变量在 GUI 中显示为 locked。
 
-修改后需重启 Amadeus/后端并重开壁纸。仅切换绘制 FPS 不会立即重建纹理缓存。
-如需恢复原行为，将 `RENDER_TEXTURE_SAMPLING=false` 后按同样步骤重启。
+**重启后端并重新打开角色/壁纸**后，查看**当前实际动画帧源**，对应窗口应显示
+**视频与静态入口帧 · 384 MiB**。如果显示**静态帧**，请按旁边的原因检查素材包和解码支持；
+只选了“自动”不代表视频已生效。没有兼容的视频素材或解码器时，自动模式继续使用静态帧，
+缓存预算为 2 GiB。手动指定的预算对两种路径都生效。
+
+帧预算限制静态帧保留的 CPU/GPU 数据，不包含整个应用、语音模型或解码器的总占用，
+因此不等于总显存上限，也不能保证每台设备降低相同比例。实测数据及各自基线见
+[性能对照](docs/alpha-0.17.0-performance.md)。
+
+#### 动画纹理采样
+
+没有手动配置时，纹理采样在**配置为 60 FPS 时默认开启**，其他预设帧率默认关闭；
+显式开启或关闭的选择会保留。采样按有效 FPS 预算跳过用不到的源帧，同时保留关键停留帧、
+动作时长与嘴型索引，也可以在 30 FPS 节能档下手动开启。磁盘纹理缓存默认开启，
+磁盘空间目标为 4 GiB；这是磁盘预算。
+
+修改这些选项后需重启后端并重开角色/壁纸。仅切换绘制 FPS 不会立即重建纹理缓存。
+如需全帧加载，将 `RENDER_TEXTURE_SAMPLING=false` 后按同样步骤重启。
+此前的 [30 FPS 采样实验](docs/fps_texture_sampling_experiment_2026-09-16.md)
+测量的是 CPU 纹理缓冲，不是整机 RAM 或总显存。
 
 ## 配置所有权
 
