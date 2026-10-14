@@ -42,3 +42,24 @@ Host helper verifies the bound child environment, cwd and absence of an unrelate
 Host secret; it is not a claim that mainline Pi calls this manual connection.
 Desktop tests cover encrypted persistence and restart projection. Nested-error
 and Windows/POSIX tests cover redaction, useful causes and override semantics.
+
+
+## Codex MCP confirmation requests
+
+Codex App Server can request an MCP tool confirmation through
+`mcpServer/elicitation/request`. The adapter preserves the server and message
+in the existing Work permission card. For a supported empty object form,
+Allow once returns `action: accept, content: {}`; denial, expiry or cancellation
+returns `action: decline, content: null`. Each pending request has its own ID.
+This is not a sandbox permissions grant and does not bypass the Runtime's
+input opt-in or action gates.
+
+This permission UI does not collect arbitrary MCP form values or complete URL
+authorization: those requests cannot be accepted here. Unknown Codex server
+request methods fail explicitly rather than becoming sandbox approval cards.
+Existing workspace and Host permission policies still apply.
+
+中文：Codex 的 MCP 空表单确认由原有 Work 权限卡处理，保留服务名和原问题；
+允许、拒绝、超时和取消按 MCP 的 action/content 合同回复。任意字段表单和 URL
+授权尚不支持，不能用一次“允许”伪造答案；未知协议方法明确报错，不映射为沙箱权限。
+Runtime 输入选择和动作门禁、Host 原有权限策略继续有效。
