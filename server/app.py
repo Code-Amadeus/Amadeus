@@ -149,7 +149,7 @@ for _cuda_ver in ("v12.1", "v12.2", "v12.4", "v12.6"):
         os.add_dll_directory(_cuda_bin)
         break
 # Eager-load onnxruntime before the torchmetrics chain on local-model installs
-# (CUDA DLL ordering). It is a T2b (local-cu124) dependency: L1 installs skip
+# (CUDA DLL ordering). It is a T4 embedded (build cu124) dependency: T1 installs skip
 # the preload. Supported absence (ModuleNotFoundError naming onnxruntime
 # itself) is skipped; a present-but-broken install surfaces instead of
 # masquerading as absence.

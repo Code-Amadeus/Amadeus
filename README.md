@@ -14,7 +14,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — reference platform"/></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — Apple Silicon MPS supported"/></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — Apple Silicon MPS (T4 build mps)"/></a>
   <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-444449?labelColor=191a1d" alt="Linux — verified on real hardware"/></a>
 </p>
 
@@ -182,56 +182,68 @@ a separately versioned SDK and standalone conformance suite are not yet publishe
 
 ## Quick start
 
-Dependencies are grouped into four capability tiers. Start with the minimal L1
-installation, then add the tiers you need. Torch enters at L3/L4 in the default
-ladder; optional RAG also adds local embedding/Torch dependencies. Windows is
-the reference platform. macOS with Apple Silicon MPS and Linux source deployment
-have also been verified on real hardware; macOS L1/L2 has separate installation CI. L3 offers CPU VAD with **no NVIDIA GPU requirement**. The current L4
-cu124 profile targets Windows + NVIDIA. Windows ROCm 7.2.1 has a mutually exclusive
-`local-rocm` experimental lock and validation tools for GPUs in AMD's official
-support matrix. Apple Silicon MPS uses the verified
-`local-mps` profile; NVIDIA cu128 remains an experimental Torch 2.7.0 profile.
+Dependencies are grouped into four capability tiers. Start with the minimal T1
+installation, then add the tiers you need. A tier is a recommended install
+preset: each one is a strict superset of the one below it, and the extras
+themselves encode that (`vad` includes `voice`; every `local-<build>` includes
+`vad`). Platforms are not capped; the table below only recommends a tier and build
+per platform. Terminology is fixed by the [tier and build taxonomy](TIER_TAXONOMY.md).
 
 All profiles use [uv](https://docs.astral.sh/uv/) and Python 3.12; CI pins uv 0.12.8.
 
 Linux users should start with [Linux](#linux) below.
 
-| Tier | Capability | Platform | Installation |
-|---|---|---|---|
-| L1 core | Text Chat, Work, Providers, and character rendering | Windows / macOS | `uv sync --locked` |
-| L2 voice | Remote TTS, playback, lip-sync, microphone, and remote ASR | Windows / macOS | `uv sync --locked --extra voice` |
-| L3 CPU VAD | Real-time interruption while the character is speaking | CPU; no NVIDIA GPU required | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
-| L4 local-cu124 | Local GPT-SoVITS, Qwen3 ASR, and wake word | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
-| Experimental local-rocm | Local GPT-SoVITS / Qwen3 ASR sidecars | Windows + GPU in AMD's official support matrix | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
+| Tier | Capability | Installation |
+|---|---|---|
+| T1 core | Text Chat, Work, Providers, and character rendering | `uv sync --locked` |
+| T2 voice | Remote TTS, playback, lip-sync, microphone, and remote ASR | `uv sync --locked --extra voice` |
+| T3 vad | Real-time interruption while the character is speaking | `uv sync --locked --extra vad --extra torch-cpu` |
+| T4 embedded | Local GPT-SoVITS, Qwen3 ASR, and wake word | `uv sync --locked --extra local-<build>` |
 
-The four default tiers and the ROCm experiment use **the same `.venv`**. Give the
-complete target configuration each time: `uv sync` is exact and removes packages
-from omitted tiers. `torch-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and `local-rocm` are pairwise
-incompatible. To switch builds, replace the build extra while keeping `voice`
-and `vad`. See [installation profiles and migration](docs/install_profiles.md).
+T3 and T4 need a Torch **build**, selected independently of the tier: `torch-cpu`
+for T3, or one of `local-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and
+`local-rocm` for T4. T1 and T2 stay Torch-free. Longer commands that also name
+`voice` and `vad` remain valid and select the same environment. Optional character
+RAG adds local embedding/Torch dependencies to whichever command you use.
+
+| Platform | Recommended | Also installable | Notes |
+|---|---|---|---|
+| Windows + NVIDIA | T4 `local-cu124` (reference) | `local-cu128` (experimental), `local-cpu` | The only platform with full local-stack acceptance |
+| Windows + AMD (card inside AMD's official support matrix) | T4 `local-rocm` (experimental) | `local-cpu` | Validation entry points under `tools/rocm_sidecar/`; same `uv.lock` and `.venv` |
+| Linux x86_64 + NVIDIA | T4 `local-cu128` (experimental) | `local-cpu` | Source deployment verified on real hardware; GPU model qualification pending |
+| macOS Apple Silicon | T4 `local-mps` (experimental) | `local-cpu` (same wheel) | Local TTS runs on MPS; local ASR stays CPU; wake word is CPU |
+| Windows / Linux without a matching GPU | T2 or T3 | T4 `local-cpu` | Wake word runs on CPU; local TTS/ASR install but have no real-time promise. Set `TTS_DEVICE=cpu`, because `auto` selects `cuda:0` outside macOS |
+| macOS Intel | T2 | — | T3 and above cannot install: the locked Torch 2.7.0 has no macOS x86_64 wheel |
+
+Every tier uses **the same `.venv`**. Give the complete target configuration each
+time: `uv sync` is exact and removes packages from omitted extras.
+`torch-cpu`, `local-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and `local-rocm`
+are pairwise incompatible; to switch builds, replace the build extra. See
+[installation profiles and migration](docs/install_profiles.md).
 
 - Main Chat defaults to remote DeepSeek. llama.cpp is an optional local LLM
   profile under [Compatibility routes](#compatibility-routes), not an installation prerequisite.
-- L2 without VAD uses energy-based endpoint detection. Adding VAD enables
+- T2 without VAD uses energy-based endpoint detection. Adding VAD enables
   Silero endpointing and interruption.
 - On Windows, check each tier with
   `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`
-  (`ci` shares the core import checks). For L4, use `--profile cu124 --require-cuda-device`.
+  (`ci` is an alias of `cpu`). For T4, use `--profile cu124 --require-cuda-device`
+  (or `t4-cpu` for `local-cpu`).
   For ROCm, use `--profile rocm`, then run the GPU compute probe. Import/build
   checks do not replace real model and audio-device tests.
-- L1 is sufficient for text-only/headless use. Start the backend with
+- T1 is sufficient for text-only/headless use. Start the backend with
   `uv run --locked --no-sync python -m server.app --port 17777`.
   Set `TTS_BACKEND=disabled` and disable Wake for a strict text-only profile.
 
 ### Reference hardware
 
-**L1/L2 (Windows / macOS)**
+**T1/T2 (Windows / macOS)**
 
 - CPython **3.12**, managed by uv; no system Python installation required
 - Node.js **22** (`22.21.1` is the current reference)
 - No GPU required
 
-**Additional requirements for L4 cu124 (Windows local models)**
+**Additional requirements for T4 with build `cu124` (Windows local models)**
 
 - CUDA 12.4-compatible NVIDIA GPU, targeting **8 GiB VRAM**
 - **16 GiB system RAM minimum; 32 GiB recommended**
@@ -240,11 +252,14 @@ Peak memory depends on local ASR/TTS models and concurrency. The target describe
 the remote-Chat/local-voice profile. An optional local LLM needs additional
 memory according to its model, quantization, context, and GPU offload.
 
-### Base environment (L1/L2, Windows / macOS)
+### Base environment (T1/T2, Windows / macOS)
 
 Install uv with `winget install astral-sh.uv` on Windows or `brew install uv` on
-macOS. For L2 on macOS, install PortAudio first with `brew install portaudio`;
-PyAudio builds from source there. Then clone and choose a tier with the same
+macOS. For T2 on macOS, install PortAudio first with `brew install portaudio`;
+PyAudio builds from source there. Chinese step-by-step guides that cover every
+feature and its external prerequisites (for example Lively Wallpaper on Windows)
+are in [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md), [MACOS_INSTALL.md](MACOS_INSTALL.md)
+and [LINUX_INSTALL.md](LINUX_INSTALL.md). Then clone and choose a tier with the same
 commands on both platforms:
 
 ```bash
@@ -252,8 +267,8 @@ git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
 uv venv .venv --python 3.12
-uv sync --locked                              # L1 core
-uv sync --locked --extra voice                # L2 voice (optional)
+uv sync --locked                              # T1 core
+uv sync --locked --extra voice                # T2 voice (optional)
 ```
 
 Keep the environment named `.venv`. Electron discovers its interpreter
@@ -283,14 +298,14 @@ Where network access requires it, configure npm/Electron mirrors, such as
 ### Linux
 
 **Linux source deployment has been verified on real hardware.** [Phase 1 Linux CI (#63)](https://github.com/Code-Amadeus/Amadeus/pull/63)
-has passed locked L1 + dev installation, environment imports and model-less
+has passed locked T1 + dev installation, environment imports and model-less
 dependency checks, basic contract tests, Ruff, architecture-view checks, and the
 Electron build on Ubuntu 24.04. A separate Voice source-build job checks locked
 installation, AEC import, bundled Abseil selection and related contracts. CI does
 not cover the Electron GUI, real audio devices, VAD/local model inference,
 Wayland sessions, or wallpaper integration.
 Additional jobs check cu128 candidate installation, dependencies and transitions
-back to CPU VAD; they do not qualify real GPU model inference.
+back to T3 vad; they do not qualify real GPU model inference.
 
 The community has reported desktop and character-rendering results on Arch Linux /
 Wayland. These reports do not establish compatibility across all distributions or
@@ -298,7 +313,7 @@ desktop environments. See [Linux tracking issue #64](https://github.com/Code-Ama
 for environment records, known issues, and follow-up work.
 
 Install Git, [uv](https://docs.astral.sh/uv/) (`0.12.8` in CI), and Node.js 22
-(`22.21.1` in CI), then start with L1, which needs no GPU or voice packages:
+(`22.21.1` in CI), then start with T1, which needs no GPU or voice packages:
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
@@ -338,7 +353,7 @@ For a headless backend instead, run this from the project root:
 uv run --locked --no-sync python -m server.app --port 17777
 ```
 
-For remote voice, recording and playback, install L2 in the same `.venv`.
+For remote voice, recording and playback, install T2 in the same `.venv`.
 On Ubuntu 24.04, install the native prerequisites used by CI first; other Linux
 distributions need their corresponding package names:
 
@@ -357,7 +372,7 @@ For voice, local models, and desktop integration, see the component-specific not
   unchanged; Windows/macOS retain their registry artifacts. Source identity,
   the isolated patch and removal conditions are in [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md).
   Build/import success does not qualify real-device echo cancellation or full voice interaction.
-- **VAD / NVIDIA:** Linux CPU VAD and the `local-cu128` candidate have explicit
+- **VAD / NVIDIA:** Linux T3 vad and the `local-cu128` candidate have explicit
   Torch build selections and installation/contract CI. The cu124 reference
   remains Windows-specific; real GPU inference and full voice interaction
   require device acceptance. See the candidate profiles below.
@@ -367,25 +382,25 @@ For voice, local models, and desktop integration, see the component-specific not
 
 ### VAD and local models
 
-Use the same `.venv` as L1/L2 and select the complete capability/build combination.
+Use the same `.venv` as T1/T2 and select the complete capability/build combination.
 
-**L3 CPU VAD — real-time interruption:** Torch enters as a CPU build.
+**T3 vad — real-time interruption:** Torch enters as a CPU build.
 
 ```powershell
-uv sync --locked --extra voice --extra vad --extra torch-cpu
+uv sync --locked --extra vad --extra torch-cpu
 uv run --locked --no-sync python tools\verify_python_environment.py --profile vad-cpu
 ```
 
-**L4 local-cu124 — local voice models:** select the CUDA profile in that same
+**T4 embedded — local voice models:** select the CUDA profile in that same
 environment. On Windows, `[tool.uv.sources]` routes this extra's Torch/Torchaudio
 packages to the PyTorch cu124 index.
 
 ```powershell
-uv sync --locked --extra voice --extra vad --extra local-cu124
+uv sync --locked --extra local-cu124
 uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
 ```
 
-The L4 profile pins `torch==2.6.0+cu124`, `torchaudio==2.6.0+cu124`, and the local
+The T4 build `cu124` pins `torch==2.6.0+cu124`, `torchaudio==2.6.0+cu124`, and the local
 model dependencies. This is the current qualified local-model profile.
 
 **Experimental local-rocm (Windows):** this profile targets GPUs in AMD's official
@@ -399,17 +414,18 @@ installation commands, and validation steps.
 
 **Torch 2.7 profiles:** `local-cu128` (Windows/Linux x86_64)
 and `local-mps` (Apple Silicon) select locked Torch/Torchaudio 2.7.0 packages.
-Apple Silicon MPS has been verified on real hardware; cu128 remains an experimental
-NVIDIA profile. Windows cu124 remains the reference, and Windows ROCm retains
+Both are experimental: GPT-SoVITS MPS has real-hardware evidence on Torch 2.6.0
+that has not been repeated on the locked 2.7.0 build, and cu128 still lacks NVIDIA
+device/model qualification. Windows cu124 remains the reference, and Windows ROCm retains
 AMD's 2.9.1 pair.
 
 ```bash
 # Windows/Linux NVIDIA candidate, including the model dependency set
-uv sync --locked --extra voice --extra vad --extra local-cu128
+uv sync --locked --extra local-cu128
 uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
 
 # Apple Silicon MPS
-uv sync --locked --extra voice --extra vad --extra local-mps
+uv sync --locked --extra local-mps
 uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
 ```
 
@@ -520,8 +536,8 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 
 ### Recommended NVIDIA speech acceleration
 
-These local CUDA improvements require the L4 local CUDA installation profile and
-the Qwen/GPT-SoVITS assets above; L1 text, remote voice and CPU profiles do not
+These local CUDA improvements require the T4 build `cu124` and
+the Qwen/GPT-SoVITS assets above; T1 text, remote voice and CPU profiles do not
 receive them. Keep your complete optional-extra selection when syncing
 dependencies; see [installation profiles](docs/install_profiles.md).
 
@@ -580,12 +596,12 @@ Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
 Leave unused providers' keys commented out, then review Settings:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
-- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, a compatible GPT-SoVITS checkpoint pair (**Kurisu v3** by default or experimental **Kurisu v2Pro**), reference audio/text, microphone, AEC, and barge-in;
+- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The T4 local stack also needs a Qwen model directory, a compatible GPT-SoVITS checkpoint pair (**Kurisu v3** by default or experimental **Kurisu v2Pro**), reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
 Launch Amadeus:
 
-- Windows: `run_electron_utf8.bat`, the shared launcher for L1–L4; it discovers `.venv` automatically.
+- Windows: `run_electron_utf8.bat`, the shared launcher for T1–T4; it discovers `.venv` automatically.
 - macOS: `cd electron && npm run electron:dev`.
 
 The development launcher and `npm run dev` use port `5173` by default. If the
@@ -702,7 +718,8 @@ without truncating a Chat request. Persistent llama-cli sessions must migrate to
 llama-server. LM Studio and Ollama capacity behavior remains pending live acceptance.
 Hybrid uses its configured local HTTP first sentence plus the remote reply; it
 does not use the pure-local backend selector. No profile is an automatic fallback
-after a DeepSeek failure. See [Chat runtime and settings migration](docs/chat-runtime-convergence.md).
+after a DeepSeek failure. The main flow is unified on Cooperative; basic and
+professional remain available. See [Chat runtime and settings migration](docs/chat-runtime-convergence.md).
 
 ### Optional remote model recommendations
 
@@ -721,7 +738,7 @@ failure:
 
 ### Recommended remote TTS: Fish Audio + Kurisu
 
-After installing L2 voice, select **Fish Audio** under **Settings → Voice →
+After installing T2 voice, select **Fish Audio** under **Settings → Voice →
 Speech synthesis**, enter the API key, and restart the backend. Use:
 
 | Setting | Recommended value |
@@ -926,13 +943,13 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 
 | Scope | Status |
 |---|---|
-| L1/L2 (text + remote voice) | Source deployment on Windows, macOS, and Linux; Windows is the reference platform, with separate macOS L1/L2 and Linux CI |
-| Linux | Source deployment verified on real hardware; Ubuntu 24.04 CI covers L1, L2 Voice source builds and the Electron build. See [Linux setup](#linux) for environment-specific notes |
-| L3 CPU VAD | No NVIDIA GPU required; uses an explicit CPU build selection |
-| L4 cu124 (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
+| T1/T2 (text + remote voice) | Source deployment on Windows, macOS, and Linux; Windows is the reference platform, with separate macOS T1/T2 and Linux CI |
+| Linux | Source deployment verified on real hardware; Ubuntu 24.04 CI covers T1, T2 Voice source builds and the Electron build. See [Linux setup](#linux) for environment-specific notes |
+| T3 vad | No NVIDIA GPU required; uses an explicit CPU build selection |
+| T4 with build `cu124` (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
 | AMD ROCm 7.2.1 | Targets GPUs in AMD's official Windows support matrix; `local-rocm` experimental profile with Qwen ASR / GPT-SoVITS sidecars. See [setup and validation](tools/rocm_sidecar/README.md) |
 | NVIDIA cu128 | Experimental Torch 2.7.0 lock and installation CI; full device/model qualification pending |
-| Apple Silicon MPS | Supported through `local-mps`; verified on real hardware |
+| Apple Silicon MPS (T4 build `mps`) | Experimental; installed through `local-mps` with installation CI; TTS real-hardware evidence predates the locked Torch 2.7.0; local ASR and the wake word stay on CPU |
 | 8 GiB VRAM / 16–32 GiB RAM | Target configuration; actual use depends on model selection |
 | Remote DeepSeek Main Chat | First-release default profile |
 | Remote ASR / TTS | Explicit compatibility path, never a silent fallback |

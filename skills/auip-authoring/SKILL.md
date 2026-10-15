@@ -92,7 +92,7 @@ milestone so it remains reviewable.
   target, objective priority, pause, lifecycle choices—without forcing only
   bundled modes. Declare only dimensions the real app supports.
 - Every non-empty payload keeps its exact MCP-compatible object JSON Schema,
-  normally closed by `additionalProperties:false`. Do not wrap, flatten,
+  closed by `additionalProperties:false` (required for participant actions). Do not wrap, flatten,
   rename, abbreviate, or abstract it into command/args/data. Preserve source
   action granularity: never replace repeated state transitions with a
   `solve`/`apply_plan` macro or split one payload into action names for size.

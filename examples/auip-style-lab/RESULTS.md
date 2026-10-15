@@ -39,7 +39,7 @@ Host verdict、Work/Attempt 身份与输入未修改检查；`events.jsonl` 保�
 参考光谱页：1280px / 390px、参数变化、记录观察、重置、键盘 range、可见
 焦点、reduced motion 和页面错误检查通过。曲线标注为示意，并不声称物理测量。
 
-最终汉诺塔的 [独立检查数据](../../runtime/auip-style-lab/palette-final/checks.json)
+最终汉诺塔的独立检查数据（本地输出 `runtime/auip-style-lab/palette-final/checks.json`，不随仓库提交）
 记录 16 项通过，包括：
 
 - 初始、移动后、完成时的真实 DOM 位置与棋局快照一致。

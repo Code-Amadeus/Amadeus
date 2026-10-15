@@ -95,8 +95,8 @@ per-Provider configs or silently claim compatibility.
 
 An MCP server is available only through a compatible Work execution Provider.
 The Settings registry currently projects enabled connections into the selected
-Codex Work Provider by process-local config overrides; it does not rewrite the
-user's global Codex config. Main Chat may delegate work and understand its
+Codex, Pi or compatible ACP Work Provider by process-local overrides; it does not
+rewrite the user's global Codex config. Main Chat may delegate work and understand its
 verified result, but it does not receive the MCP tool catalog or invoke tools
 directly. AUIP Participants and Controllers continue to use AUIP typed actions;
 an MCP registration grants them nothing.
@@ -140,9 +140,11 @@ add, edit, disable, remove, restart-to-apply, and read-only discovery probes.
 
 When that evidence exists:
 
-1. add Provider projection adapters beyond Codex only after their native MCP
-   lifecycle and permission boundary is implemented;
+1. ~~add Provider projection adapters beyond Codex~~ — done for ACP and Pi
+   (#221); further adapters still require their native MCP lifecycle and
+   permission boundary;
 2. permit trusted Python entry points only from installed distributions and a
-   user allowlist;
+   user allowlist (the local-wheel subset is described in the
+   [extension Host profile](extension_host_profile_v0.1.md));
 3. prefer sidecar/MCP execution for untrusted integrations;
 4. add remote catalogs, signatures, upgrades, and rollback only after Alpha.

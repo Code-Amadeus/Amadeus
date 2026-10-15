@@ -14,7 +14,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — 参考平台"/></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — 支持 Apple Silicon MPS"/></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — Apple Silicon MPS（T4 build mps）"/></a>
   <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-444449?labelColor=191a1d" alt="Linux — 已实机跑通"/></a>
 </p>
 
@@ -125,7 +125,7 @@ local_tts_infer.py  由 tts/ 调用的 GPT-SoVITS 推理集成层
 
 `main.py` 不是应用入口，只输出退役提示。Python 主入口是
 `uv run --locked --no-sync python -m server.app --port 17777`，桌面入口是
-Windows `run_electron_utf8.bat` / macOS `npm run electron:dev`（自动发现 `.venv`，L1–L4 通用）。
+Windows `run_electron_utf8.bat` / macOS `npm run electron:dev`（自动发现 `.venv`，T1–T4 通用）。
 
 ## 系统架构
 
@@ -170,49 +170,61 @@ verified Work Artifact
 
 ## 快速开始
 
-依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（默认阶梯中 torch 在 L3/L4 进入安装；可选 RAG 也会引入
-本地 embedding/Torch 依赖）。Windows 是当前参考平台，macOS 的 Apple Silicon MPS 与 Linux
-源码运行路径均已实机跑通；macOS 的 L1/L2 安装与 CI 单独验证。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
-L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
-`local-rocm` 实验锁与验证入口，面向 AMD 官方支持矩阵内的 GPU；Apple Silicon MPS
-使用已验证的 `local-mps` 配置，RTX 50 系 cu128 仍为实验配置。
+依赖按能力分四级：先装最小的 T1 跑通，再按需升梯。梯级（Tier）是**推荐的安装套餐**——每一级都是前一级的
+严格超集，且由 extra 本身保证（`vad` 包含 `voice`，每个 `local-<build>` 包含 `vad`）。平台不设上限，
+下表只按平台推荐梯级与构建。术语定义见
+[分层与构建术语契约](TIER_TAXONOMY.md)。
+
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
 
 Linux 用户请从下方的 [Linux](#linux) 章节开始。
 
-| 梯级 | 能力 | 平台 | 安装方式 |
-|---|---|---|---|
-| L1 core | 文字聊天、工作、Provider、角色渲染 | Windows / macOS | `uv sync --locked` |
-| L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| Windows / macOS | `uv sync --locked --extra voice` |
-| L3 CPU VAD | 实时打断（角色说话时可以插话）| CPU，无 NVIDIA GPU 前提 | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
-| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
-| 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
+| 梯级 | 能力 | 安装方式 |
+|---|---|---|
+| T1 core | 文字聊天、工作、Provider、角色渲染 | `uv sync --locked` |
+| T2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| `uv sync --locked --extra voice` |
+| T3 vad | 实时打断（角色说话时可以插话）| `uv sync --locked --extra vad --extra torch-cpu` |
+| T4 embedded | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | `uv sync --locked --extra local-<build>` |
 
-各安装配置均使用**同一个 `.venv`**。每次给出完整目标配置：
-`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与
-`local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
+T3 与 T4 需要额外选择一个 Torch **构建**（build），构建与梯级相互独立：T3 用 `torch-cpu`，T4 从
+`local-cpu`、`local-cu124`、`local-cu128`、`local-mps`、`local-rocm` 中选一个。T1/T2 保持 Torch-free。
+同时写上 `voice`、`vad` 的旧长命令仍然有效，结果相同。可选角色 RAG 会为你所用的命令额外引入本地
+embedding/Torch 依赖。
+
+| 平台 | 推荐 | 也可安装 | 备注 |
+|---|---|---|---|
+| Windows + NVIDIA | T4 `local-cu124`（参考） | `local-cu128`（实验）、`local-cpu` | 唯一具备完整本地栈验收记录的平台 |
+| Windows + AMD（AMD 官方支持矩阵内的卡） | T4 `local-rocm`（实验） | `local-cpu` | 验证入口在 `tools/rocm_sidecar/`；共用同一份 `uv.lock` 与 `.venv` |
+| Linux x86_64 + NVIDIA | T4 `local-cu128`（实验） | `local-cpu` | 源码运行路径已实机跑通；GPU 模型回归待完成 |
+| macOS Apple Silicon | T4 `local-mps`（实验性） | `local-cpu`（同一个轮子） | 本地 TTS 走 MPS；本地 ASR 落 CPU；唤醒词为 CPU |
+| 无匹配 GPU 的 Windows / Linux | T2 或 T3 | T4 `local-cpu` | 唤醒词在 CPU 上运行；本地 TTS/ASR 可安装但无实时性承诺。需设 `TTS_DEVICE=cpu`，因为 macOS 以外 `auto` 会选 `cuda:0` |
+| macOS Intel | T2 | — | T3 及以上无法安装：锁定的 Torch 2.7.0 没有 macOS x86_64 轮子 |
+
+各梯级均使用**同一个 `.venv`**。每次给出完整目标配置：
+`uv sync` 会精确同步，漏带的 extra 会被移除。`torch-cpu`、`local-cpu`、`local-cu124`、`local-cu128`、
+`local-mps` 与 `local-rocm` 两两互斥；切换构建时替换对应 extra 即可。
 详见[安装配置与迁移](docs/install_profiles.md)。
 
 - 主 Chat 默认远程 DeepSeek；llama.cpp 是可选本地 LLM profile（见
   [兼容路径](#兼容路径)），不是安装前提。
-- L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
+- T2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
   silero 精准端点与打断。
 - Windows 上每装完一级可验证导入合同（`ci` 同 `cpu`）：
   `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`，
-  L4 用 `--profile cu124 --require-cuda-device`；ROCm 实验入口用 `--profile rocm`
+  T4 用 `--profile cu124 --require-cuda-device`（`local-cpu` 用 `t4-cpu`）；ROCm 实验入口用 `--profile rocm`
   并继续执行 GPU compute probe。导入/构建验证不替代真实模型与音频设备测试。
-- 纯文字 / headless（CI）场景用 L1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
+- 纯文字 / headless（CI）场景用 T1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
   直接启动后端；严格文字模式设置 `TTS_BACKEND=disabled` 并关闭 Wake。
 
 ### 参考硬件
 
-**L1/L2（Windows / macOS）**
+**T1/T2（Windows / macOS）**
 
 - CPython **3.12**（由 uv 管理，无需系统安装）
 - Node.js **22**（当前参考 `22.21.1`）
 - 无 GPU 要求
 
-**L4 cu124（Windows 本地模型）追加**
+**T4 使用 build `cu124`（Windows 本地模型）追加**
 
 - CUDA 12.4-compatible NVIDIA GPU，目标 **8 GiB VRAM**
 - **16 GiB 内存起步，32 GiB 推荐**
@@ -221,7 +233,7 @@ Linux 用户请从下方的 [Linux](#linux) 章节开始。
 描述的是远程 Chat + 本地语音配置。选用本地 LLM 时需要按模型、量化、
 context 和 GPU offload 另行评估内存。
 
-### 基础环境（L1/L2，Windows / macOS）
+### 基础环境（T1/T2，Windows / macOS）
 
 安装 uv（Windows：`winget install astral-sh.uv`；macOS：`brew install uv`），
 然后克隆并按梯级安装——两个平台的命令完全一致：
@@ -231,11 +243,14 @@ git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
 uv venv .venv --python 3.12
-uv sync --locked                              # L1 core
-uv sync --locked --extra voice                # L2 voice（可选）
+uv sync --locked                              # T1 core
+uv sync --locked --extra voice                # T2 voice（可选）
 ```
 
-macOS 上 PyAudio（L2 语音采集）从源码编译，需要先 `brew install portaudio`。
+macOS 上 PyAudio（T2 语音采集）从源码编译，需要先 `brew install portaudio`。
+覆盖全部功能及其外部准备（如 Windows 的 Lively Wallpaper）的分步指南见
+[Windows 安装指南](WINDOWS_INSTALL.md)、[macOS 安装指南](MACOS_INSTALL.md)（含国内镜像配置）与
+[Linux 安装指南](LINUX_INSTALL.md)。
 
 venv 固定命名为 `.venv`：Electron 启动器会自动发现它（Windows
 `Scripts\python.exe`，macOS `bin/python3`），无需手动设置 `AMADEUS_PYTHON`。
@@ -260,18 +275,18 @@ Settings -> Models 或 `.env` 中主 Chat 的 `DEEPSEEK_API_KEY`；重启后端�
 
 **Linux 源码运行路径已在实机上跑通。**
 [第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
-Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
+Ubuntu 24.04 上的 T1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
 Ruff、架构视图检查及 Electron 构建。另有独立 Voice source-build CI，验证锁定安装、
 AEC 导入、bundled Abseil 选择及相关契约。CI 不覆盖 Electron GUI、真实音频设备、
 VAD/本地模型推理、Wayland 会话或壁纸集成。
-另有 cu128 候选安装、依赖和 CPU VAD 回切检查，均不替代真实 GPU 模型验收。
+另有 cu128 候选安装、依赖和 T3 vad 回切检查，均不替代真实 GPU 模型验收。
 
 社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
 所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
 [Linux 跟踪 issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)。
 
 先安装 Git、[uv](https://docs.astral.sh/uv/)（CI 使用 `0.12.8`）和 Node.js 22
-（CI 使用 `22.21.1`），从无需 GPU 或语音包的 L1 开始：
+（CI 使用 `22.21.1`），从无需 GPU 或语音包的 T1 开始：
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
@@ -281,7 +296,7 @@ uv sync --locked
 cp .env.example .env
 ```
 
-编辑 `.env`，填写 `DEEPSEEK_API_KEY`，设置 `TTS_BACKEND=disabled`，并保持
+编辑 `.env`，去掉 `# DEEPSEEK_API_KEY=<your-api-key>` 行首的 `# ` 并填入 key，设置 `TTS_BACKEND=disabled`，并保持
 `WAKE_ENABLED=false`，先验证文字路径。然后在项目根目录检查环境：
 
 ```bash
@@ -307,7 +322,7 @@ npm run electron:dev
 uv run --locked --no-sync python -m server.app --port 17777
 ```
 
-需要远程语音、录音和播放时，可在同一 `.venv` 安装 L2。Ubuntu 24.04 先安装
+需要远程语音、录音和播放时，可在同一 `.venv` 安装 T2。Ubuntu 24.04 先安装
 CI 使用的源码构建前置包；其他发行版请使用对应的软件包名称：
 
 ```bash
@@ -324,7 +339,7 @@ uv run --locked --no-sync python tools/verify_python_environment.py --profile vo
   失败。该修改不更改系统 Abseil；Windows/macOS 继续使用 registry 包。来源、独立
   补丁与移除条件见 [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md)。
   构建/导入通过不代表真实设备上的回声消除或完整语音交互已验收。
-- **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
+- **VAD / NVIDIA**：Linux T3 vad 与 `local-cu128` 候选已有明确的 Torch 构建选择
   和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
   交互继续按设备验收，见下方候选配置说明。
 - **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
@@ -332,25 +347,25 @@ uv run --locked --no-sync python tools/verify_python_environment.py --profile vo
 
 ### VAD 与本地模型
 
-与 L1/L2 共用同一个 `.venv`，选择完整的能力与构建组合：
+与 T1/T2 共用同一个 `.venv`，选择完整的能力与构建组合：
 
-**L3 vad — 实时打断**（torch 随之以 CPU 版进入安装）：
+**T3 vad — 实时打断**（torch 随之以 CPU 版进入安装）：
 
 ```powershell
-uv sync --locked --extra voice --extra vad --extra torch-cpu
+uv sync --locked --extra vad --extra torch-cpu
 uv run --locked --no-sync python tools\verify_python_environment.py --profile vad-cpu
 ```
 
-**L4 local-cu124 — 本地语音模型栈**：在同一 `.venv` 上选择 CUDA 配置，torch 换为
+**T4 embedded — 本地语音模型栈**：在同一 `.venv` 上选择 CUDA 配置，torch 换为
 CUDA 12.4 构建（经 `pyproject.toml` 的 `[tool.uv.sources]` 路由到
 PyTorch cu124 index，仅 Windows + 本 extra 生效）：
 
 ```powershell
-uv sync --locked --extra voice --extra vad --extra local-cu124
+uv sync --locked --extra local-cu124
 uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
 ```
 
-L4 profile 固定 `torch==2.6.0+cu124`、`torchaudio==2.6.0+cu124` 和本地模型
+T4 的 `cu124` 构建固定 `torch==2.6.0+cu124`、`torchaudio==2.6.0+cu124` 和本地模型
 依赖集；它以当前实际运行环境为第一版基线。
 
 **实验 local-rocm（Windows）**：面向 AMD 官方 ROCm 7.2.1 Windows PyTorch
@@ -362,16 +377,16 @@ L4 profile 固定 `torch==2.6.0+cu124`、`torchaudio==2.6.0+cu124` 和本地模�
 
 **Torch 2.7 配置**：`local-cu128`（Windows/Linux x86_64）与
 `local-mps`（Apple Silicon）提供锁定的 Torch/Torchaudio 2.7.0 安装入口。
-Apple Silicon MPS 已实机跑通；cu128 仍为 NVIDIA 实验配置。
+两者均为实验配置：GPT-SoVITS MPS 的实机证据基于 Torch 2.6.0，尚未在锁定的 2.7.0 上复测；cu128 尚无 NVIDIA 设备/模型验收。
 现有 Windows cu124 仍保留为参考配置，Windows ROCm 继续使用 AMD 配套的 2.9.1。
 
 ```bash
 # Windows/Linux NVIDIA 候选，包含完整模型依赖
-uv sync --locked --extra voice --extra vad --extra local-cu128
+uv sync --locked --extra local-cu128
 uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
 
 # Apple Silicon MPS
-uv sync --locked --extra voice --extra vad --extra local-mps
+uv sync --locked --extra local-mps
 uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
 ```
 
@@ -463,8 +478,8 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 
 ### 推荐的 NVIDIA 语音加速配置
 
-这些本地 CUDA 优化需要 L4 本地 CUDA 安装配置及上面的 Qwen/GPT-SoVITS 资产；
-L1 纯文字、远程语音和 CPU 配置不享有这些 CUDA 优化。同步依赖时保留完整的
+这些本地 CUDA 优化需要 T4 的 `cu124` 构建及上面的 Qwen/GPT-SoVITS 资产；
+T1 纯文字、远程语音和 CPU 配置不享有这些 CUDA 优化。同步依赖时保留完整的
 optional-extra 组合，见[安装配置说明](docs/install_profiles.md)。
 
 在 **设置 → 语音 → 对话语音识别** 中，保持 **Qwen 设备**为 `auto`、
@@ -490,6 +505,13 @@ FlashAttention KV-cache 路径在 NVIDIA Ampere 或更新架构、FP16/BF16 权�
 兼容的 `flash-attn` 扩展可用时自动选择；否则继续使用现有 PyTorch SDPA 路径。
 应用不会自动安装扩展，安装与验证见[可选扩展说明](docs/torch27_candidates.md#flashattention-wheel-inventory)。
 
+T2S CUDA Graph 保留各自的桶形状，默认共享一个最大容量的 KV 工作区（`TTS_KV_CACHE_LAYOUT=nested`）。
+现有 CUDA Graph 管线本就串行处理完整的 TTS 合成请求，因此共享 KV 不会降低该模式的并发；
+解码器在整个 AR 请求期间持有工作区，普通 ASR 推理与音频播放仍可并行。每个桶只有一个 Graph，
+可复用于任意合法前缀长度；nested 请求在桶满时升到已捕获的更大桶，不复制 KV；目标缺失或最大桶
+已满时保留全上下文动态回退。`bucket` 保留每桶独立 KV，不升桶。请在加载模型前设置布局。
+内存与延迟实测见 [Nested KV 评估](docs/tts_nested_kv_evaluation_2026-10-14.md)。
+
 两个开关均支持 `0`（关闭）、`1`（请求开启）与 `auto`。已有 `.env` 或桌面设置中的
 显式值继续优先；旧配置为 `0` 时，改为 `auto` 或在界面选择“自动”即可采用新策略。
 手动开启也需要运行时能力支持。桌面模式请在语音空闲时切换；修改 `.env` 或
@@ -502,12 +524,12 @@ FlashAttention 设置后重启后端。启动诊断会报告实际选择的路�
 macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、兼容的 GPT-SoVITS 权重组合（默认 **Kurisu v3**，可选实验性 **Kurisu v2Pro**）、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；T4 本地栈另需 Qwen model 目录、兼容的 GPT-SoVITS 权重组合（默认 **Kurisu v3**，可选实验性 **Kurisu v2Pro**）、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 启动：
 
-- Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
+- Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，T1–T4 通用）
 - macOS：`cd electron && npm run electron:dev`
 
 开发启动器和 `npm run dev` 默认使用 `5173` 端口。若终端提示 `EACCES`
@@ -627,7 +649,7 @@ Amadeus 不会替你启动 Luna 或选择其 hook；**结束陪玩**只断开原
 
 ### 推荐远程 TTS：Fish Audio + Kurisu
 
-安装 L2 voice 后，在 **Settings → Voice** 的 Speech synthesis 中选择
+安装 T2 voice 后，在 **Settings → Voice** 的 Speech synthesis 中选择
 **Fish Audio**，填写 API key，确认以下两个不同的 ID，再重启后端：
 
 | 设置 | 推荐值 |
@@ -804,13 +826,13 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 
 | 范围 | 状态 |
 |---|---|
-| L1/L2（文字 + 远程语音）| Windows、macOS 与 Linux 源码部署；Windows 为参考平台，macOS L1/L2 与 Linux 有独立 CI |
-| Linux | 源码运行路径已实机跑通；Ubuntu 24.04 的 L1、L2 Voice 源码构建与 Electron 构建有 CI，具体环境说明见 [Linux 章节](#linux) |
-| L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
-| L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
+| T1/T2（文字 + 远程语音）| Windows、macOS 与 Linux 源码部署；Windows 为参考平台，macOS T1/T2 与 Linux 有独立 CI |
+| Linux | 源码运行路径已实机跑通；Ubuntu 24.04 的 T1、T2 Voice 源码构建与 Electron 构建有 CI，具体环境说明见 [Linux 章节](#linux) |
+| T3 vad | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
+| T4 使用 build `cu124`（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 面向 AMD 官方 Windows 支持矩阵内的 GPU；提供 `local-rocm` 实验配置与 Qwen ASR / GPT-SoVITS sidecar，见 [安装与验证](tools/rocm_sidecar/README.md) |
 | NVIDIA cu128 | Torch 2.7.0 实验锁与安装 CI；完整设备和模型回归待完成 |
-| Apple Silicon MPS | 通过 `local-mps` 支持，已实机跑通 |
+| Apple Silicon MPS（T4 build `mps`）| 实验性；通过 `local-mps` 安装并有安装 CI；TTS 实机证据早于锁定的 Torch 2.7.0；本地 ASR 与唤醒词仍在 CPU 上 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
@@ -862,6 +884,7 @@ Amadeus 第一方源码和修改依据
 - [AUIP](https://github.com/Code-Amadeus/AUIP)：已在 Amadeus 中实现的实验性 application-session / typed-action 协议；独立仓库维护现状与公开实现入口，独立版本 SDK 和 conformance suite 尚未发布。
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
 - [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
+- [实验性扩展 Host profile](docs/extension_host_profile_v0.1.md)：已实现的本地 wheel TTS/MCP/Skill/主题子集、包应用生命周期、Agent 绑定与当前限制；不是稳定 SDK，也不声明完整扩展协议一致性。
 
 <details>
 <summary>Star History</summary>

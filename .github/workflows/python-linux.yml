@@ -7,7 +7,7 @@ on:
 
 jobs:
   core-tier:
-    # Phase 1 Linux regression baseline: L1 core + dev tooling, platform-safe
+    # Phase 1 Linux regression baseline: T1 core + dev tooling, platform-safe
     # contract tests, and Electron build. Full Linux support is a separate effort.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -32,13 +32,13 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
-      - name: Install locked environment (L1 + dev tooling)
+      - name: Install locked environment (T1 + dev tooling)
         run: uv sync --locked --extra dev
 
       - name: Verify environment (ci profile)
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
 
-      - name: Assert L1 stays model-less
+      - name: Assert T1 stays model-less
         run: >-
           uv run --locked --no-sync python -c
           "import importlib.util as u;
@@ -114,7 +114,7 @@ jobs:
             echo "No pkg-config-visible system Abseil"
           fi
 
-      - name: Install locked environment (L1 + L2 voice)
+      - name: Install locked environment (T1 + T2 voice)
         run: uv sync --locked --extra voice --extra dev
 
       - name: Verify environment (voice profile)
