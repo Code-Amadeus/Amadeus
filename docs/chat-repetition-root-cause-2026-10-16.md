@@ -3,6 +3,9 @@
 ## English
 
 Related to [#227](https://github.com/Code-Amadeus/Amadeus/issues/227) and draft PR #229.
+Follow-up: [108-request preface side-effect check](chat-preface-safety-evaluation-2026-10-16.md)
+separates a smaller two-cue treatment from the combined ablation; the 933 requests
+and tables below remain the original investigation dataset.
 **The evidence supports interacting prompt and history effects, not temperature as a
 single root cause. No prompt/history candidate in this investigation qualifies as a
 complete fix.** The production prompts and history policy are unchanged by this report.

@@ -53,16 +53,27 @@ CURRENT_CASES = {
     "formal_proof": ("neutral", "红莉栖，解释一下什么是形式化证明。"),
     "actual_nickname": ("trigger", "クリスティーナ、3は素数かしら？"),
     "quoted_nickname": ("quotation", "例文『クリスティーナと呼ばれた』の文法を説明してください。これは呼びかけではありません。"),
+    "held_out_name": ("neutral", "紅莉栖、9は素数ですか。一文で理由も教えて。"),
+    "held_out_quote": ("quotation", "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。"),
+    "held_out_address": ("trigger", "クリスティーナ、9が素数かどうか理由も教えて。"),
+    "held_out_memory": ("context", "さっきの例では箱は何色で、玉はいくつだった？"),
+    "held_out_continue": ("context", "今の説明を続けて、9を例に合成数だと分かる理由を教えて。"),
+    "held_out_work": ("work", "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。"),
 }
 HISTORY_PROFILES = ("reported", "synthetic_clean", "synthetic_ha", "synthetic_nickname",
     "synthetic_both", "synthetic_other_nickname", "user_only", "user_only_no_user_nickname",
-    "empty", "recent_only", "reported_no_user_nickname")
+    "empty", "recent_only", "reported_no_user_nickname", "held_out_clean")
 PROMPT_VARIANTS = ("original", "no_ack_preface", "persona_no_preface", "contract_no_preface",
     "both_no_preface", "no_nickname_reaction", "current_grounded",
-    "scoped_nickname_reaction", "scoped_and_no_preface")
+    "scoped_nickname_reaction", "scoped_and_no_preface", "two_ack_cues_removed")
 
 
 def fixed_history(profile):
+    if profile == "held_out_clean":
+        return [
+            {"role": "user", "content": "説明に使う仮の箱は青、玉は5個と覚えておいて。まず素数と合成数の違いを教えて。"},
+            {"role": "assistant", "content": "この例では箱は青、玉は5個ね。素数は1より大きく、正の約数が1と自分自身だけの整数。合成数は1より大きく、それ以外の正の約数もある整数よ。"},
+        ]
     history = []
     for index, (_, _, user, opening) in enumerate(CASES[:-1]):
         if profile in ("reported_no_user_nickname", "user_only_no_user_nickname"):
@@ -106,6 +117,11 @@ def transform_system(system, variant):
 
     if variant == "no_ack_preface":
         replace_once("短い相づち・前置き、または", "")
+    if variant == "two_ack_cues_removed":
+        # Isolate the two explicit acknowledgment cues; leave examples and all
+        # other short-spoken-output, EMO, delegation and authority rules intact.
+        replace_once("短い相づち・前置き、または", "")
+        replace_once("最初の相づちと句読点までを先に出します。", "最初の文節と句読点までを先に出します。")
     if variant in ("persona_no_preface", "both_no_preface", "scoped_and_no_preface"):
         replace_once("返答の先頭は、すぐに読み上げられる短い自然な言葉にする。", "")
         replace_once("短い相づち・前置き、または", "")
@@ -271,6 +287,9 @@ async def evaluate(args):
         "openai_sampling": args.openai_sampling if args.provider == "openai" else None,
         "history_schema": args.history_schema, "history_profiles": args.history_profiles,
         "current_cases": args.current_cases,
+        "current_fixture": {case: CURRENT_CASES[case] for case in args.current_cases},
+        "current_fixture_sha256": digest({case: CURRENT_CASES[case] for case in args.current_cases}),
+        "history_fixture_sha256": {profile: digest(fixed_history(profile)) for profile in args.history_profiles},
         "max_tokens": args.max_tokens, "timeout_s": 60, "sdk_retries": 0,
         "tts": False, "provider_execution": False, "session_persistence": False,
         "persona": "built-in kurisu Japanese", "professional_role_contract": True,
