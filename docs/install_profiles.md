@@ -47,7 +47,8 @@ when Torch came from no build extra; `vad-cpu` requires the CPU build.
 The cu124, cu128 and ROCm profiles can additionally use `--require-cuda-device` on a GPU machine.
 An import or build check does not establish model inference or audio-device support.
 
-T1 and T2 remain Torch-free. T3 and T4 add Torch through the `vad` extra, which
+The default T1 and T2 presets remain Torch-free (optional extras such as
+`rag` with `torch-cpu` may still add Torch). T3 and T4 add Torch through the `vad` extra, which
 transitively requires `silero-vad` → `torch`; this is why a build must be named
 explicitly from T3 onward. `torch-cpu`, `local-cpu`, `local-cu124`, `local-cu128`,
 `local-mps`, and `local-rocm` are mutually exclusive build selections. The CPU

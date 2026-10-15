@@ -9,13 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "sdk" / "auip-core" / "managed-v0.js"
 
 
-def _run_node(script: str) -> None:
+def _run_node(script: str, *args: str) -> None:
     node = shutil.which("node")
     if not node:
         print("ok: AUIP managed core test skipped (node unavailable)")
         return
     result = subprocess.run(
-        [node, "-e", script, str(CORE)],
+        [node, "-e", script, str(CORE), *args],
         cwd=ROOT,
         text=True,
         encoding="utf-8",
@@ -317,9 +317,46 @@ console.log('ok: an unprojectable committed mutation fails closed');
     )
 
 
+def test_default_projection_budget_matches_the_host_role_state_budget() -> None:
+    # The SDK warning and the Host projection share one advisory budget.
+    from server.auip_runtime import AUIP_ROLE_STATE_MAX_CHARS
+
+    _run_node(
+        r"""
+const assert = require('assert');
+const {createManagedCore} = require(process.argv[1]);
+const budget = Number(process.argv[2]);
+const manifest = {
+  schema:'amadeus.auip/v0',
+  app:{id:'budget', title:'Budget', version:'0.1.0'},
+  events:{'app.changed':{}},
+  actions:{'app.change':{description:'Change.', risk:'local_execution'}},
+  stances:['participant'],
+};
+function diagnosticsFor(length) {
+  const diagnostics = [];
+  // {"v":"..."} adds eight characters around the padding.
+  const state = {v:'x'.repeat(length - 8)};
+  createManagedCore({
+    manifest,
+    onDiagnostic:item=>diagnostics.push(item.code),
+    snapshot:()=>state,
+    actions:{'app.change':(_payload, tx)=>tx.reject('not needed')},
+  });
+  return diagnostics;
+}
+assert.deepEqual(diagnosticsFor(budget), []);
+assert.deepEqual(diagnosticsFor(budget + 1), ['projection_budget_exceeded']);
+console.log('ok: default projection budget matches the Host budget');
+""",
+        str(AUIP_ROLE_STATE_MAX_CHARS),
+    )
+
+
 if __name__ == "__main__":
     test_managed_core_has_no_web_or_host_identity_dependency()
     test_managed_core_owns_revision_and_keeps_payload_app_specific()
     test_managed_core_fails_closed_on_contract_drift_and_async_commit_code()
     test_managed_core_rejects_state_drift_before_a_low_frequency_action()
     test_post_mutation_projection_failure_poisoned_core_cannot_claim_more_actions()
+    test_default_projection_budget_matches_the_host_role_state_budget()

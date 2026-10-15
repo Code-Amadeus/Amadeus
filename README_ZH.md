@@ -187,7 +187,7 @@ Linux 用户请从下方的 [Linux](#linux) 章节开始。
 | T4 embedded | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | `uv sync --locked --extra local-<build>` |
 
 T3 与 T4 需要额外选择一个 Torch **构建**（build），构建与梯级相互独立：T3 用 `torch-cpu`，T4 从
-`local-cpu`、`local-cu124`、`local-cu128`、`local-mps`、`local-rocm` 中选一个。T1/T2 保持 Torch-free。
+`local-cpu`、`local-cu124`、`local-cu128`、`local-mps`、`local-rocm` 中选一个。默认的 T1/T2 套餐保持 Torch-free；`rag` 加 `torch-cpu` 这类可选组合仍可引入 Torch。
 同时写上 `voice`、`vad` 的旧长命令仍然有效，结果相同。可选角色 RAG 会为你所用的命令额外引入本地
 embedding/Torch 依赖。
 

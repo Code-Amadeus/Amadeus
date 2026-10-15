@@ -202,7 +202,8 @@ Linux users should start with [Linux](#linux) below.
 
 T3 and T4 need a Torch **build**, selected independently of the tier: `torch-cpu`
 for T3, or one of `local-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and
-`local-rocm` for T4. T1 and T2 stay Torch-free. Longer commands that also name
+`local-rocm` for T4. The default T1 and T2 presets stay Torch-free; optional extras such as `rag` with
+`torch-cpu` may still add Torch. Longer commands that also name
 `voice` and `vad` remain valid and select the same environment. Optional character
 RAG adds local embedding/Torch dependencies to whichever command you use.
 

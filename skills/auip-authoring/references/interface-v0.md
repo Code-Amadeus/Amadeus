@@ -115,8 +115,7 @@ say/do conflict.
 
 For a Node author test without a Host transport, load `managed-v0.js` with the
 following UMD-compatible expression and instantiate the same manifest,
-snapshot, and action map (`initialEvents` is read only by the Web binding's
-`start()`; the Core ignores it):
+snapshot, and action map:
 
 ```js
 const managedModule = await import("./sdk/auip-core/managed-v0.js");
@@ -301,13 +300,9 @@ retain the lower-authority `spectator` stance, and must declare a non-empty top-
 `scalars/v1`, `sequence/v1`, and/or `controller/v1`; every declared kind must occur in each published state (it may
 be nested beside additional business state). A `participant` manifest must
 declare at least one real typed application action; an empty catalog is a
-spectator surface regardless of descriptive prose. For `participant` manifests the
-validator also requires: a non-empty `app.interactionSummary`
-(`missing_interaction_summary`); `additionalProperties: false` on every object
-action input (`open_action_input_schema`); `choice/v1` when the finite action
-space has 32 or fewer payloads (`small_action_space_requires_choice`); and the
-JSON-encoded list of action types within 520 characters
-(`role_action_surface_too_large`). Run the opaque manifest validation and embed-sync preflight
+spectator surface regardless of descriptive prose. It also needs
+`app.interactionSummary`, closed object inputs, `choice/v1` for ≤32 finite
+payloads, and ≤520 JSON characters of action types. Run the opaque manifest validation and embed-sync preflight
 paths supplied by the Host against the completed manifest and HTML entry; do
 not read their implementations. The Host reruns the authoritative checks after
 Provider completion.

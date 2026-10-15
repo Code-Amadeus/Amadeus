@@ -120,33 +120,35 @@ cp .env.example .env
 
 ### 启动前检查清单
 
-执行启动命令前，Agent 必须逐项完成本清单。**自动**项由 Agent 直接执行并检查输出；**手动**项必须由用户
-亲自完成，Agent 只负责提示并等待用户确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权安装软件。
-任何一项未通过都不要启动，先按「故障排查」处理。
+只需完成与用户所选功能对应的项（见「适用于」列）；不适用的项不影响启动。纯文字桌面启动只需要标
+「所有启动」与「桌面」的项，headless 后端只需要「所有启动」的项。**自动**项由 Agent 执行并检查输出；
+**手动**项由用户完成，Agent 只提示并等待确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权
+安装软件。适用的项未通过时，先按「故障排查」处理再启动。密钥不是启动前提：可以先启动，再在 Settings
+中填写。
 
 **自动（Agent 执行）**
 
-| 检查项 | 命令或判定 |
-|---|---|
-| 依赖与目标梯级一致 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
-| 前端已构建 | `cd electron && npm ci && npm run build && cd ..`（每次拉取新源码后都要重跑） |
-| `.env` 存在 | 不存在时 `cp .env.example .env`；已存在则**不要覆盖** |
-| 非密钥配置与已装梯级一致 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；用 `local-cpu`：设 `TTS_DEVICE=cpu` |
-| 本地语音资产（T4 本地语音） | `uv run --locked --no-sync python tools/external_assets.py status`；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
-| 日文字典预热（本地 TTS） | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"` |
-| Browser Work 的浏览器 | `uv run --locked --no-sync python -m playwright install chromium`（只下载浏览器，不装系统依赖） |
-| 端口空闲，没有其他 Amadeus 在运行 | `ss -ltn '( sport = :5173 or sport = :17777 )'` 只有表头即空闲。`5173` 被占用时在 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户，不要结束未知进程 |
-| 有图形会话（启动桌面端时） | `echo "$WAYLAND_DISPLAY$DISPLAY"` 非空；为空时只能运行 headless 后端 |
+| 检查项 | 适用于 | 命令或判定 |
+|---|---|---|
+| 依赖与目标梯级一致 | 所有启动 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
+| 前端已构建 | 桌面 | `cd electron && npm ci && npm run build && cd ..`（每次拉取新源码后都要重跑） |
+| `.env` 存在 | 所有启动 | 不存在时 `cp .env.example .env`；已存在则**不要覆盖** |
+| 非密钥配置与已装梯级一致 | 所有启动 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；用 `local-cpu`：设 `TTS_DEVICE=cpu` |
+| 本地语音资产（T4 本地语音） | 本地 TTS / ASR | `uv run --locked --no-sync python tools/external_assets.py status`；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
+| 日文字典预热（本地 TTS） | 本地 TTS | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"` |
+| Browser Work 的浏览器 | Browser Work | `uv run --locked --no-sync python -m playwright install chromium`（只下载浏览器，不装系统依赖） |
+| 端口空闲，没有其他 Amadeus 在运行 | 所有启动（`5173` 只影响桌面） | `ss -ltn '( sport = :5173 or sport = :17777 )'` 只有表头即空闲。`5173` 被占用时在 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户，不要结束未知进程 |
+| 有图形会话（启动桌面端时） | 桌面 | `echo "$WAYLAND_DISPLAY$DISPLAY"` 非空；为空时只能运行 headless 后端 |
 
 **手动（用户完成，Agent 提示并等待确认）**
 
-| 事项 | 必须手动的原因 |
-|---|---|
-| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 密钥属于用户。可以启动后在 Settings 中填写，或由用户自己编辑 `.env` |
-| 安装系统包（`apt-get install …`）与 Playwright 系统依赖（`sudo .venv/bin/python -m playwright install-deps chromium`） | 需要 sudo。用户自己执行，或明确授权 Agent 执行 |
-| 安装或升级 NVIDIA 驱动（用 `local-cu128` 时） | 系统级安装，需要 root，可能需要重启 |
-| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 需要用户访问下载页 |
-| 获取 Live2D Cubism Core（用 Live2D 时） | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
+| 事项 | 适用于 | 必须手动的原因 |
+|---|---|---|
+| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 用到对应服务时；可启动后再填 | 密钥属于用户。可以启动后在 Settings 中填写，或由用户自己编辑 `.env` |
+| 安装系统包（`apt-get install …`）与 Playwright 系统依赖（`sudo .venv/bin/python -m playwright install-deps chromium`） | 语音（T2 及以上）、T4、Browser Work | 需要 sudo。用户自己执行，或明确授权 Agent 执行 |
+| 安装或升级 NVIDIA 驱动（用 `local-cu128` 时） | `local-cu128` | 系统级安装，需要 root，可能需要重启 |
+| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 本地语音、角色动画 | 需要用户访问下载页 |
+| 获取 Live2D Cubism Core（用 Live2D 时） | Live2D | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
 
 完成清单后启动：
 

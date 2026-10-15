@@ -192,19 +192,19 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 环境目录必须叫 `.venv`，且放在仓库根目录。Electron 会自动发现其中的解释器（macOS 下是
 `bin/python3`），无需设置 `AMADEUS_PYTHON` 覆盖。
 
+要装 `T2` 及以上时，**先**安装 PortAudio（PyAudio 会从源码编译，缺少它时 `uv sync` 会在编译处失败）：
+
+```bash
+brew install portaudio
+```
+
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
 uv venv .venv --python 3.12
 uv sync --locked                              # T1 core
-uv sync --locked --extra voice                # T2 voice
-```
-
-`T2` 需要 PortAudio（PyAudio 会从源码编译）：
-
-```bash
-brew install portaudio
+uv sync --locked --extra voice                # T2 voice（需要上面的 PortAudio）
 ```
 
 每次更新源码后构建一次 Electron 前端：
@@ -292,33 +292,35 @@ uv run --locked --no-sync python tools/external_assets.py status
 
 ## 启动前检查清单
 
-执行启动命令前，Agent 必须逐项完成本清单。**自动**项由 Agent 直接执行并检查输出；**手动**项必须由用户
-亲自完成，Agent 只负责提示并等待用户确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权安装软件。
-任何一项未通过都不要启动，先按「故障排查」处理。
+只需完成与用户所选功能对应的项（见「适用于」列）；不适用的项不影响启动。纯文字桌面启动只需要标
+「所有启动」与「桌面」的项，headless 后端只需要「所有启动」的项。**自动**项由 Agent 执行并检查输出；
+**手动**项由用户完成，Agent 只提示并等待确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权
+安装软件。适用的项未通过时，先按「故障排查」处理再启动。密钥不是启动前提：可以先启动，再在 Settings
+中填写。
 
 **自动（Agent 执行）**
 
-| 检查项 | 命令或判定 |
-|---|---|
-| 依赖与目标梯级一致 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
-| 前端已构建 | `cd electron && npm ci && npm run build && cd ..`（每次拉取新源码后都要重跑） |
-| `.env` 存在 | 不存在时 `cp .env.example .env`；已存在则**不要覆盖** |
-| 非密钥配置与已装梯级一致 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；本地 ASR 显式设 `QWEN3_ASR_DEVICE=cpu` |
-| PortAudio（T2 及以上） | `brew list portaudio` 成功；缺失时 `brew install portaudio`（Homebrew 不需要管理员权限） |
-| 本地语音资产（T4 本地语音） | `uv run --locked --no-sync python tools/external_assets.py status`；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
-| 日文字典预热（本地 TTS） | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"` |
-| Browser Work 的浏览器 | `uv run --locked --no-sync python -m playwright install chromium` |
-| 端口空闲，没有其他 Amadeus 在运行 | `lsof -nP -iTCP:5173 -iTCP:17777 -sTCP:LISTEN` 无输出即空闲。`5173` 被占用时在仓库根 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户，不要结束未知进程 |
-| 壁纸 app 与仓库位置一致（用登录自启动时） | 仓库移动过就重新运行 `./scripts/build_macos_wallpaper_app.sh --force` |
+| 检查项 | 适用于 | 命令或判定 |
+|---|---|---|
+| 依赖与目标梯级一致 | 所有启动 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
+| 前端已构建 | 桌面 | `cd electron && npm ci && npm run build && cd ..`（每次拉取新源码后都要重跑） |
+| `.env` 存在 | 所有启动 | 不存在时 `cp .env.example .env`；已存在则**不要覆盖** |
+| 非密钥配置与已装梯级一致 | 所有启动 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；本地 ASR 显式设 `QWEN3_ASR_DEVICE=cpu` |
+| PortAudio（T2 及以上） | 语音（T2 及以上） | `brew list portaudio` 成功；缺失时 `brew install portaudio`（Homebrew 不需要管理员权限） |
+| 本地语音资产（T4 本地语音） | 本地 TTS / ASR | `uv run --locked --no-sync python tools/external_assets.py status`；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
+| 日文字典预热（本地 TTS） | 本地 TTS | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"` |
+| Browser Work 的浏览器 | Browser Work | `uv run --locked --no-sync python -m playwright install chromium` |
+| 端口空闲，没有其他 Amadeus 在运行 | 所有启动（`5173` 只影响桌面） | `lsof -nP -iTCP:5173 -iTCP:17777 -sTCP:LISTEN` 无输出即空闲。`5173` 被占用时在仓库根 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户，不要结束未知进程 |
+| 壁纸 app 与仓库位置一致（用登录自启动时） | 登录自启动壁纸 | 仓库移动过就重新运行 `./scripts/build_macos_wallpaper_app.sh --force` |
 
 **手动（用户完成，Agent 提示并等待确认）**
 
-| 事项 | 必须手动的原因 |
-|---|---|
-| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 密钥属于用户。可以启动后在 Settings 中填写，或由用户自己编辑 `.env` |
-| 安装 Xcode 命令行工具（`xcode-select --install`） | 会弹出系统安装对话框，需要用户确认 |
-| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 需要用户访问下载页 |
-| 获取 Live2D Cubism Core（用 Live2D 时） | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
+| 事项 | 适用于 | 必须手动的原因 |
+|---|---|---|
+| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 用到对应服务时；可启动后再填 | 密钥属于用户。可以启动后在 Settings 中填写，或由用户自己编辑 `.env` |
+| 安装 Xcode 命令行工具（`xcode-select --install`） | 语音（T2 及以上） | 会弹出系统安装对话框，需要用户确认 |
+| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 本地语音、角色动画 | 需要用户访问下载页 |
+| 获取 Live2D Cubism Core（用 Live2D 时） | Live2D | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
 
 ## 启动
 

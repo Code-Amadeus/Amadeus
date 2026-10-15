@@ -63,8 +63,9 @@ tier 名与 extra 名对齐，方便机械对照：`T2 ↔ voice`、`T3 ↔ vad`
    `tests/test_profile_contract.py::test_tier_extras_are_declared_as_a_strict_ladder` 校验声明，
    `test_t4_build_alone_installs_the_whole_ladder` 校验锁文件；`T1` 另由
    `tests/test_core_install_tiers.py` 兜底。
-2. **`T1`/`T2` 必须 torch-free**。`pyproject.toml` 的 voice extra 注释明确写了
-   "Torch-free on purpose: T2 stays a few hundred MB"。torch 只允许从 `T3` 起出现。
+2. **默认的 `T1`/`T2` 套餐必须 torch-free**。`pyproject.toml` 的 voice extra 注释明确写了
+   "Torch-free on purpose: T2 stays a few hundred MB"。梯级本身只从 `T3` 起引入 torch；用户在
+   `T1`/`T2` 之上**另选**带 torch 的可选 extra 仍然合法，例如 `core + rag + torch-cpu`。
 3. **装了 torch 就恰好是一个已锁定的 build**。build extra 两两互斥由 uv `conflicts` 保证；
    验证器的 `vad` profile 会识别实际 build，torch 不来自任何 build extra 时直接失败。
 4. **平台不设上限**。平台表只做推荐；某组合装不上只能是因为锁文件里没有对应轮子（事实），

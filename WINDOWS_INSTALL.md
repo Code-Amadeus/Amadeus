@@ -108,35 +108,37 @@ Copy-Item .env.example .env
 
 ### 启动前检查清单
 
-执行启动命令前，Agent 必须逐项完成本清单。**自动**项由 Agent 直接执行并检查输出；**手动**项必须由用户
-亲自完成，Agent 只负责提示并等待用户确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权安装软件。
-任何一项未通过都不要启动，先按「故障排查」处理。
+只需完成与用户所选功能对应的项（见「适用于」列）；不适用的项不影响启动。纯文字桌面启动只需要标
+「所有启动」与「桌面」的项，headless 后端只需要「所有启动」的项。**自动**项由 Agent 执行并检查输出；
+**手动**项由用户完成，Agent 只提示并等待确认：不代填密钥、不代替用户接受许可条款、不在用户同意前提权
+安装软件。适用的项未通过时，先按「故障排查」处理再启动。密钥不是启动前提：可以先启动，再在 Settings
+中填写。
 
 **自动（Agent 执行）**
 
-| 检查项 | 命令或判定 |
-|---|---|
-| 依赖与目标梯级一致 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
-| 前端已构建 | `cd electron; npm ci; npm run build; cd ..`（每次拉取新源码后都要重跑） |
-| `.env` 存在 | 不存在时 `Copy-Item .env.example .env`；已存在则**不要覆盖** |
-| 非密钥配置与已装梯级一致 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；用 `local-cpu`：设 `TTS_DEVICE=cpu` |
-| 本地语音资产（T4 本地语音） | `uv run --locked --no-sync python tools\external_assets.py status`，Qwen ASR 与 GPT-SoVITS v3 包应显示已安装；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
-| 日文字典预热（本地 TTS） | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"`，避免首次合成时临时下载 |
-| Browser Work 的浏览器 | `uv run --locked --no-sync python -m playwright install chromium` |
-| 端口空闲，没有其他 Amadeus 在运行 | `Get-NetTCPConnection -LocalPort 5173,17777 -State Listen -ErrorAction SilentlyContinue` 无输出即空闲。`5173` 被占用时在 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户是否已有 Amadeus 在运行，不要结束未知进程 |
-| 壁纸辅助程序（要用壁纸时） | `dotnet --list-sdks` 含 8.x 后运行 `powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly` |
+| 检查项 | 适用于 | 命令或判定 |
+|---|---|---|
+| 依赖与目标梯级一致 | 所有启动 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
+| 前端已构建 | 桌面 | `cd electron; npm ci; npm run build; cd ..`（每次拉取新源码后都要重跑） |
+| `.env` 存在 | 所有启动 | 不存在时 `Copy-Item .env.example .env`；已存在则**不要覆盖** |
+| 非密钥配置与已装梯级一致 | 所有启动 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；用 `local-cpu`：设 `TTS_DEVICE=cpu` |
+| 本地语音资产（T4 本地语音） | 本地 TTS / ASR | `uv run --locked --no-sync python tools\external_assets.py status`，Qwen ASR 与 GPT-SoVITS v3 包应显示已安装；用户下载好的 ZIP 由 Agent 执行 `verify` 与 `install` |
+| 日文字典预热（本地 TTS） | 本地 TTS | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"`，避免首次合成时临时下载 |
+| Browser Work 的浏览器 | Browser Work | `uv run --locked --no-sync python -m playwright install chromium` |
+| 端口空闲，没有其他 Amadeus 在运行 | 所有启动（`5173` 只影响桌面） | `Get-NetTCPConnection -LocalPort 5173,17777 -State Listen -ErrorAction SilentlyContinue` 无输出即空闲。`5173` 被占用时在 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户是否已有 Amadeus 在运行，不要结束未知进程 |
+| 壁纸辅助程序（要用壁纸时） | 壁纸 | `dotnet --list-sdks` 含 8.x 后运行 `powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly` |
 
 **手动（用户完成，Agent 提示并等待确认）**
 
-| 事项 | 必须手动的原因 |
-|---|---|
-| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 密钥属于用户。可以启动后在 Settings 中填写（加密存储），或由用户自己编辑 `.env` |
-| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 需要用户访问下载页；Google Drive 分卷要先用 `Assemble-Kurisu.ps1` 合并成完整 ZIP |
-| 安装 .NET 8 SDK、NVIDIA 驱动、Windows App Installer（winget） | 系统级安装，需要管理员权限或 UAC 确认 |
-| 已装但未运行的 Microsoft Store 版 Lively 先手动打开一次 | 图形界面操作；否则壁纸 setup 会拒绝重复安装 |
-| 首次进入壁纸时 Lively 安装过程中的 Windows 权限弹窗 | 需要用户点击确认 |
-| 获取 Live2D Cubism Core（用 Live2D 时） | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
-| 安装 0xDC00 Agent 或 LunaTranslator 并完成 hook（用 VN Player 时） | 外部程序的图形界面操作 |
+| 事项 | 适用于 | 必须手动的原因 |
+|---|---|---|
+| 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 用到对应服务时；可启动后再填 | 密钥属于用户。可以启动后在 Settings 中填写（加密存储），或由用户自己编辑 `.env` |
+| 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 本地语音、角色动画 | 需要用户访问下载页；Google Drive 分卷要先用 `Assemble-Kurisu.ps1` 合并成完整 ZIP |
+| 安装 .NET 8 SDK、NVIDIA 驱动、Windows App Installer（winget） | 壁纸、T4 GPU 构建 | 系统级安装，需要管理员权限或 UAC 确认 |
+| 已装但未运行的 Microsoft Store 版 Lively 先手动打开一次 | 壁纸 | 图形界面操作；否则壁纸 setup 会拒绝重复安装 |
+| 首次进入壁纸时 Lively 安装过程中的 Windows 权限弹窗 | 壁纸 | 需要用户点击确认 |
+| 获取 Live2D Cubism Core（用 Live2D 时） | Live2D | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
+| 安装 0xDC00 Agent 或 LunaTranslator 并完成 hook（用 VN Player 时） | VN Player | 外部程序的图形界面操作 |
 
 完成清单后启动：
 
