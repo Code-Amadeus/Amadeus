@@ -299,6 +299,46 @@ def test_pi_startup_rejects_previous_runtime_before_authentication(tmp_path, mon
     assert raised.value.availability["reason"] == "pi_runtime_missing_or_wrong_version"
 
 
+def test_pi_startup_rejects_missing_mcp_bearer_before_authentication(tmp_path, monkeypatch):
+    from agent_host.mcp_connections import McpConnectionSpec
+
+    _installed_pi_runtime(tmp_path, monkeypatch)
+    monkeypatch.delenv("PI_MCP_MISSING_TOKEN", raising=False)
+    connection = McpConnectionSpec(connection_id="fixture", display_name="Fixture", transport="http",
+        enabled=True, provider_ids=("pi",), url="https://mcp.example.test/mcp",
+        bearer_token_env_var="PI_MCP_MISSING_TOKEN")
+
+    def probe(*_args, **_kwargs):
+        pytest.fail("Invalid MCP bindings must not reach authentication")
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent", startup_probe=probe,
+        mcp_connections=(connection,))
+    with pytest.raises(PiStartupUnavailable) as raised:
+        adapter.require_startup_ready()
+    assert raised.value.availability["reason"] == "pi_mcp_configuration_invalid"
+
+
+async def test_pi_native_notifications_are_redacted_diagnostics(pi_host, monkeypatch):
+    from agent_host.mcp_connections import McpConnectionSpec
+
+    adapter, request, events, emit = pi_host
+    adapter.mcp_connections = (McpConnectionSpec(connection_id="fixture", display_name="Fixture",
+        transport="stdio", command="fixture", environment={"TOKEN": "synthetic-secret"}),)
+    finish = FakePi.finish
+
+    def notify(self, *args, **kwargs):
+        self.events.put_nowait({"type": "extension_ui_request", "method": "notify",
+            "message": "Connection failed: synthetic-secret", "notifyType": "error"})
+        finish(self, *args, **kwargs)
+
+    monkeypatch.setattr(FakePi, "finish", notify)
+    assert (await adapter.run(request, "notice", emit)).status == "done"
+    event, = [event for event in events if event.type == "semantic.progress"]
+    assert "synthetic-secret" not in str(event.payload)
+    assert "[redacted]" in event.payload["summary"]
+    assert event.payload["milestone"] == "diagnostic" and not event.payload["verified"]
+
+
 async def test_pi_rejects_concurrent_attachment_to_a_new_live_session(pi_host, monkeypatch):
     adapter, request, events, emit = pi_host
     monkeypatch.setattr(FakePi, "mode", "waiting")

@@ -14,9 +14,10 @@ import sys
 from typing import Any
 
 from agent_host.pi_rpc import PiCommandRejected, PiRpcClient, PiTransportError
+from agent_host.mcp_connections import load_mcp_connections, pi_mcp_servers, redact_mcp_text
 from agent_host.provider_catalog import PI_MANIFEST
 from agent_host.provider_identity import with_parent_conversation_context
-from agent_host.provider_progress import split_progress_stream, with_progress_contract
+from agent_host.provider_progress import progress_payload, split_progress_stream, with_progress_contract
 from agent_host.provider_types import (
     ProviderActivityEvidence, ProviderEvent, ProviderInputDelivery,
     ProviderPermissionResponse, ProviderRunResult, ProviderSessionHandle,
@@ -80,7 +81,7 @@ class PiAdapter:
 
     def __init__(self, *, client_factory=PiRpcClient, node_path=None,
                  agent_dir=None, model_provider=None, model=None, timeout=None,
-                 startup_probe=subprocess.run):
+                 startup_probe=subprocess.run, mcp_connections=None):
         self.client_factory = client_factory
         self.startup_probe = startup_probe
         self.node_path = node_path or settings.PI_NODE_PATH
@@ -88,6 +89,7 @@ class PiAdapter:
         self.model_provider = settings.PI_MODEL_PROVIDER if model_provider is None else model_provider
         self.model = settings.PI_MODEL if model is None else model
         self.timeout = settings.PI_TIMEOUT_S if timeout is None else timeout
+        self.mcp_connections = tuple(load_mcp_connections() if mcp_connections is None else mcp_connections)
         self._runs: dict[str, _Run] = {}
         self._attached: set[str] = set()
 
@@ -100,6 +102,11 @@ class PiAdapter:
         web_package = RUNTIME_DIR / "node_modules/pi-simple-web-tools/package.json"
         if not web_package.is_file() or json.loads(web_package.read_text(encoding="utf-8")).get("version") != "0.1.0":
             raise PiStartupUnavailable("pi_web_component_missing_or_wrong_version")
+        try:
+            pi_mcp_servers(self.mcp_connections, cwd=str(self.agent_dir))
+        except ValueError:
+            raise PiStartupUnavailable("pi_mcp_configuration_invalid",
+                diagnostic="Review Pi bindings and credentials in Settings -> Providers -> MCP, then restart the backend.") from None
         extensions = json.loads(settings.PI_EXTENSIONS_JSON)
         if not isinstance(extensions, list) or any(not isinstance(item, str)
                 or not Path(item).expanduser().is_file() for item in extensions):
@@ -149,7 +156,8 @@ class PiAdapter:
             env.update({"AMADEUS_PI_WORKSPACE": str(cwd), "AMADEUS_PI_ACCESS": access,
                 "AMADEUS_PI_PYTHON": sys.executable,
                 "AMADEUS_PI_WEB_HELPER": str(RUNTIME_DIR.parent / "pi_web_tools.py"),
-                "PI_WEB_TOOLS_CONFIG": str(self.agent_dir / "web-tools.json")})
+                "PI_WEB_TOOLS_CONFIG": str(self.agent_dir / "web-tools.json"),
+                "AMADEUS_PI_MCP_SERVERS": json.dumps(pi_mcp_servers(self.mcp_connections, cwd=str(cwd)))})
         return env
 
     def configuration(self):
@@ -319,6 +327,11 @@ class PiAdapter:
                 # No generic form owner exists in Provider permission responses.
                 # Refuse rather than fabricating a choice or leaving Pi blocked.
                 await run.client.send({"type": "extension_ui_response", "id": key, "cancelled": True})
+            elif event.get("method") == "notify" and str(event.get("message") or "").strip():
+                notice = redact_mcp_text(str(event["message"]), self.mcp_connections)
+                run.milestones += 1
+                await self._emit(run_id, run, "semantic.progress", progress_payload(
+                    "diagnostic", notice, source="pi_native_notification", explicit=False, verified=False))
         elif kind == "extension_error":
             raise PiTransportError("Pi extension failed; execution outcome requires inspection")
         elif kind == "agent_settled":

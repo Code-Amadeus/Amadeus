@@ -214,7 +214,27 @@ async def test_real_pi_keeps_managed_tools_without_ambient_mcp_or_extensions(nat
     }
     assert not mcp_started.exists()
     assert not extension_loaded.exists()
-    assert "mcp_connection" not in adapter.manifest.capabilities.capability_projections
+    assert "mcp_connection" in adapter.manifest.capabilities.capability_projections
+
+
+async def test_real_pi_disposes_native_session_before_process_exit(native_pi, tmp_path, monkeypatch):
+    from config import settings
+
+    adapter, _, _, _ = native_pi
+    closed = tmp_path / "session-closed"
+    extension = tmp_path / "shutdown.ts"
+    extension.write_text("import { writeFileSync } from 'node:fs';\n"
+        "export default function(pi) { pi.on('session_shutdown', async () => {\n"
+        f"writeFileSync({json.dumps(str(closed))}, 'closed');\n"
+        "}); }\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", json.dumps([str(extension)]))
+
+    async def emit(_event):
+        pass
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Reply briefly.", cwd=str(tmp_path)), "close", emit)
+    assert result.status == "done", result
+    assert closed.read_text(encoding="utf-8") == "closed"
 
 
 @pytest.mark.parametrize("access,allow", [("none", False), ("read", False), ("write", False), ("write", True)])

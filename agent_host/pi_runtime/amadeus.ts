@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { Type } from 'typebox'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { fetchAllContent } from 'pi-simple-web-tools/fetch.ts'
+import { registerHostMcp } from './mcp.ts'
 
 export function canonicalPath(value: string): string {
   const absolute = path.resolve(value)
@@ -94,6 +95,7 @@ export default function (pi: ExtensionAPI) {
   const readers = new Set(['read', 'grep', 'find', 'ls'])
   const writers = new Set(['write', 'edit'])
   const web = new Set(['web_fetch', 'web_search', 'web_read', 'open_url', 'news_search'])
+  const mcpTools = registerHostMcp(pi)
   pi.on('tool_call', async (event, ctx) => {
     const name = event.toolName
     if (web.has(name) || name === 'launch_app') return
@@ -115,7 +117,8 @@ export default function (pi: ExtensionAPI) {
       event.input.path = target
       return
     }
-    if (access !== 'write') {
+    // Host-bound external tools require their own approval, not local file writes.
+    if (!mcpTools.has(name) && access !== 'write') {
       return { block: true, reason: 'This conversation cannot execute shell or mutating extension tools' }
     }
     if (!ctx.hasUI || !await ctx.ui.confirm(`Pi tool: ${name}`, JSON.stringify(event.input))) {

@@ -117,8 +117,10 @@ class PiRpcClient:
 
     async def close(self) -> None:
         if self.process is not None and self.process.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                self.process.terminate()
+            # EOF invokes Pi's native session disposal, including MCP teardown.
+            # TerminateProcess on Windows skips those hooks entirely.
+            if self.process.stdin is not None:
+                self.process.stdin.close()
             try:
                 await asyncio.wait_for(self.process.wait(), 5)
             except TimeoutError:

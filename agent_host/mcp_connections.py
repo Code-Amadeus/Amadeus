@@ -227,6 +227,46 @@ def connections_for_provider(
     return tuple(item for item in connections if item.supports_provider(provider_id))
 
 
+def pi_mcp_servers(connections: tuple[McpConnectionSpec, ...], *, cwd: str) -> list[dict[str, Any]]:
+    """Build private native Pi entries; this does not launch or authorize tools."""
+    from pathlib import Path
+    from config.subprocess_environment import isolated_child_environment
+
+    entries: list[dict[str, Any]] = []
+    namespaces: set[str] = set()
+    for connection in connections_for_provider(connections, "pi"):
+        namespace = connection.connection_id.replace("-", "_")
+        if namespace in namespaces:
+            raise ValueError("Pi MCP connection ids collide after native namespace normalization")
+        namespaces.add(namespace)
+        config: dict[str, Any] = {"exposure": "direct"}
+        if connection.transport == "stdio":
+            config.update(command=connection.command, args=list(connection.arguments),
+                cwd=str(Path(connection.cwd).resolve()) if connection.cwd else cwd,
+                env=isolated_child_environment(extra=connection.environment))
+        else:
+            headers: dict[str, str] = {}
+            if key := connection.bearer_token_env_var:
+                token = connection.environment.get(key) or os.environ.get(key, "")
+                if not token:
+                    raise ValueError("Pi MCP configured bearer token is unavailable")
+                headers["Authorization"] = f"Bearer {token}"
+            config.update(url=connection.url, headers=headers)
+        entries.append({"name": connection.connection_id, "config": config,
+                        "source": "Amadeus Host", "scope": "extension"})
+    return entries
+
+
+def redact_mcp_text(text: str, connections: tuple[McpConnectionSpec, ...]) -> str:
+    """Remove configured connection credentials from native diagnostics."""
+    secrets = [value for connection in connections for value in connection.environment.values()]
+    secrets.extend(os.environ.get(connection.bearer_token_env_var, "")
+                   for connection in connections if connection.bearer_token_env_var)
+    for secret in sorted(filter(None, secrets), key=len, reverse=True):
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
 def _toml_literal(value: object) -> str:
     # JSON strings and arrays are valid TOML values and give deterministic
     # escaping without adding another serializer dependency.
