@@ -80,6 +80,39 @@ If the helper is also killed, the next managed start recovers the journal before
 taking another snapshot. Failed restoration retains the journal and reports an
 error. It is never marked successful merely because a command was dispatched.
 
+The journal records `MountUnconfirmed` before calling `SetWallpaper`, because
+the host can apply the scene and then time out while confirming it. A failed
+mount keeps the original error and journal; the same Session's automatic
+`finally` cleanup does not retry restoration or stop the owned host. A later
+managed start or explicit `recover` uses a new Session. While that transaction
+is unconfirmed, an empty report for the target display cannot confirm recovery:
+the journal stays pending and the host is retained until that display has
+usable wallpaper evidence. A layout value is not mount evidence. Once reliable
+scene evidence is available, the existing restoration and user-choice rules
+apply, including retries after a further restoration failure.
+
+日志在调用 `SetWallpaper` 前持久化 `MountUnconfirmed`，因为宿主可能已挂载场景，
+却在确认时超时。挂载失败保留原始错误和日志；同一 Session 的自动 `finally` 收尾
+不再尝试恢复或停止自有宿主。后续受控启动或显式 `recover` 创建新 Session 重试。
+在该事务尚未确认时，目标显示的空报告不能作为恢复完成的证据，布局值也不能替代
+挂载证据；日志保持 pending，宿主保留。取得可靠场景证据后仍沿用原恢复、用户选择
+优先和恢复失败后重试的规则。
+
+This is conservative handling of an uncertain transaction, not a repair to
+Lively's reporting protocol. A truly empty desktop and an unreported mounted
+scene cannot be distinguished from that empty stream alone; manual recovery
+may remain pending until the reporting problem is repaired. Normal cleanup of
+a confirmed mount can still restore an empty desktop. Contract tests separate
+the fake host's actual wallpapers from its reported wallpapers and exercise
+the caller's repeated `finally`, new-Session recovery and original-error
+preservation. No real Lively mounting is established by those tests.
+
+这只修复 Amadeus 对不确定事务的收尾，不修复 Lively 的报告协议。仅凭同一空流无法
+区分真实空桌面和未报告的已挂载场景；报告问题修复前，人工恢复也可能继续 pending。
+已确认挂载的正常收尾仍允许恢复为空桌面。契约测试分离 fake 宿主的实际场景和报告
+场景，覆盖调用方重复 `finally`、新 Session 恢复及原错误保留，不代表真实 Lively
+挂载已通过。
+
 If Lively must be started with its screenshot-to-wallpaper options temporarily
 disabled, `Lively Wallpaper\Amadeus.launch-settings.json` backs up just those
 two launch settings until RPC can restore them. This is not a second desktop

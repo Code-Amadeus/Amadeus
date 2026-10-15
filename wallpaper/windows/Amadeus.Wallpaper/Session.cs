@@ -6,7 +6,8 @@ public record DesktopItem(string Monitor, string Path);
 public record HostOptions(int Arrangement, int Browser, bool DesktopImage, bool LockImage);
 public record ProcessIdentity(int Id, long Started);
 public record Snapshot(string Project, string Monitor, HostOptions Options,
-    List<DesktopItem> Wallpapers, ProcessIdentity? OwnedProcess, bool Mounted = false);
+    List<DesktopItem> Wallpapers, ProcessIdentity? OwnedProcess, bool Mounted = false,
+    bool MountUnconfirmed = false);
 
 public interface IWallpaperHost
 {
@@ -24,6 +25,7 @@ public interface IWallpaperHost
 public sealed class Session(IWallpaperHost host, string journal)
 {
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    bool mountFailed;
     public static bool SamePath(string left, string right) =>
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
@@ -34,23 +36,30 @@ public sealed class Session(IWallpaperHost host, string journal)
         try
         {
             await host.SetSessionOptions();
+            Save(snapshot with { MountUnconfirmed = true });
             await host.SetWallpaper(new(snapshot.Monitor, snapshot.Project));
-            Save(snapshot with { Mounted = true });
+            Save(snapshot with { Mounted = true, MountUnconfirmed = false });
         }
         catch
         {
-            await Restore();
+            // 调用可能已生效；保留原错误与日志，阻止调用方 finally 再次自动恢复。
+            mountFailed = true;
             throw;
         }
     }
 
     public async Task Restore(ProcessIdentity? restartedProcess = null)
     {
+        if (mountFailed) return;
         if (!File.Exists(journal)) return;
         var snapshot = JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(journal))
             ?? throw new InvalidDataException("Invalid wallpaper recovery journal.");
         var current = await host.GetWallpapers();
         var options = await host.GetOptions();
+        // 仅未确认的挂载事务拒绝把目标显示的空报告当成恢复证据。
+        if (snapshot.MountUnconfirmed && !current.Any(x => x.Monitor == snapshot.Monitor))
+            throw new InvalidOperationException("Wallpaper mount outcome is unconfirmed; recovery journal retained until the target display can be observed.");
+        snapshot = snapshot with { MountUnconfirmed = false };
         var ours = current.Where(x => SamePath(x.Path, snapshot.Project)).ToList();
         // A user's new layout/selection takes precedence over the old snapshot.
         var layoutUnchanged = options.Arrangement == snapshot.Options.Arrangement;
