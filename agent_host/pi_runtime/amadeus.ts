@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { Type } from 'typebox'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { fetchAllContent } from 'pi-simple-web-tools/fetch.ts'
+import { registerHostMcp } from './mcp.ts'
 
 export function canonicalPath(value: string): string {
   const absolute = path.resolve(value)
@@ -94,15 +95,20 @@ export default function (pi: ExtensionAPI) {
   const readers = new Set(['read', 'grep', 'find', 'ls'])
   const writers = new Set(['write', 'edit'])
   const web = new Set(['web_fetch', 'web_search', 'web_read', 'open_url', 'news_search'])
+  const mcpTools = registerHostMcp(pi)
   pi.on('tool_call', async (event, ctx) => {
     const name = event.toolName
     if (web.has(name) || name === 'launch_app') return
     if (readers.has(name) || writers.has(name)) {
-      const target = path.resolve(root, String(event.input.path || '.'))
+      // Tool-name sets route this branch at runtime; TypeScript cannot narrow
+      // the native/custom input union through Set.has. Keep the same mutable
+      // object, with unknown-valued properties rather than asserting a schema.
+      const input: Record<string, unknown> = event.input
+      const target = path.resolve(root, String(input.path || '.'))
       // User-selected Skill instructions/resources are inherent read inputs,
       // never writable workspace grants or permission for neighboring packages.
       if (readers.has(name) && skillRoots.some(skillRoot => withinWorkspace(target, skillRoot))) {
-        event.input.path = target
+        input.path = target
         return
       }
       if (access === 'none' || (writers.has(name) && access !== 'write')) {
@@ -112,13 +118,16 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: 'The path is outside the Host-assigned workspace' }
       }
       // Freeze the same absolute path that the Host gate inspected.
-      event.input.path = target
+      input.path = target
       return
     }
-    if (access !== 'write') {
+    // Host-bound external tools require their own approval, not local file writes.
+    const mcpLabel = mcpTools.get(name)
+    if (!mcpLabel && access !== 'write') {
       return { block: true, reason: 'This conversation cannot execute shell or mutating extension tools' }
     }
-    if (!ctx.hasUI || !await ctx.ui.confirm(`Pi tool: ${name}`, JSON.stringify(event.input))) {
+    const title = mcpLabel ? `MCP tool: ${mcpLabel(event.input)}` : `Pi tool: ${name}`
+    if (!ctx.hasUI || !await ctx.ui.confirm(title, JSON.stringify(event.input))) {
       return { block: true, reason: 'The Host did not approve this operation' }
     }
   })

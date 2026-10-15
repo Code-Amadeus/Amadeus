@@ -130,6 +130,33 @@ def test_journal_compaction_bounds_runs_and_events() -> None:
         )
 
 
+def test_runtime_notice_survives_journal_reload_and_compaction(tmp_path) -> None:
+    path = tmp_path / "activity.jsonl"
+    journal = ProviderActivityJournal(path)
+    notice = _event("run-notice", 1, event_type="runtime.notice")
+    notice["payload"] = {
+        "message": "Fixture connection skipped. Review Settings -> Providers -> MCP. token=synthetic-secret",
+        "level": "warning",
+        "source": "pi_native_notification",
+    }
+    assert journal.record_event(notice) is True
+    expected = journal.list_runs("session-one")
+    assert expected[0]["status"] == "running"
+    assert expected[0]["events"][0]["type"] == "runtime.notice"
+    assert expected[0]["events"][0]["payload"] == {
+        **notice["payload"],
+        "message": notice["payload"]["message"].replace("synthetic-secret", "•••"),
+    }
+    # First exercise the append-only event path used after an abrupt restart,
+    # then the compacted snapshot path written on normal shutdown.
+    assert ProviderActivityJournal(path).list_runs("session-one") == expected
+    journal.close()
+    restored = ProviderActivityJournal(path)
+    assert restored.list_runs("session-one") == expected
+    assert restored.list_runs("another-session") == []
+    assert "synthetic-secret" not in path.read_text(encoding="utf-8")
+
+
 def test_read_api_returns_the_persisted_session_projection() -> None:
     async def scenario(path: Path) -> None:
         journal = ProviderActivityJournal(path)

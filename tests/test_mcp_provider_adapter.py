@@ -290,6 +290,8 @@ def test_non_read_only_mcp_tool_uses_existing_host_permission_lane() -> None:
         )
         requested = await _wait_for_event(record, "permission.requested")
         permission = requested["payload"]["permissionRequest"]
+        assert permission["capability"] == "mcp.tool.call"
+        assert permission["action"] == "call_tool"
         assert permission["tool"] == "reserve_part"
         assert permission["argument_keys"] == ["part_id"]
         resolved = await runtime.resolve_permission(

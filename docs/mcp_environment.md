@@ -1,18 +1,20 @@
-# Manual MCP connection-test environment
+# MCP connection environment and approvals
 
-In the current mainline, **Settings → Providers → MCP → Test** is the only
-Host-owned consumer of manually configured stdio MCP connections. Its child
-process now receives a platform environment allowlist plus the connection's
+**Settings → Providers → MCP → Test** and Pi's bound stdio MCP connections
+use a platform environment allowlist plus the connection's
 explicit encrypted bindings, instead of arbitrary Host environment credentials.
 A service that relied on a Host token may therefore fail this probe even while
 it continues to work through Codex or ACP's independently launched MCP service.
 
 Saved version-1 records, commands, arguments and working directories are unchanged.
 Codex explicitly forwards configured environment names to its stdio MCP children;
-ACP launch behavior is unchanged. Pi does not accept manual MCP connection
-bindings on main; its built-in web search uses HTTP and is unaffected by the
-stdio environment policy. Later Host-owned MCP consumers (for example extension
-execution paths) can use the same helper, but this PR does not introduce them.
+ACP launch behavior is unchanged. Pi projects enabled connections bound to it
+from the same Host registry, including extension-package contributions. Its
+built-in web search uses HTTP and is unaffected by the stdio environment policy.
+Pi's native client receives resolved literal values, without its own environment
+substitution or command expansion. HTTP bearer bindings use the explicit
+connection value before the named Host environment variable; native Pi OAuth
+accounts are not imported.
 
 ## Migrating a connection test
 
@@ -40,9 +42,28 @@ A real local stdio regression loads an original manual record bound to Codex,
 verifies an actionable probe failure with an ambient-only token, then verifies
 discovery after adding an explicit binding. A direct call through the shared
 Host helper verifies the bound child environment, cwd and absence of an unrelated
-Host secret; it is not a claim that mainline Pi calls this manual connection.
+Host secret. Pi's real-runtime tests separately exercise bound stdio/HTTP calls,
+literal credentials, isolation, resources, approvals and native session cleanup.
 Desktop tests cover encrypted persistence and restart projection. Nested-error
 and Windows/POSIX tests cover redaction, useful causes and override semantics.
+
+## Pi tool approvals
+
+Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
+when a server marks them read-only. This permission is independent of local
+workspace write access, including project-bound read-only cooperative chats.
+Pi and the standard MCP Provider use `mcp.tool.call` / `call_tool` for tool-call
+approval. Codex's server input requests retain the separate `mcp.elicitation`
+contract. Direct-tool cards retain the connection display name and original tool
+name; resource cards resolve the selected server's display name from the Host
+snapshot. Unfiltered listings explicitly identify all bound connections. Labels
+are normalized to one bounded line without changing execution identifiers or
+arguments.
+Approving a connector operation does not grant local
+file writes or shell execution, and cancellation releases pending confirmations.
+Pi closes its native session before terminating the process during normal
+completion/cancellation. See [Pi integration](pi-rpc-provider.md) for connection
+ownership, authentication scope and abnormal-exit limitations.
 
 
 ## Codex MCP confirmation requests

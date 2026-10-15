@@ -142,7 +142,7 @@ PI_MANIFEST = ProviderManifest(
         # the Host's latest-revision-wins replacement steering contract.
         steering="next_turn", append_input=True, interaction="bidirectional",
         event_model="canonical+native",
-        capability_projections=("agent_skill",),
+        capability_projections=("agent_skill", "mcp_connection"),
     ),
 )
 

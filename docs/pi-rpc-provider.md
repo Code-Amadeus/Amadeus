@@ -2,7 +2,7 @@
 
 Pi is the default daily-task agent reached through its native stdin/stdout JSONL RPC.
 It is not an ACP bridge and does not replace the Python Host. The runtime is
-pinned to `@earendil-works/pi-coding-agent@0.86.1`.
+pinned to `@earendil-works/pi-coding-agent@1.2.0`.
 
 ## Install and configure
 
@@ -109,9 +109,11 @@ changes. Registered compatible ACP agents appear in the role dropdowns too.
 Advanced cooperative policy overrides and trusted Pi extension paths remain
 startup configuration, with no dedicated GUI editor.
 MCP connections are configurable in the GUI only for adapters advertising the
-`mcp_connection` projection (currently Codex and compatible ACP agents). Pi's
-bundled anonymous web search reuses the MCP client internally; this does not
-advertise arbitrary MCP projection support for Pi or OpenClaw.
+`mcp_connection` projection (Codex, Pi and compatible ACP agents). Enable a
+connection, bind it to Pi, then save and restart the backend. Pi projects the
+same Host registry, including bound extension-package MCP contributions.
+OpenClaw does not advertise this projection. Pi's bundled anonymous web search
+continues to use its existing Host MCP bridge independently of these bindings.
 
 - `ProviderRuntime`, Work Ledger, control admission and task/session identities
   remain unchanged. Bootstrap registers one ordinary `pi` provider.
@@ -199,17 +201,157 @@ arbitrary code, and approved shell commands have process-user access. Do not
 load untrusted extensions or treat the path checks as isolation from hostile
 code. No Pi process runs in the Electron UI process.
 
+## Pi 1.2.0 and Host-managed MCP
+
+The managed runtime retains the existing file/web tools and adds direct tools
+and resources only from enabled MCP connections bound to Pi. The Host supplies
+the configuration in the trusted child environment, never command-line arguments
+or a second persisted registry. Pi's public `createMcpExtension` and MCP client
+own discovery, schema/result handling and connection shutdown.
+
+Ambient extensions and Pi's built-in discovery remain disabled by
+`--no-extensions`; project-local files remain disabled by `--no-approve`.
+Neither global/project `mcp.json` nor native extension server registrations can
+override or add to the Host snapshot. Explicit trusted native extension code
+still loads under `PI_EXTENSIONS_JSON`, with the same arbitrary-code trust
+boundary as before. Codemode and tool search are not part of the managed
+default tool set. No connection binding means the original tool set.
+
+Every projected MCP tool or resource call uses the existing Host allow-once/deny
+card, including tools annotated read-only. A server's annotation does not grant
+permission. This approval is independent of local workspace write access: a
+workspace-less or read-only Work or cooperative chat can use an approved connector without acquiring
+file or shell rights. File/path checks and the write-access-plus-approval gate
+for shell and other extension tools are unchanged. Denial and cancellation do
+not authorize a later call.
+The trusted MCP gate uses the existing `mcp.tool.call` capability and `call_tool`
+action, shared with the standard MCP Provider. The Host applies the same
+workspace-independent approval policy to that capability; generic tool
+permissions remain denied in read-only cooperative contexts. Codex's
+`mcp.elicitation` remains a distinct server input/confirmation request and does
+not receive this tool-call exception. The earlier pre-release
+`mcp.tool.execute` spelling is superseded, without an alias; restart the backend
+when updating this integration so active permission owners use the same contract.
+
+Direct-tool approval cards show the Host connection display name and original
+MCP tool name, even when Pi hashes its model-facing identifier. The three resource
+operations resolve their `server` argument against the same Host snapshot and
+show its display name and ID. An unfiltered list identifies all bound connections
+as its scope with a bounded name preview; an unknown ID is not attributed to a
+known connection. Approval labels replace control/format characters and line
+breaks with spaces, and are capped at 320 Unicode code points (plus the fixed
+title prefix), with an ellipsis when shortened. Execution names and arguments
+are never rewritten by this display formatting.
+Enabling and binding a stdio connection authorizes starting its configured
+executable when the Work connects. Per-call approval does not sandbox that
+server's startup code; only bind trusted services.
+
+Stdio servers receive the platform allowlist from `isolated_child_environment`
+plus only their own explicit environment bindings. Values remain literal;
+`${...}` and `!command` are not expanded by Pi. HTTP connections use anonymous
+access or the configured bearer token (the explicit connection value takes
+precedence over its named Host environment variable). Pi model credentials,
+other connections' values and native Pi OAuth accounts are not implicitly
+forwarded. Interactive MCP OAuth and native `/mcp` configuration are not exposed
+through this adapter; configure authentication through Host connection settings.
+
+Missing bearer tokens skip the affected connection; native namespace collisions
+skip all ambiguous connections. Other connections and Pi remain available. These
+errors and connection failures appear as redacted `runtime.notice` status entries
+in provider activity, with Host Settings guidance. They neither count as task
+progress nor claim tool execution or a diagnosed task failure.
+Notices are retained in the bounded Provider activity journal so session reloads
+and backend restarts can restore the same activity entries.
+
+Each run (including each cooperative turn) starts a fresh Pi process and the
+bound services. This incurs service startup/discovery cost on every run; connections
+are not pooled across turns. The first prompt waits at most 3 seconds for direct
+tools, down from Pi's 10-second default. Connected services contribute tools to
+the first model request; slower services can become available on later model
+turns within the same run, and a runtime notice reports that they are still
+connecting. A short run may finish before a slow service becomes usable. This
+budget does not change the native timeout for an actual MCP request.
+
+Connections reload from the current Host snapshot on a new run,
+including when restoring an existing native session. Disabling or unbinding a
+connection takes effect after the backend restart required by Host settings.
+
+Normal completion/cancellation closes Pi's stdin and waits for native session
+disposal before force termination is considered. Tests verify direct server
+exit and sequential-session cleanup. This is not an OS sandbox or a guarantee
+that arbitrary descendants survive neither an abrupt Host/Pi crash nor forced
+termination; the native transport owns its process handling.
+
+Keep `package.json`, `package-lock.json` and the adapter's startup version check
+in sync. Install with `npm ci --ignore-scripts` in `agent_host/pi_runtime` (or the
+normal desktop installation), then restart the backend. Pi 1.2.0 no longer ships
+an npm shrinkwrap; the repository lockfile pins the complete tested tree. The
+Node requirement remains 22.19 or newer. Preserve a copy of the isolated Pi
+session/configuration directory before upgrading a deployment; restoring a
+1.2.0-written session with 0.86.1 is not a supported rollback guarantee.
+
+The scope and acceptance boundary are recorded in
+[issue #222](https://github.com/Code-Amadeus/Amadeus/issues/222). Codemode/tool
+search and interactive OAuth require separate integration and acceptance work;
+MCP schemas remain on the bound Work Provider and are not published to Main Chat.
+Pi may truncate large direct results or return temporary paths for binary
+resources. Those paths do not grant extra filesystem access; this integration
+does not open a global temporary directory to the file tools.
+
 ## Validation
 
 ```powershell
-.venv/Scripts/python.exe -m pytest tests/test_pi_provider.py tests/test_pi_runtime.py tests/test_pi_web_tools.py
+npm ci --ignore-scripts --prefix agent_host/pi_runtime
+npm --prefix agent_host/pi_runtime run typecheck
+.venv/Scripts/python.exe -m pytest tests/test_pi_provider.py tests/test_pi_runtime.py tests/test_pi_mcp.py tests/test_pi_web_tools.py tests/test_skill_pi_runtime.py
 ```
+
+The native extension has its own pinned TypeScript compiler and strict, no-emit
+configuration (`tsconfig.typecheck.json`). It checks every first-party `.ts`
+entry and imported TypeScript source, including the web component. As in the
+Electron configuration, third-party declaration files use `skipLibCheck`; no
+source checks are suppressed. Electron's normal `npm run build` invokes this
+check through `check:pi`, so Windows and Linux build CI cover the native extension.
+
+The web component's optional `playwright` import needs declarations even when
+the runtime package is absent. Only the type-check configuration maps that name
+to the pinned development dependency `playwright-core`, whose declarations are
+[re-exported by Playwright itself](https://github.com/microsoft/playwright/blob/v1.61.1/packages/playwright/index.d.ts).
+This does not change runtime module resolution, install `playwright`, download
+browser binaries, or enable browser rendering. `@types/turndown` supplies the
+web parser's missing declarations and `@types/node` matches the supported Node
+22 line. The real Pi regression includes a client-rendered page that must still
+report the missing optional browser fallback, while ordinary HTTP article reads
+remain supported. Production runtime installs can omit development dependencies;
+type checking and source builds require them.
 
 The first suite checks acknowledgement uncertainty, correlation, permissions,
 cancellation and session identity using deterministic protocol peers. The second
 starts the real pinned Pi CLI against a local mock model endpoint to test file
-tools, native extensions, permission denial and on-disk session restoration.
+tools, explicit versus ambient extensions, disabled ambient MCP discovery, Host
+approval/denial, workspace boundaries and on-disk session restoration. The Skill
+suite covers native instruction/resource reads, continuation and stale bindings.
 It skips when the optional npm runtime is absent; it uses no paid model calls.
+The MCP suite uses synthetic stdio and loopback HTTP services to check connection
+binding, literal credentials, independent approvals, denial/cancellation,
+resources, connection errors and restored-session cleanup. Windows Python CI
+installs the pinned runtime before running these suites.
+Cooperative ingress tests cover exact approval ownership, read-only MCP approval,
+local shell denial and unchanged workspace access. The MCP suite also checks
+per-connection configuration failures, original tool labels after native hashing,
+single-server and unfiltered resource approval scopes, label normalization without
+rewriting execution identifiers, and a hanging server's bounded first-prompt delay.
+Standard MCP Provider and Pi tests assert the shared permission capability/action;
+cooperative tests reject shell, generic, obsolete and elicitation capabilities
+under the read-only tool-call policy.
+
+Synthetic captures using the real Electron activity-card component show the
+notice and approval text [before](evidence/pi-mcp-2026-10-15/before.png) and
+[after](evidence/pi-mcp-2026-10-15/after.png) the audit fixes. They use fixture
+events and no real credentials or sessions.
+Resource cards have separate [before](evidence/pi-mcp-2026-10-15/resources-before.png)
+and [after](evidence/pi-mcp-2026-10-15/resources-after.png) captures showing selected
+connections and unfiltered list scope.
 
 For an opt-in real-model run that creates files and opens real browser/Notepad
 windows on Windows:

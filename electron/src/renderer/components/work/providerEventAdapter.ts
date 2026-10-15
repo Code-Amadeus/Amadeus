@@ -113,6 +113,7 @@ function signalImportance(event: ProviderEvent, phase: WorkSignalPhase): WorkSig
 }
 
 function signalTitle(phase: WorkSignalPhase, event: ProviderEvent): string {
+  if (event.type === 'runtime.notice') return 'Runtime notice'
   const tool = toolName(event)
   if (phase === 'inspect') return tool ? `Inspected with ${tool}` : 'Inspected workspace'
   if (phase === 'edit') return 'Changed workspace files'

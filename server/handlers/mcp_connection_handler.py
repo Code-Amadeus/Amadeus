@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections.abc import Callable, Iterator
 from contextlib import AbstractAsyncContextManager
 from itertools import islice
 from typing import Any
 
-from agent_host.mcp_connections import McpConnectionSpec, open_mcp_connection
+from agent_host.mcp_connections import McpConnectionSpec, open_mcp_connection, redact_mcp_text
 from server.protocol import Method
 from server.ws_handler import RequestHandler
 
@@ -118,11 +117,7 @@ def _error_leaves(exc: BaseException) -> Iterator[BaseException]:
 def _safe_error(exc: Exception, connection: McpConnectionSpec) -> str:
     text = '; '.join(dict.fromkeys(
         str(item).strip() or type(item).__name__ for item in islice(_error_leaves(exc), 3)))
-    secrets = list(connection.environment.values())
-    if connection.transport == 'http' and connection.bearer_token_env_var:
-        secrets.append(os.environ.get(connection.bearer_token_env_var, ''))
-    for secret in sorted(filter(None, secrets), key=len, reverse=True):
-        text = text.replace(secret, "[redacted]")
+    text = redact_mcp_text(text, (connection,))
     hint = (
         '\nHost connection tests do not inherit Host credentials. If this server needs '
         'environment variables, add them in Settings → Providers → MCP → Encrypted '

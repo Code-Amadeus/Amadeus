@@ -38,7 +38,7 @@ jobs:
       - name: Test renderer projections
         run: npm test
 
-      - name: Typecheck and build renderer
+      - name: Typecheck Pi extensions and build renderer
         run: npm run build
 
       - name: Test native wallpaper composer interactions

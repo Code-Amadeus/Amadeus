@@ -11,7 +11,8 @@
     "test": "npm run check:config && node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "node --experimental-strip-types scripts/dev.mjs",
     "check:extension-sdk": "node --experimental-strip-types scripts/check-extension-sdk.mjs",
-    "build": "npm run check:config && npm run check:extension-sdk && tsc && vite build",
+    "check:pi": "npm --prefix ../agent_host/pi_runtime run typecheck",
+    "build": "npm run check:config && npm run check:extension-sdk && npm run check:pi && tsc && vite build",
     "electron:dev": "npm run check:extension-sdk && node --experimental-strip-types scripts/dev.mjs --electron",
     "electron:build": "npm run build && electron-builder"
   },

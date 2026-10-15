@@ -4591,11 +4591,15 @@ class CooperativeChatManager:
                 normalized_options.append(option)
         if "deny" not in normalized_options:
             normalized_options.append("deny")
+        capability = str(source.get("capability") or "tool.execute")[:120]
+        # MCP execution is an external capability, not a workspace write grant.
+        # Unknown/generic tool permissions keep the read-only deny policy.
         ask_user = (self.permission_policy == "ask"
-            and child.requirements.workspace_access != "read")
+            and (child.requirements.workspace_access != "read"
+                 or capability == "mcp.tool.call"))
         permission = self.permission_store.create_cooperative_permission_request(
             session_id=session_id, context_id=context_id, provider_run_id=run_id,
-            capability=str(source.get("capability") or "tool.execute")[:120],
+            capability=capability,
             action=str(source.get("action") or "invoke_tool")[:120],
             scope_paths=scope_paths,
             reason=str(source.get("reason") or "Explicit user approval is required.")[:1000],
@@ -4758,7 +4762,8 @@ class CooperativeChatManager:
                 or metadata.get("session_id") != session_id
                 or metadata.get("cooperative_context_id") != child.child_id):
             return {"ok":False, "error":"cooperative_permission_run_not_current"}
-        if allow and child.requirements.workspace_access == "read":
+        if (allow and child.requirements.workspace_access == "read"
+                and permission.capability != "mcp.tool.call"):
             return {"ok":False, "error":"cooperative_permission_read_only_context"}
         if allow and "allow_once" not in permission.options:
             return {"ok":False, "error":"cooperative_permission_option_not_allowed"}

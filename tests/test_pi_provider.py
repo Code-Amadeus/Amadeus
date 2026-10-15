@@ -285,6 +285,66 @@ def test_pi_startup_rejects_missing_selected_model_credentials(tmp_path, monkeyp
     assert "Settings -> Models" in raised.value.availability["diagnostic"]
 
 
+def test_pi_startup_rejects_previous_runtime_before_authentication(tmp_path, monkeypatch):
+    runtime = _installed_pi_runtime(tmp_path, monkeypatch)
+    package = runtime / "node_modules/@earendil-works/pi-coding-agent/package.json"
+    package.write_text(json.dumps({"version": "0.86.1"}), encoding="utf-8")
+
+    def probe(*_args, **_kwargs):
+        pytest.fail("An incompatible runtime must not reach authentication")
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent", startup_probe=probe)
+    with pytest.raises(PiStartupUnavailable) as raised:
+        adapter.require_startup_ready()
+    assert raised.value.availability["reason"] == "pi_runtime_missing_or_wrong_version"
+
+
+def test_pi_startup_remains_available_with_missing_mcp_bearer(tmp_path, monkeypatch):
+    from agent_host.mcp_connections import McpConnectionSpec
+
+    _installed_pi_runtime(tmp_path, monkeypatch)
+    monkeypatch.delenv("PI_MCP_MISSING_TOKEN", raising=False)
+    connection = McpConnectionSpec(connection_id="fixture", display_name="Fixture", transport="http",
+        enabled=True, provider_ids=("pi",), url="https://mcp.example.test/mcp",
+        bearer_token_env_var="PI_MCP_MISSING_TOKEN")
+
+    def probe(*_args, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"status": "ready"}))
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent", startup_probe=probe,
+        mcp_connections=(connection,))
+    adapter.require_startup_ready()
+    projected = json.loads(adapter._child_environment(cwd=tmp_path)["AMADEUS_PI_MCP_SERVERS"])
+    assert projected["servers"] == []
+    assert "bearer token is unavailable" in projected["errors"][0]
+
+
+async def test_pi_native_notifications_are_redacted_without_task_progress(pi_host, monkeypatch):
+    from agent_host.mcp_connections import McpConnectionSpec
+    from server.work_semantic_progress import semantic_progress_fact
+
+    adapter, request, events, emit = pi_host
+    adapter.mcp_connections = (McpConnectionSpec(connection_id="fixture", display_name="Fixture",
+        transport="stdio", command="fixture", environment={"TOKEN": "synthetic-secret"}),)
+    finish = FakePi.finish
+
+    def notify(self, *args, **kwargs):
+        self.events.put_nowait({"type": "extension_ui_request", "method": "notify",
+            "message": "Connection failed: synthetic-secret", "notifyType": "error"})
+        finish(self, *args, **kwargs)
+
+    monkeypatch.setattr(FakePi, "finish", notify)
+    result = await adapter.run(request, "notice", emit)
+    assert result.status == "done"
+    assert result.activity_evidence.progress_milestones == 0
+    assert not any(event.type == "semantic.progress" for event in events)
+    event, = [event for event in events if event.type == "runtime.notice"]
+    assert "synthetic-secret" not in str(event.payload)
+    assert "[redacted]" in event.payload["message"]
+    assert event.payload["level"] == "error"
+    assert semantic_progress_fact(event.type, event.payload) is None
+
+
 async def test_pi_rejects_concurrent_attachment_to_a_new_live_session(pi_host, monkeypatch):
     adapter, request, events, emit = pi_host
     monkeypatch.setattr(FakePi, "mode", "waiting")

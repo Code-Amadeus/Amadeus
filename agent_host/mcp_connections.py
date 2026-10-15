@@ -227,6 +227,51 @@ def connections_for_provider(
     return tuple(item for item in connections if item.supports_provider(provider_id))
 
 
+def pi_mcp_config(connections: tuple[McpConnectionSpec, ...], *, cwd: str) -> dict[str, Any]:
+    """Project valid bindings and visible per-connection errors into Pi's config."""
+    from pathlib import Path
+    from config.subprocess_environment import isolated_child_environment
+
+    entries: list[dict[str, Any]] = []
+    errors: list[str] = []
+    bound = connections_for_provider(connections, "pi")
+    namespaces = [connection.connection_id.replace("-", "_") for connection in bound]
+    for connection in bound:
+        label = f"{connection.display_name} ({connection.connection_id})"
+        namespace = connection.connection_id.replace("-", "_")
+        if namespaces.count(namespace) > 1:
+            # Do not pick an arbitrary owner for an ambiguous native namespace.
+            errors.append(f"{label}: connection id collides after native namespace normalization; connection skipped")
+            continue
+        config: dict[str, Any] = {"exposure": "direct"}
+        if connection.transport == "stdio":
+            config.update(command=connection.command, args=list(connection.arguments),
+                cwd=str(Path(connection.cwd).resolve()) if connection.cwd else cwd,
+                env=isolated_child_environment(extra=connection.environment))
+        else:
+            headers: dict[str, str] = {}
+            if key := connection.bearer_token_env_var:
+                token = connection.environment.get(key) or os.environ.get(key, "")
+                if not token:
+                    errors.append(f"{label}: configured bearer token is unavailable; connection skipped")
+                    continue
+                headers["Authorization"] = f"Bearer {token}"
+            config.update(url=connection.url, headers=headers)
+        entries.append({"name": connection.connection_id, "displayName": connection.display_name, "config": config,
+                        "source": "Amadeus Host", "scope": "extension"})
+    return {"servers": entries, "errors": errors, "autoEnableCodemode": False}
+
+
+def redact_mcp_text(text: str, connections: tuple[McpConnectionSpec, ...]) -> str:
+    """Remove configured connection credentials from native diagnostics."""
+    secrets = [value for connection in connections for value in connection.environment.values()]
+    secrets.extend(os.environ.get(connection.bearer_token_env_var, "")
+                   for connection in connections if connection.bearer_token_env_var)
+    for secret in sorted(filter(None, secrets), key=len, reverse=True):
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
 def _toml_literal(value: object) -> str:
     # JSON strings and arrays are valid TOML values and give deterministic
     # escaping without adding another serializer dependency.

@@ -6,6 +6,7 @@ checks. They exercise the actual native extension and RPC session format.
 from dataclasses import replace
 import json
 import shutil
+import sys
 
 from aiohttp import web
 import pytest
@@ -65,6 +66,12 @@ async def native_pi(tmp_path):
             '<h1>Requested article</h1><p>' + 'Author Chen reports the verified article fact. ' * 40
             + '</p></article></body></html>', content_type='text/html')
     app.router.add_get('/article', article)
+    async def client_only(_):
+        return web.Response(text='<html><body>Loading<script>'
+            'document.body.textContent="SYNTHETIC-BROWSER-ONLY";'
+            '</script><script></script><script></script><script></script></body></html>',
+            content_type='text/html')
+    app.router.add_get('/client-only', client_only)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '127.0.0.1', 0)
@@ -177,6 +184,126 @@ async def test_real_pi_workspace_and_permission_policy(native_pi, tmp_path, acce
         assert any(event.type == "permission.requested" for event in events)
 
 
+async def test_real_pi_keeps_managed_tools_without_ambient_mcp_or_extensions(native_pi, tmp_path):
+    adapter, requests, _, _ = native_pi
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    mcp_started = tmp_path / "mcp-started"
+    extension_loaded = tmp_path / "extension-loaded"
+    server = tmp_path / "ambient_server.py"
+    server.write_text(f"from pathlib import Path\nPath({str(mcp_started)!r}).touch()\n", encoding="utf-8")
+    for directory in (adapter.agent_dir, workspace / ".pi"):
+        directory.mkdir(exist_ok=True)
+        (directory / "mcp.json").write_text(json.dumps({"mcpServers": {
+            "ambient": {"command": sys.executable, "args": [str(server)], "exposure": "direct"},
+        }}), encoding="utf-8")
+        (directory / "settings.json").write_text(json.dumps({
+            "extensions": ["builtin:mcp", "builtin:codemode", "builtin:tool-search"],
+        }), encoding="utf-8")
+        extensions = directory / "extensions"
+        extensions.mkdir()
+        (extensions / "ambient.ts").write_text(
+            "import { writeFileSync } from 'node:fs';\n"
+            f"export default function() {{ writeFileSync({json.dumps(str(extension_loaded))}, 'loaded'); }}\n",
+            encoding="utf-8",
+        )
+
+    async def emit(_event):
+        pass
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Reply briefly.",
+        cwd=str(workspace), requirements=ProviderRequirements(workspace_access="none")), "managed", emit)
+    assert result.status == "done", result
+    assert {tool["function"]["name"] for tool in requests[0]["tools"]} == {
+        "read", "bash", "edit", "write", "web_fetch", "news_search",
+        "web_search", "web_read", "open_url", "launch_app",
+    }
+    assert not mcp_started.exists()
+    assert not extension_loaded.exists()
+    assert "mcp_connection" in adapter.manifest.capabilities.capability_projections
+
+
+async def test_real_pi_disposes_native_session_before_process_exit(native_pi, tmp_path, monkeypatch):
+    from config import settings
+
+    adapter, _, _, _ = native_pi
+    closed = tmp_path / "session-closed"
+    extension = tmp_path / "shutdown.ts"
+    extension.write_text("import { writeFileSync } from 'node:fs';\n"
+        "export default function(pi) { pi.on('session_shutdown', async () => {\n"
+        f"writeFileSync({json.dumps(str(closed))}, 'closed');\n"
+        "}); }\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", json.dumps([str(extension)]))
+
+    async def emit(_event):
+        pass
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Reply briefly.", cwd=str(tmp_path)), "close", emit)
+    assert result.status == "done", result
+    assert closed.read_text(encoding="utf-8") == "closed"
+
+
+@pytest.mark.parametrize("access,allow", [("none", False), ("read", False), ("write", False), ("write", True)])
+async def test_real_pi_trusted_extension_tool_requires_host_write_access_and_approval(
+    native_pi, tmp_path, monkeypatch, access, allow,
+):
+    from config import settings
+
+    adapter, _, selected, _ = native_pi
+    marker = tmp_path / "extension-called"
+    extension = tmp_path / "trusted.ts"
+    extension.write_text(
+        "import { writeFileSync } from 'node:fs';\n"
+        "export default function(pi) { pi.registerTool({\n"
+        "name: 'fixture_action', label: 'Fixture action', description: 'Write a synthetic marker.',\n"
+        "parameters: { type: 'object', properties: {} },\n"
+        f"async execute() {{ writeFileSync({json.dumps(str(marker))}, 'called');\n"
+        "return { content: [{ type: 'text', text: 'called' }], details: {} }; }\n"
+        "}); }\n", encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", json.dumps([str(extension)]))
+    selected.update(tool="fixture_action", args={})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            key = event.payload["permissionRequest"]["request_id"]
+            assert (await adapter.resolve_permission("extension", ProviderPermissionResponse(key, allow)))["accepted"]
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Run the fixture action.",
+        cwd=str(tmp_path), requirements=ProviderRequirements(workspace_access=access,
+            workspace_ownership="caller")), "extension", emit)
+    assert result.status == "done", result
+    assert marker.exists() == (access == "write" and allow)
+    assert sum(event.type == "permission.requested" for event in events) == (1 if access == "write" else 0)
+    output, = [event for event in events if event.type == "tool.result"]
+    assert output.payload["ok"] == marker.exists()
+
+
+@pytest.mark.parametrize("tool", ["read", "write"])
+async def test_real_pi_file_tools_reject_paths_outside_host_workspace(native_pi, tmp_path, tool):
+    adapter, _, selected, _ = native_pi
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("preserve", encoding="utf-8")
+    selected.update(tool=tool, args={"path": str(outside), **({"content": "changed"} if tool == "write" else {})})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Exercise a path boundary.",
+        cwd=str(workspace), requirements=ProviderRequirements(workspace_access="write",
+            workspace_ownership="caller")), "outside", emit)
+    assert result.status == "done", result
+    assert outside.read_text(encoding="utf-8") == "preserve"
+    output, = [event for event in events if event.type == "tool.result"]
+    assert not output.payload["ok"]
+    assert not any(event.type == "permission.requested" for event in events)
+
+
 @pytest.fixture
 def local_search_mcp(tmp_path, monkeypatch):
     from config import settings
@@ -261,3 +388,25 @@ async def test_real_pi_search_rate_limit_is_tool_failure_and_conversation_contin
     output, = [event for event in events if event.type == "tool.result"]
     assert not output.payload["ok"]
     assert "Search rate limited" in json.dumps(requests[-1]["messages"])
+
+
+async def test_typecheck_dependencies_do_not_enable_optional_browser_renderer(native_pi, tmp_path):
+    adapter, requests, selected, url = native_pi
+    selected.update(tool="web_read", args={"url": url + "/client-only"})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Read the fixture page.",
+        cwd=str(tmp_path), requirements=ProviderRequirements(workspace_access="none")), "no-browser", emit)
+    assert result.status == "done", result
+    output, = [event for event in events if event.type == "tool.result"]
+    assert output.payload["ok"] is False
+    error = json.dumps(output.payload["raw"]["output"])
+    # Distinguish an absent optional renderer from accidentally installing it
+    # and attempting to launch a missing Chromium binary during an ordinary read.
+    assert "Install the browser fallback" in error
+    assert "Playwright fallback failed" not in error
+    assert "SYNTHETIC-BROWSER-ONLY" not in json.dumps(requests[-1]["messages"])
+    assert not any(event.type == "permission.requested" for event in events)
