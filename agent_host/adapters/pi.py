@@ -317,9 +317,10 @@ class PiAdapter:
                 title = str(event.get("title", ""))
                 # This title prefix is emitted by the trusted Host MCP gate,
                 # never inferred from model text or the tool's hashed name.
-                capability = "mcp.tool.execute" if title.startswith("MCP tool: ") else "provider.tool.execute"
+                capability, action = (("mcp.tool.call", "call_tool") if title.startswith("MCP tool: ")
+                    else ("provider.tool.execute", "execute_tool"))
                 await self._emit(run_id, run, "permission.requested", {"permissionRequest": {
-                    "request_id": key, "capability": capability, "action": "execute_tool",
+                    "request_id": key, "capability": capability, "action": action,
                     "reason": title + "\n" + str(event.get("message", "")),
                     "options": ["allow_once", "deny"], "retryRequired": False, "diagnosticOnly": False}})
             elif event.get("method") in {"select", "input", "editor"}:

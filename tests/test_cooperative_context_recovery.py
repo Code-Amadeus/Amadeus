@@ -3621,9 +3621,10 @@ async def test_cooperative_work_uses_existing_context_without_blocking_chat_and_
         ledger.close()
 
 
-@pytest.mark.parametrize("access,capability", [("write", "shell.execute"), ("read", "mcp.tool.execute")])
+@pytest.mark.parametrize("access,capability", [("write", "shell.execute"), ("read", "mcp.tool.call")])
 async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
         tmp_path, monkeypatch, access, capability):
+    permission_action = "call_tool" if capability == "mcp.tool.call" else "execute_command"
     monkeypatch.setattr(sm, "_SESSION_DIR", str(tmp_path/"sessions"))
     monkeypatch.setattr(sm, "_CURRENT_SESSION_ID", None)
     monkeypatch.setattr(sm, "_SESSION_SELECTION_REVISION", 0)
@@ -3680,7 +3681,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
         request_event = {"provider":"recovery-test", "run_id":record.run_id,
             "type":"permission.requested", "metadata":dict(record.metadata),
             "payload":{"permissionRequest":{"request_id":"native-allow-once",
-                "capability":capability, "action":"execute_command",
+                "capability":capability, "action":permission_action,
                 "options":["allow_once", "deny"]}}}
         await manager._handle_provider_event(Method.PROVIDER_EVENT, request_event)
         pending = permissions.list_cooperative_permission_requests(
@@ -3696,7 +3697,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
             "id":pending[0].request_id, "ownerKind":"cooperative_run",
             "sessionId":"permission-session", "runId":record.run_id,
             "providerRequestId":"native-allow-once",
-            "capability":capability, "action":"execute_command",
+            "capability":capability, "action":permission_action,
             "scope":[], "reason":"Explicit user approval is required.",
             "reversibility":"unknown", "status":"pending",
             "options":["allow_once", "deny"]}
@@ -3754,7 +3755,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
 
         expiring = {**request_event,
             "payload":{"permissionRequest":{"request_id":"native-expiring",
-                "capability":capability, "action":"execute_command",
+                "capability":capability, "action":permission_action,
                 "options":["allow_once", "deny"]}}}
         before_background = len([call for call in emitted.await_args_list
             if call.args and call.args[0] == Method.WALLPAPER_CANVAS])
@@ -3777,7 +3778,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
 
         remaining_event = {**request_event,
             "payload":{"permissionRequest":{"request_id":"native-remaining",
-                "capability":capability, "action":"execute_command",
+                "capability":capability, "action":permission_action,
                 "options":["allow_once", "deny"]}}}
         await manager._handle_provider_event(Method.PROVIDER_EVENT, remaining_event)
         remaining_row = next(permission for permission in
@@ -3823,25 +3824,28 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
         await handler._stream_task
         read_receipt = ingress.receipts["read-permission-source"]
         read_record = runtime.get_run(read_receipt["run_id"])
-        read_event = {"provider":"recovery-test", "run_id":read_record.run_id,
-            "type":"permission.requested", "metadata":dict(read_record.metadata),
-            "payload":{"permissionRequest":{"request_id":"read-only-escalation",
-                "capability":"shell.execute", "action":"execute_command",
-                "options":["allow_once", "deny"]}}}
-        await manager._handle_provider_event(Method.PROVIDER_EVENT, read_event)
+        blocked = ["shell.execute", "provider.tool.execute", "mcp.elicitation", "mcp.tool.execute"]
+        for blocked_capability in blocked:
+            request_id = f"read-only-escalation:{blocked_capability}"
+            read_event = {"provider":"recovery-test", "run_id":read_record.run_id,
+                "type":"permission.requested", "metadata":dict(read_record.metadata),
+                "payload":{"permissionRequest":{"request_id":request_id,
+                    "capability":blocked_capability, "action":"execute_tool",
+                    "options":["allow_once", "deny"]}}}
+            await manager._handle_provider_event(Method.PROVIDER_EVENT, read_event)
+            response_run, response = adapter.permission_responses[-1]
+            assert response_run == read_record.run_id and response.request_id == request_id
+            assert response.allow is False and response.automatic is True
+            assert response.reason == "cooperative_read_only_context"
+            refused = await manager.resolve_permission({"session_id":"permission-session",
+                "run_id":read_record.run_id,
+                "provider_request_id":request_id, "allow":True})
+            assert refused == {"ok":False, "error":"cooperative_permission_not_pending"}
         denied = permissions.list_cooperative_permission_requests(
             "permission-session", context_id=read_child.child_id,
             provider_run_id=read_record.run_id)
-        assert len(denied) == 1
-        assert denied[0].status == "denied" and denied[0].options == ["deny"]
-        response_run, response = adapter.permission_responses[-1]
-        assert response_run == read_record.run_id
-        assert response.allow is False and response.automatic is True
-        assert response.reason == "cooperative_read_only_context"
-        refused = await manager.resolve_permission({"session_id":"permission-session",
-            "run_id":read_record.run_id,
-            "provider_request_id":"read-only-escalation", "allow":True})
-        assert refused == {"ok":False, "error":"cooperative_permission_not_pending"}
+        assert len(denied) == len(blocked)
+        assert all(item.status == "denied" and item.options == ["deny"] for item in denied)
     finally:
         adapter.release.set()
         await handler.close()

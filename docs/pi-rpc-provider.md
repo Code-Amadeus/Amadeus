@@ -224,12 +224,24 @@ workspace-less or read-only Work or cooperative chat can use an approved connect
 file or shell rights. File/path checks and the write-access-plus-approval gate
 for shell and other extension tools are unchanged. Denial and cancellation do
 not authorize a later call.
-The trusted MCP gate identifies these requests as `mcp.tool.execute`; generic
-tool permissions remain denied in read-only cooperative contexts. Direct-tool
-approval cards show the Host connection display name and original MCP tool name, even when
-Pi hashes its model-facing identifier. Resource approval cards currently show
-the resource operation and its raw server ID/arguments; display-name lookup for
-those operations remains a presentation follow-up.
+The trusted MCP gate uses the existing `mcp.tool.call` capability and `call_tool`
+action, shared with the standard MCP Provider. The Host applies the same
+workspace-independent approval policy to that capability; generic tool
+permissions remain denied in read-only cooperative contexts. Codex's
+`mcp.elicitation` remains a distinct server input/confirmation request and does
+not receive this tool-call exception. The earlier pre-release
+`mcp.tool.execute` spelling is superseded, without an alias; restart the backend
+when updating this integration so active permission owners use the same contract.
+
+Direct-tool approval cards show the Host connection display name and original
+MCP tool name, even when Pi hashes its model-facing identifier. The three resource
+operations resolve their `server` argument against the same Host snapshot and
+show its display name and ID. An unfiltered list identifies all bound connections
+as its scope with a bounded name preview; an unknown ID is not attributed to a
+known connection. Approval labels replace control/format characters and line
+breaks with spaces, and are capped at 320 Unicode code points (plus the fixed
+title prefix), with an ellipsis when shortened. Execution names and arguments
+are never rewritten by this display formatting.
 Enabling and binding a stdio connection authorizes starting its configured
 executable when the Work connects. Per-call approval does not sandbox that
 server's startup code; only bind trusted services.
@@ -306,12 +318,19 @@ installs the pinned runtime before running these suites.
 Cooperative ingress tests cover exact approval ownership, read-only MCP approval,
 local shell denial and unchanged workspace access. The MCP suite also checks
 per-connection configuration failures, original tool labels after native hashing,
-and a hanging server's bounded first-prompt delay.
+single-server and unfiltered resource approval scopes, label normalization without
+rewriting execution identifiers, and a hanging server's bounded first-prompt delay.
+Standard MCP Provider and Pi tests assert the shared permission capability/action;
+cooperative tests reject shell, generic, obsolete and elicitation capabilities
+under the read-only tool-call policy.
 
 Synthetic captures using the real Electron activity-card component show the
 notice and approval text [before](evidence/pi-mcp-2026-10-15/before.png) and
 [after](evidence/pi-mcp-2026-10-15/after.png) the audit fixes. They use fixture
 events and no real credentials or sessions.
+Resource cards have separate [before](evidence/pi-mcp-2026-10-15/resources-before.png)
+and [after](evidence/pi-mcp-2026-10-15/resources-after.png) captures showing selected
+connections and unfiltered list scope.
 
 For an opt-in real-model run that creates files and opens real browser/Notepad
 windows on Windows:

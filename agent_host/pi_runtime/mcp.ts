@@ -4,7 +4,20 @@ import { StdioTransport, StreamableHttpTransport } from '@earendil-works/pi-mcp'
 
 const snapshotKey = Symbol.for('amadeus.pi.hostMcpSnapshot')
 
-type HostMcpConfig = LoadedMcpConfig & { servers: (McpServerEntry & { displayName: string })[] }
+type HostMcpConfig = Omit<LoadedMcpConfig, 'servers'> & { servers: (McpServerEntry & { displayName: string })[] }
+type ApprovalLabel = (input: Record<string, unknown>) => string
+const resourceTools = new Set(['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'])
+
+function approvalLabel(value: string): string {
+  // Display only: native tool names and arguments must keep their exact bytes.
+  const text = value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/gu, ' ').trim()
+  const characters = [...text]
+  return characters.length <= 320 ? text : characters.slice(0, 319).join('') + '…'
+}
+
+function connectionLabel(entry: HostMcpConfig['servers'][number]): string {
+  return `${entry.displayName} (${entry.name})`
+}
 
 function hostSnapshot(): HostMcpConfig {
   // Session replacement reloads extension modules within the same Pi process.
@@ -19,9 +32,9 @@ function hostSnapshot(): HostMcpConfig {
   return owner[snapshotKey]!
 }
 
-export function registerHostMcp(pi: ExtensionAPI): Map<string, string> {
+export function registerHostMcp(pi: ExtensionAPI): Map<string, ApprovalLabel> {
   const config = hostSnapshot()
-  const tools = new Map<string, string>()
+  const tools = new Map<string, ApprovalLabel>()
   if (!config.servers.length && !config.errors.length) return tools
 
   createMcpExtension({
@@ -45,8 +58,18 @@ export function registerHostMcp(pi: ExtensionAPI): Map<string, string> {
       // Native labels retain server/original tool names even when model-facing
       // names have been shortened and hashed. Host display names remain visible.
       const entry = config.servers.find(entry => tool.label.startsWith(`${entry.name}/`))
-      const label = entry ? `${entry.displayName} (${entry.name}) / ${tool.label.slice(entry.name.length + 1)}` : tool.label
-      tools.set(tool.name, label)
+      const label = entry ? `${connectionLabel(entry)} / ${tool.label.slice(entry.name.length + 1)}` : tool.label
+      tools.set(tool.name, input => {
+        if (!resourceTools.has(tool.name)) return approvalLabel(label)
+        // Native resource operations choose their server at invocation time.
+        // Match Pi's string trimming for display without rewriting the input.
+        const server = typeof input.server === 'string' ? input.server.trim() : ''
+        const selected = config.servers.find(entry => entry.name === server)
+        const scope = selected ? connectionLabel(selected) : server ? `Unknown server (${server})`
+          : tool.name === 'read_mcp_resource' ? 'Server not specified'
+          : `All bound connections: ${config.servers.map(connectionLabel).join(', ')}`
+        return approvalLabel(`${tool.label} / ${scope}`)
+      })
       pi.registerTool(tool)
     },
   })

@@ -5,6 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+import unicodedata
 
 import psutil
 import pytest
@@ -174,15 +175,18 @@ async def test_bad_bindings_are_visible_without_disabling_healthy_tools(native_p
     assert result.activity_evidence.progress_milestones == 0
 
 
-async def test_hashed_mcp_tool_approval_keeps_service_and_original_name(native_pi, tmp_path):
+@pytest.mark.parametrize("unusual_name", [False, True])
+async def test_hashed_mcp_tool_approval_keeps_service_and_original_name(native_pi, tmp_path, unusual_name):
     adapter, requests, selected, _ = native_pi
     root = tmp_path / "service"
-    adapter.mcp_connections = (connection(root, connection_id="ext_" + "a" * 40,
-        display_name="Synthetic Notes"),)
+    original = "inspect_fixture" + ("\n\t\x1b\u202e" + "x" * 400 if unusual_name else "")
+    spec = connection(root, connection_id="ext_" + "a" * 40,
+        display_name="Synthetic\nNotes\u202e" if unusual_name else "Synthetic Notes")
+    adapter.mcp_connections = (replace(spec, environment={**spec.environment, "PI_MCP_INSPECT_NAME": original}),)
 
     def inspect_tool(data):
         name = next(tool["function"]["name"] for tool in data["tools"]
-                    if "inspect_fixture" in tool["function"]["description"])
+                    if original in tool["function"]["description"])
         assert len(name) == 64 and not name.endswith("inspect_fixture")
         return {"tool": name, "args": {}}
 
@@ -193,14 +197,21 @@ async def test_hashed_mcp_tool_approval_keeps_service_and_original_name(native_p
         if event.type == "permission.requested":
             permission = event.payload["permissionRequest"]
             permissions.append(permission)
-            await adapter.resolve_permission("readable-name", ProviderPermissionResponse(permission["request_id"], False))
+            await adapter.resolve_permission("readable-name", ProviderPermissionResponse(permission["request_id"], True))
 
     result = await adapter.run(request(tmp_path, "read"), "readable-name", emit)
     assert result.status == "done", result
     permission, = permissions
     assert "Synthetic Notes" in permission["reason"] and "inspect_fixture" in permission["reason"]
-    assert permission["capability"] == "mcp.tool.execute"
-    assert calls(root) == []
+    assert permission["capability"] == "mcp.tool.call"
+    assert permission["action"] == "call_tool"
+    title = permission["reason"].split("\n", 1)[0]
+    assert len(title) <= 330
+    assert not any(unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp"} for char in title)
+    if unusual_name:
+        assert "…" in title
+        assert len(permission["reason"].splitlines()) == 2
+    assert calls(root) == ["inspect"]
     assert len(requests) == 2
 
 
@@ -239,6 +250,91 @@ async def test_hung_server_does_not_hold_the_first_model_request_for_native_defa
             await running
 
 
+@pytest.mark.parametrize("allow", [False, True])
+async def test_resource_approvals_name_the_exact_bound_connection(native_pi, tmp_path, allow):
+    adapter, _, selected, _ = native_pi
+    root, other = tmp_path / "notes", tmp_path / "other"
+    server_id = "ext_" + "b" * 40
+    adapter.mcp_connections = (connection(root, connection_id=server_id, display_name="Synthetic Notes"),
+        connection(other, connection_id="other", display_name="Other Service"))
+    steps = [
+        {"tool": "list_mcp_resources", "args": {"server": f" {server_id} "}},
+        {"tool": "list_mcp_resource_templates", "args": {"server": server_id}},
+        {"tool": "read_mcp_resource", "args": {"server": server_id, "uri": "fixture://note"}},
+    ]
+    selected["steps"] = list(steps)
+    events, permissions = [], []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            permission = event.payload["permissionRequest"]
+            permissions.append(permission)
+            title, arguments = permission["reason"].split("\n", 1)
+            step = steps[len(permissions) - 1]
+            assert "Synthetic Notes" in title and server_id in title and step["tool"] in title
+            assert "Other Service" not in title
+            assert json.loads(arguments) == step["args"]
+            assert permission["capability"] == "mcp.tool.call"
+            assert permission["action"] == "call_tool"
+            await adapter.resolve_permission("resources", ProviderPermissionResponse(permission["request_id"], allow))
+
+    result = await adapter.run(request(tmp_path, "read"), "resources", emit)
+    assert result.status == "done", result
+    assert len(permissions) == 3
+    results = [event for event in events if event.type == "tool.result"]
+    assert len(results) == 3 and all(event.payload["ok"] is allow for event in results)
+    assert calls(root) == (["resource"] if allow else [])
+    assert calls(other) == []
+
+
+async def test_resource_listing_without_server_displays_all_bound_scope(native_pi, tmp_path):
+    adapter, _, selected, _ = native_pi
+    adapter.mcp_connections = (connection(tmp_path / "one", connection_id="one", display_name="Notes One"),
+        connection(tmp_path / "two", connection_id="two", display_name="Notes Two"),
+        connection(tmp_path / "disabled", connection_id="disabled", display_name="Disabled Service", enabled=False))
+    selected["steps"] = [{"tool": name, "args": {}}
+        for name in ("list_mcp_resources", "list_mcp_resource_templates")]
+    events, permissions = [], []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            permission = event.payload["permissionRequest"]
+            permissions.append(permission)
+            assert "All bound connections" in permission["reason"]
+            assert "Notes One" in permission["reason"] and "Notes Two" in permission["reason"]
+            assert "Disabled Service" not in permission["reason"]
+            await adapter.resolve_permission("all-resources", ProviderPermissionResponse(permission["request_id"], True))
+
+    result = await adapter.run(request(tmp_path, "read"), "all-resources", emit)
+    assert result.status == "done" and len(permissions) == 2, result
+    outputs = [event for event in events if event.type == "tool.result"]
+    assert all(event.payload["ok"] for event in outputs)
+    listing = json.loads(outputs[0].payload["raw"]["output"]["content"][0]["text"])
+    assert {resource["server"] for resource in listing["resources"]} == {"one", "two"}
+
+
+async def test_resource_approval_does_not_misidentify_an_unknown_server(native_pi, tmp_path):
+    adapter, _, selected, _ = native_pi
+    root = tmp_path / "service"
+    adapter.mcp_connections = (connection(root, display_name="Known Service"),)
+    selected.update(tool="read_mcp_resource", args={"server": "missing", "uri": "fixture://note"})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            permission = event.payload["permissionRequest"]
+            assert "missing" in permission["reason"] and "Known Service" not in permission["reason"]
+            await adapter.resolve_permission("unknown-resource", ProviderPermissionResponse(permission["request_id"], True))
+
+    result = await adapter.run(request(tmp_path, "read"), "unknown-resource", emit)
+    assert result.status == "done", result
+    output, = [event for event in events if event.type == "tool.result"]
+    assert output.payload["ok"] is False and calls(root) == []
+
+
 @pytest.mark.parametrize("access", ["none", "read", "write"])
 @pytest.mark.parametrize("allow", [False, True])
 async def test_mcp_call_requires_host_approval_independent_of_workspace(native_pi, tmp_path, monkeypatch, access, allow):
@@ -252,7 +348,8 @@ async def test_mcp_call_requires_host_approval_independent_of_workspace(native_p
     async def emit(event):
         events.append(event)
         if event.type == "permission.requested":
-            assert event.payload["permissionRequest"]["capability"] == "mcp.tool.execute"
+            assert event.payload["permissionRequest"]["capability"] == "mcp.tool.call"
+            assert event.payload["permissionRequest"]["action"] == "call_tool"
             key = event.payload["permissionRequest"]["request_id"]
             assert (await adapter.resolve_permission("mcp", ProviderPermissionResponse(key, allow)))["accepted"]
             assert not (await adapter.resolve_permission("mcp", ProviderPermissionResponse(key, allow)))["accepted"]

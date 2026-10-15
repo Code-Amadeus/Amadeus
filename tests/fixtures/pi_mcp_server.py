@@ -20,7 +20,8 @@ def record(name):
         output.write(name + "\n")
 
 
-@server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@server.tool(name=os.environ.get("PI_MCP_INSPECT_NAME", "inspect_fixture"),
+             annotations=ToolAnnotations(readOnlyHint=True))
 def inspect_fixture() -> str:
     record("inspect")
     return json.dumps({"literal": os.environ.get("PI_MCP_LITERAL"),

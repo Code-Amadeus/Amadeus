@@ -4596,7 +4596,7 @@ class CooperativeChatManager:
         # Unknown/generic tool permissions keep the read-only deny policy.
         ask_user = (self.permission_policy == "ask"
             and (child.requirements.workspace_access != "read"
-                 or capability == "mcp.tool.execute"))
+                 or capability == "mcp.tool.call"))
         permission = self.permission_store.create_cooperative_permission_request(
             session_id=session_id, context_id=context_id, provider_run_id=run_id,
             capability=capability,
@@ -4763,7 +4763,7 @@ class CooperativeChatManager:
                 or metadata.get("cooperative_context_id") != child.child_id):
             return {"ok":False, "error":"cooperative_permission_run_not_current"}
         if (allow and child.requirements.workspace_access == "read"
-                and permission.capability != "mcp.tool.execute"):
+                and permission.capability != "mcp.tool.call"):
             return {"ok":False, "error":"cooperative_permission_read_only_context"}
         if allow and "allow_once" not in permission.options:
             return {"ok":False, "error":"cooperative_permission_option_not_allowed"}

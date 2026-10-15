@@ -118,10 +118,11 @@ export default function (pi: ExtensionAPI) {
       return
     }
     // Host-bound external tools require their own approval, not local file writes.
-    if (!mcpTools.has(name) && access !== 'write') {
+    const mcpLabel = mcpTools.get(name)
+    if (!mcpLabel && access !== 'write') {
       return { block: true, reason: 'This conversation cannot execute shell or mutating extension tools' }
     }
-    const title = mcpTools.has(name) ? `MCP tool: ${mcpTools.get(name)}` : `Pi tool: ${name}`
+    const title = mcpLabel ? `MCP tool: ${mcpLabel(event.input)}` : `Pi tool: ${name}`
     if (!ctx.hasUI || !await ctx.ui.confirm(title, JSON.stringify(event.input))) {
       return { block: true, reason: 'The Host did not approve this operation' }
     }
