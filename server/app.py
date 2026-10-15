@@ -1785,7 +1785,9 @@ async def bootstrap(port: int = 17777) -> None:
                 if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else "",
             json_output=(source_kind not in ("provider", "host_receipt")
                 if json_output is None else json_output),
-            on_text=on_text, visual_context=visual_context, temperature=0.0,
+            on_text=on_text, visual_context=visual_context,
+            temperature=(settings.COOPERATIVE_CHAT_TEMPERATURE
+                if source_kind in ("user", "provider", "host_receipt") else 0.0),
             max_tokens=max(1, int(settings.COOPERATIVE_CHAT_QUERY_MAX_TOKENS)),
             timeout=max(1.0, float(settings.COOPERATIVE_CHAT_QUERY_TIMEOUT_S)))
 
