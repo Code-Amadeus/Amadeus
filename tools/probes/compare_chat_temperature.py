@@ -72,17 +72,26 @@ async def evaluate(args):
 
     # Read only the selected connection. Never copy user sessions or persona overrides.
     supplied = dotenv_values(args.credentials_env) if args.credentials_env else {}
-    credential_keys = (("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL") if args.provider == "deepseek"
-        else ("GEMINI_API_KEY",))
+    credential_keys = {
+        "deepseek": ("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"),
+        "gemini": ("GEMINI_API_KEY",),
+        "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+        "bedrock": ("AWS_BEARER_TOKEN_BEDROCK", "AWS_BEDROCK_BEARER_TOKEN",
+            "AWS_BEDROCK_REGION"),
+    }[args.provider]
     for key in credential_keys:
         if supplied.get(key) and not os.environ.get(key):
             os.environ[key] = str(supplied[key])
     os.environ.update({"LLM_PROVIDER": args.provider,
         "DEEPSEEK_MODEL_NAME": args.model, "GEMINI_MODEL_NAME": args.model,
+        "OPENAI_MODEL_NAME": args.model,
         "TTS_BACKEND": "disabled", "AMADEUS_E2E_NO_TTS": "1", "TTS_DEVICE": "cpu",
         "TTS_OUTPUT_LANGUAGE": "日文", "RAG_ENABLED": "false", "EMO_HISTORY_POLICY": "strip",
         "AMADEUS_CHARACTER_ID": "kurisu", "AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA": "",
-        "COOPERATIVE_CHAT_QUERY_MAX_TOKENS": "900", "COOPERATIVE_CHAT_QUERY_TIMEOUT_S": "60"})
+        "COOPERATIVE_CHAT_QUERY_MAX_TOKENS": str(args.max_tokens), "COOPERATIVE_CHAT_QUERY_TIMEOUT_S": "60"})
+    if args.provider == "bedrock":
+        os.environ.update({"AWS_BEDROCK_AUTH_MODE": "bearer",
+            "AWS_BEDROCK_MODEL_ID": args.model, "AWS_BEDROCK_USE_INFERENCE_PROFILE": "false"})
     logging.disable(logging.CRITICAL)
     from config import settings
     from agent_host.provider_runtime import ProviderRuntime
@@ -98,6 +107,44 @@ async def evaluate(args):
             raise RuntimeError("DeepSeek credential unavailable")
         connection = client.init_llm_client().with_options(max_retries=0)
         client.llm_client = connection
+    elif args.provider == "openai":
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError("OpenAI credential unavailable")
+        connection = client.init_llm_client().with_options(max_retries=0)
+
+        class ObservedOpenAICompletions:
+            def create(self, **kwargs):
+                observed = native_observation.current
+                if args.openai_sampling == "reasoning_none":
+                    kwargs.update(reasoning_effort="none", temperature=observed["sent_temperature"])
+                observed["upstream_temperature"] = kwargs.get("temperature")
+                observed["upstream_temperature_present"] = "temperature" in kwargs
+                observed["reasoning_effort"] = kwargs.get("reasoning_effort")
+                return connection.chat.completions.create(**kwargs)
+
+        client.llm_client = SimpleNamespace(chat=SimpleNamespace(completions=ObservedOpenAICompletions()))
+    elif args.provider == "bedrock":
+        if not settings.AWS_BEDROCK_BEARER_TOKEN:
+            raise RuntimeError("Bedrock credential unavailable")
+        client.init_llm_client()
+        connection = client.bedrock_http_client
+        if connection is None:
+            raise RuntimeError("Bedrock HTTP transport unavailable")
+
+        class ObservedBedrockHTTP:
+            def post(self, *call_args, **kwargs):
+                response = connection.post(*call_args, **kwargs)
+                if response.is_success:
+                    result = response.json()
+                    observed = getattr(native_observation, "current", None)
+                    if observed is not None:
+                        choices = result.get("choices") or []
+                        observed["native_finish_reason"] = (
+                            choices[0].get("finish_reason") if choices else result.get("stop_reason"))
+                        observed["native_model_version"] = result.get("model")
+                return response
+
+        client.bedrock_http_client = ObservedBedrockHTTP()
     else:
         from google import genai
         from google.genai import types
@@ -129,7 +176,8 @@ async def evaluate(args):
         "provider": args.provider, "model": args.model, "temperatures": args.temperatures,
         "prompt_variants": args.prompt_variants, "modes": args.modes,
         "serial": args.serial, "request_interval_s": args.request_interval_s, "repeats": args.repeats,
-        "max_tokens": 900, "timeout_s": 60, "sdk_retries": 0,
+        "openai_sampling": args.openai_sampling if args.provider == "openai" else None,
+        "max_tokens": args.max_tokens, "timeout_s": 60, "sdk_retries": 0,
         "tts": False, "provider_execution": False, "session_persistence": False,
         "persona": "built-in kurisu Japanese", "professional_role_contract": True,
         "history_policy": "strip", "rag": False,
@@ -248,12 +296,17 @@ async def evaluate(args):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--credentials-env", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--provider", choices=("deepseek", "gemini"), default="deepseek")
+    parser.add_argument("--provider", choices=("deepseek", "gemini", "bedrock", "openai"), default="deepseek")
+    parser.add_argument("--openai-sampling", choices=("production", "reasoning_none"), default="production",
+        help="production omits upstream temperature; reasoning_none is an experimental probe-only override")
     parser.add_argument("--model")
+    parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--repeats", type=int, default=3, choices=range(1, 4))
     parser.add_argument("--temperatures", type=float, nargs="+", default=[0.0, 0.7])
     parser.add_argument("--prompt-variants", nargs="+", choices=("original", "no_ack_preface"), default=["original"])
@@ -261,10 +314,15 @@ def main():
     parser.add_argument("--serial", action="store_true")
     parser.add_argument("--request-interval-s", type=float, default=0)
     args = parser.parse_args()
+    if not 900 <= args.max_tokens <= 8192:
+        parser.error("max tokens must be between 900 and 8192")
     if not math.isfinite(args.request_interval_s) or not 0 <= args.request_interval_s <= 30:
         parser.error("request interval must be between 0 and 30 seconds")
     if args.model is None:
-        args.model = "deepseek-v4-flash" if args.provider == "deepseek" else "gemini-2.5-flash"
+        args.model = {"deepseek": "deepseek-v4-flash", "gemini": "gemini-2.5-flash",
+            "bedrock": "qwen.qwen3-235b-a22b-2507-v1:0", "openai": "gpt-5.6-luna"}[args.provider]
+    if args.provider == "openai" and args.openai_sampling == "production" and len(args.temperatures) != 1:
+        parser.error("OpenAI production policy omits temperature; select one configured value for this control")
     if len(set(args.temperatures)) != len(args.temperatures) or any(
         not math.isfinite(value) or not 0 <= value <= 2 for value in args.temperatures
     ):
