@@ -6,6 +6,8 @@
 > Current behavior and setup are documented in `vn-text-sources.md`. The later
 > Slice frame/style alignment and contextual controls are documented in
 > `companion-panel.md`; the "Slice unchanged" scope below describes this historical PR.
+> Since #154 the VN card uses 0.92 opacity, and a missing Lite pack shows a plain
+> avatar with captions instead of the VN cache/legacy renderer.
 
 ## Final scope
 

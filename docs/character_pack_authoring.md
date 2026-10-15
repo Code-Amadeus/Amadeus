@@ -36,14 +36,20 @@ label to ordered KTX2 frames and playback timing:
 
 ```json
 {
-  "idle": {
-    "phase": "loop",
-    "frameIntervalMs": 42,
-    "loopMode": "loop",
-    "frames": ["textures/idle/0000.ktx2"]
+  "clips": {
+    "idle": {
+      "phase": "loop",
+      "frameIntervalMs": 42,
+      "loopMode": "loop",
+      "frames": ["textures/idle/0000.ktx2"]
+    }
   }
 }
 ```
+
+`clips` sits beside the other required top-level fields (`format`, `id`, `graph`,
+`mouthConfig`, `mouthOverlays`); see the
+[minimal example](../examples/character-pack-minimal/runtime_manifest.json).
 
 Supported `loopMode` values are:
 

@@ -165,7 +165,7 @@ Primary code:
 - `server/interaction_branch.py`
 - `agent_host/adapters/browser_branch.py`
 - `server/browser_branch_planner.py`
-- `server/handlers/chat_handler.py`
+- `server/cooperative_chat_ingress.py`
 
 Important implementation rules (updated 2026-08-06, single-brain routing):
 
@@ -174,13 +174,11 @@ Important implementation rules (updated 2026-08-06, single-brain routing):
   branch state block plus mandatory routing rules into the system prompt;
   the model expresses intent via `[DELEGATE provider="browser"
   branch="continue|new|close" task="..."]`.
-- `try_route_user_message()` keeps only three STRUCTURAL fast paths
-  (state/shape-triggered, no vocabulary): waiting-for-value short reply ->
-  continue; explicit URL same site -> continue; explicit URL new site ->
-  supersede. Everything else defers to the main LLM.
-- `_handle_delegate()` consumes the branch attribute: continue routes into
-  `continue_from_delegate()` (background run, observer narrates — chat is
-  never blocked); close calls `close_active_branch()`.
+- The cooperative chat ingress consumes the branch attribute: continue routes
+  into `InteractionBranch.continue_from_delegate()` (background run, observer
+  narrates — chat is never blocked); close calls `close_active_branch()`. The
+  earlier `try_route_user_message()` fast paths and `_handle_delegate()` were
+  removed in #156.
 - `_should_start_new_branch()` honors explicit `branch_intent` metadata
   before falling back to source-based inference.
 - `_branch_task()` keeps latest instruction first and filters noisy context.

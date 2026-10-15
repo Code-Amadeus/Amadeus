@@ -19,14 +19,14 @@ uv sync --locked --extra rag --extra torch-cpu
 Keep the complete set of capabilities you use. For example:
 
 ```powershell
-# Remote voice + CPU VAD + character retrieval
-uv sync --locked --extra voice --extra vad --extra torch-cpu --extra rag
+# Remote voice (T2) + interruption (T3) + character retrieval
+uv sync --locked --extra vad --extra torch-cpu --extra rag
 
 # Existing Windows NVIDIA local voice + character retrieval
-uv sync --locked --extra voice --extra vad --extra local-cu124 --extra rag
+uv sync --locked --extra local-cu124 --extra rag
 
 # Existing experimental Windows ROCm local voice + character retrieval
-uv sync --locked --extra voice --extra vad --extra local-rocm --extra rag
+uv sync --locked --extra local-rocm --extra rag
 ```
 
 `torch-cpu`, `local-cu124` and `local-rocm` remain mutually exclusive. The RAG

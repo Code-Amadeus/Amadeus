@@ -1,8 +1,11 @@
 # Torch 2.7 installation candidates
 
 The CPU build uses Torch/Torchaudio 2.7.0. `local-cu128` (Windows/Linux x86_64)
-and `local-mps` (Apple Silicon) are explicit, experimental installation choices.
-Windows cu124 remains on 2.6.0 and Windows ROCm remains on AMD's 2.9.1 build.
+is an explicit, experimental installation choice; `local-mps` (Apple Silicon) is
+the experimental T4 build for macOS; its locked 2.7.0 build has installation/import
+CI, while real-hardware GPT-SoVITS MPS evidence used 2.6.0 (see below). Application
+ASR stays on CPU. Windows cu124 remains on 2.6.0 and
+Windows ROCm remains on AMD's 2.9.1 build.
 Core and remote voice still require no Torch. See [installation profiles](install_profiles.md)
 for complete commands; every build selection uses the existing single `.venv`.
 
@@ -21,7 +24,7 @@ profile enables repeatable standalone ASR experiments and existing TTS integrati
 it does not implement application Qwen MPS routing.
 
 Candidate CI checks clean locked installation, build/version/import contracts,
-CPU tensor and fake-device tests, and switching back to CPU VAD and core.
+CPU tensor and fake-device tests, and switching back to T3 vad and T1 core.
 It does not open microphones, load external voice/model assets or claim GPU
 execution. The existing cu124 ladder also runs dependency-gated model tests.
 

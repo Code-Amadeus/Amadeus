@@ -40,7 +40,7 @@ jobs:
       - name: Install pinned Pi runtime for native integration tests
         working-directory: agent_host/pi_runtime
         run: npm ci --ignore-scripts
-      - name: Install locked environment (L1 + dev tooling)
+      - name: Install locked environment (T1 + dev tooling)
         shell: bash
         run: uv sync --locked --extra dev
       - name: Verify environment
@@ -74,7 +74,7 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
-      - name: Install locked environment (L1 + dev tooling)
+      - name: Install locked environment (T1 + dev tooling)
         shell: bash
         run: uv sync --locked --extra dev
 
@@ -148,7 +148,7 @@ jobs:
           SMOKE_RESULT: ${{ needs.checks-and-smoke.result }}
         run: test "$SUITES_RESULT" = success && test "$SMOKE_RESULT" = success
 
-  # Windows clean-install proof of the single-.venv L1 → L4 ladder: the same
+  # Windows clean-install proof of the single-.venv T1 → T4 ladder: the same
   # .venv is upgraded in place, torch flips to the +cu124 build, and no second
   # venv (e.g. .venv_cu124) is ever created.
   single-venv-ladder:
@@ -169,25 +169,25 @@ jobs:
       - name: Install pinned uv
         run: python -m pip install uv==0.12.8
 
-      - name: L1 core
+      - name: T1 core
         shell: bash
         run: |
           uv sync --locked
           uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
           uv run --locked --no-sync python -c "import importlib.util as u; assert all(u.find_spec(n) is None for n in ('torch', 'torchaudio', 'pyaudio', 'silero_vad', 'onnxruntime'))"
-      - name: L2 voice
+      - name: T2 voice
         shell: bash
         run: |
           uv sync --locked --extra voice --extra dev
           uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
           uv run --locked --no-sync python -c "import importlib.util as u; assert u.find_spec('torch') is None"
           uv run --locked --no-sync python -m pytest -q tests/test_mic_descriptor.py tests/test_playback_device_recovery.py tests/test_tts_contract.py tests/test_tts_fish_audio_backend.py tests/test_tts_cache_backend_boundary.py tests/test_aec_native_smoke.py
-      - name: L3 CPU VAD
+      - name: T3 vad
         shell: bash
         run: |
           uv sync --locked --extra voice --extra vad --extra torch-cpu
           uv run --locked --no-sync python tools/verify_python_environment.py --profile vad-cpu
-      - name: L4 local-cu124
+      - name: T4 embedded
         run: uv sync --locked --extra voice --extra vad --extra local-cu124 --extra dev
 
       - name: Assert single venv and cu124 torch
@@ -215,7 +215,7 @@ jobs:
           tests/test_t2s_static_kv_mask.py
           tests/test_t2s_nested_kv.py
 
-      - name: Return to CPU VAD and core
+      - name: Return to T3 vad and T1 core
         shell: bash
         run: |
           uv sync --locked --extra voice --extra vad --extra torch-cpu

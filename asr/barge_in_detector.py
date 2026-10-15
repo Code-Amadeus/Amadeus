@@ -138,7 +138,7 @@ class BargeInDetector:
             from silero_vad import load_silero_vad
         except ModuleNotFoundError as exc:
             if exc.name == "silero_vad":
-                # Absent dependency: documented L2 fallback.
+                # Absent dependency: documented T2 fallback.
                 return "fallback", ""
             # silero-vad present but a dependency (e.g. torch) missing:
             # a broken install must stay observable, not fake absence.

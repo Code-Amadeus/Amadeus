@@ -49,7 +49,7 @@ each checkout still owns exactly one `.venv`.
 
 ```powershell
 uv venv .venv --python 3.12
-uv sync --locked --extra voice --extra vad --extra local-rocm
+uv sync --locked --extra local-rocm
 uv run --locked --no-sync python tools\verify_python_environment.py --profile rocm
 uv run --locked --no-sync python tools\rocm_sidecar\verify_gpu.py --compute
 ```
@@ -59,7 +59,7 @@ Do not continue when the compute probe fails, even if PyTorch reports
 through `torch.cuda`; the device string remains `cuda:0`, while
 `torch.version.hip` distinguishes ROCm from NVIDIA CUDA.
 
-`local-rocm`, `local-cu124`, and `torch-cpu` are mutually exclusive. Always
+`torch-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and `local-rocm` are mutually exclusive. Always
 provide the complete target selection to `uv sync`; exact sync removes packages
 that do not belong to the selected profile.
 
@@ -141,5 +141,5 @@ Host、ASR sidecar 与 TTS sidecar 共用项目的同一个 `.venv`。sidecar �
 计算 probe 失败也必须停止。当前 Radeon 780M 实测可以被枚举，但首次 FP32 计算会
 在 `amdhip64_7.dll` 中崩溃，因此不能作为可用 ROCm 目标。
 
-`local-rocm`、`local-cu124` 与 `torch-cpu` 互斥。评估机器如果还要保留工作的
+`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与 `local-rocm` 互斥。评估机器如果还要保留工作的
 cu124 环境，应在另一个 checkout/worktree 中测试，避免改动正在使用的基线。

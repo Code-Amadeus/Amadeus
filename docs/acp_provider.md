@@ -1,6 +1,6 @@
 # ACP Work Providers — experimental
 
-Status: experimental, opt-in ACP v1 integration for 0.15 Alpha. It has not been
+Status: experimental, opt-in ACP v1 integration (introduced in 0.15 Alpha). It has not been
 integrated into real production use. Codex remains the existing default coding Provider.
 
 Claude's earlier setup below is a historical local example. DeepSeek Harness
@@ -30,10 +30,11 @@ flowchart TD
 
 ## Setup
 
-Install the optional Host dependency in the Python environment that runs Amadeus:
+Install the optional Host dependency in the Python environment that runs Amadeus by
+appending `--extra acp` to your complete tier command, for example:
 
 ```powershell
-python -m pip install -e ".[acp]"
+uv sync --locked --extra voice --extra acp
 ```
 
 The dev extra/CI lock includes it so deterministic ACP tests run in CI. The

@@ -300,7 +300,7 @@ PR 继续保持 draft。新的公开配置与默认值仍需要关联 Amadeus Is
 
 ## 使用与验证入口
 
-模型加载前配置 `TTS_KV_CACHE_LAYOUT=nested|bucket|graph`，默认 `nested`。环境解析位于 `config/tts_acceleration.py`；无效值会明确报错。变更布局、设备、dtype 或容量应创建新的 decoder，不在已经捕获的地址上热切换。
+模型加载前配置 `TTS_KV_CACHE_LAYOUT=nested|bucket`，默认 `nested`（早期草稿中的 `graph` 已移除）。环境解析位于 `config/tts_acceleration.py`；无效值会明确报错。变更布局、设备、dtype 或容量应创建新的 decoder，不在已经捕获的地址上热切换。
 
 - 容量/多场景 probe：`tools/probes/benchmark_t2s_nested_kv.py`，支持 attention/device/layout、`--buckets 1024` 和 `--skip-precapture`。
 - 交替对照：`tools/probes/benchmark_t2s_nested_kv_paired.py`。`--baseline-source` 指向本地实验开始时保存的未修改快照。

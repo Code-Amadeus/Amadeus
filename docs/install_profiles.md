@@ -4,33 +4,57 @@ The project uses `pyproject.toml` for direct dependencies and `uv.lock` for
 resolved packages and builds. CI uses uv 0.12.8 and Python 3.12.10. The default
 desktop interpreter is the checkout's `.venv`; launchers do not install packages.
 
-## Capability and build selection
+## Tier and build selection
+
+A **tier** is a recommended install preset whose ladder is encoded in the extras
+(`vad` includes `voice`; each `local-<build>` includes `vad`); a **build** selects which Torch/Torchaudio
+packages are locked. Terminology is fixed by the
+[tier and build taxonomy](../TIER_TAXONOMY.md).
 
 Run one complete command for the environment you want:
 
-| Capability | Install | Verify |
-|---|---|---|
-| Core Chat/Work | `uv sync --locked` | `--profile cpu` |
-| Remote voice and audio I/O | `uv sync --locked --extra voice` | `--profile voice` |
-| CPU VAD | `uv sync --locked --extra voice --extra vad --extra torch-cpu` | `--profile vad-cpu` |
-| Experimental NVIDIA cu128 (Windows/Linux x86_64) | `uv sync --locked --extra voice --extra vad --extra local-cu128` | `--profile cu128` |
-| Experimental Apple Silicon models | `uv sync --locked --extra voice --extra vad --extra local-mps` | `--profile mps` |
-| Windows cu124 local models | `uv sync --locked --extra voice --extra vad --extra local-cu124` | `--profile cu124` |
-| Experimental Windows ROCm local models | `uv sync --locked --extra voice --extra vad --extra local-rocm` | `--profile rocm`, then `tools/rocm_sidecar/verify_gpu.py --compute` |
+| Tier | Capability | Install | Verify |
+|---|---|---|---|
+| T1 core | Core Chat/Work | `uv sync --locked` | `--profile cpu` |
+| T2 voice | Remote voice and audio I/O | `uv sync --locked --extra voice` | `--profile voice` |
+| T3 vad | Real-time interruption | `uv sync --locked --extra vad --extra torch-cpu` | `--profile vad-cpu` |
+| T4 embedded | Local GPT-SoVITS / Qwen3 ASR / wake word | `uv sync --locked --extra local-<build>` | see the build table |
+
+Commands that also name `voice` and `vad` remain valid and select the same environment.
+
+Builds. The `local-<build>` extras bundle the shared local-model dependency set;
+`torch-cpu` is the bare CPU build. T1 and T2 take no build.
+
+| Build | Platform | Extra | Tiers | Verify |
+|---|---|---|---|---|
+| `cu124` (reference) | Windows + NVIDIA | `local-cu124` | T4 | `--profile cu124`, add `--require-cuda-device` on a GPU machine |
+| `cu128` (experimental) | Windows / Linux x86_64 | `local-cu128` | T4 | `--profile cu128`, add `--require-cuda-device` on a GPU machine |
+| `mps` (experimental) | macOS Apple Silicon | `local-mps` | T4 | `--profile mps`, add `--require-mps-device` on a machine with MPS |
+| `rocm` (experimental) | Windows + GPU in AMD's support matrix | `local-rocm` | T4 | `--profile rocm`, then `tools/rocm_sidecar/verify_gpu.py --compute` |
+| `cpu` | Windows / Linux / macOS Apple Silicon (same wheel as `mps`) | `torch-cpu` | T3 | `--profile vad-cpu` |
+| `cpu` | Windows / Linux / macOS Apple Silicon | `local-cpu` | T4 | `--profile t4-cpu` |
+
+The platform column says where a build installs, not a cap: any installable build
+may be chosen, and the README recommends one per platform. `local-cpu` exists so
+that CPU-only features such as the wake word (SenseVoice + Silero) work without a
+GPU; local TTS/ASR also install on it without a real-time promise. Outside macOS,
+`TTS_DEVICE=auto` resolves to `cuda:0`, so set `TTS_DEVICE=cpu` with `local-cpu`.
 
 Invoke the verifier with
 `uv run --locked --no-sync python tools/verify_python_environment.py` and the
-profile above. `--profile vad` checks VAD capability imports without requiring
-a particular Torch build; `vad-cpu` also verifies the qualified CPU build.
-The cu124 and ROCm profiles can additionally use `--require-cuda-device` on a GPU machine.
+profile above. `--profile vad` detects which locked build is installed and fails
+when Torch came from no build extra; `vad-cpu` requires the CPU build.
+The cu124, cu128 and ROCm profiles can additionally use `--require-cuda-device` on a GPU machine.
 An import or build check does not establish model inference or audio-device support.
 
-Core and voice remain Torch-free. CPU VAD needs no NVIDIA GPU. `torch-cpu`,
-`local-cu124`, `local-cu128`, `local-mps`, and `local-rocm` are mutually exclusive
-build selections. CPU VAD/RAG now select Torch/Torchaudio 2.7.0, using the
-explicit CPU index on Windows and Linux and the macOS registry wheel.
-Switching builds replaces the previous build extra while preserving `voice` and
-`vad` in the complete command.
+The default T1 and T2 presets remain Torch-free (optional extras such as
+`rag` with `torch-cpu` may still add Torch). T3 and T4 add Torch through the `vad` extra, which
+transitively requires `silero-vad` → `torch`; this is why a build must be named
+explicitly from T3 onward. `torch-cpu`, `local-cpu`, `local-cu124`, `local-cu128`,
+`local-mps`, and `local-rocm` are mutually exclusive build selections. The CPU
+build and optional RAG select Torch/Torchaudio 2.7.0, using the explicit CPU
+index on Windows and Linux and the macOS registry wheel. Switching builds
+replaces the previous build extra.
 
 Optional [character RAG](character_rag.md) adds local embedding dependencies.
 For core plus retrieval use `uv sync --locked --extra rag --extra torch-cpu`;
@@ -44,7 +68,8 @@ and removes the optional voice/model stack. Ordinary application launch uses the
 installed environment, without synchronizing or changing its selected extras.
 
 Windows is the current reference platform. macOS core/voice has a separate CI
-qualification path and needs PortAudio for PyAudio. A successful install, import
+qualification path and needs PortAudio for PyAudio; the macos-14 candidate job
+also installs `local-mps` and switches back through T3 vad. A successful install, import
 or Electron build does not replace microphone, playback and desktop acceptance.
 The reference cu124 profile is Windows-only. The cu128 candidate targets
 Windows/Linux x86_64; the MPS candidate targets Apple Silicon macOS. Local model weights, reference audio
@@ -98,7 +123,7 @@ add `--require-cuda-device` on NVIDIA hardware. `--profile mps` checks an Apple
 Silicon environment and a Torch build with MPS support; add
 `--require-mps-device` on a machine with accessible MPS. Availability checks do
 not execute models. Hosted CI runs package/import and CPU/fake-device contracts,
-then switches back through CPU VAD to model-less core in the same environment.
+then switches back through T3 vad to model-less T1 core in the same environment.
 
 The application Qwen ASR configuration currently accepts `auto`, `cpu`, and
 `cuda`, not `mps`. Issue #67's standalone MPS inference evidence must not be

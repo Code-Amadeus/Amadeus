@@ -8,14 +8,15 @@ python tools/revendor_pixi_basis_ktx2.py --check
 python tools/revendor_pixi_basis_ktx2.py --write
 ```
 
-The Live2D files are a legacy compatibility boundary, not part of the default
-renderer. A host must explicitly add `live2d=1` to the render-page query before
-the page attempts to load the local Cubism Core and pixi-live2d-display files.
-It must then call `renderApp.loadLive2DModel(modelUrl)` before selecting
-`live2d` or `both` mode.
+Live2D is an experimental, explicitly selected character backend; Sprite stays
+the default. The render pages always include `live2d_character.js`, but it loads
+the user-supplied Cubism Core and the vendored pixi-live2d-display adapter only
+when the active character profile selects Live2D (Settings → Characters →
+Appearance). See [character visuals and Live2D](live2d_character_visuals.md).
 
 The public source archive does not contain Live2D Cubism Core or a Live2D
 model. Supply them under their own terms. The retained
 pixi-live2d-display 0.4.0 adapter declares PixiJS 6 peers, while Amadeus uses
-PixiJS 7.4.3, so this path remains compatibility-only until it is exercised by
-a dedicated model test.
+PixiJS 7.4.3. Real-model acceptance on this combination is recorded in
+[character visuals and Live2D](live2d_character_visuals.md); other models remain
+unqualified.

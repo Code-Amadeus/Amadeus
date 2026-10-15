@@ -34,8 +34,8 @@ CC0, GPL, or other rights that apply to third-party portions.
   Cantonese frontend source. The associated implementation is deliberately
   excluded from the public source archive; retaining its notice does not make
   it part of the AGPL-3.0-licensed first-party scope.
-- `pixi-basis-ktx2-MIT.txt` and `pixi-live2d-display-MIT.txt` preserve the
-  licenses for the checked-in browser vendor bundles.
+- `pixi-basis-ktx2-MIT.txt`, `pixi-live2d-display-MIT.txt`, `bokuweb-zstd-wasm-MIT.txt`
+  and `zstd-BSD.txt` preserve the licenses for the checked-in browser vendor bundles.
 - `AP-BWE-MIT.txt` preserves the upstream license while the optional
   implementation remains excluded. `Live2D-Cubism-Core-NOTICE.md` records the
   proprietary runtime exclusion without redistributing Cubism Core.

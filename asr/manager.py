@@ -20,7 +20,7 @@ import numpy as np
 
 from config.log_privacy import protected_text
 
-# torch is a local-model tier (T2b) dependency. Remote ASR installs (L2) have
+# torch is a T4 embedded dependency. Remote ASR installs (T2) have
 # no torch: every use below is guarded so device selection degrades to CPU
 # (remote backends ignore the device hint anyway).
 from config.settings import (
@@ -397,13 +397,13 @@ class ASRManager:
                 # silero present but one of its dependencies (torch) is
                 # missing/broken — surface it instead of faking absence.
                 raise
-            # L2 install: the vad tier is absent; energy endpointing is the
+            # T2 install: the vad tier is absent; energy endpointing is the
             # documented degradation for this tier.
             self._vad_model = None
             logger.info(
-                "[ASR] silero-vad not installed (L2 voice tier); "
+                "[ASR] silero-vad not installed (T2 voice tier); "
                 "ASR capture uses energy endpointing "
-                "(install -e '.[vad]' for VAD endpointing and barge-in)"
+                "(add `--extra vad` and a Torch build to `uv sync` for VAD endpointing and barge-in)"
             )
             return
         try:

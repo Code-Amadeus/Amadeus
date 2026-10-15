@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-# Tier contract: this suite belongs to L4 (local-cu124). Skip when torch is
-# absent (L1–L3) and when the GPT_SoVITS dependency chain (torchmetrics) is
+# Tier contract: this suite belongs to T4 embedded (build cu124). Skip when torch is
+# absent (T1–T3) and when the GPT_SoVITS dependency chain (torchmetrics) is
 # absent (torch present without the local-cu124 extra).
-pytest.importorskip("torch", reason="test requires the local-cu124 tier (torch)")
+pytest.importorskip("torch", reason="test requires the T4 embedded (build cu124) (torch)")
 pytest.importorskip("torchmetrics", reason="test requires the local-cu124 extra (torchmetrics)")
 
 import torch

@@ -1,4 +1,4 @@
-"""Offline model boundary; stdlib runner also works in the L4 ladder without dev extras."""
+"""Offline model boundary; stdlib runner also works in the T4 ladder without dev extras."""
 
 from __future__ import annotations
 
