@@ -220,10 +220,14 @@ default tool set. No connection binding means the original tool set.
 Every projected MCP tool or resource call uses the existing Host allow-once/deny
 card, including tools annotated read-only. A server's annotation does not grant
 permission. This approval is independent of local workspace write access: a
-workspace-less or read-only Work can use an approved connector without acquiring
+workspace-less or read-only Work or cooperative chat can use an approved connector without acquiring
 file or shell rights. File/path checks and the write-access-plus-approval gate
 for shell and other extension tools are unchanged. Denial and cancellation do
 not authorize a later call.
+The trusted MCP gate identifies these requests as `mcp.tool.execute`; generic
+tool permissions remain denied in read-only cooperative contexts. Approval cards
+show the Host connection display name and the original MCP tool name, even when
+Pi hashes its model-facing identifier.
 Enabling and binding a stdio connection authorizes starting its configured
 executable when the Work connects. Per-call approval does not sandbox that
 server's startup code; only bind trusted services.
@@ -237,10 +241,22 @@ other connections' values and native Pi OAuth accounts are not implicitly
 forwarded. Interactive MCP OAuth and native `/mcp` configuration are not exposed
 through this adapter; configure authentication through Host connection settings.
 
-Invalid bearer bindings or connection IDs that collide after Pi's namespace
-normalization prevent provider registration with a settings diagnostic. Connection
-startup failures appear as redacted native diagnostic milestones, not executed
-tool evidence. Connections reload from the current Host snapshot on a new run,
+Missing bearer tokens skip the affected connection; native namespace collisions
+skip all ambiguous connections. Other connections and Pi remain available. These
+errors and connection failures appear as redacted `runtime.notice` status entries
+in provider activity, with Host Settings guidance. They neither count as task
+progress nor claim tool execution or a diagnosed task failure.
+
+Each run (including each cooperative turn) starts a fresh Pi process and the
+bound services. This incurs service startup/discovery cost on every run; connections
+are not pooled across turns. The first prompt waits at most 3 seconds for direct
+tools, down from Pi's 10-second default. Connected services contribute tools to
+the first model request; slower services can become available on later model
+turns within the same run, and a runtime notice reports that they are still
+connecting. A short run may finish before a slow service becomes usable. This
+budget does not change the native timeout for an actual MCP request.
+
+Connections reload from the current Host snapshot on a new run,
 including when restoring an existing native session. Disabling or unbinding a
 connection takes effect after the backend restart required by Host settings.
 
@@ -283,6 +299,15 @@ The MCP suite uses synthetic stdio and loopback HTTP services to check connectio
 binding, literal credentials, independent approvals, denial/cancellation,
 resources, connection errors and restored-session cleanup. Windows Python CI
 installs the pinned runtime before running these suites.
+Cooperative ingress tests cover exact approval ownership, read-only MCP approval,
+local shell denial and unchanged workspace access. The MCP suite also checks
+per-connection configuration failures, original tool labels after native hashing,
+and a hanging server's bounded first-prompt delay.
+
+Synthetic captures using the real Electron activity-card component show the
+notice and approval text [before](evidence/pi-mcp-2026-10-15/before.png) and
+[after](evidence/pi-mcp-2026-10-15/after.png) the audit fixes. They use fixture
+events and no real credentials or sessions.
 
 For an opt-in real-model run that creates files and opens real browser/Notepad
 windows on Windows:

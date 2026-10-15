@@ -163,6 +163,17 @@ function entryForEvent(event: Record<string, unknown>): ChatWorkActivityEntry | 
       observedAt,
     }
   }
+  if (type === 'runtime.notice') {
+    const message = cleanText(payload.message, 1200)
+    if (!message) return null
+    return {
+      id: `notice:${itemId}`,
+      kind: 'status',
+      state: ['warning', 'error'].includes(String(payload.level)) ? 'attention' : 'info',
+      title: message,
+      observedAt,
+    }
+  }
   if (type === 'semantic.progress') {
     const summary = cleanText(payload.summary || payload.text, 600)
     if (!summary) return null

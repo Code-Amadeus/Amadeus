@@ -1,29 +1,33 @@
 /** Host-selected MCP configuration; Pi owns discovery and tool execution. */
-import { createMcpExtension, type ExtensionAPI, type McpServerEntry } from '@earendil-works/pi-coding-agent'
+import { createMcpExtension, type ExtensionAPI, type LoadedMcpConfig, type McpServerEntry } from '@earendil-works/pi-coding-agent'
 import { StdioTransport, StreamableHttpTransport } from '@earendil-works/pi-mcp'
 
 const snapshotKey = Symbol.for('amadeus.pi.hostMcpSnapshot')
 
-function hostSnapshot(): McpServerEntry[] {
+type HostMcpConfig = LoadedMcpConfig & { servers: (McpServerEntry & { displayName: string })[] }
+
+function hostSnapshot(): HostMcpConfig {
   // Session replacement reloads extension modules within the same Pi process.
   // Consume the launch environment once; reloads reuse the private process
   // snapshot. A new Work process receives a fresh Host snapshot.
-  const owner = process as unknown as Record<symbol, McpServerEntry[] | undefined>
+  const owner = process as unknown as Record<symbol, HostMcpConfig | undefined>
   if (!owner[snapshotKey]) {
-    const entries: McpServerEntry[] = JSON.parse(process.env.AMADEUS_PI_MCP_SERVERS || '[]')
-    Object.defineProperty(owner, snapshotKey, { value: entries })
+    const config: HostMcpConfig = JSON.parse(process.env.AMADEUS_PI_MCP_SERVERS || '{"servers":[],"errors":[],"autoEnableCodemode":false}')
+    Object.defineProperty(owner, snapshotKey, { value: config })
     delete process.env.AMADEUS_PI_MCP_SERVERS
   }
   return owner[snapshotKey]!
 }
 
-export function registerHostMcp(pi: ExtensionAPI): Set<string> {
-  const entries = hostSnapshot()
-  const tools = new Set<string>()
-  if (!entries.length) return tools
+export function registerHostMcp(pi: ExtensionAPI): Map<string, string> {
+  const config = hostSnapshot()
+  const tools = new Map<string, string>()
+  if (!config.servers.length && !config.errors.length) return tools
 
   createMcpExtension({
-    loadConfig: () => ({ servers: entries, autoEnableCodemode: false, errors: [] }),
+    loadConfig: () => config,
+    // Bound the first-prompt delay; late tools appear on subsequent model turns.
+    startupWaitMs: 3_000,
     createTransport: ({ config }) => {
       // Host values are already resolved: do not interpret ${...} or !commands,
       // inherit Pi's model credentials, or import Pi's native OAuth accounts.
@@ -38,7 +42,11 @@ export function registerHostMcp(pi: ExtensionAPI): Set<string> {
     getMcpServers: () => [],
     registerCommand: () => {},
     registerTool: tool => {
-      tools.add(tool.name)
+      // Native labels retain server/original tool names even when model-facing
+      // names have been shortened and hashed. Host display names remain visible.
+      const entry = config.servers.find(entry => tool.label.startsWith(`${entry.name}/`))
+      const label = entry ? `${entry.displayName} (${entry.name}) / ${tool.label.slice(entry.name.length + 1)}` : tool.label
+      tools.set(tool.name, label)
       pi.registerTool(tool)
     },
   })

@@ -121,7 +121,8 @@ export default function (pi: ExtensionAPI) {
     if (!mcpTools.has(name) && access !== 'write') {
       return { block: true, reason: 'This conversation cannot execute shell or mutating extension tools' }
     }
-    if (!ctx.hasUI || !await ctx.ui.confirm(`Pi tool: ${name}`, JSON.stringify(event.input))) {
+    const title = mcpTools.has(name) ? `MCP tool: ${mcpTools.get(name)}` : `Pi tool: ${name}`
+    if (!ctx.hasUI || !await ctx.ui.confirm(title, JSON.stringify(event.input))) {
       return { block: true, reason: 'The Host did not approve this operation' }
     }
   })

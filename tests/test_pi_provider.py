@@ -299,7 +299,7 @@ def test_pi_startup_rejects_previous_runtime_before_authentication(tmp_path, mon
     assert raised.value.availability["reason"] == "pi_runtime_missing_or_wrong_version"
 
 
-def test_pi_startup_rejects_missing_mcp_bearer_before_authentication(tmp_path, monkeypatch):
+def test_pi_startup_remains_available_with_missing_mcp_bearer(tmp_path, monkeypatch):
     from agent_host.mcp_connections import McpConnectionSpec
 
     _installed_pi_runtime(tmp_path, monkeypatch)
@@ -309,17 +309,19 @@ def test_pi_startup_rejects_missing_mcp_bearer_before_authentication(tmp_path, m
         bearer_token_env_var="PI_MCP_MISSING_TOKEN")
 
     def probe(*_args, **_kwargs):
-        pytest.fail("Invalid MCP bindings must not reach authentication")
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"status": "ready"}))
 
     adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent", startup_probe=probe,
         mcp_connections=(connection,))
-    with pytest.raises(PiStartupUnavailable) as raised:
-        adapter.require_startup_ready()
-    assert raised.value.availability["reason"] == "pi_mcp_configuration_invalid"
+    adapter.require_startup_ready()
+    projected = json.loads(adapter._child_environment(cwd=tmp_path)["AMADEUS_PI_MCP_SERVERS"])
+    assert projected["servers"] == []
+    assert "bearer token is unavailable" in projected["errors"][0]
 
 
-async def test_pi_native_notifications_are_redacted_diagnostics(pi_host, monkeypatch):
+async def test_pi_native_notifications_are_redacted_without_task_progress(pi_host, monkeypatch):
     from agent_host.mcp_connections import McpConnectionSpec
+    from server.work_semantic_progress import semantic_progress_fact
 
     adapter, request, events, emit = pi_host
     adapter.mcp_connections = (McpConnectionSpec(connection_id="fixture", display_name="Fixture",
@@ -332,11 +334,15 @@ async def test_pi_native_notifications_are_redacted_diagnostics(pi_host, monkeyp
         finish(self, *args, **kwargs)
 
     monkeypatch.setattr(FakePi, "finish", notify)
-    assert (await adapter.run(request, "notice", emit)).status == "done"
-    event, = [event for event in events if event.type == "semantic.progress"]
+    result = await adapter.run(request, "notice", emit)
+    assert result.status == "done"
+    assert result.activity_evidence.progress_milestones == 0
+    assert not any(event.type == "semantic.progress" for event in events)
+    event, = [event for event in events if event.type == "runtime.notice"]
     assert "synthetic-secret" not in str(event.payload)
-    assert "[redacted]" in event.payload["summary"]
-    assert event.payload["milestone"] == "diagnostic" and not event.payload["verified"]
+    assert "[redacted]" in event.payload["message"]
+    assert event.payload["level"] == "error"
+    assert semantic_progress_fact(event.type, event.payload) is None
 
 
 async def test_pi_rejects_concurrent_attachment_to_a_new_live_session(pi_host, monkeypatch):

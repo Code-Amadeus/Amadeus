@@ -75,7 +75,7 @@ export function summarizePayload(event: ProviderEvent): string {
   const payload = event.payload || {}
   const tool = payload.tool || payload.name || payload.command
   if (tool) return String(tool)
-  const text = payload.text || payload.delta || payload.error || payload.status || payload.result
+  const text = payload.text || payload.message || payload.delta || payload.error || payload.status || payload.result
   if (text) return String(text).replace(/\s+/g, ' ').slice(0, 180)
   try {
     return JSON.stringify(payload).slice(0, 180)

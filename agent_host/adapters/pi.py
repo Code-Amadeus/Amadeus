@@ -14,10 +14,10 @@ import sys
 from typing import Any
 
 from agent_host.pi_rpc import PiCommandRejected, PiRpcClient, PiTransportError
-from agent_host.mcp_connections import load_mcp_connections, pi_mcp_servers, redact_mcp_text
+from agent_host.mcp_connections import load_mcp_connections, pi_mcp_config, redact_mcp_text
 from agent_host.provider_catalog import PI_MANIFEST
 from agent_host.provider_identity import with_parent_conversation_context
-from agent_host.provider_progress import progress_payload, split_progress_stream, with_progress_contract
+from agent_host.provider_progress import split_progress_stream, with_progress_contract
 from agent_host.provider_types import (
     ProviderActivityEvidence, ProviderEvent, ProviderInputDelivery,
     ProviderPermissionResponse, ProviderRunResult, ProviderSessionHandle,
@@ -102,11 +102,6 @@ class PiAdapter:
         web_package = RUNTIME_DIR / "node_modules/pi-simple-web-tools/package.json"
         if not web_package.is_file() or json.loads(web_package.read_text(encoding="utf-8")).get("version") != "0.1.0":
             raise PiStartupUnavailable("pi_web_component_missing_or_wrong_version")
-        try:
-            pi_mcp_servers(self.mcp_connections, cwd=str(self.agent_dir))
-        except ValueError:
-            raise PiStartupUnavailable("pi_mcp_configuration_invalid",
-                diagnostic="Review Pi bindings and credentials in Settings -> Providers -> MCP, then restart the backend.") from None
         extensions = json.loads(settings.PI_EXTENSIONS_JSON)
         if not isinstance(extensions, list) or any(not isinstance(item, str)
                 or not Path(item).expanduser().is_file() for item in extensions):
@@ -157,7 +152,7 @@ class PiAdapter:
                 "AMADEUS_PI_PYTHON": sys.executable,
                 "AMADEUS_PI_WEB_HELPER": str(RUNTIME_DIR.parent / "pi_web_tools.py"),
                 "PI_WEB_TOOLS_CONFIG": str(self.agent_dir / "web-tools.json"),
-                "AMADEUS_PI_MCP_SERVERS": json.dumps(pi_mcp_servers(self.mcp_connections, cwd=str(cwd)))})
+                "AMADEUS_PI_MCP_SERVERS": json.dumps(pi_mcp_config(self.mcp_connections, cwd=str(cwd)))})
         return env
 
     def configuration(self):
@@ -319,9 +314,13 @@ class PiAdapter:
             key = str(event.get("id") or "")
             if event.get("method") == "confirm":
                 run.permissions[key] = event
+                title = str(event.get("title", ""))
+                # This title prefix is emitted by the trusted Host MCP gate,
+                # never inferred from model text or the tool's hashed name.
+                capability = "mcp.tool.execute" if title.startswith("MCP tool: ") else "provider.tool.execute"
                 await self._emit(run_id, run, "permission.requested", {"permissionRequest": {
-                    "request_id": key, "capability": "provider.tool.execute", "action": "execute_tool",
-                    "reason": str(event.get("title", "")) + "\n" + str(event.get("message", "")),
+                    "request_id": key, "capability": capability, "action": "execute_tool",
+                    "reason": title + "\n" + str(event.get("message", "")),
                     "options": ["allow_once", "deny"], "retryRequired": False, "diagnosticOnly": False}})
             elif event.get("method") in {"select", "input", "editor"}:
                 # No generic form owner exists in Provider permission responses.
@@ -329,9 +328,11 @@ class PiAdapter:
                 await run.client.send({"type": "extension_ui_response", "id": key, "cancelled": True})
             elif event.get("method") == "notify" and str(event.get("message") or "").strip():
                 notice = redact_mcp_text(str(event["message"]), self.mcp_connections)
-                run.milestones += 1
-                await self._emit(run_id, run, "semantic.progress", progress_payload(
-                    "diagnostic", notice, source="pi_native_notification", explicit=False, verified=False))
+                notice = notice.replace("Run /mcp to fix.",
+                    "Review connections in Settings -> Providers -> MCP, then restart the backend.")
+                await self._emit(run_id, run, "runtime.notice", {
+                    "message": notice, "level": str(event.get("notifyType") or "info"),
+                    "source": "pi_native_notification"})
         elif kind == "extension_error":
             raise PiTransportError("Pi extension failed; execution outcome requires inspection")
         elif kind == "agent_settled":

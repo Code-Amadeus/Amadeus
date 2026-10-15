@@ -3621,8 +3621,9 @@ async def test_cooperative_work_uses_existing_context_without_blocking_chat_and_
         ledger.close()
 
 
+@pytest.mark.parametrize("access,capability", [("write", "shell.execute"), ("read", "mcp.tool.execute")])
 async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, access, capability):
     monkeypatch.setattr(sm, "_SESSION_DIR", str(tmp_path/"sessions"))
     monkeypatch.setattr(sm, "_CURRENT_SESSION_ID", None)
     monkeypatch.setattr(sm, "_SESSION_SELECTION_REVISION", 0)
@@ -3662,10 +3663,11 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
     runtime.set_native_session_checkpoint(manager.checkpoint_native_session)
     manager.install()
     try:
-        # Legacy active approvals retain their exact owner; new conversation
-        # starts are covered separately by the read-only permission checks.
+        # Legacy write approvals and MCP approvals in ordinary read-only chats
+        # retain the exact same Host-owned identity and resolution path.
         legacy_ingress = await manager._ingress_for("permission-session")
-        legacy_ingress.loop.context_requirements["recovery-test"] = requirements
+        legacy_ingress.loop.context_requirements["recovery-test"] = replace(
+            requirements, workspace_access=access)
         result = await handler._handle_send({"text":"执行需要批准的命令。",
             "turn_id":"permission-turn", "utterance_id":"permission-source",
             "session_id":"permission-session"})
@@ -3678,7 +3680,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
         request_event = {"provider":"recovery-test", "run_id":record.run_id,
             "type":"permission.requested", "metadata":dict(record.metadata),
             "payload":{"permissionRequest":{"request_id":"native-allow-once",
-                "capability":"shell.execute", "action":"execute_command",
+                "capability":capability, "action":"execute_command",
                 "options":["allow_once", "deny"]}}}
         await manager._handle_provider_event(Method.PROVIDER_EVENT, request_event)
         pending = permissions.list_cooperative_permission_requests(
@@ -3694,7 +3696,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
             "id":pending[0].request_id, "ownerKind":"cooperative_run",
             "sessionId":"permission-session", "runId":record.run_id,
             "providerRequestId":"native-allow-once",
-            "capability":"shell.execute", "action":"execute_command",
+            "capability":capability, "action":"execute_command",
             "scope":[], "reason":"Explicit user approval is required.",
             "reversibility":"unknown", "status":"pending",
             "options":["allow_once", "deny"]}
@@ -3735,6 +3737,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
         response_run, response = adapter.permission_responses[0]
         assert response_run == record.run_id
         assert response.request_id == "native-allow-once" and response.allow is True
+        assert ingress.loop.get_context(record.metadata["cooperative_context_id"]).requirements.workspace_access == access
         stored = permissions.get_permission_request(pending[0].request_id)
         assert stored is not None and stored.status == "allowed"
         assert not stored.work_item_id and not stored.attempt_id
@@ -3751,7 +3754,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
 
         expiring = {**request_event,
             "payload":{"permissionRequest":{"request_id":"native-expiring",
-                "capability":"shell.execute", "action":"execute_command",
+                "capability":capability, "action":"execute_command",
                 "options":["allow_once", "deny"]}}}
         before_background = len([call for call in emitted.await_args_list
             if call.args and call.args[0] == Method.WALLPAPER_CANVAS])
@@ -3774,7 +3777,7 @@ async def test_ask_policy_resolves_only_the_exact_active_cooperative_permission(
 
         remaining_event = {**request_event,
             "payload":{"permissionRequest":{"request_id":"native-remaining",
-                "capability":"shell.execute", "action":"execute_command",
+                "capability":capability, "action":"execute_command",
                 "options":["allow_once", "deny"]}}}
         await manager._handle_provider_event(Method.PROVIDER_EVENT, remaining_event)
         remaining_row = next(permission for permission in

@@ -38,6 +38,24 @@ const orphanedEvent = {
   metadata: orphanedResult.metadata,
 }
 
+test('runtime notices remain visible status entries without claiming a milestone or failing the task', () => {
+  const event = {
+    ...orphanedEvent,
+    type: 'runtime.notice',
+    payload: { message: 'Fixture connection skipped. Review Settings -> Providers -> MCP.', level: 'warning' },
+  }
+  const [activity] = applyProviderEvent([], event)
+  assert.equal(activity.status, 'running')
+  assert.equal(activity.entries.length, 1)
+  assert.equal(activity.entries[0].kind, 'status')
+  assert.equal(activity.entries[0].state, 'attention')
+  assert.equal(activity.entries[0].title, event.payload.message)
+  const [hydrated] = activitiesFromProviderRuns([{
+    ...orphanedResult, status: 'running', events: [event],
+  }], 'session-a')
+  assert.deepEqual(hydrated.entries, activity.entries)
+})
+
 test('live orphaned result becomes a non-terminal recovery activity', () => {
   const [activity] = applyProviderResult([], orphanedResult)
 

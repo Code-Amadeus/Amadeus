@@ -1,6 +1,7 @@
 """Host-bound MCP calls through the real Pi CLI and local synthetic servers."""
 from dataclasses import replace
 from contextlib import suppress
+import asyncio
 import json
 from pathlib import Path
 import sys
@@ -50,14 +51,16 @@ def calls(root):
 
 
 def test_pi_projection_filters_bindings_and_keeps_credentials_literal(tmp_path, monkeypatch):
-    from agent_host.mcp_connections import pi_mcp_servers
+    from agent_host.mcp_connections import pi_mcp_config
 
     monkeypatch.setenv("AMADEUS_PI_TEST_HOST_SECRET", "unrelated-secret")
     active = connection(tmp_path / "active")
     disabled = connection(tmp_path / "disabled", connection_id="disabled", enabled=False)
     other = connection(tmp_path / "other", connection_id="other", provider_ids=("codex",),
         environment={"PI_MCP_OTHER_SECRET": "other-secret"})
-    entries = pi_mcp_servers((active, disabled, other), cwd=str(tmp_path))
+    projected = pi_mcp_config((active, disabled, other), cwd=str(tmp_path))
+    entries = projected["servers"]
+    assert projected["errors"] == []
     assert [entry["name"] for entry in entries] == ["fixture"]
     environment = entries[0]["config"]["env"]
     assert environment["PI_MCP_LITERAL"] == "!literal ${NOT_EXPANDED}"
@@ -65,24 +68,28 @@ def test_pi_projection_filters_bindings_and_keeps_credentials_literal(tmp_path, 
     assert "PI_MCP_OTHER_SECRET" not in environment
     assert "AMADEUS_PI_MCP_SERVERS" not in environment
     assert entries[0]["config"]["exposure"] == "direct"
-    with pytest.raises(ValueError, match="namespace"):
-        pi_mcp_servers((replace(active, connection_id="a-b"), replace(active, connection_id="a_b")), cwd=str(tmp_path))
+    collisions = pi_mcp_config((active, replace(active, connection_id="a-b"),
+                               replace(active, connection_id="a_b")), cwd=str(tmp_path))
+    assert [entry["name"] for entry in collisions["servers"]] == ["fixture"]
+    assert len(collisions["errors"]) == 2
+    assert all("namespace" in error for error in collisions["errors"])
 
 
 def test_pi_http_projection_uses_bound_token_and_fails_closed_when_missing(tmp_path, monkeypatch):
-    from agent_host.mcp_connections import pi_mcp_servers
+    from agent_host.mcp_connections import pi_mcp_config
 
     monkeypatch.setenv("PI_MCP_TEST_TOKEN", "ambient-fallback")
     spec = McpConnectionSpec(connection_id="http", display_name="HTTP", transport="http", enabled=True,
         provider_ids=("pi",), url="https://mcp.example.test/mcp", bearer_token_env_var="PI_MCP_TEST_TOKEN",
         environment={"PI_MCP_TEST_TOKEN": "bound-${LITERAL}"})
-    config = pi_mcp_servers((spec,), cwd=str(tmp_path))[0]["config"]
+    config = pi_mcp_config((spec,), cwd=str(tmp_path))["servers"][0]["config"]
     assert config["headers"] == {"Authorization": "Bearer bound-${LITERAL}"}
     assert "env" not in config
     assert "auth" not in config and "oauth" not in config
     monkeypatch.delenv("PI_MCP_TEST_TOKEN")
-    with pytest.raises(ValueError, match="bearer token is unavailable"):
-        pi_mcp_servers((replace(spec, environment={}),), cwd=str(tmp_path))
+    missing = pi_mcp_config((replace(spec, environment={}),), cwd=str(tmp_path))
+    assert missing["servers"] == []
+    assert "bearer token is unavailable" in missing["errors"][0]
 
 
 async def test_only_host_bound_servers_load_despite_ambient_configuration(native_pi, tmp_path, monkeypatch):
@@ -129,9 +136,107 @@ async def test_failed_mcp_connection_is_observable_without_claiming_execution(na
 
     result = await adapter.run(request(tmp_path), "failed-connection", emit)
     assert result.status == "done", result
-    assert any(event.type == "semantic.progress" and event.payload["source"] == "pi_native_notification" for event in events)
+    notice, = [event for event in events if event.type == "runtime.notice"]
+    assert "Settings -> Providers -> MCP" in notice.payload["message"]
+    assert "/mcp" not in notice.payload["message"]
     assert not any(event.type == "tool.call" for event in events)
     assert result.activity_evidence.execution_items == 0
+    assert result.activity_evidence.progress_milestones == 0
+
+
+async def test_bad_bindings_are_visible_without_disabling_healthy_tools(native_pi, tmp_path, monkeypatch):
+    adapter, requests, selected, _ = native_pi
+    root = tmp_path / "service"
+    good = connection(root)
+    monkeypatch.delenv("PI_MCP_MISSING_TOKEN", raising=False)
+    adapter.mcp_connections = (good,
+        replace(good, connection_id="a-b"), replace(good, connection_id="a_b"),
+        McpConnectionSpec(connection_id="missing", display_name="Missing credential", transport="http",
+            enabled=True, provider_ids=("pi",), url="http://127.0.0.1:9/mcp",
+            bearer_token_env_var="PI_MCP_MISSING_TOKEN"))
+    selected.update(tool="mcp__fixture__inspect_fixture", args={})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            await adapter.resolve_permission("bad-bindings", ProviderPermissionResponse(
+                event.payload["permissionRequest"]["request_id"], True))
+
+    result = await adapter.run(request(tmp_path, "read"), "bad-bindings", emit)
+    assert result.status == "done", result
+    assert calls(root) == ["inspect"]
+    names = [tool["function"]["name"] for tool in requests[0]["tools"]]
+    assert not any(name.startswith(("mcp__a_b__", "mcp__missing__")) for name in names)
+    notices = "\n".join(event.payload["message"] for event in events if event.type == "runtime.notice")
+    assert "a-b" in notices and "a_b" in notices and "Missing credential" in notices
+    assert "Settings -> Providers -> MCP" in notices
+    assert result.activity_evidence.progress_milestones == 0
+
+
+async def test_hashed_mcp_tool_approval_keeps_service_and_original_name(native_pi, tmp_path):
+    adapter, requests, selected, _ = native_pi
+    root = tmp_path / "service"
+    adapter.mcp_connections = (connection(root, connection_id="ext_" + "a" * 40,
+        display_name="Synthetic Notes"),)
+
+    def inspect_tool(data):
+        name = next(tool["function"]["name"] for tool in data["tools"]
+                    if "inspect_fixture" in tool["function"]["description"])
+        assert len(name) == 64 and not name.endswith("inspect_fixture")
+        return {"tool": name, "args": {}}
+
+    selected["steps"] = [inspect_tool]
+    permissions = []
+
+    async def emit(event):
+        if event.type == "permission.requested":
+            permission = event.payload["permissionRequest"]
+            permissions.append(permission)
+            await adapter.resolve_permission("readable-name", ProviderPermissionResponse(permission["request_id"], False))
+
+    result = await adapter.run(request(tmp_path, "read"), "readable-name", emit)
+    assert result.status == "done", result
+    permission, = permissions
+    assert "Synthetic Notes" in permission["reason"] and "inspect_fixture" in permission["reason"]
+    assert permission["capability"] == "mcp.tool.execute"
+    assert calls(root) == []
+    assert len(requests) == 2
+
+
+async def test_hung_server_does_not_hold_the_first_model_request_for_native_default(native_pi, tmp_path):
+    adapter, _, selected, _ = native_pi
+    # The synthetic process consumes stdin but never answers initialization.
+    # Observe its launch and the model request separately from Pi boot time.
+    root = tmp_path / "hung"
+    script = tmp_path / "hung_server.py"
+    script.write_text("import os, pathlib, sys\n"
+        "pathlib.Path(os.environ['PI_MCP_FIXTURE_ROOT']).mkdir()\n"
+        "for line in sys.stdin: pass\n", encoding="utf-8")
+    adapter.mcp_connections = (connection(root, arguments=(str(script),)),)
+    prompted = asyncio.Event()
+    selected["steps"] = [lambda _data: prompted.set() or {}]
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    running = asyncio.create_task(adapter.run(request(tmp_path), "hung", emit))
+    try:
+        async with asyncio.timeout(15):
+            while not root.exists():
+                await asyncio.sleep(0.02)
+        # The managed budget is 3s. Leave scheduling headroom, but remain below
+        # the native 10s default that previously stalled every turn.
+        await asyncio.wait_for(prompted.wait(), 7)
+        result = await running
+        assert result.status == "done", result
+        assert any(event.type == "runtime.notice" and "still connecting" in event.payload["message"] for event in events)
+        assert result.activity_evidence.progress_milestones == 0
+    finally:
+        if not running.done():
+            await adapter.cancel("hung")
+            await running
 
 
 @pytest.mark.parametrize("access", ["none", "read", "write"])
@@ -147,6 +252,7 @@ async def test_mcp_call_requires_host_approval_independent_of_workspace(native_p
     async def emit(event):
         events.append(event)
         if event.type == "permission.requested":
+            assert event.payload["permissionRequest"]["capability"] == "mcp.tool.execute"
             key = event.payload["permissionRequest"]["request_id"]
             assert (await adapter.resolve_permission("mcp", ProviderPermissionResponse(key, allow)))["accepted"]
             assert not (await adapter.resolve_permission("mcp", ProviderPermissionResponse(key, allow)))["accepted"]
