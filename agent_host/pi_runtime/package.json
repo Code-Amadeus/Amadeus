@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Pinned optional Pi RPC runtime and Amadeus tool extension",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-coding-agent": "1.2.0",
     "pi-simple-web-tools": "0.1.0",
     "typebox": "1.3.27"
   }

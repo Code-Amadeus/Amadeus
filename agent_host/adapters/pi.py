@@ -24,7 +24,7 @@ from agent_host.provider_types import (
 from config import settings
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1] / "pi_runtime"
-PI_VERSION = "0.86.1"
+PI_VERSION = "1.2.0"
 PI_AUTH_CHECK_TIMEOUT_S = 10
 
 _PI_MODEL_CREDENTIALS = {

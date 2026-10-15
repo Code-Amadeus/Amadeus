@@ -6,6 +6,7 @@ checks. They exercise the actual native extension and RPC session format.
 from dataclasses import replace
 import json
 import shutil
+import sys
 
 from aiohttp import web
 import pytest
@@ -175,6 +176,106 @@ async def test_real_pi_workspace_and_permission_policy(native_pi, tmp_path, acce
     assert tools[0].payload["ok"] == (tool in {"web_fetch", "web_read"})
     if tool == "bash":
         assert any(event.type == "permission.requested" for event in events)
+
+
+async def test_real_pi_keeps_managed_tools_without_ambient_mcp_or_extensions(native_pi, tmp_path):
+    adapter, requests, _, _ = native_pi
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    mcp_started = tmp_path / "mcp-started"
+    extension_loaded = tmp_path / "extension-loaded"
+    server = tmp_path / "ambient_server.py"
+    server.write_text(f"from pathlib import Path\nPath({str(mcp_started)!r}).touch()\n", encoding="utf-8")
+    for directory in (adapter.agent_dir, workspace / ".pi"):
+        directory.mkdir(exist_ok=True)
+        (directory / "mcp.json").write_text(json.dumps({"mcpServers": {
+            "ambient": {"command": sys.executable, "args": [str(server)], "exposure": "direct"},
+        }}), encoding="utf-8")
+        (directory / "settings.json").write_text(json.dumps({
+            "extensions": ["builtin:mcp", "builtin:codemode", "builtin:tool-search"],
+        }), encoding="utf-8")
+        extensions = directory / "extensions"
+        extensions.mkdir()
+        (extensions / "ambient.ts").write_text(
+            "import { writeFileSync } from 'node:fs';\n"
+            f"export default function() {{ writeFileSync({json.dumps(str(extension_loaded))}, 'loaded'); }}\n",
+            encoding="utf-8",
+        )
+
+    async def emit(_event):
+        pass
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Reply briefly.",
+        cwd=str(workspace), requirements=ProviderRequirements(workspace_access="none")), "managed", emit)
+    assert result.status == "done", result
+    assert {tool["function"]["name"] for tool in requests[0]["tools"]} == {
+        "read", "bash", "edit", "write", "web_fetch", "news_search",
+        "web_search", "web_read", "open_url", "launch_app",
+    }
+    assert not mcp_started.exists()
+    assert not extension_loaded.exists()
+    assert "mcp_connection" not in adapter.manifest.capabilities.capability_projections
+
+
+@pytest.mark.parametrize("access,allow", [("none", False), ("read", False), ("write", False), ("write", True)])
+async def test_real_pi_trusted_extension_tool_requires_host_write_access_and_approval(
+    native_pi, tmp_path, monkeypatch, access, allow,
+):
+    from config import settings
+
+    adapter, _, selected, _ = native_pi
+    marker = tmp_path / "extension-called"
+    extension = tmp_path / "trusted.ts"
+    extension.write_text(
+        "import { writeFileSync } from 'node:fs';\n"
+        "export default function(pi) { pi.registerTool({\n"
+        "name: 'fixture_action', label: 'Fixture action', description: 'Write a synthetic marker.',\n"
+        "parameters: { type: 'object', properties: {} },\n"
+        f"async execute() {{ writeFileSync({json.dumps(str(marker))}, 'called');\n"
+        "return { content: [{ type: 'text', text: 'called' }], details: {} }; }\n"
+        "}); }\n", encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", json.dumps([str(extension)]))
+    selected.update(tool="fixture_action", args={})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        if event.type == "permission.requested":
+            key = event.payload["permissionRequest"]["request_id"]
+            assert (await adapter.resolve_permission("extension", ProviderPermissionResponse(key, allow)))["accepted"]
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Run the fixture action.",
+        cwd=str(tmp_path), requirements=ProviderRequirements(workspace_access=access,
+            workspace_ownership="caller")), "extension", emit)
+    assert result.status == "done", result
+    assert marker.exists() == (access == "write" and allow)
+    assert sum(event.type == "permission.requested" for event in events) == (1 if access == "write" else 0)
+    output, = [event for event in events if event.type == "tool.result"]
+    assert output.payload["ok"] == marker.exists()
+
+
+@pytest.mark.parametrize("tool", ["read", "write"])
+async def test_real_pi_file_tools_reject_paths_outside_host_workspace(native_pi, tmp_path, tool):
+    adapter, _, selected, _ = native_pi
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("preserve", encoding="utf-8")
+    selected.update(tool=tool, args={"path": str(outside), **({"content": "changed"} if tool == "write" else {})})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Exercise a path boundary.",
+        cwd=str(workspace), requirements=ProviderRequirements(workspace_access="write",
+            workspace_ownership="caller")), "outside", emit)
+    assert result.status == "done", result
+    assert outside.read_text(encoding="utf-8") == "preserve"
+    output, = [event for event in events if event.type == "tool.result"]
+    assert not output.payload["ok"]
+    assert not any(event.type == "permission.requested" for event in events)
 
 
 @pytest.fixture

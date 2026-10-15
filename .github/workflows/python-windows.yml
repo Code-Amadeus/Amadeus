@@ -37,6 +37,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22.21.1"
+      - name: Install pinned Pi runtime for native integration tests
+        working-directory: agent_host/pi_runtime
+        run: npm ci --ignore-scripts
       - name: Install locked environment (L1 + dev tooling)
         shell: bash
         run: uv sync --locked --extra dev

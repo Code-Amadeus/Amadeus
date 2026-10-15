@@ -285,6 +285,20 @@ def test_pi_startup_rejects_missing_selected_model_credentials(tmp_path, monkeyp
     assert "Settings -> Models" in raised.value.availability["diagnostic"]
 
 
+def test_pi_startup_rejects_previous_runtime_before_authentication(tmp_path, monkeypatch):
+    runtime = _installed_pi_runtime(tmp_path, monkeypatch)
+    package = runtime / "node_modules/@earendil-works/pi-coding-agent/package.json"
+    package.write_text(json.dumps({"version": "0.86.1"}), encoding="utf-8")
+
+    def probe(*_args, **_kwargs):
+        pytest.fail("An incompatible runtime must not reach authentication")
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent", startup_probe=probe)
+    with pytest.raises(PiStartupUnavailable) as raised:
+        adapter.require_startup_ready()
+    assert raised.value.availability["reason"] == "pi_runtime_missing_or_wrong_version"
+
+
 async def test_pi_rejects_concurrent_attachment_to_a_new_live_session(pi_host, monkeypatch):
     adapter, request, events, emit = pi_host
     monkeypatch.setattr(FakePi, "mode", "waiting")

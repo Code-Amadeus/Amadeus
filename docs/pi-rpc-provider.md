@@ -2,7 +2,7 @@
 
 Pi is the default daily-task agent reached through its native stdin/stdout JSONL RPC.
 It is not an ACP bridge and does not replace the Python Host. The runtime is
-pinned to `@earendil-works/pi-coding-agent@0.86.1`.
+pinned to `@earendil-works/pi-coding-agent@1.2.0`.
 
 ## Install and configure
 
@@ -199,16 +199,62 @@ arbitrary code, and approved shell commands have process-user access. Do not
 load untrusted extensions or treat the path checks as isolation from hostile
 code. No Pi process runs in the Electron UI process.
 
+## Pi 1.2.0 upgrade boundary
+
+The managed runtime keeps the existing tool set and Host authority. Pi 1.2.0's
+native MCP, codemode and tool-search extensions are disabled by the existing
+`--no-extensions` launch option; only the bundled extension and explicit trusted
+`PI_EXTENSIONS_JSON` paths load. `--no-approve` continues to ignore project-local
+configuration. A native `mcp.json` does not enable MCP in this provider, and the
+Pi manifest still advertises only `agent_skill` projection. The bundled Exa
+search bridge remains available through its existing Host MCP client.
+
+Keep `package.json`, `package-lock.json` and the adapter's startup version check
+in sync. Install with `npm ci --ignore-scripts` in `agent_host/pi_runtime` (or the
+normal desktop installation), then restart the backend. Pi 1.2.0 no longer ships
+an npm shrinkwrap; the repository lockfile pins the complete tested tree. The
+Node requirement remains 22.19 or newer. Preserve a copy of the isolated Pi
+session/configuration directory before upgrading a deployment; restoring a
+1.2.0-written session with 0.86.1 is not a supported rollback guarantee.
+
+### Deferred MCP integration
+
+Native MCP is a separate capability change, requiring an Issue and its own
+implementation/acceptance scope under `CONTRIBUTING.md`. Resolve these points
+before advertising `mcp_connection` for Pi:
+
+- Project only enabled connections bound to Pi from the existing Host registry,
+  including package contributions and credential environment bindings. Keep the
+  Host registry authoritative; do not introduce a competing user/project
+  `mcp.json` configuration path or expose MCP schemas to Main Chat.
+- Keep external tool execution authority distinct from local workspace write
+  access. Today unknown tools, including MCP and codemode if explicitly loaded,
+  require write access and Host confirmation. A read-only MCP annotation is
+  evidence about a tool, not a grant of permission. Preserve Host approval and
+  denial semantics without granting workspace writes just to use a connector.
+- Validate direct calls before adding codemode/tool search. Pi sends nested
+  calls through its tool hooks, but the current gate can ask for confirmation
+  both for codemode and for each nested MCP call. Preserve call/result identity,
+  cancellation and observable partial failures when designing that interaction.
+- Define connection startup/failure/shutdown and credential/OAuth ownership in
+  the existing Host settings flow. Pi's interactive MCP manager is not an
+  Amadeus GUI integration; select/input/editor dialogs are currently cancelled.
+- Cover disabled/unbound connections, credential isolation, read-only and
+  mutating calls, approval denial, cancellation, restoration and tool-list
+  changes with deterministic local MCP services before real-provider acceptance.
+
 ## Validation
 
 ```powershell
-.venv/Scripts/python.exe -m pytest tests/test_pi_provider.py tests/test_pi_runtime.py tests/test_pi_web_tools.py
+.venv/Scripts/python.exe -m pytest tests/test_pi_provider.py tests/test_pi_runtime.py tests/test_pi_web_tools.py tests/test_skill_pi_runtime.py
 ```
 
 The first suite checks acknowledgement uncertainty, correlation, permissions,
 cancellation and session identity using deterministic protocol peers. The second
 starts the real pinned Pi CLI against a local mock model endpoint to test file
-tools, native extensions, permission denial and on-disk session restoration.
+tools, explicit versus ambient extensions, disabled native MCP discovery, Host
+approval/denial, workspace boundaries and on-disk session restoration. The Skill
+suite covers native instruction/resource reads, continuation and stale bindings.
 It skips when the optional npm runtime is absent; it uses no paid model calls.
 
 For an opt-in real-model run that creates files and opens real browser/Notepad
