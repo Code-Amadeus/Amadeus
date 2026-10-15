@@ -47,7 +47,8 @@
           "original"
         ],
         "serial": false,
-        "request_interval_s": 0
+        "request_interval_s": 0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -1037,7 +1038,8 @@
           "original"
         ],
         "serial": false,
-        "request_interval_s": 0
+        "request_interval_s": 0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -2979,7 +2981,8 @@
           "no_ack_preface"
         ],
         "serial": false,
-        "request_interval_s": 0
+        "request_interval_s": 0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -3968,7 +3971,8 @@
           "original"
         ],
         "serial": false,
-        "request_interval_s": 0
+        "request_interval_s": 0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -4590,7 +4594,8 @@
           "original"
         ],
         "serial": false,
-        "request_interval_s": 0
+        "request_interval_s": 0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -4651,7 +4656,8 @@
           "original"
         ],
         "serial": true,
-        "request_interval_s": 12.0
+        "request_interval_s": 12.0,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -4926,7 +4932,8 @@
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
         "status": "complete",
-        "openai_sampling": null
+        "openai_sampling": null,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -4992,7 +4999,8 @@
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
         "status": "complete",
-        "openai_sampling": null
+        "openai_sampling": null,
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -6313,7 +6321,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -6962,7 +6971,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -7029,7 +7039,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -7097,7 +7108,8 @@
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
         "status": "interrupted_after_saved_response",
-        "instrument_failure": "Windows stdout UnicodeEncodeError after saving one successful response; excluded from primary summary. UTF-8 console handling repaired before full runs."
+        "instrument_failure": "Windows stdout UnicodeEncodeError after saving one successful response; excluded from primary summary. UTF-8 console handling repaired before full runs.",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -7165,7 +7177,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -7839,7 +7852,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -9896,7 +9910,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "complete"
+        "status": "complete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -11894,7 +11909,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "incomplete"
+        "status": "incomplete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -11961,7 +11977,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "incomplete"
+        "status": "incomplete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -12253,7 +12270,8 @@
         "history_policy": "strip",
         "rag": false,
         "fixture_sha256": "5d1528b40ac5913253f01970cd194c4d3d8451a405cf416fd6b345cd3814cf9e",
-        "status": "incomplete"
+        "status": "incomplete",
+        "history_schema": "legacy_role_content"
       },
       "runs": [
         {
@@ -12748,5 +12766,10 @@
         "other": 24
       }
     }
-  ]
+  ],
+  "instrument_correction": {
+    "status": "legacy_history_format_observations_only",
+    "description": "All 538 attempts supplied role/content rows inside frame.history. Production ingress supplies source/text/input_id-or-cause. These results remain observations of that legacy probe input, not strict production-history qualification.",
+    "superseding_evidence": "issue-227-prompt-history-2026-10-16.json"
+  }
 }

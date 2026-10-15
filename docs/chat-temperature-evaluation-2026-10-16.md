@@ -2,6 +2,12 @@
 
 ## English
 
+**Instrument correction:** all 538 attempts below used legacy `role/content` rows
+inside `frame.history`; production ingress uses `source/text` rows. Keep these as
+legacy-format observations, not production-history qualification. The corrected
+[prompt/history investigation](chat-repetition-root-cause-2026-10-16.md) supersedes
+the production-fidelity claims below and contains 933 additional controlled requests.
+
 Related to [#227](https://github.com/Code-Amadeus/Amadeus/issues/227); keep the issue open.
 The change adds the environment-only `COOPERATIVE_CHAT_TEMPERATURE`, default **0.7**,
 with explicit overrides including 0 allowed. The measurements **do not establish 0.7
@@ -18,7 +24,8 @@ persona and existing OpenAI sampling policy are unchanged.
   across all DeepSeek temperatures for the same repeat; only sampling differs.
 - The probe captures `CooperativeProviderLoop._decide` messages and runs the exact
   `_query_cooperative_chat` callback extracted from `server/app.py`, using the production
-  client. Built-in Kurisu Japanese persona, professional role contract, EMO history
+  client, but supplied the legacy history shape described above. Built-in Kurisu
+  Japanese persona, professional role contract, EMO history
   stripping, RAG off, 900-token budget, no SDK retries; no private persona overrides.
 - No TTS, Electron, Work/tool execution or session persistence. No execution provider is
   registered, so this is a role-boundary experiment, not a full Chat/Work reproduction.
@@ -235,6 +242,11 @@ Omit `--live` to print a preparation manifest without model calls. The original 
 was executed as two batches (0/0.7, then 0.3/0.5/1/1.3), not a single six-way batch.
 
 ## 中文
+
+**探针格式纠正：** 下列 538 次请求使用 `role/content` 历史行，生产入口实际为
+`source/text`。旧数据作为该格式下的观察保留，不能作为严格匹配生产历史的验收。
+最新 [prompt/历史调查](chat-repetition-root-cause-2026-10-16.md) 已纠正这一点，另做
+933 次受控请求，并取代下面关于生产历史保真度的表述。
 
 关联 #227，并保留 issue 开放。新增环境变量 `COOPERATIVE_CHAT_TEMPERATURE`，默认
 **0.7**、允许显式覆盖（含 0）、修改后重启后端。CI 锁定默认值并验证参数传递，
