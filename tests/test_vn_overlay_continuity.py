@@ -1,8 +1,10 @@
 """Real native atlas player + real overlay transition methods, with a fake Tk clock/display."""
 import hashlib
 import json
+import sys
 from types import SimpleNamespace
 
+import PIL
 from PIL import Image
 
 from render.companion_atlas_tk import AtlasPlayer
@@ -40,8 +42,7 @@ def test_sentence_gap_changes_thinking_variant_directly_but_final_stop_returns_i
         def _set_emotion(self, emotion, state="idle"):
             self._current_emotion, self._current_state = emotion, state
     legacy = SimpleNamespace(PortraitOverlayTk=OriginalShell, clean_display_text=lambda text: text,
-                             infer_emotion=lambda text, explicit: (explicit or "normal", 6500),
-                             photo_image=lambda image, master: object())
+                             infer_emotion=lambda text, explicit: (explicit or "normal", 6500))
     cls = overlay_class(legacy)
     overlay = cls.__new__(cls)
     overlay._lite = AtlasPlayer(tmp_path, clock=lambda: now[0])
@@ -58,6 +59,9 @@ def test_sentence_gap_changes_thinking_variant_directly_but_final_stop_returns_i
     overlay.text_var = SimpleNamespace(set=lambda value: text.__setitem__(0, value))
     overlay.root = SimpleNamespace(after=after, after_cancel=lambda key: timers.pop(key, None),
                                    winfo_viewable=lambda: True, deiconify=lambda: None, lift=lambda: None)
+    image_tk = SimpleNamespace(PhotoImage=lambda image, master: object())
+    monkeypatch.setitem(sys.modules, "PIL.ImageTk", image_tk)
+    monkeypatch.setattr(PIL, "ImageTk", image_tk, raising=False)
     def event(sentence, speaking, emotion="thinking"):
         overlay.apply_reaction({"source": "vn_playback", "sentence_id": sentence,
                                 "speaking": speaking, "emotion": emotion})

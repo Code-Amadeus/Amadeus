@@ -56,6 +56,8 @@ def overlay_class(shell=vn_overlay_window):
                 self._draw_lite()
 
         def _draw_lite(self):
+            from PIL import ImageTk
+
             # Hold the current pose during the short sentence-end grace period.
             # The next speaking variant can enter directly, without routing through idle.
             settling = self._current_state == "speaking" and self._active_until == 0.0
@@ -71,7 +73,7 @@ def overlay_class(shell=vn_overlay_window):
                         frame.close()
                         frame = resized
                     # No old per-frame tint/sweep/re-crop; display the same RGBA tile as Canvas.
-                    photo = shell.photo_image(frame, master=self.root)
+                    photo = ImageTk.PhotoImage(frame, master=self.root)
                     self.avatar_label.configure(image=photo)
                     self.avatar_label.image = photo
                 finally:
