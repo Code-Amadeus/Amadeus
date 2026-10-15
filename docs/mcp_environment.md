@@ -52,7 +52,8 @@ and Windows/POSIX tests cover redaction, useful causes and override semantics.
 Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
 when a server marks them read-only. This permission is independent of local
 workspace write access, including project-bound read-only cooperative chats.
-Cards retain the connection display name and original tool name.
+Direct-tool cards retain the connection display name and original tool name;
+resource cards currently show the resource operation and raw server ID/arguments.
 Approving a connector operation does not grant local
 file writes or shell execution, and cancellation releases pending confirmations.
 Pi closes its native session before terminating the process during normal

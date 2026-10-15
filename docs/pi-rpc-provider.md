@@ -225,9 +225,11 @@ file or shell rights. File/path checks and the write-access-plus-approval gate
 for shell and other extension tools are unchanged. Denial and cancellation do
 not authorize a later call.
 The trusted MCP gate identifies these requests as `mcp.tool.execute`; generic
-tool permissions remain denied in read-only cooperative contexts. Approval cards
-show the Host connection display name and the original MCP tool name, even when
-Pi hashes its model-facing identifier.
+tool permissions remain denied in read-only cooperative contexts. Direct-tool
+approval cards show the Host connection display name and original MCP tool name, even when
+Pi hashes its model-facing identifier. Resource approval cards currently show
+the resource operation and its raw server ID/arguments; display-name lookup for
+those operations remains a presentation follow-up.
 Enabling and binding a stdio connection authorizes starting its configured
 executable when the Work connects. Per-call approval does not sandbox that
 server's startup code; only bind trusted services.
@@ -246,6 +248,8 @@ skip all ambiguous connections. Other connections and Pi remain available. These
 errors and connection failures appear as redacted `runtime.notice` status entries
 in provider activity, with Host Settings guidance. They neither count as task
 progress nor claim tool execution or a diagnosed task failure.
+Notices are retained in the bounded Provider activity journal so session reloads
+and backend restarts can restore the same activity entries.
 
 Each run (including each cooperative turn) starts a fresh Pi process and the
 bound services. This incurs service startup/discovery cost on every run; connections

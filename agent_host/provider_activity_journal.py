@@ -33,6 +33,7 @@ _DISPLAY_EVENT_TYPES = frozenset(
         "tool.call",
         "tool.result",
         "semantic.progress",
+        "runtime.notice",
         "permission.requested",
         "permission.required",
         "permission.resolved",
