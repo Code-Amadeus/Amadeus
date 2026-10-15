@@ -67,7 +67,7 @@ jobs:
           tests/test_extension_examples.py
           tests/test_extension_resources.py
 
-      - name: Build Electron renderer (Linux)
+      - name: Typecheck Pi extensions and build Electron renderer (Linux)
         working-directory: electron
         run: |
           npm ci

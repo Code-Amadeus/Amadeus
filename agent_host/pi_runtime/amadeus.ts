@@ -100,11 +100,15 @@ export default function (pi: ExtensionAPI) {
     const name = event.toolName
     if (web.has(name) || name === 'launch_app') return
     if (readers.has(name) || writers.has(name)) {
-      const target = path.resolve(root, String(event.input.path || '.'))
+      // Tool-name sets route this branch at runtime; TypeScript cannot narrow
+      // the native/custom input union through Set.has. Keep the same mutable
+      // object, with unknown-valued properties rather than asserting a schema.
+      const input: Record<string, unknown> = event.input
+      const target = path.resolve(root, String(input.path || '.'))
       // User-selected Skill instructions/resources are inherent read inputs,
       // never writable workspace grants or permission for neighboring packages.
       if (readers.has(name) && skillRoots.some(skillRoot => withinWorkspace(target, skillRoot))) {
-        event.input.path = target
+        input.path = target
         return
       }
       if (access === 'none' || (writers.has(name) && access !== 'write')) {
@@ -114,7 +118,7 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: 'The path is outside the Host-assigned workspace' }
       }
       // Freeze the same absolute path that the Host gate inspected.
-      event.input.path = target
+      input.path = target
       return
     }
     // Host-bound external tools require their own approval, not local file writes.

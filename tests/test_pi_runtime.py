@@ -66,6 +66,12 @@ async def native_pi(tmp_path):
             '<h1>Requested article</h1><p>' + 'Author Chen reports the verified article fact. ' * 40
             + '</p></article></body></html>', content_type='text/html')
     app.router.add_get('/article', article)
+    async def client_only(_):
+        return web.Response(text='<html><body>Loading<script>'
+            'document.body.textContent="SYNTHETIC-BROWSER-ONLY";'
+            '</script><script></script><script></script><script></script></body></html>',
+            content_type='text/html')
+    app.router.add_get('/client-only', client_only)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '127.0.0.1', 0)
@@ -382,3 +388,25 @@ async def test_real_pi_search_rate_limit_is_tool_failure_and_conversation_contin
     output, = [event for event in events if event.type == "tool.result"]
     assert not output.payload["ok"]
     assert "Search rate limited" in json.dumps(requests[-1]["messages"])
+
+
+async def test_typecheck_dependencies_do_not_enable_optional_browser_renderer(native_pi, tmp_path):
+    adapter, requests, selected, url = native_pi
+    selected.update(tool="web_read", args={"url": url + "/client-only"})
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    result = await adapter.run(ProviderRunRequest(provider="pi", task="Read the fixture page.",
+        cwd=str(tmp_path), requirements=ProviderRequirements(workspace_access="none")), "no-browser", emit)
+    assert result.status == "done", result
+    output, = [event for event in events if event.type == "tool.result"]
+    assert output.payload["ok"] is False
+    error = json.dumps(output.payload["raw"]["output"])
+    # Distinguish an absent optional renderer from accidentally installing it
+    # and attempting to launch a missing Chromium binary during an ordinary read.
+    assert "Install the browser fallback" in error
+    assert "Playwright fallback failed" not in error
+    assert "SYNTHETIC-BROWSER-ONLY" not in json.dumps(requests[-1]["messages"])
+    assert not any(event.type == "permission.requested" for event in events)

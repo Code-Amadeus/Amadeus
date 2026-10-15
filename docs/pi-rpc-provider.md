@@ -301,8 +301,29 @@ does not open a global temporary directory to the file tools.
 ## Validation
 
 ```powershell
+npm ci --ignore-scripts --prefix agent_host/pi_runtime
+npm --prefix agent_host/pi_runtime run typecheck
 .venv/Scripts/python.exe -m pytest tests/test_pi_provider.py tests/test_pi_runtime.py tests/test_pi_mcp.py tests/test_pi_web_tools.py tests/test_skill_pi_runtime.py
 ```
+
+The native extension has its own pinned TypeScript compiler and strict, no-emit
+configuration (`tsconfig.typecheck.json`). It checks every first-party `.ts`
+entry and imported TypeScript source, including the web component. As in the
+Electron configuration, third-party declaration files use `skipLibCheck`; no
+source checks are suppressed. Electron's normal `npm run build` invokes this
+check through `check:pi`, so Windows and Linux build CI cover the native extension.
+
+The web component's optional `playwright` import needs declarations even when
+the runtime package is absent. Only the type-check configuration maps that name
+to the pinned development dependency `playwright-core`, whose declarations are
+[re-exported by Playwright itself](https://github.com/microsoft/playwright/blob/v1.61.1/packages/playwright/index.d.ts).
+This does not change runtime module resolution, install `playwright`, download
+browser binaries, or enable browser rendering. `@types/turndown` supplies the
+web parser's missing declarations and `@types/node` matches the supported Node
+22 line. The real Pi regression includes a client-rendered page that must still
+report the missing optional browser fallback, while ordinary HTTP article reads
+remain supported. Production runtime installs can omit development dependencies;
+type checking and source builds require them.
 
 The first suite checks acknowledgement uncertainty, correlation, permissions,
 cancellation and session identity using deterministic protocol peers. The second
