@@ -155,3 +155,37 @@ def test_professional_work_planner_defaults_on_with_explicit_rollback() -> None:
     assert EnvironmentReader({}).boolean("COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is True
     assert EnvironmentReader({"COOPERATIVE_WORK_PLANNER_ENABLED":"false"}).boolean(
         "COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is False
+
+
+@pytest.mark.parametrize("raw,expected", [(None, 0.7), ("0", 0.0), ("1.2", 1.2), ("2", 2.0)])
+def test_chat_temperature_environment_default_and_override(raw, expected):
+    import subprocess
+    import sys
+
+    code = """
+import config.environment as environment
+values = {} if RAW is None else {"COOPERATIVE_CHAT_TEMPERATURE": RAW}
+environment.load_project_environment = lambda _: environment.EnvironmentReader(values)
+from config import settings
+assert settings.COOPERATIVE_CHAT_TEMPERATURE == EXPECTED
+field = next(field for field in settings.declared_environment_fields()
+    if field.key == "COOPERATIVE_CHAT_TEMPERATURE")
+assert field.default == 0.7 and field.value_type == "float"
+""".replace("RAW", repr(raw)).replace("EXPECTED", repr(expected))
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("raw", ["-0.1", "2.1", "nan", "inf", "-inf", "invalid", ""])
+def test_invalid_chat_temperature_is_rejected_at_startup(raw):
+    import subprocess
+    import sys
+
+    code = """
+import config.environment as environment
+environment.load_project_environment = lambda _: environment.EnvironmentReader(
+    {"COOPERATIVE_CHAT_TEMPERATURE": RAW})
+from config import settings
+""".replace("RAW", repr(raw))
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "COOPERATIVE_CHAT_TEMPERATURE must be" in result.stderr

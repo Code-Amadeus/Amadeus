@@ -672,9 +672,10 @@ async def test_query_bridge_cancels_inflight_callback_and_closes_transport():
     assert await asyncio.to_thread(closed.wait, 1)
 
 
-def production_query(query):
+def production_query(query, *, temperature=0.7):
     scope = {"json":json, "_llm_client_mod":SimpleNamespace(remote_llm_messages_query=query),
-        "settings":SimpleNamespace(COOPERATIVE_CHAT_QUERY_MAX_TOKENS=900,
+        "settings":SimpleNamespace(COOPERATIVE_CHAT_TEMPERATURE=temperature,
+            COOPERATIVE_CHAT_QUERY_MAX_TOKENS=900,
             COOPERATIVE_CHAT_QUERY_TIMEOUT_S=45)}
     path = Path(__file__).resolve().parents[1] / "server/app.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -685,12 +686,13 @@ def production_query(query):
 
 
 @pytest.mark.parametrize("source_kind", ["user", "provider", "host_receipt"])
-async def test_production_role_query_keeps_shared_language_contract_after_coordination(source_kind):
+@pytest.mark.parametrize("temperature", [0.0, 0.7, 1.2])
+async def test_production_role_query_keeps_language_and_sampling_contract(source_kind, temperature):
     from llm.prompts import get_language_lock_prompt, wrap_user_message_for_language_lock
 
     reply = '{"action":null,"say":"こんにちは。"}' if source_kind == "user" else "こんにちは。"
     query = Mock(return_value=reply)
-    assembled = production_query(query)
+    assembled = production_query(query, temperature=temperature)
     original = [{"role":"system", "content":"Persona\nCoordination JSON contract"},
         {"role":"user", "content":json.dumps({"source_kind":source_kind,
             "current":{"text":"你好", "turn_id":"role-turn"}}, ensure_ascii=False)}]
@@ -700,6 +702,7 @@ async def test_production_role_query_keeps_shared_language_contract_after_coordi
     query.assert_called_once()
     assert query.call_args.kwargs["turn_id"] == "role-turn"
     assert query.call_args.kwargs["json_output"] is (source_kind == "user")
+    assert query.call_args.kwargs["temperature"] == temperature
     sent = query.call_args.args[0]
     assert sent[0]["content"].startswith(original[0]["content"])
     assert sent[0]["content"].endswith(get_language_lock_prompt().strip())
@@ -709,12 +712,15 @@ async def test_production_role_query_keeps_shared_language_contract_after_coordi
     assert original[0]["content"] == "Persona\nCoordination JSON contract"
 
 
-async def test_production_inline_role_query_disables_json_mode_explicitly():
+@pytest.mark.parametrize("temperature", [0.0, 0.7, 1.2])
+async def test_production_inline_role_query_disables_json_mode_explicitly(temperature):
     query = Mock(return_value="ええ、作るわ。[DELEGATE op=work]")
     messages = [{"role":"system", "content":"Role contract"},
         {"role":"user", "content":json.dumps({"source_kind":"user"})}]
-    assert await production_query(query)(messages, json_output=False) == query.return_value
+    assert await production_query(query, temperature=temperature)(
+        messages, json_output=False) == query.return_value
     assert query.call_args.kwargs["json_output"] is False
+    assert query.call_args.kwargs["temperature"] == temperature
 
 
 async def test_production_query_preserves_real_typed_reference_requests():
@@ -728,11 +734,12 @@ async def test_production_query_preserves_real_typed_reference_requests():
     expected = build_reference_messages(utterance, [candidate], history=history)
     query = Mock(return_value=json.dumps({"references":[candidate.token]}))
     resolution = await resolve_typed_reference(utterance, [candidate], complete=True,
-        query=production_query(query), history=history)
+        query=production_query(query, temperature=1.2), history=history)
 
     assert resolution.status == "unique" and resolution.candidate == candidate
     query.assert_called_once()
     assert query.call_args.kwargs["json_output"] is True
+    assert query.call_args.kwargs["temperature"] == 0.0
     assert query.call_args.args[0][1:] == expected[1:]
 
 
@@ -743,7 +750,8 @@ async def test_generic_queries_keep_json_default_without_role_wrapping(content):
     query = Mock(return_value='{"references":[]}')
     messages = [{"role":"system", "content":"Return a reference decision."},
         {"role":"user", "content":content}]
-    assert await production_query(query)(messages) == '{"references":[]}'
+    assert await production_query(query, temperature=1.2)(messages) == '{"references":[]}'
     query.assert_called_once()
     assert query.call_args.kwargs["json_output"] is True
+    assert query.call_args.kwargs["temperature"] == 0.0
     assert query.call_args.args[0][-1] == messages[-1]

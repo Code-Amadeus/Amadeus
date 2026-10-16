@@ -103,7 +103,7 @@ test('offline fields, translations and desktop persistence consume every declare
 
 test('all migrated controls share defaults, validation, translations and storage ownership', t => {
   const settings = store(t)
-  for (const group of catalog.catalogGroups) {
+  for (const group of catalog.catalogGroups.filter(group => group.desktop)) {
     const computed = Object.fromEntries(Object.entries(group.config).filter(([, field]) => field.computed_default)
       .map(([key, field]) => [key, field.example]))
     const controls = catalog.catalogConfiguration(group.id, null, computed).fields
@@ -124,6 +124,18 @@ test('all migrated controls share defaults, validation, translations and storage
       }
     }
   }
+})
+
+test('Main Chat temperature remains an environment-only setting', t => {
+  const settings = store(t)
+  const field = catalog.catalogConfiguration('chat_sampling').fields
+    .find(field => field.key === 'COOPERATIVE_CHAT_TEMPERATURE')
+  assert.equal(field.value, '0.7')
+  assert.equal(field.editable, false)
+  assert.equal(field.apply, 'backend_restart')
+  assert.ok(!('COOPERATIVE_CHAT_TEMPERATURE' in catalog.desktopCatalogFields))
+  assert.throws(() => settings.update({}, { values: { COOPERATIVE_CHAT_TEMPERATURE: '1.2' } }),
+    /Unsupported desktop setting/)
 })
 
 test('a new declared TTS backend appears in selection, its section and durable settings', t => {
