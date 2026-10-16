@@ -492,6 +492,8 @@ class AcpProviderAdapter:
     async def resolve_permission(
         self, run_id: str, response: ProviderPermissionResponse
     ) -> dict[str, Any]:
+        if response.scope != "once":
+            return {"accepted": False, "reason": "permission_scope_not_supported"}
         run = self._runs.get(run_id)
         future = run.permission_futures.get(response.request_id) if run else None
         if run is None or run.cancel_requested or run.terminal or future is None or future.done():

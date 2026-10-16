@@ -845,6 +845,8 @@ class CodexAppServerAdapter:
     ) -> dict[str, Any]:
         """Release exactly one native approval callback for this active run."""
 
+        if response.scope != "once":
+            return {"accepted": False, "reason": "permission_scope_not_supported"}
         with self._approval_condition:
             pending = self._pending_approvals.get(response.request_id)
             if pending is None or pending.resolved.is_set():

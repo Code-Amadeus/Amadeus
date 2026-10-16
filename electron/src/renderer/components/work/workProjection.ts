@@ -1,4 +1,4 @@
-import type { ProviderRun, WorkDockItem, WorkProjectSummary, WorkProjection } from './types'
+import type { ProviderRun, WorkDockItem, WorkProjectSummary, WorkProjection, WorkPermissionProjection } from './types'
 
 export const ELECTRON_WORK_SURFACE = 'electron.work'
 
@@ -15,6 +15,24 @@ function text(value: unknown): string {
 function count(value: unknown): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
+}
+
+function normalizeWorkPermission(value: unknown): WorkPermissionProjection | null {
+  const source = record(value)
+  if (!source.id) return null
+  const call = record(source.mcpCall)
+  return {
+    id: text(source.id), ownerKind: text(source.ownerKind) || 'work_attempt',
+    workItemId: text(source.workItemId), attemptId: text(source.attemptId),
+    sessionId: text(source.sessionId), runId: text(source.runId), providerRequestId: text(source.providerRequestId),
+    capability: text(source.capability), action: text(source.action),
+    scope: Array.isArray(source.scope) ? source.scope.map(String) : [],
+    reason: text(source.reason), options: Array.isArray(source.options) ? source.options.map(String) : [],
+    mcpCall: call.connectionId && call.toolName && 'arguments' in call
+      ? { connectionId: String(call.connectionId), toolName: String(call.toolName), arguments: call.arguments }
+      : undefined,
+    grantStatus: text(source.grantStatus), useCount: count(source.useCount),
+  }
 }
 
 function normalizeItem(value: unknown): WorkDockItem | null {
@@ -144,6 +162,10 @@ export function normalizeWorkProjection(value: unknown): WorkProjection | null {
     },
     projects,
     items,
+    permissionRequest: normalizeWorkPermission(projection.permissionRequest),
+    activePermissionGrants: (Array.isArray(projection.activePermissionGrants) ? projection.activePermissionGrants : [])
+      .map(normalizeWorkPermission).filter((value): value is NonNullable<typeof value> => value !== null && value.grantStatus === 'active'),
+    workPermissionAutoApprove: projection.workPermissionAutoApprove === true,
   }
 }
 

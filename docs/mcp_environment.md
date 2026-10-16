@@ -49,7 +49,7 @@ and Windows/POSIX tests cover redaction, useful causes and override semantics.
 
 ## Pi tool approvals
 
-Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
+By default, Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
 when a server marks them read-only. This permission is independent of local
 workspace write access, including project-bound read-only cooperative chats.
 Pi and the standard MCP Provider use `mcp.tool.call` / `call_tool` for tool-call
@@ -64,6 +64,34 @@ file writes or shell execution, and cancellation releases pending confirmations.
 Pi closes its native session before terminating the process during normal
 completion/cancellation. See [Pi integration](pi-rpc-provider.md) for connection
 ownership, authentication scope and abnormal-exit limitations.
+
+For a Pi call bound to one known connection, the Work page and Slice permission
+card also offer **Allow identical calls for this Work**. This explicitly grants
+only that connection/configuration, original tool identity/schema and the exact
+argument values. It does not trust `readOnlyHint`, create a wildcard tool grant,
+or authorize a different operation on a mixed query/action tool. Aggregate
+resource listings and unknown connections retain per-call approval. Active
+grants remain visible and can be revoked individually; revocation affects the
+next approval boundary, not an operation already dispatched. Grants expire
+when the current Provider run finishes, fails or is cancelled, including when
+the same native session is later restored for another Work. Every reuse has a
+Host audit event; the original user decision remains immutable.
+
+**Settings → Providers → Work approval → Automatically approve all Work
+execution** is a separate persistent switch, off by default. Enabling it
+automatically answers supported Amadeus execution confirmations for every Work
+and Provider, including MCP and shell. It also answers confirmations already
+waiting. Desktop settings retain the switch across restarts; turning it off in
+Settings or the Work page restores approval for subsequent requests. Each
+automatic decision is recorded. This setting does not add workspace access,
+answer arbitrary MCP forms, replay a failed/unknown operation or remove an
+external tool's own confirmation rules.
+
+中文：默认仍逐次审批。Pi 的确切连接调用可以选择“本次 Work 允许相同调用”，
+只复用相同连接配置、工具及完整参数；授权可见、可逐条撤销，当前运行结束或取消即失效。
+“设置 → Providers → Work 审批 → 自动批准所有 Work 执行”是独立的持久开关，默认关闭，
+开启后自动批准所有 Work 的 Amadeus 执行确认（包括 MCP 和 Shell），直到手动关闭。
+开关会处理当前等待的确认并跨重启保存；每次批准与授权复用均留痕，外部工具自身门禁不变。
 
 
 ## Codex MCP confirmation requests

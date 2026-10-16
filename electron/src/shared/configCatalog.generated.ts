@@ -1548,6 +1548,36 @@ export const catalogGroups: CatalogGroup[] = [
     "apply": "backend_restart"
   },
   {
+    "id": "work_permissions",
+    "title": {
+      "en-US": "Work approval",
+      "zh-CN": "Work 审批"
+    },
+    "description": {
+      "en-US": "Choose whether Amadeus asks for execution approval. External tools keep their own action gates.",
+      "zh-CN": "选择 Amadeus 是否请求执行审批；外部工具仍保留自身的动作门禁。"
+    },
+    "desktop": true,
+    "section": "routing",
+    "order": 9,
+    "apply": "host",
+    "config": {
+      "WORK_PERMISSION_AUTO_APPROVE": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Automatically approve all Work execution",
+          "zh-CN": "自动批准所有 Work 执行"
+        },
+        "description": {
+          "en-US": "Automatically approve Amadeus execution requests for every Work, including MCP and shell. Saved across restarts until you turn it off; approvals remain recorded.",
+          "zh-CN": "自动批准所有 Work 的 Amadeus 执行请求，包括 MCP 和 Shell。跨重启保存，直到手动关闭；审批仍会留痕。"
+        },
+        "default": false,
+        "runtime_key": "work_permission_auto_approve"
+      }
+    }
+  },
+  {
     "id": "work_routing",
     "title": {
       "en-US": "Work role assignments",

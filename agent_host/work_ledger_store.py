@@ -3544,6 +3544,43 @@ class WorkLedgerStore:
             assert row is not None
             return self._permission_request_from_row(row)
 
+    def update_permission_grant(
+        self, request_id: str, *, status: str = "active", call_request_id: str = "",
+    ) -> PermissionRequestRecord:
+        """Record use or retirement of an explicitly approved exact-call grant."""
+        if status not in {"active", "revoked", "expired"}:
+            raise ValueError("unsupported permission grant status")
+        call_id = str(call_request_id or "").strip()
+        if status == "active" and not call_id:
+            raise ValueError("grant use requires an exact call request identity")
+        now = float(self._clock())
+        with self._transaction() as cursor:
+            row = cursor.execute("SELECT * FROM permission_requests WHERE request_id=?",
+                (str(request_id),)).fetchone()
+            if row is None:
+                raise WorkLedgerNotFound(f"unknown permission request: {request_id}")
+            metadata = _load_json(row["metadata_json"])
+            if (row["status"] != "allowed" or metadata.get("resolution") != "user_allowed_work"
+                    or metadata.get("grant_status") != "active"):
+                raise WorkLedgerConflict("permission has no active user-approved Work grant")
+            if status == "active":
+                uses = list(metadata.get("grant_uses") or [])
+                if any(use.get("request_id") == call_id for use in uses):
+                    return self._permission_request_from_row(row)
+                uses.append({"request_id": call_id, "used_at": now})
+                metadata.update(grant_uses=uses, use_count=len(uses), last_used_at=now)
+            else:
+                metadata.update(grant_status=status, grant_retired_at=now)
+            # 原始审批状态和时间保持不可变，仅更新受限授权的生命周期事实。
+            cursor.execute("UPDATE permission_requests SET metadata_json=?,updated_at=? WHERE request_id=?",
+                (_dump_json(metadata), now, str(request_id)))
+            if row["owner_kind"] == "work_attempt":
+                cursor.execute("UPDATE work_items SET updated_at=?,last_activity_at=? WHERE work_item_id=?",
+                    (now, now, row["work_item_id"]))
+            updated = cursor.execute("SELECT * FROM permission_requests WHERE request_id=?",
+                (str(request_id),)).fetchone()
+            return self._permission_request_from_row(updated)
+
     # -- Completion assessment -----------------------------------------
 
     def record_completion(

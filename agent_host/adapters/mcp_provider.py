@@ -396,6 +396,8 @@ class McpProviderAdapter:
         run_id: str,
         response: ProviderPermissionResponse,
     ) -> dict[str, Any]:
+        if response.scope != "once":
+            return {"accepted": False, "reason": "permission_scope_not_supported"}
         pending = self._pending_permissions.get(response.request_id)
         if pending is None:
             return {"accepted": False, "reason": "permission_request_not_pending"}

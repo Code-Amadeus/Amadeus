@@ -92,6 +92,7 @@ product slice rather than a pixel-exact installation preview.
 | **Character and desktop presentation** | SpriteForge graph state, a KTX2/PixiJS runtime, subtitle, lip-sync, and emotion timing; Chat, Work, and headless startup remain available without a character pack. |
 | **Provider Runtime** | [Pi over native RPC](docs/pi-rpc-provider.md) for daily tasks, Codex App Server / Direct Codex for complex coding, Browser for managed pages, and optional OpenClaw. Claude CLI is a committed future direct Provider. |
 | **Durable Work control plane** | Projects, default Drafts, WorkItems / Attempts, Continue / Retry, restart recovery, permissions, the Artifact Registry, and structured diffs. |
+| **Work approval choices** | Per-call approval by default; revocable exact-call Pi MCP grants for the current Work, plus an explicit persistent switch to automatically approve all Work execution. [Approval details](docs/mcp_environment.md#pi-tool-approvals). |
 | **Artifacts and AUIP** | A Work Artifact can be previewed, opened, or attached as a bounded AUIP AppSession so Amadeus can interact with it without turning narration into execution authority. |
 | **Unified settings** | Models, Voice, Providers/MCP, vision, character-pack status, and chat appearance are managed in Electron Settings. |
 

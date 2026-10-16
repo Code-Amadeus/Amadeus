@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import vm from 'node:vm'
+import ts from 'typescript'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
@@ -10,6 +12,38 @@ import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 const catalog = loadTypeScript(new URL('../src/shared/configCatalog.ts', import.meta.url))
 const runtimeUrl = new URL('../src/renderer/components/desktopRuntimeSettings.ts', import.meta.url)
 const credentials = { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }
+
+test('Settings reports saved changes with partial runtime confirmation and preserves the actual error', async () => {
+  const source = fs.readFileSync(new URL('../src/renderer/components/SettingsPage.tsx', import.meta.url), 'utf8')
+  const tree = ts.createSourceFile('SettingsPage.tsx', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  let callback
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'handleChange') callback = node.getText(tree)
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  assert.ok(callback)
+  const code = ts.transpileModule(`const ${callback};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  for (const persisted of [true, false]) {
+    const state = { error: '', notice: '', saving: '', calls: 0, runtime: false }
+    const context = vm.createContext({
+      Error, useCallback: value => value,
+      setSaving: value => { state.saving = value }, setError: value => { state.error = value },
+      setNotice: value => { state.notice = value }, setDesktop() {}, setConfig() {},
+      persistDesktopRuntimeSettings: async () => ({ persisted, pendingRevisions: {} }),
+      markRuntimeSettingsApplied: async () => assert.fail('A failed application cannot be acknowledged'),
+      send: async () => { state.calls += 1; state.runtime = true; throw new Error('broken MCP connection') },
+    })
+    vm.runInContext(code, context)
+    const result = await vm.runInContext('handleChange', context)('work_permission_auto_approve', true)
+    assert.equal(result, persisted)
+    assert.equal(state.runtime, true)
+    assert.equal(state.error, 'broken MCP connection')
+    assert.equal(state.notice, persisted ? 'Saved locally; the current runtime could not fully confirm this change.' : '')
+    assert.equal(state.calls, 1)
+    assert.equal(state.saving, null)
+  }
+})
 function makeStore(t, overrides = {}) {
   const { DesktopSettingsStore } = loadTypeScript(new URL('../src/main/desktopSettings.ts', import.meta.url), {
     electron: { safeStorage: credentials }, ...overrides,

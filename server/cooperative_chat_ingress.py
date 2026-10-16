@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from config.settings import PENDING_TURN_GATE_TIMEOUT_S
+from config import settings as app_settings
+from server.permission_grants import active_grants, apply_grant_event, expire_failed_dispatch_grant, permission_projection
 from core import session_manager as sm
 from core.turn_coordinator import TurnAuthorityError, get_turn_coordinator
 from agent_host.provider_runtime import ProviderRuntime, ProviderStartAdmissionRejected
@@ -267,12 +269,16 @@ class CooperativeChatIngress:
         for child in self.loop.context_catalog():
             observation = recovery.get(child["context_id"], {}) if isinstance(recovery, dict) else {}
             for permission in store.list_cooperative_permission_requests(
-                    self.session_id, context_id=child["context_id"], status="pending"):
+                    self.session_id, context_id=child["context_id"]):
+                active_grant = permission.metadata.get("grant_status") == "active"
+                if permission.status != "pending" and not active_grant:
+                    continue
                 if self.loop.runtime.get_run(permission.provider_run_id) is not None:
                     continue
                 current_run = permission.provider_run_id == child["run_id"]
                 try:
-                    resolved = store.resolve_permission_request(permission.request_id,
+                    resolved = (store.update_permission_grant(permission.request_id, status="expired")
+                        if active_grant else store.resolve_permission_request(permission.request_id,
                         "expired", metadata={
                             "resolution":"runtime_owner_unavailable_after_recovery",
                             "provider_run_status":(
@@ -280,14 +286,14 @@ class CooperativeChatIngress:
                             "recovery_state":str(
                                 (observation.get("state") or "not_required")
                                 if current_run else "superseded_run"),
-                        })
+                        }))
                 except WorkLedgerConflict:
                     continue
                 expired.append({"session_id":self.session_id,
                     "context_id":child["context_id"],
                     "run_id":permission.provider_run_id,
                     "permission_request_id":resolved.request_id,
-                    "state":"expired", "reason":resolved.metadata["resolution"]})
+                    "state":"expired", "reason":"runtime_owner_unavailable_after_recovery"})
         return expired
 
     async def run(self, text, *, turn_admission=None, visual_context=None,
@@ -4515,6 +4521,7 @@ class CooperativeChatManager:
         event_type = str(params.get("type") or "").lower()
         if self.permission_policy not in {"deny", "ask"} or event_type not in {
             "permission.requested", "permission.required", "permission.expired",
+            "permission.used", "permission.allowed", "permission.revoked",
         }:
             return
         metadata = params.get("metadata") if isinstance(params.get("metadata"), dict) else {}
@@ -4531,21 +4538,36 @@ class CooperativeChatManager:
                 or metadata.get("session_id") != session_id):
             return
         payload = params.get("payload") if isinstance(params.get("payload"), dict) else {}
-        if event_type == "permission.expired":
+        if event_type in {"permission.expired", "permission.used", "permission.allowed", "permission.revoked"}:
             provider_request_id = str(
                 payload.get("request_id") or payload.get("requestId") or ""
             ).strip()[:240]
+            requests = self.permission_store.list_cooperative_permission_requests(
+                session_id, context_id=context_id, provider_run_id=run_id)
+            grant = apply_grant_event(self.permission_store, requests, event_type, payload) if (
+                payload.get("automatic") is True) else None
+            if grant is not None:
+                await self._emit_cooperative_permission_canvas(grant, visible=False)
+                await self._present_current_cooperative_permission()
+                return
+            if event_type not in {"permission.expired", "permission.allowed"} or (
+                    event_type == "permission.allowed" and payload.get("automatic") is not True):
+                return
             matches = [permission for permission in
                 self.permission_store.list_cooperative_permission_requests(
                     session_id, context_id=context_id,
                     provider_run_id=run_id, status="pending")
                 if permission.metadata.get("provider_request_id") == provider_request_id]
+            if event_type == "permission.allowed":
+                matches = [permission for permission in matches if "allow_once" in permission.options
+                    and permission.metadata.get("diagnostic_only") is not True]
             if len(matches) != 1:
                 return
             try:
                 resolved = self.permission_store.resolve_permission_request(
-                    matches[0].request_id, "expired",
-                    metadata={"resolution":"provider_expired",
+                    matches[0].request_id, "allowed" if event_type == "permission.allowed" else "expired",
+                    metadata={"resolution":"policy_allowed" if event_type == "permission.allowed" else "provider_expired",
+                        "resolved_automatically":True,
                         "reason":str(payload.get("reason") or "")})
             except WorkLedgerConflict:
                 return
@@ -4553,7 +4575,7 @@ class CooperativeChatManager:
                 "context_id":context_id, "run_id":run_id,
                 "provider_request_id":provider_request_id,
                 "permission_request_id":resolved.request_id,
-                "state":"expired", "accepted":True, "reason":"provider_expired"})
+                "state":resolved.status, "accepted":True, "reason":resolved.metadata["resolution"]})
             await self._emit_cooperative_permission_canvas(resolved, visible=False)
             await self._present_current_cooperative_permission()
             return
@@ -4587,7 +4609,7 @@ class CooperativeChatManager:
                 or "").strip().lower()
             option = {"allow":"allow_once", "approve_once":"allow_once",
                 "reject":"deny"}.get(option, option)
-            if option in {"allow_once", "deny"} and option not in normalized_options:
+            if option in {"allow_once", "allow_work", "deny"} and option not in normalized_options:
                 normalized_options.append(option)
         if "deny" not in normalized_options:
             normalized_options.append("deny")
@@ -4597,6 +4619,10 @@ class CooperativeChatManager:
         ask_user = (self.permission_policy == "ask"
             and (child.requirements.workspace_access != "read"
                  or capability == "mcp.tool.call"))
+        auto_approve = (bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False))
+            and "allow_once" in normalized_options
+            and not any(source.get(key) is True for key in (
+                "diagnosticOnly", "diagnostic_only", "retryRequired", "retry_required")))
         permission = self.permission_store.create_cooperative_permission_request(
             session_id=session_id, context_id=context_id, provider_run_id=run_id,
             capability=capability,
@@ -4604,11 +4630,12 @@ class CooperativeChatManager:
             scope_paths=scope_paths,
             reason=str(source.get("reason") or "Explicit user approval is required.")[:1000],
             reversibility=str(source.get("reversibility") or "unknown")[:240],
-            options=normalized_options if ask_user else ["deny"],
+            options=normalized_options if ask_user or auto_approve else ["deny"],
             idempotency_key=f"provider:{provider}:{run_id}:{request_id}",
             metadata={"kind":"provider_permission", "provider":provider,
                 "provider_request_id":request_id,
                 "provider_options":[str(value)[:80] for value in provider_options[:8]],
+                **({"mcp_call": dict(source["mcpCall"])} if isinstance(source.get("mcpCall"), dict) else {}),
                 "resolution_policy":"user_prompt" if ask_user else "automatic_deny"})
         if permission.status != "pending":
             self.permission_receipts.append({"session_id":session_id,
@@ -4617,6 +4644,9 @@ class CooperativeChatManager:
                 "permission_request_id":permission.request_id,
                 "accepted":permission.status == "denied", "replayed":True,
                 "reason":"already_" + permission.status})
+            return
+        if auto_approve:
+            # 统一 Runtime 在本次请求持久化后执行当前全自动策略。
             return
         if ask_user:
             self.permission_receipts.append({"session_id":session_id,
@@ -4658,23 +4688,7 @@ class CooperativeChatManager:
     ) -> None:
         """Project one Host-owned cooperative permission onto the shared Slice card."""
 
-        provider_request_id = str(
-            permission.metadata.get("provider_request_id") or ""
-        )
-        request = {
-            "id": permission.request_id,
-            "ownerKind": "cooperative_run",
-            "sessionId": permission.session_id,
-            "runId": permission.provider_run_id,
-            "providerRequestId": provider_request_id,
-            "capability": permission.capability,
-            "action": permission.action,
-            "scope": list(permission.scope_paths),
-            "reason": permission.reason,
-            "reversibility": permission.reversibility,
-            "status": permission.status,
-            "options": list(permission.options),
-        }
+        request = permission_projection(permission)
         signal = work_signal(label="permission", text=permission.reason,
             detail="; ".join(permission.scope_paths[:2]), kind="permission",
             importance="blocking", ref=permission.request_id)
@@ -4689,6 +4703,10 @@ class CooperativeChatManager:
             metadata=identity) if visible else {"metadata": identity})
         canvas["permissionVisible"] = visible
         canvas["permissionRequest"] = request
+        canvas["activePermissionGrants"] = active_grants(
+            self.permission_store.list_cooperative_permission_requests(permission.session_id,
+                context_id=permission.context_id, provider_run_id=permission.provider_run_id))
+        canvas["workPermissionAutoApprove"] = bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False))
         await bus.emit(Method.WALLPAPER_CANVAS, canvas)
 
     async def _handle_permission_session_changed(
@@ -4730,10 +4748,13 @@ class CooperativeChatManager:
         session_id = str(params.get("session_id") or "").strip()
         run_id = str(params.get("run_id") or "").strip()
         provider_request_id = str(params.get("provider_request_id") or "").strip()
-        allow = params.get("allow")
+        decision = str(params.get("decision") or params.get("action") or "")
+        if not decision and isinstance(params.get("allow"), bool):
+            decision = "allow_once" if params["allow"] else "deny"
+        allow = decision in {"allow_once", "allow_work"}
         if not session_id or not run_id or not provider_request_id:
             return {"ok":False, "error":"cooperative_permission_identity_incomplete"}
-        if not isinstance(allow, bool):
+        if decision not in {"allow_once", "allow_work", "deny", "revoke_work"}:
             return {"ok":False, "error":"cooperative_permission_decision_invalid"}
         if sm.get_current_session_id() != session_id:
             return {"ok":False, "error":"cooperative_permission_session_not_current"}
@@ -4742,8 +4763,9 @@ class CooperativeChatManager:
             return {"ok":False, "error":"cooperative_permission_session_unavailable"}
         matches = [permission for permission in
             self.permission_store.list_cooperative_permission_requests(
-                session_id, provider_run_id=run_id, status="pending")
-            if permission.metadata.get("provider_request_id") == provider_request_id]
+                session_id, provider_run_id=run_id, status="allowed" if decision == "revoke_work" else "pending")
+            if permission.metadata.get("provider_request_id") == provider_request_id
+            and (decision != "revoke_work" or permission.metadata.get("grant_status") == "active")]
         if len(matches) != 1:
             return {"ok":False, "error":"cooperative_permission_not_pending"}
         permission = matches[0]
@@ -4765,16 +4787,31 @@ class CooperativeChatManager:
         if (allow and child.requirements.workspace_access == "read"
                 and permission.capability != "mcp.tool.call"):
             return {"ok":False, "error":"cooperative_permission_read_only_context"}
-        if allow and "allow_once" not in permission.options:
+        if allow and ("allow_work" if decision == "allow_work" else "allow_once") not in permission.options:
             return {"ok":False, "error":"cooperative_permission_option_not_allowed"}
-        outcome = await self.runtime.resolve_permission(run_id,
-            ProviderPermissionResponse(request_id=provider_request_id, allow=allow))
+        if decision == "allow_work":
+            self.permission_store.resolve_permission_request(permission.request_id, "allowed",
+                metadata={"resolution":"user_allowed_work", "grant_status":"active", "use_count":0, "grant_uses":[]})
+        try:
+            outcome = await self.runtime.resolve_permission(run_id,
+                ProviderPermissionResponse(request_id=provider_request_id, allow=allow,
+                    scope="work" if decision in {"allow_work", "revoke_work"} else "once"))
+        except BaseException:
+            if decision == "allow_work":
+                expire_failed_dispatch_grant(self.permission_store, permission.request_id)
+            raise
         if outcome.get("accepted") is not True:
+            if decision == "allow_work":
+                expired = expire_failed_dispatch_grant(self.permission_store, permission.request_id)
+                await self._emit_cooperative_permission_canvas(expired, visible=False)
             return {"ok":False,
                 "error":str(outcome.get("reason") or "provider_permission_rejected")}
-        resolved = self.permission_store.resolve_permission_request(
+        resolved = (self.permission_store.get_permission_request(permission.request_id)
+            if decision == "allow_work" else self.permission_store.update_permission_grant(permission.request_id, status="revoked")
+            if decision == "revoke_work" else self.permission_store.resolve_permission_request(
             permission.request_id, "allowed" if allow else "denied",
-            metadata={"resolution":"user_allowed" if allow else "user_denied"})
+            metadata={"resolution":"user_allowed_work" if decision == "allow_work" else "user_allowed" if allow else "user_denied",
+                **({"grant_status":"active", "use_count":0, "grant_uses":[]} if decision == "allow_work" else {})}))
         self.permission_receipts.append({"session_id":session_id,
             "context_id":child.child_id, "run_id":run_id,
             "provider_request_id":provider_request_id,
