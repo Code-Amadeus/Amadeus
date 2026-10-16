@@ -32,13 +32,36 @@ callback translation. Restoring a native session never restores a grant.
 - Two unchanged optional Codex Skill tests remain blocked before model/tool
   execution: their fixture sets `windows.sandbox = 'mxc'`, which both the local
   CLI 0.130.0 and locked CLI 0.154.0 reject (accepted values are `elevated` or
-  `unelevated`). The PR retains draft status and does not modify that unrelated
-  sandbox fixture. The original failures and reruns are reported separately.
+  `unelevated`). That independent sandbox fixture is unchanged. These local
+  failures do not establish an approval-policy failure; the original failures
+  and reruns are reported separately from the hosted CI checks.
 
 An initial CPython 3.12.14 run exposed existing Windows character-test fixtures
 that clear `SystemRoot` before importing aiohttp/OpenSSL. Those source/test
 files were unchanged. Their 20 checks passed on CPython 3.12.10 without changing
 fixtures. No unrelated environment workaround is included in this change.
+
+## Hosted CI / 远端 CI (2026-10-17)
+
+All six hosted workflows succeeded for the frozen code candidate
+`2dbb5dcef6f1a664679417d526430ad7c2871e89`:
+
+- [Python Windows](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693805):
+  all three full-suite shards, source/dependency checks, source and packaged
+  Electron smoke, the environment ladder and the `cpu-model-less` gate passed.
+- [Electron Windows](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693523):
+  renderer tests/build, native UI checks, packaging and packaged wallpaper smoke passed.
+- [Python Linux](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909692876)
+  and [Python macOS](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909692749) passed.
+- [Optional character RAG](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693771)
+  and [local-model installation candidates](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693628) passed.
+
+The follow-up verification-note commit changes this Markdown file only;
+executable code and tests remain identical to that tested candidate. The local
+optional Codex limitations above remain recorded independently of hosted results.
+
+中文：冻结代码的六组远端 CI 全部通过，包括 Windows 三个完整测试分片、安装包启动
+和汇总门禁。后续结项提交只补本文档，不修改已验收的代码或测试。
 
 ## Rendered evidence
 
