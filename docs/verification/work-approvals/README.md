@@ -20,8 +20,20 @@ callback translation. Restoring a native session never restores a grant.
   multiple grants, foreground ownership, background expiry, persistent settings
   reopening and accurate feedback after partial application.
 - Electron `npm test`: 529 passed. `npm run build` and Pi typecheck passed.
-- The complete isolated Python suite is being run on the documented CPython
-  3.12.10 baseline; its final result will be recorded before this PR is ready.
+- Final approval/Provider/Work/Cooperative/Canvas/wallpaper regression selection:
+  77 passed, including real Pi calls across two automatically approved Work runs
+  followed by a third run that waits for approval after the switch is disabled.
+- The complete isolated Python suite ran in four shards on the documented
+  CPython 3.12.10 baseline: 5,934 passed, 34 skipped and 4 failed initially.
+  The new scrollbar declaration violated the existing shared-surface contract;
+  it was removed, and the wallpaper/Canvas checks then passed (16 checks).
+  An unchanged texture-cache HTTP test hit a Windows connection-aborted error;
+  its complete module passed on rerun (25 checks).
+- Two unchanged optional Codex Skill tests remain blocked before model/tool
+  execution: their fixture sets `windows.sandbox = 'mxc'`, which both the local
+  CLI 0.130.0 and locked CLI 0.154.0 reject (accepted values are `elevated` or
+  `unelevated`). The PR retains draft status and does not modify that unrelated
+  sandbox fixture. The original failures and reruns are reported separately.
 
 An initial CPython 3.12.14 run exposed existing Windows character-test fixtures
 that clear `SystemRoot` before importing aiohttp/OpenSSL. Those source/test

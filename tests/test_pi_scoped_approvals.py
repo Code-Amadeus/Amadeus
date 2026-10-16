@@ -1,5 +1,6 @@
 """真实 Pi/MCP 的精确调用授权、撤销与运行隔离。"""
 from dataclasses import replace
+import asyncio
 
 import pytest
 
@@ -161,3 +162,43 @@ async def test_same_named_tool_on_another_connection_needs_its_own_grant(native_
     assert (await adapter.run(request(tmp_path), "connections", emit)).status == "done"
     assert len(approvals) == 2
     assert calls(root) == ["inspect"] and calls(other) == []
+
+
+async def test_real_pi_persistent_policy_approves_new_work_until_disabled(native_pi, tmp_path, monkeypatch):
+    from config import settings
+    from agent_host.provider_runtime import ProviderRuntime
+
+    adapter, _, selected, _ = native_pi
+    root = tmp_path / "service"
+    adapter.mcp_connections = (connection(root),)
+    runtime = ProviderRuntime()
+    runtime.register(adapter)
+    monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True)
+    try:
+        for _ in range(2):
+            selected["steps"] = [{"tool": "mcp__fixture__inspect_fixture", "args": {}}] * 2
+            record = await runtime.start(request(tmp_path))
+            await asyncio.wait_for(record.task_handle, 20)
+            assert record.status == "done", record.error
+            decisions = [event for event in record.events if event["type"] == "permission.allowed"]
+            assert len(decisions) == 2 and all(event["payload"]["automatic"] for event in decisions)
+        assert calls(root) == ["inspect"] * 4
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+        selected["steps"] = [{"tool": "mcp__fixture__inspect_fixture", "args": {}}]
+        record = await runtime.start(request(tmp_path))
+
+        async def pending():
+            while not any(event["type"] == "permission.requested" for event in record.events):
+                assert not record.task_handle.done(), record.error
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(pending(), 10)
+        assert calls(root) == ["inspect"] * 4
+        approval = next(event["payload"]["permissionRequest"] for event in record.events
+            if event["type"] == "permission.requested")
+        assert (await runtime.resolve_permission(record.run_id, ProviderPermissionResponse(
+            approval["request_id"], False)))["accepted"]
+        await asyncio.wait_for(record.task_handle, 10)
+        assert calls(root) == ["inspect"] * 4
+    finally:
+        await runtime.close()
