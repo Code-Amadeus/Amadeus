@@ -40,6 +40,25 @@ owned work before a version change; an unknown Provider state remains unknown.
 cover only the recorded current/baseline commits on test copies, not arbitrary
 releases or external process recovery.
 
+## Main Chat temperature / 主对话温度
+
+`COOPERATIVE_CHAT_TEMPERATURE=0.7` is the default for Main Chat role replies,
+including replies to Provider updates and Host receipts. Set it in the process
+environment or repository `.env`, then restart the backend. Values must be
+finite and between 0 and 2; the selected model may have narrower limits.
+Set `0` explicitly to restore the previous sampling behavior. Planner, reference
+resolution and structured control queries remain at `0.0`; Hybrid local-head
+sampling is independent. DeepSeek, Gemini, Bedrock and local HTTP adapters forward
+this value. The current OpenAI / Hybrid3 adapter omits temperature, so this
+setting does not take effect on that path. This setting does not change history retention.
+
+`COOPERATIVE_CHAT_TEMPERATURE` 默认 `0.7`，用于主对话角色回复，包含对 Provider
+更新及 Host 回执的回复。在进程环境或仓库 `.env` 中设置后，需重启后端。值必须为
+0 到 2 之间的有限数值；所选模型可能有更窄的限制。显式设为 `0` 可恢复之前的采样
+行为。规划、引用解析和结构化控制查询保持 `0.0`，Hybrid 本地首句采样独立，
+DeepSeek、Gemini、Bedrock 和本地 HTTP 适配器会传递该值；当前 OpenAI / Hybrid3
+适配器不发送 temperature，因此此设置在该路径不生效。历史保留策略不变。
+
 ## Local and Hybrid profiles
 
 For pure-local Chat, use `LOCAL_LLM_TYPE=llama_server`. The managed default

@@ -42,10 +42,18 @@ Qwen3-ASR 是整段式识别：必须等端点检测（VAD 静音 `ASR_VAD_SILEN
 `post-endpoint wait` 就是端点确认后的真实剩余等待——对比无投机时的整段转写
 耗时即为本方案的实测收益。
 
+## 投机 LLM 启动
+
+`ASR_SPECULATIVE_LLM_START`（默认 `true`）：投机转写文本就绪即以 pending 轮发起 LLM；
+端点确认且文本一致时 TTS 门控放行，否则静默作废并按原路径发送。实现见
+`server/speculative_turn.py`，pending 轮由 `core/turn_coordinator.py` 持有。全部满足才启动：
+
+- Chat provider 为 `hybrid` / `hybrid2` / `hybrid3`（远程单链有计费与重发幂等成本）；
+- 当前 ASR 会话来源为 wake（手动 ASR 输入不投机）；
+- chat 不忙（正在流式输出或播放时不抢跑）；
+- 通过 ASR prompt 泄漏过滤。
+
 ## 后续扩展（未实现）
 
-- **投机 LLM 启动**：投机转写完成后即发起 LLM 请求（甚至 hybrid 首句流），
-  端点确认且文本一致时直接接上。需要 chat 侧支持"缓冲输出、确认前不进 TTS"
-  的 pending-turn 语义，建议等 TurnCoordinator（收敛计划 Phase 2）落地后做。
 - **远端 prompt cache 预热**：投机触发时预热远端连接/前缀缓存，成本低，
   可与上一项分开先做。

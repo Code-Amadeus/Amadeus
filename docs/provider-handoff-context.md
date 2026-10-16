@@ -47,7 +47,7 @@ initial fixture-isolation failure remains recorded. No live Planner or attached
 AUIP application was exercised by this boundary probe.
 
 A separate [native Pi observation](evidence/provider-handoff-pi-2026-10-07.json)
-covers the same two-operation message with Pi 0.86.1 and its default
+covers the same two-operation message with Pi 0.86.1 (pre-1.2.0 runtime) and its default
 DeepSeek V4 Flash model. Through the real Host effect pipeline, A created only
 `alpha.txt` and B created only `beta.txt`, preserving A's file. Both honored the
 shared no-shell constraint using native `write` and `read` tools. The accepted

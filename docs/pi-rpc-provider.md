@@ -321,6 +321,21 @@ exit and sequential-session cleanup. This is not an OS sandbox or a guarantee
 that arbitrary descendants survive neither an abrupt Host/Pi crash nor forced
 termination; the native transport owns its process handling.
 
+### Cancellation and transport disposal / 取消与连接收尾
+
+An acknowledged native abort is the business cancellation result, not proof
+that the Pi/MCP transport has closed. PiAdapter completes and awaits its owned
+transport teardown even if permission-expiration publication fails or the Host
+cancels the producer task again. The original publication error or cancellation
+still propagates; successful disposal also releases the active-run/session
+registrations and signals the run's completion. EOF and the existing close
+deadline remain unchanged; this does not authorize replay or automatic approval.
+
+原生 abort 回执只证明业务取消，不等于 Pi/MCP 连接已经关闭。权限过期事件发布失败，
+或 Host 再次取消 producer 时，PiAdapter 仍等待本轮原连接完成收尾，再释放运行及会话
+登记并标记完成；原发布错误或取消继续向上传播。EOF 和原有关闭时限不变，不重派任务，
+不自动批准权限。真实进程与连接清理应与业务终态分别核验。
+
 Keep `package.json`, `package-lock.json` and the adapter's startup version check
 in sync. Install with `npm ci --ignore-scripts` in `agent_host/pi_runtime` (or the
 normal desktop installation), then restart the backend. Pi 1.2.0 no longer ships

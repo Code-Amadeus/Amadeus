@@ -270,13 +270,27 @@ class PiAdapter:
                 if run.submitted else {})
         finally:
             run.ready = False
-            for key in list(run.permissions):
-                await self._emit(run_id, run, "permission.expired", {"request_id": key})
-            await client.close()
-            self._runs.pop(run_id, None)
-            if owned_session:
-                self._attached.discard(owned_session)
-            run.done.set()
+            try:
+                for key in list(run.permissions):
+                    await self._emit(run_id, run, "permission.expired", {"request_id": key})
+            finally:
+                # 事件发布失败或外层取消不能跳过原连接的 EOF 与有界关闭。
+                primary_error = sys.exception()
+                closing = asyncio.create_task(client.close(), name=f"pi-close:{run_id}")
+                interrupted = None
+                while not closing.done():
+                    try:
+                        await asyncio.shield(closing)
+                    except asyncio.CancelledError as exc:
+                        interrupted = exc
+                closing.result()
+                self._runs.pop(run_id, None)
+                if owned_session:
+                    self._attached.discard(owned_session)
+                run.done.set()
+                # 原发布异常仍向上传播；仅在没有原异常时补回关闭期间的取消。
+                if interrupted is not None and primary_error is None:
+                    raise interrupted
 
     async def _emit(self, run_id, run, kind, payload=None, **kwargs):
         await run.emit(ProviderEvent(provider="pi", run_id=run_id,

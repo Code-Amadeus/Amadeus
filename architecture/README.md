@@ -32,10 +32,10 @@ Regenerate Mermaid views:
 python tools/architecture/generate_views.py
 ```
 
-On Windows, generate the views, build a local overview, and open it in the default browser:
+Build a local overview from the generated views, then open it in a browser:
 
 ```powershell
-preview_architecture.bat
+python tools/architecture/build_preview.py
 ```
 
 The generated overview is written to the git-ignored `runtime/architecture_preview.html`. It loads the pinned Mermaid renderer from `cdn.jsdelivr.net`, so the diagrams need network access when the page is opened. If the CDN is unavailable, the source `.mmd` files remain usable.

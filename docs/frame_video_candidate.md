@@ -1,9 +1,8 @@
-# Automatic frame-video candidate
+# Automatic frame-video source
 
-The draft now includes normal package loading and Graphics settings. Automatic
-frame-source selection is the default, while older packs retain the existing
-static path. This is still a draft pending review, repository CI and real voice
-interruption acceptance. Character media is distributed separately.
+Merged in #200 (`2f39036`) and shipped in 0.17.0 Alpha. Automatic frame-source
+selection is the default, while older packs retain the existing static path.
+Character media is distributed separately.
 
 ## Defaults and compatibility
 
@@ -52,7 +51,7 @@ runtime files. The ordinary character window uses file URLs through Pixi's asset
 adapter. Missing or invalid optional video does not invalidate the static pack.
 
 The existing corrected candidate bundle can be installed by copying only these
-runtime files into `video/`. The offline `full_encode.py` tool can create a new
+runtime files into `video/`. The offline `tools/probes/frame-video/full_encode.py` tool can create a new
 bundle from a corrected-PNG production ledger and the installed static manifest;
 its diagnostic output and source PNGs remain local. Source PNG hashes, installed
 KTX2 hashes and ordering must be verified before encoding. No uncorrected source
@@ -165,8 +164,7 @@ shared-output controls avoided the isolated long ticker gaps seen with continuou
 CPU readback. An older 1.067-second supply stall still lacks request-level timing;
 successful new runs do not prove its historical cause.
 
-Before merge/promotion: external review, full repository CI, actual Lively/desktop
-presentation and real LLM/microphone/TTS interruption journeys, and final-size
-motion/alpha review. Other GPUs and webviews are not qualified by the single-GPU
+Known limits: actual Lively/desktop presentation, real LLM/microphone/TTS
+interruption journeys and final-size motion/alpha review remain unqualified. Other GPUs and webviews are not qualified by the single-GPU
 measurements. Automatic capability/failure fallback preserves the old path, but
 does not substitute for broader device acceptance.
