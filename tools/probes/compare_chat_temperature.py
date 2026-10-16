@@ -64,7 +64,7 @@ CURRENT_CASES = {
 HISTORY_PROFILES = ("reported", "synthetic_clean", "synthetic_ha", "synthetic_nickname",
     "synthetic_both", "synthetic_other_nickname", "user_only", "user_only_no_user_nickname",
     "empty", "recent_only", "reported_no_user_nickname", "held_out_clean")
-PROMPT_VARIANTS = ("original", "no_ack_preface", "persona_no_preface", "contract_no_preface",
+PROMPT_VARIANTS = ("production", "original", "no_ack_preface", "persona_no_preface", "contract_no_preface",
     "both_no_preface", "no_nickname_reaction", "current_grounded",
     "scoped_nickname_reaction", "scoped_and_no_preface", "two_ack_cues_removed",
     "preface_examples_only", "preface_directions_only", "both_no_reaction",
@@ -171,6 +171,22 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def load_baseline(path):
+    """Historical treatments use an explicit frozen public prompt, never a reverse edit."""
+    baseline = json.loads(path.read_text(encoding="utf-8"))
+    if digest(baseline["system"]) != baseline["system_sha256"]:
+        raise ValueError("baseline system hash mismatch")
+    return baseline
+
+
+def select_system(production, variant, baseline=None):
+    if variant == "production":
+        return production
+    if baseline is None:
+        raise ValueError("historical prompt variants require --baseline-system")
+    return transform_system(baseline["system"], variant)
+
+
 class CapturedMessages(Exception):
     def __init__(self, messages, json_output):
         self.messages, self.json_output = messages, json_output
@@ -199,6 +215,7 @@ def production_query(transport, temperature):
 async def evaluate(args):
     from dotenv import dotenv_values
 
+    baseline = load_baseline(args.baseline_system) if args.baseline_system else None
     # Read only the selected connection. Never copy user sessions or persona overrides.
     supplied = dotenv_values(args.credentials_env) if args.credentials_env else {}
     credential_keys = {
@@ -302,6 +319,7 @@ async def evaluate(args):
         "base_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "app_sha256": hashlib.sha256((ROOT / "server/app.py").read_bytes()).hexdigest(),
         "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "baseline": {key: value for key, value in baseline.items() if key != "system"} if baseline else None,
         "provider": args.provider, "model": args.model, "temperatures": args.temperatures,
         "prompt_variants": args.prompt_variants, "modes": args.modes,
         "serial": args.serial, "request_interval_s": args.request_interval_s, "repeats": args.repeats,
@@ -361,7 +379,8 @@ async def evaluate(args):
                 messages, json_output = captured.messages, captured.json_output
             else:
                 raise AssertionError("production message capture was not reached")
-            messages[0]["content"] = transform_system(messages[0]["content"], variant)
+            production_system = messages[0]["content"]
+            messages[0]["content"] = select_system(production_system, variant, baseline)
             if args.history_schema == "native_roles":
                 frame = json.loads(messages[-1]["content"])
                 rows = frame.pop("history")
@@ -381,6 +400,7 @@ async def evaluate(args):
 
             row = {"case": case, "category": category, "user": user,
                 "input_history_sha256": digest(input_history),
+                "production_system_sha256": digest(production_system),
                 "system_sha256": digest(messages[0]["content"]), "observed": observation}
             run["turns"].append(row)
             started = time.perf_counter()
@@ -460,7 +480,10 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--repeats", type=int, default=3, choices=range(1, 6))
     parser.add_argument("--temperatures", type=float, nargs="+", default=[0.0, 0.7])
-    parser.add_argument("--prompt-variants", nargs="+", choices=PROMPT_VARIANTS, default=["original"])
+    parser.add_argument("--prompt-variants", nargs="+", choices=PROMPT_VARIANTS, default=["production"],
+        help="production uses the current assembler; all other variants transform the explicit frozen baseline")
+    parser.add_argument("--baseline-system", type=Path,
+        help="captured public pre-change system JSON with source commit and system hash")
     parser.add_argument("--history-schema", choices=("production", "legacy_role_content", "native_roles"), default="production")
     parser.add_argument("--history-profiles", nargs="+", choices=HISTORY_PROFILES, default=["reported"])
     parser.add_argument("--current-cases", nargs="+", choices=tuple(CURRENT_CASES), default=["neutral_continue"])
@@ -471,6 +494,8 @@ def main():
         help="shuffle treatment/history arm submission order reproducibly; not a model sampling seed")
     parser.add_argument("--request-interval-s", type=float, default=0)
     args = parser.parse_args()
+    if any(variant != "production" for variant in args.prompt_variants) and args.baseline_system is None:
+        parser.error("historical prompt variants require --baseline-system")
     if not 900 <= args.max_tokens <= 8192:
         parser.error("max tokens must be between 900 and 8192")
     if "rollout" in args.modes and (args.history_profiles != ["reported"] or args.current_cases != ["neutral_continue"]):

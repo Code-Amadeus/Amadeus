@@ -1,5 +1,9 @@
 # Qwen preface regression and a shared candidate / Qwen 前置语退化与通用候选
 
+Historical pre-adoption investigation. The selected candidate was subsequently
+approved and adopted; see the separate [306-request production verification](chat-shared-prompt-adoption-2026-10-16.md).
+本页保留落地前的实验结论；批准后的实际改动与新增复测见上述独立报告。
+
 ## English
 
 **The controls support an interaction between the opener treatment and the existing

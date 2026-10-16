@@ -1,10 +1,16 @@
 """Guard the live probe's history fidelity and treatment independence."""
 import asyncio
 import json
+from pathlib import Path
+
+import pytest
 
 from tools.probes.compare_chat_temperature import (
-    CapturedMessages, capture_messages, ingress_history, transform_system,
+    CapturedMessages, capture_messages, digest, ingress_history, load_baseline,
+    select_system, transform_system,
 )
+
+BASELINE = Path(__file__).parent / "fixtures/issue227_prompt_baseline.json"
 
 
 def test_probe_uses_session_history_projection_without_current_turn_replay():
@@ -45,14 +51,7 @@ def test_probe_uses_session_history_projection_without_current_turn_replay():
 
 
 def test_preface_factorial_separates_examples_from_directions():
-    from llm.character_prompts import text
-    from llm.prompts import _JA_LANGUAGE_RULES, _JA_OUTPUT_RULES
-    from server.cooperative_provider_loop import _role_coordination_contract
-
-    character_rule = text("ja_character_rule", character_id="kurisu")
-    system = (text("ja_identity", character_id="kurisu") + _JA_LANGUAGE_RULES
-        + "3) " + character_rule + _JA_OUTPUT_RULES + "\n\n"
-        + _role_coordination_contract(True, character_id="kurisu"))
+    system = load_baseline(BASELINE)["system"]
     examples = transform_system(system, "preface_examples_only")
     directions = transform_system(system, "preface_directions_only")
     combined = transform_system(system, "both_no_preface")
@@ -60,4 +59,38 @@ def test_preface_factorial_separates_examples_from_directions():
     assert examples != system and directions != system and examples != directions
     assert transform_system(examples, "preface_directions_only") == combined
     assert transform_system(directions, "preface_examples_only") == combined
-    assert all(character_rule in candidate for candidate in (system, examples, directions, combined))
+
+
+def test_adopted_production_matches_evaluated_shared_candidate(monkeypatch):
+    from agent_host.provider_runtime import ProviderRuntime
+    from llm import prompts
+    from server import assistant_language
+    from server.cooperative_provider_loop import CooperativeProviderLoop
+
+    monkeypatch.setenv("AMADEUS_CHARACTER_ID", "kurisu")
+    monkeypatch.setenv("AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA", "")
+    monkeypatch.setattr(prompts, "_character_prompt_ja", "")
+    monkeypatch.setattr(assistant_language, "current_assistant_language", lambda: "japanese")
+
+    async def capture():
+        loop = CooperativeProviderLoop(ProviderRuntime(), capture_messages,
+            lambda *_: (_ for _ in ()).throw(AssertionError("execution forbidden")),
+            provider="pi", context_requirements={}, persona=prompts.get_system_prompt("base"),
+            owns_runtime=False, work_proposals_only=True)
+        try:
+            await loop._decide({"source": "user", "text": "3は素数？", "turn_id": "probe"}, turn_history=())
+        except CapturedMessages as result:
+            return result.messages[0]["content"]
+        finally:
+            await loop.close()
+        raise AssertionError("model boundary not captured")
+
+    production = asyncio.run(capture())
+    baseline = load_baseline(BASELINE)
+    assert digest(production) == baseline["adopted_system_sha256"]
+    assert production == select_system(production, "both_contextual_reaction", baseline)
+    assert select_system(production, "production", baseline) == production
+    assert select_system(production, "original", baseline) == baseline["system"]
+    assert production != baseline["system"]
+    with pytest.raises(ValueError, match="require --baseline-system"):
+        select_system(production, "original")
