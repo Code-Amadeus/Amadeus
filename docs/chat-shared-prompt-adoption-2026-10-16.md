@@ -140,10 +140,17 @@ revision; on this source they require the explicit frozen baseline.
   environment-only persistence boundary and adapter forwarding. It does not judge
   stochastic quality. Remote CI runs after the new push; these local results do
   not claim that remote jobs have already passed.
-- The preceding remote head's dependency-audit job reports `mcp 2.0.0` /
-  `CVE-2026-59951` ([job log](https://github.com/Code-Amadeus/Amadeus/actions/runs/38849006120/job/116805837332)).
-  Dependency files are unchanged by this PR. This separate CI blocker is recorded;
-  the audit is not bypassed or waived by the prompt validation.
+- At prompt-adoption commit `1dde795e`, the remote dependency-audit job reports `mcp 2.0.0` /
+  `CVE-2026-59951` ([job log](https://github.com/Code-Amadeus/Amadeus/actions/runs/38850231811/job/116809712725)).
+  A subsequent CI repair upgrades only `mcp` and `mcp-types` to the upstream patched
+  2.2.0 release and regenerates the lockfile. The same audit passes in a fresh
+  locked CI-profile environment; no new vulnerability exception is added. See the
+  [upstream advisory](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99).
+  **99 targeted SDK/stdio/Pi/environment/prompt regressions pass without skips.**
+  The synthetic rate-limit fixture now raises the SDK's public `ToolError`, while
+  a paired unexpected-exception case verifies internal details remain redacted
+  and both tool failures still allow the Pi conversation to continue.
+  The prompt study above remains evidence from before that dependency-only repair.
 
 Prior [366-request investigation](chat-qwen-preface-investigation-2026-10-16.md),
 [108-request follow-up](chat-preface-safety-evaluation-2026-10-16.md),
@@ -218,5 +225,9 @@ remain separate. Issue #227 stays open with its original body unchanged.
 快照通过，43 项快照变化均与批准的替换或旧预热 fixture 刷新一致。全库 Ruff、7 个
 架构视图、README 架构概览、证据一致性与 diff 空白检查通过。CI 守住默认值、
 配置校验、显式覆盖与透传，不判断随机回复质量；远端 CI 在 push 后另跑。
-旧远端提交的依赖审计报告 `mcp 2.0.0` 命中 `CVE-2026-59951`，该独立 CI 阻塞保留可见，
-没有修改依赖或跳过审计。此前各批证据保持独立，issue 原正文与开放状态不变。
+prompt 落地提交 `1dde795e` 的远端依赖审计报告 `mcp 2.0.0` 命中 `CVE-2026-59951`。
+后续 CI 修复仅升级 `mcp` 与 `mcp-types` 至上游已修复的 2.2.0 并重建锁文件；
+同一审计在全新锁定的 CI 环境中通过，没有增加漏洞豁免。上述 prompt 实验仍属于依赖
+修复前的独立证据。99 项 SDK/stdio/Pi/环境/prompt 回归通过，无跳过；合成限流夹具
+改用 SDK 公开的 `ToolError`，配对用例验证意外异常细节仍被隐藏，两类工具失败后
+Pi 对话都能继续。此前各批证据保持独立，issue 原正文与开放状态不变。
