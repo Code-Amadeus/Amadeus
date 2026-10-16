@@ -250,11 +250,13 @@ public sealed class LivelyHost : IWallpaperHost
         return directory;
     }
 
-    public async Task SetWallpaper(DesktopItem wallpaper)
+    public async Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null)
     {
         await desktop.SetWallpaperAsync(new SetWallpaperRequest {
             LivelyInfoPath = wallpaper.Path, MonitorId = wallpaper.Monitor
         }, deadline: Deadline);
+        // 只确认原生请求不再等待；下面的场景读回仍须独立成功。
+        requestSettled?.Invoke();
         var until = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < until)
         {

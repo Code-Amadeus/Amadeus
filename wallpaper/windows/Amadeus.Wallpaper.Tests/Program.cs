@@ -8,12 +8,35 @@ if (args.Length == 2 && args[0] == "--cold-start-probe")
     await ColdStartProbe.Run(args[1]);
     return;
 }
+if (args.Length == 1 && args[0] == "--false-empty-counterexample")
+{
+    var directory = Path.Combine(Path.GetTempPath(), "amadeus-wallpaper-counterexample", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try
+    {
+        var journal = Path.Combine(directory, "session.json");
+        var host = new FakeHost { ReportedItems = [], CloseNoOp = true, FailAfterMount = true };
+        var session = new Session(host, journal);
+        var error = await Failure(() => session.Mount(new("amadeus", "primary", host.Options, [], new(10, 20))));
+        // 仅记录尚未修复的协议反例，不能计入恢复安全契约的通过数。
+        Console.WriteLine(JsonSerializer.Serialize(new {
+            diagnostic = "known false-empty protocol counterexample; not a recovery acceptance pass",
+            error = error.Message, actual = host.ActualItems, reported = await host.GetWallpapers(),
+            closeReturnedWithoutRemoval = host.ClosedProjects.Count > 0 && host.ActualItems.Count > 0,
+            journalRetained = File.Exists(journal), stopRequested = host.Stopped is not null,
+            strongRecoveryProven = false
+        }));
+    }
+    finally { Directory.Delete(directory, true); }
+    return;
+}
 
 static void Check(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
 }
 var passed = 0;
+var failures = new List<Exception>();
 async Task Test(string name, Func<FakeHost, Session, string, Task> test)
 {
     var directory = Path.Combine(Path.GetTempPath(), "amadeus-wallpaper-tests", Guid.NewGuid().ToString("N"));
@@ -26,10 +49,33 @@ async Task Test(string name, Func<FakeHost, Session, string, Task> test)
         Console.WriteLine("PASS " + name);
         passed++;
     }
+    catch (Exception error)
+    {
+        failures.Add(new Exception(name, error));
+        Console.WriteLine("FAIL " + name + ": " + error.Message);
+    }
     finally { Directory.Delete(directory, true); }
 }
 Snapshot Before(FakeHost host, ProcessIdentity? owned = null) =>
     new("amadeus", "primary", host.Options, host.ActualItems.ToList(), owned);
+async Task<Exception> Failure(Func<Task> operation)
+{
+    try { await operation(); }
+    catch (Exception error) { return error; }
+    throw new Exception("expected failure");
+}
+void Phase(string journal, string expected)
+{
+    using var saved = JsonDocument.Parse(File.ReadAllText(journal));
+    Check(saved.RootElement.GetProperty("Phase").GetString() == expected, "wrong durable operation phase");
+}
+void WriteLegacy(string journal, Snapshot snapshot, bool unconfirmed = false)
+{
+    File.WriteAllText(journal, JsonSerializer.Serialize(new {
+        snapshot.Project, snapshot.Monitor, snapshot.Options, snapshot.Wallpapers,
+        snapshot.OwnedProcess, snapshot.Mounted, MountUnconfirmed = unconfirmed
+    }));
+}
 
 await Test("restores the existing wallpaper without closing a shared Lively", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
@@ -66,15 +112,12 @@ await Test("user clearing the wallpaper is not undone", async (host, session, _)
     await session.Restore();
     Check(host.ActualItems.Count == 0, "user's clear was undone");
 });
-await Test("failed mount retains recovery until the old wallpaper is observable", async (host, session, journal) => {
+await Test("failed mount rolls back after Lively has closed the old wallpaper", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
     host.FailNextMount = true;
     try { await session.Mount(Before(host)); throw new Exception("expected failure"); }
     catch (IOException) { }
-    Check(host.ActualItems.Count == 0 && File.Exists(journal), "failed mount discarded recovery state");
-    host.ActualItems.Add(new("primary", "old"));
-    await new Session(host, journal).Restore();
-    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "observable original scene could not settle recovery");
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "rollback failed");
 });
 await Test("crash recovery uses the durable journal in a new session", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
@@ -139,70 +182,262 @@ await Test("settings IPC preserves fields outside our wire subset", async (_, _,
     Check(startup, "unknown setting was discarded");
     await Task.CompletedTask;
 });
-await Test("an acted but unconfirmed mount retains recovery through the caller finally", async (host, session, journal) => {
+await Test("a settled failed mount restores an originally empty desktop", async (host, session, journal) => {
     var process = new ProcessIdentity(10, 20);
-    host.ReportedItems = [];
-    host.FailAfterMount = true;
-    Exception? original = null;
-    try {
-        try { await session.Mount(Before(host, process)); }
-        finally { await session.Restore(); }
-    }
-    catch (Exception error) { original = error; }
-    Check(ReferenceEquals(original, host.MountFailure), "original mount error was lost");
-    Check(File.Exists(journal), "unconfirmed mount discarded the only recovery journal");
-    using (var saved = JsonDocument.Parse(File.ReadAllText(journal)))
-        Check(saved.RootElement.GetProperty("MountUnconfirmed").GetBoolean(), "uncertainty was not durable");
-    Check(host.ActualItems.Single().Path == "amadeus" && host.Stopped is null, "unconfirmed mount stopped the owned host");
-    var emptyRejected = false;
-    try { await new Session(host, journal).Restore(); }
-    catch (InvalidOperationException) { emptyRejected = true; }
-    Check(emptyRejected && File.Exists(journal) && host.Stopped is null, "empty report was accepted as recovery confirmation");
-    host.Options = host.Options with { Arrangement = 1 };
-    emptyRejected = false;
-    try { await new Session(host, journal).Restore(); }
-    catch (InvalidOperationException) { emptyRejected = true; }
-    Check(emptyRejected && File.Exists(journal) && host.Options.Arrangement == 1 && host.Stopped is null,
-        "layout was treated as mount confirmation or the user's layout was changed");
-    host.Options = host.Options with { Arrangement = 0 };
-    host.ReportedItems = null;
+    host.FailNextMount = true;
+    var original = await Failure(() => session.Mount(Before(host, process)));
+    Check(original is IOException && host.ActualItems.Count == 0, "empty desktop rollback failed");
+    Check(host.Stopped == process && !File.Exists(journal), "empty rollback did not release ownership");
     await new Session(host, journal).Restore();
-    Check(host.ActualItems.Count == 0 && host.Stopped == process && !File.Exists(journal), "reliable explicit recovery could not retry");
+    await session.Mount(Before(host));
+    await session.Restore();
+    Check(!File.Exists(journal), "failed mount permanently blocked the next session");
 });
-await Test("failed uncertain recovery preserves the mount error and can retry", async (host, session, journal) => {
+await Test("settled but unconfirmed mounting still automatically rolls back", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
-    host.ReportedItems = [];
+    host.FailAfterMount = true;
+    var original = await Failure(() => session.Mount(Before(host)));
+    Check(ReferenceEquals(original, host.MountFailure), "original mount error was lost");
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "settled rollback lost the old scene");
+    Check(host.ClosedProjects.SequenceEqual(new[] { "amadeus" }), "rollback did not scope close to the submitted project");
+});
+await Test("partially applied session settings roll back without wallpaper mutations", async (host, session, journal) => {
+    host.Options = new(0, 0, true, true);
+    host.ActualItems.Add(new("primary", "old"));
+    var before = Before(host, new(10, 20));
+    host.OptionsFailure = new IOException("settings write failed after applying");
+    var original = await Failure(() => session.Mount(before));
+    Check(ReferenceEquals(original, host.OptionsFailure), "settings error was replaced");
+    Check(host.Options == before.Options && host.ActualItems.SequenceEqual(before.Wallpapers), "partial settings not restored");
+    Check(host.SetCalls == 0 && host.ClosedProjects.Count == 0, "settings rollback dispatched wallpaper mutations");
+    Check(host.RestoreCalls == 1 && !File.Exists(journal), "settings rollback was skipped or repeated");
+});
+await Test("preparation cleanup failure retains both errors and retries settings only", async (host, session, journal) => {
+    host.Options = new(0, 0, true, true);
+    var before = Before(host);
+    host.OptionsFailure = new IOException("partial settings failure");
+    host.RestoreFailure = new IOException("settings rollback failed");
+    var error = await Failure(() => session.Mount(before));
+    Check(error is AggregateException both && both.InnerExceptions.SequenceEqual(new[] { host.OptionsFailure, host.RestoreFailure }), "settings primary and cleanup errors were not retained");
+    Phase(journal, "Preparing");
+    Check(host.SetCalls == 0 && host.ClosedProjects.Count == 0, "preparation cleanup mutated wallpapers");
+    host.RestoreFailure = null;
+    await new Session(host, journal).Restore();
+    Check(host.Options == before.Options && !File.Exists(journal), "preparation recovery could not retry");
+});
+await Test("mount and cleanup failures retain both causes and can retry", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
     host.FailAfterMount = true;
     host.RestoreFailure = new IOException("restoration unavailable");
-    Exception? original = null;
-    try {
-        try { await session.Mount(Before(host, new(10, 20))); }
-        finally { await session.Restore(); }
-    }
-    catch (Exception error) { original = error; }
-    Check(ReferenceEquals(original, host.MountFailure), "cleanup replaced the original mount failure");
-    host.ReportedItems = null;
-    Exception? recovery = null;
-    try { await new Session(host, journal).Restore(); }
-    catch (Exception error) { recovery = error; }
-    Check(ReferenceEquals(recovery, host.RestoreFailure) && File.Exists(journal) && host.Stopped is null, "failed recovery lost retry state");
+    var error = await Failure(() => session.Mount(Before(host, new(10, 20))));
+    Check(error is AggregateException both && both.InnerExceptions.SequenceEqual(new Exception[] { host.MountFailure, host.RestoreFailure }), "mount and cleanup errors were not retained");
+    Phase(journal, "Settled");
+    Check(File.Exists(journal) && host.Stopped is null, "failed rollback discarded retry state");
     host.RestoreFailure = null;
     await new Session(host, journal).Restore();
     Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "recovery retry did not restore the original scene");
-    Check(ReferenceEquals(original, host.MountFailure), "later recovery changed the recorded mount error");
 });
-await Test("a user selection wins after an unconfirmed mount", async (host, session, journal) => {
+await Test("a visible close no-op keeps the journal and can retry", async (host, session, journal) => {
+    await session.Mount(Before(host, new(10, 20)));
+    host.CloseNoOp = true;
+    var error = await Failure(() => session.Restore());
+    Check(error is IOException && File.Exists(journal) && host.Stopped is null, "visible remaining scene was accepted as closed");
+    Check(host.ActualItems.Single().Path == "amadeus", "fake no-op unexpectedly removed the scene");
+    host.CloseNoOp = false;
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Count == 0 && !File.Exists(journal), "close no-op recovery could not retry");
+});
+await Test("an explicit close exception keeps recovery state for retry", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
-    host.ReportedItems = [];
+    await session.Mount(Before(host));
+    host.CloseFailure = new IOException("project close unavailable");
+    var error = await Failure(() => session.Restore());
+    Check(ReferenceEquals(error, host.CloseFailure) && File.Exists(journal), "close failure lost journal or error");
+    host.CloseFailure = null;
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "close exception recovery could not retry");
+});
+await Test("missing original wallpaper after restore keeps retry state", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    await session.Mount(Before(host));
+    host.IgnoreRestoredWallpaper = true;
+    var error = await Failure(() => session.Restore());
+    Check(error is IOException && File.Exists(journal), "missing original wallpaper was treated as restored");
+    host.IgnoreRestoredWallpaper = false;
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "missing-original recovery could not retry");
+});
+await Test("the original project can be the same managed project on its original monitor", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "amadeus"));
+    var before = Before(host);
+    await session.Mount(before);
+    await session.Restore();
+    Check(host.ActualItems.SequenceEqual(before.Wallpapers) && !File.Exists(journal), "the original managed project was rejected as a leftover");
+});
+await Test("the original project does not permit a leftover on another monitor", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "amadeus"));
+    await session.Mount(Before(host));
+    host.ReportedItems = [new("secondary", "amadeus")];
+    var error = await Failure(() => session.Restore());
+    Check(error is IOException && File.Exists(journal), "a managed project outside the before-image monitor was accepted");
+});
+await Test("pending RPC can mount late and only a new host identity unlocks recovery", async (host, session, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailPendingMount = true;
+    var original = await Failure(() => session.Mount(Before(host, process)));
+    Check(ReferenceEquals(original, host.PendingFailure), "pending RPC primary error was lost");
+    Phase(journal, "Pending");
+    Check(host.ClosedProjects.Count == 0 && host.RestoreCalls == 0 && host.Stopped is null, "pending RPC was cleaned up as settled");
+    var reads = host.WallpaperReads;
+    Check(await Failure(() => new Session(host, journal).Restore()) is InvalidOperationException, "pending RPC was accepted without restart");
+    Check(await Failure(() => new Session(host, journal).Restore(process)) is InvalidOperationException, "same process was accepted as a restart");
+    Check(host.WallpaperReads == reads && host.ClosedProjects.Count == 0, "pending recovery inspected or mutated the old host");
+    host.CompletePendingMount();
+    Check(host.ActualItems.Single().Path == "amadeus" && File.Exists(journal), "fixture did not reproduce the late mount");
+    Check(await Failure(() => new Session(host, journal).Restore()) is InvalidOperationException, "a visible late mount cleared pending without restart");
+    host.ActualItems.Clear();
+    var restarted = new ProcessIdentity(11, 30);
+    await new Session(host, journal).Restore(restarted);
+    Check(host.ActualItems.Single().Path == "old" && host.Stopped == restarted && !File.Exists(journal), "actual host restart did not unlock recovery");
+});
+await Test("a user selection wins after a failed rollback", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
     host.FailAfterMount = true;
-    try { await session.Mount(Before(host, new(10, 20))); }
-    catch (TimeoutException) { }
-    host.ReportedItems = null;
+    host.CloseFailure = new IOException("close unavailable");
+    await Failure(() => session.Mount(Before(host, new(10, 20))));
+    host.CloseFailure = null;
     await host.SetWallpaper(new("primary", "user-new"));
     await new Session(host, journal).Restore();
     Check(host.ActualItems.Single().Path == "user-new" && host.Stopped is null && !File.Exists(journal), "uncertain recovery overwrote the user's new scene");
 });
+await Test("legacy journals without a phase keep their original recovery semantics", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    var snapshot = Before(host);
+    WriteLegacy(journal, snapshot);
+    host.ActualItems.Clear();
+    await session.Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "legacy pre-mount recovery changed");
+    WriteLegacy(journal, snapshot with { Mounted = true });
+    await host.SetWallpaper(new("primary", "user-new"));
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "user-new" && !File.Exists(journal), "legacy mounted recovery overwrote a user choice");
+});
+await Test("legacy unconfirmed journals remain pending until host restart", async (host, session, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    var snapshot = Before(host, process);
+    WriteLegacy(journal, snapshot, unconfirmed:true);
+    Check(await Failure(() => session.Restore()) is InvalidOperationException, "legacy uncertainty was silently discarded");
+    Check(File.Exists(journal) && host.ClosedProjects.Count == 0, "legacy pending recovery mutated the host");
+    Check(await Failure(() => session.Restore(process)) is InvalidOperationException, "legacy same process counted as a restart");
+    await session.Restore(new(11, 30));
+    Check(!File.Exists(journal), "legacy pending recovery did not settle after host restart");
+});
+await Test("mounted lifecycle does not repeat a failed mount rollback", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailNextMount = true;
+    var invoked = false;
+    var error = await Failure(() => session.RunMounted(Before(host), () => { invoked=true; return Task.CompletedTask; }));
+    Check(error is IOException && !invoked, "failed mount ran the mounted body");
+    Check(host.ClosedProjects.Count == 1 && host.RestoreCalls == 2 && !File.Exists(journal), "failed mount rollback repeated or was skipped");
+});
+await Test("mounted body and cleanup errors remain observable together", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    var bodyError = new IOException("mounted body failed");
+    host.RestoreFailure = new IOException("mounted cleanup failed");
+    var error = await Failure(() => session.RunMounted(Before(host), () => Task.FromException(bodyError)));
+    Check(error is AggregateException both && both.InnerExceptions.SequenceEqual(new[] { bodyError, host.RestoreFailure }), "body or cleanup error was lost");
+    Check(host.ClosedProjects.Count == 1 && host.RestoreCalls == 1 && File.Exists(journal), "mounted cleanup was skipped or repeated");
+    host.RestoreFailure = null;
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "body cleanup failure lost retry state");
+});
+await Test("outer failure cleanup preserves a user choice after settled mount rollback", async (host, session, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailAfterMount = true;
+    host.OnMountConfirmation = () => {
+        host.ActualItems.Clear();
+        host.ActualItems.Add(new("primary", "user-new"));
+    };
+    Exception? original = null;
+    try { await session.RunMounted(Before(host, process), () => Task.CompletedTask); }
+    catch (Exception error) { original = error; await session.ReleaseUnstartedHost(process); }
+    Check(ReferenceEquals(original, host.MountFailure), "outer cleanup replaced the settled mount failure");
+    Check(!File.Exists(journal) && host.ActualItems.Single().Path == "user-new", "mount rollback did not retain the user choice");
+    Check(host.Stopped is null, "outer catch stopped the host after owned rollback kept a user choice");
+});
+await Test("outer failure cleanup preserves a user choice after mounted body failure", async (host, session, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    var bodyError = new IOException("body failed after the user selected a new scene");
+    Exception? original = null;
+    try {
+        await session.RunMounted(Before(host, process), async () => {
+            await host.SetWallpaper(new("primary", "user-new"));
+            throw bodyError;
+        });
+    }
+    catch (Exception error) { original = error; await session.ReleaseUnstartedHost(process); }
+    Check(ReferenceEquals(original, bodyError), "outer cleanup replaced the mounted body error");
+    Check(!File.Exists(journal) && host.ActualItems.Single().Path == "user-new", "body cleanup did not retain the user choice");
+    Check(host.Stopped is null, "outer catch stopped the host after body cleanup kept a user choice");
+});
+await Test("initial journal save failure can release the unstarted owned host", async (host, _, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    var blocked = Path.Combine(Path.GetDirectoryName(journal)!, "not-a-directory");
+    File.WriteAllText(blocked, "synthetic obstruction");
+    var failedJournal = Path.Combine(blocked, "session.json");
+    var session = new Session(host, failedJournal);
+    Exception? original = null;
+    var invoked = false;
+    try { await session.RunMounted(Before(host, process), () => { invoked=true; return Task.CompletedTask; }); }
+    catch (Exception error) { original=error; await session.ReleaseUnstartedHost(process); }
+    Check(original is IOException && !invoked && !File.Exists(failedJournal), "fixture did not fail the initial save");
+    Check(host.Stopped == process && host.SetCalls == 0 && host.RestoreCalls == 0, "unstarted host was not released without wallpaper mutation");
+});
+await Test("an existing pending journal prevents outer initialization cleanup", async (host, session, journal) => {
+    var process = new ProcessIdentity(10, 20);
+    WriteLegacy(journal, Before(host, process), unconfirmed:true);
+    Exception? original = null;
+    try { await session.RunMounted(Before(host, process), () => Task.CompletedTask); }
+    catch (Exception error) { original=error; await session.ReleaseUnstartedHost(process); }
+    Check(original is InvalidOperationException && File.Exists(journal), "existing pending journal was discarded");
+    Check(host.Stopped is null && host.SetCalls == 0 && host.RestoreCalls == 0, "pending host was stopped or mutated by outer cleanup");
+});
+await Test("snapshot failure after recovery preserves the recovered host for a user choice", async (host, session, journal) => {
+    var restarted = new ProcessIdentity(10, 20);
+    WriteLegacy(journal, Before(host, new(9, 10)) with { Mounted = true });
+    host.ActualItems.Add(new("primary", "user-new"));
+    await session.Restore(restarted);
+    Check(!File.Exists(journal) && host.Stopped is null, "recovery did not preserve the user scene");
+    host.OptionsReadFailure = new IOException("snapshot options read unavailable");
+    Exception? original = null;
+    try {
+        var next = new Snapshot("amadeus", "primary", await host.GetOptions(), await host.GetWallpapers(), restarted);
+        await session.RunMounted(next, () => Task.CompletedTask);
+    }
+    catch (Exception error) { original=error; await session.ReleaseUnstartedHost(restarted); }
+    Check(ReferenceEquals(original, host.OptionsReadFailure), "snapshot error was replaced");
+    Check(host.Stopped is null && host.ActualItems.Single().Path == "user-new", "outer cleanup stopped the recovered host kept for a user choice");
+});
+await Test("snapshot failure can release a different host started after recovery stopped the old host", async (host, session, journal) => {
+    var recovered = new ProcessIdentity(10, 20);
+    WriteLegacy(journal, Before(host, new(9, 10)));
+    await session.Restore(recovered);
+    Check(host.Stopped == recovered && !File.Exists(journal), "recovery did not release the old owned host");
+    var newlyStarted = new ProcessIdentity(10, 21);
+    host.OptionsReadFailure = new IOException("new host snapshot unavailable");
+    Exception? original = null;
+    try {
+        var next = new Snapshot("amadeus", "primary", await host.GetOptions(), await host.GetWallpapers(), newlyStarted);
+        await session.RunMounted(next, () => Task.CompletedTask);
+    }
+    catch (Exception error) { original=error; await session.ReleaseUnstartedHost(newlyStarted); }
+    Check(ReferenceEquals(original, host.OptionsReadFailure), "new host snapshot error was replaced");
+    Check(host.Stopped == newlyStarted, "cleanup ownership of the prior process prevented releasing the unstarted new host");
+});
 Console.WriteLine($"{passed} contracts passed.");
+if (failures.Count > 0) throw new AggregateException("Wallpaper contract failures", failures);
 
 sealed class FakeHost : IWallpaperHost
 {
@@ -212,21 +447,63 @@ sealed class FakeHost : IWallpaperHost
     public ProcessIdentity? Stopped;
     public bool FailNextMount;
     public bool FailAfterMount;
+    public Action? OnMountConfirmation;
+    public bool FailPendingMount;
+    public bool CloseNoOp;
+    public bool IgnoreRestoredWallpaper;
+    public int SetCalls;
+    public int RestoreCalls;
+    public int WallpaperReads;
+    public List<string> ClosedProjects = [];
+    DesktopItem? pendingWallpaper;
     public readonly TimeoutException MountFailure = new("wallpaper mount confirmation timed out");
+    public readonly IOException PendingFailure = new("native SetWallpaper RPC deadline exceeded");
+    public Exception? OptionsFailure;
+    public Exception? OptionsReadFailure;
+    public Exception? CloseFailure;
     public Exception? RestoreFailure;
-    public Task<HostOptions> GetOptions() => Task.FromResult(Options);
-    public Task<List<DesktopItem>> GetWallpapers() => Task.FromResult((ReportedItems ?? ActualItems).ToList());
-    public Task SetWallpaper(DesktopItem wallpaper) {
+    public Task<HostOptions> GetOptions() {
+        if (OptionsReadFailure is not null) throw OptionsReadFailure;
+        return Task.FromResult(Options);
+    }
+    public Task<List<DesktopItem>> GetWallpapers() {
+        WallpaperReads++;
+        return Task.FromResult((ReportedItems ?? ActualItems).ToList());
+    }
+    public Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null) {
+        SetCalls++;
         ActualItems.RemoveAll(x => x.Monitor == wallpaper.Monitor);
-        if (FailNextMount) { FailNextMount = false; throw new IOException("player failed"); }
-        ActualItems.Add(wallpaper);
-        if (FailAfterMount) { FailAfterMount = false; throw MountFailure; }
+        // RPC 截止后，服务器仍可在测试明确放行时完成挂载；不调用结算回调。
+        if (FailPendingMount) { FailPendingMount = false; pendingWallpaper = wallpaper; throw PendingFailure; }
+        if (FailNextMount) { FailNextMount = false; requestSettled?.Invoke(); throw new IOException("player failed"); }
+        if (!IgnoreRestoredWallpaper || wallpaper.Path == "amadeus") ActualItems.Add(wallpaper);
+        requestSettled?.Invoke();
+        if (FailAfterMount) { FailAfterMount = false; OnMountConfirmation?.Invoke(); throw MountFailure; }
         return Task.CompletedTask;
     }
-    public Task CloseProject(string project) { ActualItems.RemoveAll(x => Session.SamePath(x.Path, project)); return Task.CompletedTask; }
-    public Task SetSessionOptions() => Task.CompletedTask;
+    public void CompletePendingMount() {
+        var wallpaper = pendingWallpaper ?? throw new InvalidOperationException("no pending native request");
+        ActualItems.RemoveAll(x => x.Monitor == wallpaper.Monitor);
+        ActualItems.Add(wallpaper);
+        pendingWallpaper = null;
+    }
+    public Task CloseProject(string project) {
+        ClosedProjects.Add(project);
+        if (CloseFailure is not null) throw CloseFailure;
+        if (!CloseNoOp) ActualItems.RemoveAll(x => Session.SamePath(x.Path, project));
+        return Task.CompletedTask;
+    }
+    public Task SetSessionOptions() {
+        Options = Options with { Browser = 1, DesktopImage = false, LockImage = false };
+        if (OptionsFailure is not null) throw OptionsFailure;
+        return Task.CompletedTask;
+    }
     public Task RestoreOptions(HostOptions previous, bool images = true) {
+        RestoreCalls++;
         if (RestoreFailure is not null) throw RestoreFailure;
+        Options = Options with { Browser = Options.Browser == 1 ? previous.Browser : Options.Browser,
+            DesktopImage = images && !Options.DesktopImage ? previous.DesktopImage : Options.DesktopImage,
+            LockImage = images && !Options.LockImage ? previous.LockImage : Options.LockImage };
         return Task.CompletedTask;
     }
     public Task StopOwnedProcess(ProcessIdentity process) { Stopped = process; return Task.CompletedTask; }

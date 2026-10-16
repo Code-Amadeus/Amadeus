@@ -77,41 +77,92 @@ It is written and flushed before desktop mutation. A cross-checkout file lock
 prevents concurrent Amadeus sessions from overwriting it. The helper stays alive
 when Electron dies; stdin EOF triggers the same restoration as normal exit.
 If the helper is also killed, the next managed start recovers the journal before
-taking another snapshot. Failed restoration retains the journal and reports an
-error. It is never marked successful merely because a command was dispatched.
+taking another snapshot. Failed restoration and observed postcondition failures
+retain the journal and report an error. Confirmation uses the host's reported
+state, subject to the stock Lively protocol limitation described below.
 
-The journal records `MountUnconfirmed` before calling `SetWallpaper`, because
-the host can apply the scene and then time out while confirming it. A failed
-mount keeps the original error and journal; the same Session's automatic
-`finally` cleanup does not retry restoration or stop the owned host. A later
-managed start or explicit `recover` uses a new Session. While that transaction
-is unconfirmed, an empty report for the target display cannot confirm recovery:
-the journal stays pending and the host is retained until that display has
-usable wallpaper evidence. A layout value is not mount evidence. Once reliable
-scene evidence is available, the existing restoration and user-choice rules
-apply, including retries after a further restoration failure.
+The journal now adds an optional `Phase`: `Preparing` before session settings,
+`Pending` before dispatching `SetWallpaper`, and `Settled` only after the native
+Set RPC returns normally, before mount confirmation. A normal RPC return only
+means that request is no longer pending; it does not prove that a scene mounted.
+Failure during settings preparation restores settings without setting or closing
+wallpaper. A settled mount failure attempts the original automatic rollback,
+including an originally empty desktop, using the exact submitted project path
+for scoped close. A reported remaining Amadeus scene outside the original
+monitor/path pairs, or a missing original scene that this cleanup attempted to
+restore, keeps the journal for retry. An original scene may itself use the same
+managed project; restoring that exact monitor/path pair remains valid.
 
-日志在调用 `SetWallpaper` 前持久化 `MountUnconfirmed`，因为宿主可能已挂载场景，
-却在确认时超时。挂载失败保留原始错误和日志；同一 Session 的自动 `finally` 收尾
-不再尝试恢复或停止自有宿主。后续受控启动或显式 `recover` 创建新 Session 重试。
-在该事务尚未确认时，目标显示的空报告不能作为恢复完成的证据，布局值也不能替代
-挂载证据；日志保持 pending，宿主保留。取得可靠场景证据后仍沿用原恢复、用户选择
-优先和恢复失败后重试的规则。
+`Session.Mount` owns its failed-mount rollback. The helper uses
+`Session.RunMounted` to run its active body and arrange exactly one cleanup only
+after Mount succeeds. If rollback or body cleanup also fails, both the primary
+and cleanup errors are retained. The Session remembers the process identity
+whose cleanup it has taken over, including journal recovery. The outer error
+handler only releases a newly started host whose identity is still outside that
+ownership and for which no journal exists. Successful cleanup removing a journal
+does not authorize another host shutdown; a later host with a different start
+identity can still be released if initialization fails before takeover.
+A transport/deadline failure before native Set
+returns leaves `Pending`; it does not trigger automatic close, restore or host
+shutdown, because the request may still mount late. Recovery requires a genuinely
+restarted host supplied by the caller; the original owned process identity is
+not accepted as a restart. Fully exit Lively, then run `recover` so this helper
+starts it; manually restarting Lively and leaving it running does not supply a
+newly started identity to this helper. Old journals without a phase keep their
+original semantics; an old `MountUnconfirmed: true` journal is treated as pending.
 
-This is conservative handling of an uncertain transaction, not a repair to
-Lively's reporting protocol. A truly empty desktop and an unreported mounted
-scene cannot be distinguished from that empty stream alone; manual recovery
-may remain pending until the reporting problem is repaired. Normal cleanup of
-a confirmed mount can still restore an empty desktop. Contract tests separate
-the fake host's actual wallpapers from its reported wallpapers and exercise
-the caller's repeated `finally`, new-Session recovery and original-error
-preservation. No real Lively mounting is established by those tests.
+Recover any pending journal with this helper before reverting to an older helper.
+Older binaries do not understand `Phase`; downgrade while a journal remains is
+not supported, and no recovery record is reset or deleted to enable it.
 
-这只修复 Amadeus 对不确定事务的收尾，不修复 Lively 的报告协议。仅凭同一空流无法
-区分真实空桌面和未报告的已挂载场景；报告问题修复前，人工恢复也可能继续 pending。
-已确认挂载的正常收尾仍允许恢复为空桌面。契约测试分离 fake 宿主的实际场景和报告
-场景，覆盖调用方重复 `finally`、新 Session 恢复及原错误保留，不代表真实 Lively
-挂载已通过。
+日志新增可空 `Phase`：设置准备前为 `Preparing`，派发 `SetWallpaper` 前为
+`Pending`，原生 Set RPC 正常返回后、挂载确认前才写入 `Settled`。正常返回仅表示该
+请求不再 pending，并不证明已挂载。设置阶段失败只恢复可能部分写入的设置，不重设
+或关闭壁纸；已结算的挂载失败恢复原自动回滚，包括原来为空的桌面，并用最初提交的
+确切项目路径关闭自身场景。恢复后仍在原 monitor/path 配对之外报告 Amadeus，或
+本次应恢复的原场景缺失，都会保留日志以便重试；原场景本身可以使用同一维护项目，
+恢复该确切 monitor/path 配对仍然有效。
+
+`Session.Mount` 自行负责挂载失败回滚；helper 经 `Session.RunMounted` 运行挂载后
+的主体，只在 Mount 成功后安排一次清理。主操作和清理同时失败时保留两个异常。
+Session 已接管某个进程的清理（包括旧日志恢复），即记录其身份；外层异常处理只在
+进程尚未被接管且没有日志时释放新启动的宿主。成功清理删除日志不代表可以再次停止
+宿主；若之后启动的是另一启动身份的宿主，在接管前初始化失败仍可释放该新进程。
+若原生 Set 正常返回前发生传输或 deadline 错误，日志维持 `Pending`，不自动关闭、
+恢复或停止宿主，因为请求仍可能迟到挂载。恢复须由调用方提供真实重启宿主的事实，
+原自有进程的相同身份不能算重启。应完全退出 Lively 后执行 `recover`，让本 helper
+启动它；手动重启后让 Lively 保持运行不会向本 helper 提供新启动的进程身份。
+无 phase 的旧日志保持原语义；旧
+`MountUnconfirmed: true` 按 pending 保守处理。
+
+回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
+时不支持降级，不会为允许降级而重置或删除恢复记录。
+
+This change is limited to phase-aware rollback and error preservation. It does
+**not** repair stock Lively 2.2.1.0's reporting/close protocol: `GetWallpapers`
+can return a falsely empty stream, and project close can swallow errors and
+return success without removing a player. A close response plus an empty stream
+cannot prove strong recovery or player exit. For an originally empty desktop,
+the retained baseline empty-report behavior can still delete the journal and
+request owned-host shutdown while an unreported scene remains. This is a known
+unresolved limitation, not an accepted strong-recovery guarantee. No PID
+inference, layout-file inference or timing heuristic is added to hide it.
+
+本次范围仅为按阶段回滚和保留异常，**未修复**原版 Lively 2.2.1.0 的报告及关闭
+协议：`GetWallpapers` 可能假空，项目关闭也可能吞错后返回成功却没有移除播放器。
+关闭回执加空流不能证明强恢复或播放器退出。对于原来为空的桌面，保留的 baseline
+空报告行为仍可能在未报告场景存在时删除日志并请求停止自有宿主。这是明确未解决的
+限制，不能视为强恢复已验收；本轮不加入 PID、磁盘 layout 或延时推断来掩盖它。
+
+Deterministic contracts separate fake actual state from reported state and cover
+rollback, retries, late requests, user choices, journal compatibility and both
+errors. The separate `--false-empty-counterexample` diagnostic records the
+unresolved false-empty/no-op-close case without adding it to the passing contract
+count. These checks do not establish real Lively mounting or close completion.
+
+离线契约分离 fake 真实状态与报告状态，覆盖回滚、重试、迟到请求、用户选择、日志
+兼容与双重异常。独立 `--false-empty-counterexample` 诊断记录未解决的假空及关闭
+no-op 反例，不计入契约通过数；这些检查不证明真实 Lively 挂载或关闭完成。
 
 If Lively must be started with its screenshot-to-wallpaper options temporarily
 disabled, `Lively Wallpaper\Amadeus.launch-settings.json` backs up just those
@@ -274,6 +325,13 @@ dotnet run --project wallpaper\windows\Amadeus.Wallpaper.Tests
 cd electron
 npm test
 npm run build
+```
+
+The separate protocol counterexample diagnostic is not an acceptance check:
+独立协议反例诊断不计为验收通过：
+
+```powershell
+dotnet run --no-restore --project wallpaper\windows\Amadeus.Wallpaper.Tests -- --false-empty-counterexample
 ```
 
 The Windows Electron CI job also runs the C# contract executable, builds an

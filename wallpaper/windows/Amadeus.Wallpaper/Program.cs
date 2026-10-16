@@ -10,6 +10,7 @@ void Report(object value)
 var state = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Amadeus", "wallpaper");
 var journal = Path.Combine(state, "session.json");
 var host = new LivelyHost();
+var session = new Session(host, journal);
 try
 {
     var command = args.FirstOrDefault() ?? "inspect";
@@ -41,7 +42,6 @@ try
     // Cross-checkout exclusion: an independent cleanup process may still own the desktop.
     using var sessionLock = new FileStream(Path.Combine(state, "session.lock"), FileMode.OpenOrCreate,
         FileAccess.ReadWrite, FileShare.None);
-    var session = new Session(host, journal);
     if (command == "recover" && !File.Exists(journal))
     {
         await host.RecoverLaunchImages();
@@ -53,11 +53,9 @@ try
     if (command == "recover") { Report(new { status = "restored" }); return 0; }
     // Recovery may have stopped the old owned host.
     await host.EnsureRunning();
-    try
-    {
-        var snapshot = new Snapshot(await host.WriteProject(args[1]), await host.PrimaryMonitor(),
-            await host.GetOptions(), await host.GetWallpapers(), host.StartedProcess);
-        await session.Mount(snapshot);
+    var snapshot = new Snapshot(await host.WriteProject(args[1]), await host.PrimaryMonitor(),
+        await host.GetOptions(), await host.GetWallpapers(), host.StartedProcess);
+    await session.RunMounted(snapshot, async () => {
         Report(new { status = "mounted" });
         // EOF also fires if Electron crashes. This process stays alive to restore.
         using var lively = LivelyHost.Running() ?? throw new IOException("Lively exited after mounting.");
@@ -65,23 +63,15 @@ try
         var hostExited = lively.WaitForExitAsync();
         if (await Task.WhenAny(input, hostExited) == hostExited)
             throw new IOException("Lively exited unexpectedly; the wallpaper recovery journal is retained.");
-    }
-    finally
-    {
-        await session.Restore();
-    }
+    });
     Report(new { status = "restored" });
     return 0;
 }
 catch (Exception error)
 {
-    // An initialization failure before the before-image is saved has not mounted
-    // our scene, but we may already have started a host. Release only that process.
-    if (!File.Exists(journal) && host.StartedProcess is not null)
-    {
-        try { await host.StopOwnedProcess(host.StartedProcess); }
-        catch (Exception cleanup) { Console.Error.WriteLine(cleanup.Message); }
-    }
+    // 未接管清理的初始化错误才允许释放自有宿主。
+    try { await session.ReleaseUnstartedHost(host.StartedProcess); }
+    catch (Exception cleanup) { Console.Error.WriteLine(cleanup.Message); }
     Report(new { status = "error", error = error.Message, recoveryPending = File.Exists(journal) });
     return 1;
 }
