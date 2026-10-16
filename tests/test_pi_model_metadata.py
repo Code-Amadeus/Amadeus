@@ -60,17 +60,22 @@ function outgoing(model) {
   return converted.flatMap(m => Array.isArray(m.content) ? m.content : [])
     .filter(x => x.type === 'image_url').length;
 }
-function repairFactory(events) {
-  return pi => { registerHostModelMetadata(pi);
+function repairFactory(events, repairFailure) {
+  return pi => { registerHostModelMetadata(repairFailure ? {...pi,setModel:async()=>{
+      if (repairFailure==='throw') throw new Error('SYNTHETIC_SECRET_MARKER');
+      return false;
+    }} : pi);
     pi.on('model_select',e=>{events.push({id:e.model.id})}); };
 }
-async function setup(name, {id='deepseek-v4-flash', config, cache, native, extension, configured=true, fullExtension=false}={}) {
+async function setup(name, {id='deepseek-v4-flash', config, cache, native, extension, configured=true,
+  fullExtension=false, unreadableConfig=false, repairFailure, beforeBind}={}) {
   const directory = path.join(outputDir,name);
   await mkdir(directory);
   process.env.PI_CODING_AGENT_DIR=directory;
   process.env.AMADEUS_PI_WORKSPACE=directory;
   process.env.AMADEUS_PI_ACCESS='none';
   let modelsPath = path.join(directory,'models.json');
+  if (unreadableConfig) await mkdir(modelsPath);
   if (config) {
     modelsPath = path.join(directory,'models.json');
     await writeFile(modelsPath,typeof config==='string' ? config : JSON.stringify(config,null,2)+'\n','utf8');
@@ -88,15 +93,17 @@ async function setup(name, {id='deepseek-v4-flash', config, cache, native, exten
   const events = [];
   const loader = new DefaultResourceLoader({cwd:directory,agentDir:directory,settingsManager:settings,
     noExtensions:true,noSkills:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,
-    disabledBuiltinExtensions:['mcp'], ...(fullExtension ? {additionalExtensionPaths:[path.join(process.cwd(),'amadeus.ts')]} : {extensionFactories:[{name:'offline-alias-probe',factory:repairFactory(events)}]})});
+    disabledBuiltinExtensions:['mcp'], ...(fullExtension ? {additionalExtensionPaths:[path.join(process.cwd(),'amadeus.ts')]} : {extensionFactories:[{name:'offline-alias-probe',factory:repairFactory(events,repairFailure)}]})});
   await loader.reload();
   assert.deepEqual(loader.getExtensions().errors,[]);
   const {session} = await createAgentSession({cwd:directory,agentDir:directory,modelRuntime:runtime,
     model:selected.model,settingsManager:settings,sessionManager:SessionManager.inMemory(directory),
     resourceLoader:loader,noTools:'all'});
   const providerBefore = runtime.getProvider('deepseek');
-  const errors=[];
-  await session.bindExtensions({mode:'rpc',onError:e=>errors.push(e.error)});
+  const errors=[],notifications=[];
+  if (beforeBind) await beforeBind(modelsPath);
+  await session.bindExtensions({mode:'rpc',onError:e=>errors.push(e.error),
+    uiContext:{notify:(message,type)=>notifications.push({message,type})}});
   assert.strictEqual(runtime.getProvider('deepseek'),providerBefore);
   const requests = [];
   // 公开 Agent.streamFunction 注入合成终态，保留真实 Session/事件/转换路径。
@@ -113,7 +120,28 @@ async function setup(name, {id='deepseek-v4-flash', config, cache, native, exten
     queueMicrotask(()=>{stream.push({type:'done',reason:'stop',message});stream.end(message);});
     return stream;
   };
-  return {runtime,registry,store,session,events,requests,settings,modelsPath,selected,errors};
+  return {runtime,registry,store,session,events,requests,settings,modelsPath,selected,errors,notifications};
+}
+
+async function assertSkippedRepair(s) {
+  assert.strictEqual(s.session.model,s.selected.model);
+  assert.equal(outgoing(s.session.model),0);
+  assert.deepEqual(s.errors,[]);
+  assert.equal(s.notifications.length,1);
+  const notification=s.notifications[0];
+  assert.equal(notification.message,
+    'Amadeus: legacy DeepSeek image compatibility was skipped; keeping the Pi model selection.');
+  assert.equal(notification.type,'warning');
+  assert.ok(!notification.message.includes('SYNTHETIC_SECRET_MARKER'));
+  assert.ok(!notification.message.includes(s.modelsPath));
+  assert.ok(!notification.message.includes('local-llm'));
+  await s.session.bindExtensions({});
+  await s.session.prompt('offline first turn',{images:[png]});
+  await s.session.prompt('offline next turn',{images:[png]});
+  assert.strictEqual(s.session.model,s.selected.model);
+  assert.deepEqual(s.requests.map(r=>r.images),[0,0]);
+  assert.deepEqual(s.errors,[]);
+  assert.deepEqual(s.notifications,[notification]);
 }
 
 '''
@@ -255,9 +283,7 @@ finally {s.session.dispose();}
 const config='{"providers":{"deepseek":{"apiKey":"SYNTHETIC_SECRET_MARKER"}},';
 const s=await setup('fixture',{config});
 try {
-  assert.deepEqual(s.session.model.input,['text']);
-  assert.ok(s.errors.some(e=>e==='Amadeus model metadata: native models.json declarations could not be read'));
-  assert.ok(s.errors.every(e=>!e.includes('SYNTHETIC_SECRET_MARKER')));
+  await assertSkippedRepair(s);
   assert.equal(await readFile(s.modelsPath,'utf8'),config);
 } finally {s.session.dispose();}
 ''',
@@ -265,11 +291,58 @@ try {
 const config='{"providers":{/* unsupported native comment */"deepseek":{"modelOverrides":{}}}}';
 const s=await setup('fixture',{config});
 try {
-  assert.deepEqual(s.session.model.input,['text']);
-  assert.ok(s.errors.some(e=>e==='Amadeus model metadata: native models.json declarations could not be read'));
-  assert.ok(s.errors.every(e=>!e.includes('SYNTHETIC_SECRET_MARKER')));
+  await assertSkippedRepair(s);
   assert.equal(await readFile(s.modelsPath,'utf8'),config);
 } finally {s.session.dispose();}
+''',
+    'unrelated-provider-error': r'''
+const config={providers:{'local-llm':{api:'openai-completions',models:[{id:'fixture'}]}}};
+const s=await setup('fixture',{config});
+try {
+  assert.ok(s.registry.find('deepseek','deepseek-flash'));
+  assert.match(s.registry.getError(),/Provider local-llm/);
+  await assertSkippedRepair(s);
+  assert.deepEqual(JSON.parse(await readFile(s.modelsPath,'utf8')),config);
+} finally {s.session.dispose();}
+''',
+    'unreadable-declarations': r'''
+const s=await setup('fixture',{unreadableConfig:true});
+try {await assertSkippedRepair(s);} finally {s.session.dispose();}
+''',
+    'unreadable-declarations-after-load': r'''
+const s=await setup('fixture',{beforeBind:p=>mkdir(p)});
+try {assert.equal(s.registry.getError(),undefined);await assertSkippedRepair(s);}
+finally {s.session.dispose();}
+''',
+    'malformed-declarations-after-load': r'''
+const config='{"providers":{"deepseek":{"apiKey":"SYNTHETIC_SECRET_MARKER"}},';
+const s=await setup('fixture',{beforeBind:p=>writeFile(p,config,'utf8')});
+try {assert.equal(s.registry.getError(),undefined);await assertSkippedRepair(s);
+  assert.equal(await readFile(s.modelsPath,'utf8'),config);}
+finally {s.session.dispose();}
+''',
+    'unrelated-provider-explicit-alias': r'''
+const config={providers:{'local-llm':{api:'openai-completions',models:[{id:'fixture'}]},
+  deepseek:{modelOverrides:{'deepseek-v4-flash':{input:['text']}}}}};
+const s=await setup('fixture',{config});
+try {
+  assert.match(s.registry.getError(),/Provider local-llm/);
+  assert.strictEqual(s.session.model,s.selected.model);
+  await s.session.bindExtensions({});
+  await s.session.prompt('offline next turn');
+  assert.strictEqual(s.session.model,s.selected.model);
+  assert.equal(outgoing(s.session.model),0);
+  assert.deepEqual(s.errors,[]);
+  assert.deepEqual(s.notifications,[]);
+} finally {s.session.dispose();}
+''',
+    'repair-rejected': r'''
+const s=await setup('fixture',{repairFailure:'false'});
+try {await assertSkippedRepair(s);} finally {s.session.dispose();}
+''',
+    'repair-threw': r'''
+const s=await setup('fixture',{repairFailure:'throw'});
+try {await assertSkippedRepair(s);} finally {s.session.dispose();}
 ''',
     'native-jsonc-bom': r'''
 const config='\ufeff{ // comment\n "providers": { "deepseek": { "modelOverrides": {"deepseek-v4-flash":{"input":["text"],},}, }, }, }';

@@ -57,9 +57,12 @@ aliases and explicit native/extension Provider registrations take precedence.
 At the first eligible selection in a new Work, the extension reads only alias
 declaration presence from native `models.json`: an alias in `models` or
 `modelOverrides` disables automatic compatibility. The declaration snapshot is
-reused for that Work. Configuration read/parse errors are reported without
-configuration contents; no file is rewritten. Canonical models, Pro and other
-unknown IDs are unchanged. See DeepSeek's
+reused for that Work. If declarations cannot be read or parsed reliably, the
+registry reports an error (including an unrelated Provider), or the repair is
+unavailable or rejected, compatibility is skipped for that Work and Pi's native
+model selection is retained. A fixed warning is shown once without configuration
+contents; this optional repair does not emit a fatal extension error. No file is
+rewritten. Canonical models, Pro and other unknown IDs are unchanged. See DeepSeek's
 [alias compatibility](https://api-docs.deepseek.com/guides/codex) and
 [image input contract](https://api-docs.deepseek.com/guides/vision/).
 The initial native unknown-model warning may still appear because CLI selection
@@ -74,8 +77,10 @@ MCP image tool result alone does not prove the model received or understood it.
 并在 Pi 转换图片之前生效。不替换 Provider，原生目录缓存和后续原生 refresh 不变，
 endpoint、认证、默认型号仍由 Pi 管理；已注册别名、显式 native/extension Provider
 优先。新 Work 首次符合条件时，仅读原生 `models.json` 中别名是否出现在 `models`
-或 `modelOverrides`，有声明便不自动兼容；本 Work 复用该声明快照。读取或解析错误
-明确报告且不包含配置内容，不改写文件。canonical、Pro 和其他未知型号不受影响。
+或 `modelOverrides`，有声明便不自动兼容；本 Work 复用该声明快照。若声明无法可靠
+读取或解析、注册表报错（包括无关 Provider），或修补不可用、被拒绝，本 Work 跳过
+兼容修补并保留 Pi 原生选择，只提示一次不含配置内容的固定警告；这项可选修补不产生
+致命扩展错误。不改写文件。canonical、Pro 和其他未知型号不受影响。
 初始 CLI 选择早于 `session_start`，因此原生未知型号警告仍可能出现。配置声明或兼容
 代码变更须新建 Pi Work/进程；不支持热改声明，也不承诺手工 `/reload` 已修补未注册
 别名的语义。扩展不主动刷新目录或认证；工具返回图片成功不等于模型已接收或理解。
