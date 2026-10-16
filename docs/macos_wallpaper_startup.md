@@ -11,7 +11,7 @@ Prepare the normal Python and Electron environments, then build the production
 renderer and app bundle:
 
 ```bash
-uv sync --locked --extra voice --extra vad --extra local-mps
+uv sync --locked --extra local-mps
 cd electron && npm install && cd ..
 ./scripts/build_macos_wallpaper_app.sh --force
 ```

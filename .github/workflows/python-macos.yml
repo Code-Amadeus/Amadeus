@@ -7,7 +7,7 @@ on:
 
 jobs:
   voice-tier:
-    # macOS product path is T1 core + T2a remote voice: install L1+L2, verify
+    # macOS product path is T1 core + T2 remote voice: install T1+T2, verify
     # the voice import contract (brew portaudio → PyAudio source build), lint,
     # run platform-safe contract tests, and compile the Electron renderer.
     runs-on: macos-14
@@ -36,7 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
-      - name: Install locked environment (L1 + L2 voice)
+      - name: Install locked environment (T1 + T2 voice)
         run: uv sync --locked --extra voice --extra dev
 
       - name: Verify environment (voice profile)

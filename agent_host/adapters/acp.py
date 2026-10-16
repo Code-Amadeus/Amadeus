@@ -179,7 +179,7 @@ class AcpProviderAdapter:
             raise AcpStartupUnavailable(
                 self.provider_id,
                 "acp_sdk_unavailable",
-                'Install the optional Python extra: pip install -e ".[acp]"',
+                'Install the optional Python extra: add `--extra acp` to your uv sync command',
             ) from None
         try:
             self.spec.executable()

@@ -25,6 +25,9 @@ jobs:
           - os: macos-14
             extra: local-mps
             profile: mps
+          - os: ubuntu-24.04
+            extra: local-cpu
+            profile: t4-cpu
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -71,7 +74,7 @@ jobs:
           tests/test_qwen3_asr_sidecar_bootstrap.py
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
-      - name: Switch the same environment to CPU VAD
+      - name: Switch the same environment to T3 vad
         run: |
           uv sync --locked --extra voice --extra vad --extra torch-cpu
           uv run --locked --no-sync python tools/verify_python_environment.py --profile vad-cpu

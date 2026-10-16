@@ -76,7 +76,8 @@ otherwise only equality/edit counts are written. Store output under ignored
 local diagnostics and do not publish user audio/text evidence.
 
 Programmatic use: `asr.qwen_inference.transcribe_qwen(wrapper, pcm, sr, context,
-language, max_tokens, engine="greedy", profile=False)` returns official results
+language, max_tokens, *, engine="official", profile=False)` (pass
+`engine="greedy"` for the measured greedy loop) returns official results
 and metrics. Hold the backend's lifecycle lock throughout; hooks are local to
 the model instance and removed in `finally`. Greedy uses Transformers' callable
 `custom_generate` extension, preserving official preparation, logits processors,

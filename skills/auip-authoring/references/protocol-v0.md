@@ -85,7 +85,8 @@ informational only: exact payloads remain in `inputSchema`, current facts remain
 in state/events, and accepted receipts remain execution truth.
 
 Action `inputSchema` is the same JSON Schema field used by an MCP Tool. Declare
-every non-empty payload field and prefer `additionalProperties: false`. The Host
+every non-empty payload field and set `additionalProperties: false`; the validator
+rejects an open participant action schema with `open_action_input_schema`. The Host
 can project this catalog into a model-native function tool today and an MCP
 facade later without changing the app contract. AUIP does not implement a
 parallel JSON Schema engine: application mechanics still own legality and the
@@ -220,10 +221,22 @@ const auip = AmadeusAUIP.createManagedApp({
         placed: {x: result.x, y: result.y, label: result.label},
       }),
       events: ({state}) => state.winner ? [{
-        type: "game.finished",
+        type: "game.round_finished",
         actor: "kurisu",
         payload: {winner: state.winner},
       }] : [],
+    }),
+    // Every declared action needs a handler, and every emitted event type must
+    // be declared, or the Managed Core rejects the registration.
+    "game.restart_round": (_payload, tx) => tx.commit({
+      mutate: () => game.restartRound(),
+      effects: {restarted: true},
+      events: () => [{type: "game.ready", actor: "kurisu", payload: {}}],
+    }),
+    "game.finish_experience": (_payload, tx) => tx.commit({
+      mutate: () => game.finishExperience(),
+      effects: {concluded: true},
+      events: () => [{type: "game.experience_finished", actor: "kurisu", payload: {}}],
     }),
   },
 });

@@ -1,11 +1,12 @@
 # Contributing
 
-Amadeus currently verifies development on Windows with CPython 3.12.10 and
-Node.js 22. Start with the model-less CPU profile described in `README.md`; local
-GPU ASR/TTS remains optional, and Windows ROCm is an experimental candidate.
+Amadeus verifies development on Windows with CPython 3.12.10 and Node.js 22;
+macOS and Linux have separate installation CI. Start with the model-less T1 core
+described in `README.md`; local GPU ASR/TTS remains optional, and Windows ROCm is
+an experimental candidate.
 
 CI pins uv 0.12.8. See [installation profiles](docs/install_profiles.md) for
-CPU VAD, CUDA selection and migration from an existing environment.
+tier and build selection and migration from an existing environment.
 
 Read [ROADMAP.md](ROADMAP.md) before proposing a feature. It distinguishes the
 active product direction, candidates that are not commitments, and features the

@@ -37,7 +37,9 @@ Ordinary core CI does not install or download the embedding model.
 
 The [retrieval fixture](../tests/fixtures/character_rag_retrieval.json) contains
 23 positive and 9 unrelated queries. A positive requires an expected fact among
-accepted top-k hits; a negative requires no accepted hits. All 32 pass locally.
+accepted top-k hits; a negative requires no accepted hits. All 32 passed locally at
+the time; the fixture has since grown to 67 queries (see
+[curation](character_rag_curation.md)).
 This is a development regression set, **not a held-out accuracy estimate** or
 proof that every returned passage is relevant.
 

@@ -1,4 +1,4 @@
-# Slice export review — 0.15 Alpha candidate
+# Slice export review
 
 Large text files can exceed the on-card preview budget without making an otherwise
 valid Desktop export impossible. The Slice labels truncated previews and exposes a

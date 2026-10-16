@@ -35,6 +35,12 @@ verified Artifact
   -> disconnect or explicit close
 ```
 
+A complete bundle that Amadeus previously exported and registered can also
+self-attach when the user opens it directly: the SDK sends `auip.attach.request`,
+the Host re-verifies the approved bundle and asks the user to choose observe,
+collaborate, delegate or standalone, and only an accepted choice yields the same
+short-lived ticket.
+
 The Host resolves the current conversation Session and validates the Artifact
 before issuing a ticket. The ticket binds the Session, an immutable Artifact
 reference, and an expiry. The application submits the ticket rather than a

@@ -32,6 +32,7 @@ copy continues to live below `assets/`.
 | `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
 | `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
 | `voice-kurisu-gpt-sovits-v2pro-experimental` | GPT-SoVITS v2Pro voice and speaker-encoder weights | Optional experimental Kurisu voice |
+| `voice-kurisu-emotions` | `audio/reference/emotions/` | Optional V3 emotion references; see [emotion references](../docs/tts_emotion_references.md) |
 
 All packs are optional at application startup. Without them, the built-in
 wallpaper, text Chat, Work, and headless startup remain available; Settings
@@ -72,6 +73,9 @@ python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
 python tools/external_assets.py build voice-kurisu-gpt-sovits-v2pro-experimental `
   --output output\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
 
+python tools/external_assets.py build voice-kurisu-emotions `
+  --output output\amadeus-voice-kurisu-emotions.zip
+
 python tools/external_assets.py build visual-runtime character-kurisu `
   --output output\amadeus-runtime-assets.zip
 ```
@@ -101,7 +105,8 @@ unexpected overwrites before committing files.
   copyright grant. Only distribute packs whose rights have been reviewed.
 - SpriteForge authoring PNGs, videos, interpolation output, and QA renders stay
   in SpriteForge or another source workspace. Amadeus consumes only the runtime
-  manifest, graph, mouth config, and indexed KTX2 textures.
+  manifest, graph, mouth config, indexed KTX2 textures and, optionally, the matched
+  `video/` frame-video companion.
 - Model families keep their existing directories under `models/`; model files
   and reference voices remain separately supplied.
 

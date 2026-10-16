@@ -74,7 +74,7 @@ No optional-model bulk upgrade or new vulnerability-free claim is made.
 | Item | Release treatment |
 | --- | --- |
 | #208 | Merged after 72 adapter tests and all 14 current-head CI checks passed. |
-| #199 / #213 | Maintainer re-review accepted the bounded output retry; 98 focused tests passed with no skips. Shared-native cases are wired into Windows L2, macOS and Linux voice CI. #213 merged at `fd145ee29454389dcade8c64712b1ebeeb349079`; #199's contribution and authorship are retained. Actual macOS/AirPods reconnect remains unqualified. |
+| #199 / #213 | Maintainer re-review accepted the bounded output retry; 98 focused tests passed with no skips. Shared-native cases are wired into Windows T2, macOS and Linux voice CI. #213 merged at `fd145ee29454389dcade8c64712b1ebeeb349079`; #199's contribution and authorship are retained. Actual macOS/AirPods reconnect remains unqualified. |
 | #185 | High-priority Windows wallpaper input/recovery defect. Do not mark fixed or promise reliable wallpaper operation without targeted reproduction/acceptance. |
 | #207 | High-priority sequential Codex/MCP ownership defect. Do not conflate approval repair, Work completion and graceful connection cleanup. |
 | #201 / #103 | Rendering acceptance and wider-device/resource claims remain open; retain static compatibility and bounded published claims. |
@@ -224,7 +224,7 @@ after a failed assertion. The same defect existed in the frame-source Settings
 and Work artifacts smokes. Each now handles `window-all-closed` so its existing
 explicit exit path owns the final code.
 
-`node scripts/test-smoke-exit-codes.cjs` injects an intentional assertion after
+`node electron/scripts/test-smoke-exit-codes.cjs` injects an intentional assertion after
 the real window loads, then uses the same `execFileSync` invocation as CI. All
 three scripts returned 0 before the repair and 1 afterward; the test rejects
 timeouts or setup failures that never reached the injected assertion. This

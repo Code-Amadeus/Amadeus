@@ -1,5 +1,9 @@
 # 2 GiB + 60 FPS sampling + automatic BC7 cache
 
+> Superseded default: since #200 (`2f39036`) `RENDER_FRAME_BUDGET_MIB=auto` uses
+> 384 MiB for frame video and keeps 2 GiB only for the static/fallback path. See
+> [automatic frame-video source](frame_video_candidate.md).
+
 The adopted implementation keeps the 2 GiB retained CPU + potential GPU texture
 budget, enables sampling by default at a 60 FPS startup limit, and automatically
 derives a persistent BC7 cache on supported HTTP wallpaper surfaces. Explicit
@@ -188,4 +192,4 @@ A [subsequent targeted diagnosis and fix](texture_closed_eye_fix_2026-10-05.md)
 reproduced the gap with the automatic cache and removed it by bypassing the
 duplicate browser HTTP response cache for streamed compressed textures.
 Visible Wallpaper Engine/Lively/macOS hosts, model contention and multi-hour
-behavior remain unqualified. Keep PR #155 draft.
+behavior remain unqualified. Merged in #155 (`f306bc1`).

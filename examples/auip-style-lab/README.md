@@ -52,12 +52,12 @@
 
 ## 本地重现
 
-从仓库根目录运行（此机器已具备的环境）：
+从仓库根目录运行：
 
 ```powershell
-.venv_cu124/Scripts/python.exe -X utf8 examples/auip-style-lab/check_reference.py
-.venv_cu124/Scripts/python.exe -X utf8 examples/auip-style-lab/run_provider.py --live --timeout 900
-.venv_cu124/Scripts/python.exe examples/auip-style-lab/serve_lab.py --port 8767
+uv run --locked --no-sync python -X utf8 examples/auip-style-lab/check_reference.py
+uv run --locked --no-sync python -X utf8 examples/auip-style-lab/run_provider.py --live --timeout 900
+uv run --locked --no-sync python examples/auip-style-lab/serve_lab.py --port 8767
 ```
 
 浏览 `http://127.0.0.1:8767/examples/auip-style-lab/`。
@@ -71,7 +71,7 @@ workspace，不改生产 ledger。自动运行只验证创作与入口，不自�
 对输出独立检查：
 
 ```powershell
-.venv_cu124/Scripts/python.exe -X utf8 examples/auip-style-lab/check_provider.py <workspace> <evidence-output>
+uv run --locked --no-sync python -X utf8 examples/auip-style-lab/check_provider.py <workspace> <evidence-output>
 ```
 
 修订实验使用 `--seed <首版workspace> --feedback examples/auip-style-lab/REVIEW.md`，

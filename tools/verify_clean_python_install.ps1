@@ -4,7 +4,7 @@ param(
     [switch]$RunFullTests
 )
 
-# Clean-install verification for the L1 + dev tooling profile. Creates a
+# Clean-install verification for the T1 + dev tooling profile. Creates a
 # fresh venv below runtime/ and installs it from the single dependency
 # declaration (pyproject.toml) via its uv.lock, exactly as CI does.
 $ErrorActionPreference = "Stop"

@@ -33,7 +33,7 @@ VOICE_IMPORTS = (
     "scipy",
     "soundfile",
 )
-# L3 realtime interruption layer (pyproject `[vad]` extra); pulls torch.
+# T3 realtime interruption layer (pyproject `[vad]` extra); pulls torch.
 VAD_IMPORTS = (
     "silero_vad",
 )
@@ -56,7 +56,8 @@ MODEL_BACKEND_IMPORTS = (
 )
 ROCM_IMPORTS = (*MODEL_BACKEND_IMPORTS, "torchvision")
 # Verification ladder: each release profile is a strict superset of the one
-# below it, mirroring the install tiers L1→L4 (base → voice → vad → local-cu124).
+# below it, mirroring the install tiers T1→T4 (core → voice → vad → embedded).
+# A profile names a (tier, build) pair; see TIER_TAXONOMY.md for the contract.
 PROFILE_TIER_IMPORTS: dict[str, tuple[str, ...]] = {
     "cpu": (),
     "ci": (),
@@ -66,6 +67,7 @@ PROFILE_TIER_IMPORTS: dict[str, tuple[str, ...]] = {
     "cu124": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *MODEL_BACKEND_IMPORTS),
     "cu128": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *MODEL_BACKEND_IMPORTS),
     "mps": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *MODEL_BACKEND_IMPORTS),
+    "t4-cpu": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *MODEL_BACKEND_IMPORTS),
     "rocm": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *ROCM_IMPORTS),
 }
 
@@ -79,7 +81,7 @@ def _distribution_installed(name: str) -> bool:
 
 
 # The cu124 local-model profile is qualified on Windows; ROCm remains an
-# experimental Windows candidate. Capability imports and CPU VAD checks do not
+# experimental Windows candidate. Capability imports and T3 vad checks do not
 # imply a GPU device or platform qualification.
 _WINDOWS_ONLY_PROFILES = frozenset({"cu124", "rocm"})
 
@@ -138,6 +140,28 @@ def _verify_torch_build(
     return f" torch={torch.__version__} torchaudio={torchaudio.__version__}"
 
 
+def _detect_torch_build() -> str:
+    """Name the locked build of the installed Torch; fail on an unlocked one.
+
+    Torch only enters through a build extra; a Torch resolved some other way
+    (for example `--extra vad` without a build) belongs to no tier.
+    """
+    import torch
+
+    if getattr(torch.version, "hip", None):
+        return "rocm"
+    cuda_build = {"12.4": "cu124", "12.8": "cu128"}.get(str(torch.version.cuda))
+    if cuda_build:
+        return cuda_build
+    _require(torch.version.cuda is None, f"unlocked CUDA {torch.version.cuda} torch build")
+    # macOS has one wheel for both torch-cpu and local-mps; its version carries no suffix.
+    if platform.system() == "Darwin" or str(torch.__version__).endswith("+cpu"):
+        return "cpu"
+    raise RuntimeError(
+        f"torch {torch.__version__} is not a locked build; select torch-cpu or local-<build>"
+    )
+
+
 def verify(
     profile: str, *, require_cuda_device: bool = False, require_mps_device: bool = False
 ) -> None:
@@ -177,9 +201,10 @@ def verify(
         "deprecated google-generativeai is installed; use google-genai only",
     )
 
-    if profile in {"cu124", "cu128", "rocm", "mps", "vad-cpu"}:
+    if profile in {"cu124", "cu128", "rocm", "mps", "vad", "vad-cpu", "t4-cpu"}:
+        build = {"vad": None, "vad-cpu": "cpu", "t4-cpu": "cpu"}.get(profile, profile)
         torch_summary = _verify_torch_build(
-            "cpu" if profile == "vad-cpu" else profile,
+            build or _detect_torch_build(),
             require_cuda_device=require_cuda_device,
             require_mps_device=require_mps_device,
         )

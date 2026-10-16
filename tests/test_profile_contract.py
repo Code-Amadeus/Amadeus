@@ -30,10 +30,31 @@ def test_capability_declarations_do_not_choose_a_gpu_build() -> None:
     assert not _names(extras["voice"]) & {"torch", "torchaudio", "silero-vad"}
     assert "silero-vad" in _names(extras["vad"])
     assert "torch" not in _names(extras["vad"])
-    for build in ("torch-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"):
+    for build in ("torch-cpu", "local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"):
         assert {"torch", "torchaudio"} <= _names(extras[build])
     assert {"torchvision", "rocm", "rocm-sdk-core"} <= _names(extras["local-rocm"])
     assert all("sys_platform == 'win32'" in item for item in extras["local-rocm"])
+
+
+def _self_extras(requirements: list[str]) -> set[str]:
+    included = set()
+    for value in requirements:
+        requirement = Requirement(value)
+        if requirement.name == "amadeus":
+            included |= requirement.extras
+    return included
+
+
+def test_tier_extras_are_declared_as_a_strict_ladder() -> None:
+    # T1 ⊂ T2 ⊂ T3 ⊂ T4 is carried by the extras themselves, so a shortened
+    # or partial command cannot produce an environment outside the ladder.
+    extras = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["optional-dependencies"]
+    assert "voice" in _self_extras(extras["vad"])
+    assert "vad" in _self_extras(extras["local-models"])
+    for build in ("local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"):
+        assert "local-models" in _self_extras(extras[build])
 
 
 def _export(*extras: str) -> subprocess.CompletedProcess[str]:
@@ -177,7 +198,9 @@ def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels(rag: bool) -> Non
 @pytest.mark.skipif(UV is None, reason="uv is required to check conflicting selections")
 @pytest.mark.parametrize(
     "left,right",
-    list(combinations(("torch-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"), 2)),
+    list(combinations(
+        ("torch-cpu", "local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"), 2
+    )),
 )
 def test_torch_builds_cannot_be_selected_together(left: str, right: str) -> None:
     result = _export(left, right)
@@ -194,7 +217,30 @@ def test_verify_profiles_cover_the_capability_ladder() -> None:
     assert ladder["vad-cpu"] == ladder["vad"]
     assert set(vpe.LOCAL_MODEL_IMPORTS) <= set(ladder["cu124"]) - set(ladder["vad"])
     assert set(ladder["rocm"]) == set(ladder["cu124"]) | {"torchvision"}
-    assert ladder["cu128"] == ladder["mps"] == ladder["cu124"]
+    assert ladder["cu128"] == ladder["mps"] == ladder["t4-cpu"] == ladder["cu124"]
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize("build,platform", [
+    ("local-cu124", "win32"), ("local-cpu", "linux"), ("local-mps", "darwin"),
+])
+def test_t4_build_alone_installs_the_whole_ladder(build, platform) -> None:
+    result = _export(build)
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, platform)
+    assert {"pyaudio", "silero-vad", "funasr", "qwen-asr", "torch"} <= selected.keys()
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize("platform,version", [
+    ("win32", "2.7.0+cpu"), ("linux", "2.7.0+cpu"), ("darwin", "2.7.0"),
+])
+def test_local_cpu_selects_the_cpu_torch_build(platform, version) -> None:
+    result = _export("local-cpu")
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, platform)
+    for name in ("torch", "torchaudio"):
+        assert str(selected[name].specifier) == f"=={version}"
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")

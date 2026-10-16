@@ -473,7 +473,7 @@ class RuntimeStatusCollector:
             lambda: bool((snapshot.get("asr") or {}).get("manager_loaded"))
             and bool((snapshot.get("asr") or {}).get("backend_ready"))
             # Installed-but-broken VAD silently loses barge-in, so ASR is not
-            # fully ready; the L2 fallback tier is the designed shape and
+            # fully ready; the T2 fallback tier is the designed shape and
             # stays ready.
             and (snapshot.get("asr") or {}).get("vad") != "degraded"
         )

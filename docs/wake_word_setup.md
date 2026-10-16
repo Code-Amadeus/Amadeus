@@ -20,8 +20,10 @@ changing one backend does not silently change the other.
 7. Choose whether a recognized command should be sent to Chat, then click
    **Restart backend to apply**.
 
-Electron starts the wallpaper surface during normal desktop startup. With
-`WAKE_ENABLED=true` and the default
+Wake listening follows wallpaper startup. The Windows desktop startup default is
+`window`, so the wallpaper (and wake) starts only when the wallpaper surface is
+opened or selected as the startup mode; on macOS/Linux it starts with
+`--wallpaper` or `AMADEUS_WALLPAPER=1`. With `WAKE_ENABLED=true` and the default
 `WAKE_AUTO_START_WITH_WALLPAPER=true`, that wallpaper start also begins wake
 listening. A headless host does not have that lifecycle trigger; it must send
 the backend method `wake.start` explicitly and may inspect `wake.status`.
