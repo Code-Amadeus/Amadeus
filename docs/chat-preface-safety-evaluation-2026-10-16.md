@@ -2,6 +2,9 @@
 
 ## English
 
+Latest: [Qwen factor controls and a shared conditional candidate](chat-qwen-preface-investigation-2026-10-16.md).
+The 108 requests below remain a separate earlier dataset.
+
 **This follow-up is diagnostic evidence, not a production prompt proposal.**
 The PR remains focused on shared temperature configuration and deterministic CI;
 there is no DeepSeek-specific prompt change. The earlier combined ablation

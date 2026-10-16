@@ -15,6 +15,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import random
 import subprocess
 import sys
 import threading
@@ -65,7 +66,9 @@ HISTORY_PROFILES = ("reported", "synthetic_clean", "synthetic_ha", "synthetic_ni
     "empty", "recent_only", "reported_no_user_nickname", "held_out_clean")
 PROMPT_VARIANTS = ("original", "no_ack_preface", "persona_no_preface", "contract_no_preface",
     "both_no_preface", "no_nickname_reaction", "current_grounded",
-    "scoped_nickname_reaction", "scoped_and_no_preface", "two_ack_cues_removed")
+    "scoped_nickname_reaction", "scoped_and_no_preface", "two_ack_cues_removed",
+    "preface_examples_only", "preface_directions_only", "both_no_reaction",
+    "both_soft_reaction", "both_contextual_reaction", "both_current_style")
 
 
 def fixed_history(profile):
@@ -122,18 +125,37 @@ def transform_system(system, variant):
         # other short-spoken-output, EMO, delegation and authority rules intact.
         replace_once("短い相づち・前置き、または", "")
         replace_once("最初の相づちと句読点までを先に出します。", "最初の文節と句読点までを先に出します。")
-    if variant in ("persona_no_preface", "both_no_preface", "scoped_and_no_preface"):
+    if variant in ("persona_no_preface", "both_no_preface", "scoped_and_no_preface",
+            "preface_directions_only", "both_no_reaction", "both_soft_reaction", "both_contextual_reaction",
+            "both_current_style"):
         replace_once("返答の先頭は、すぐに読み上げられる短い自然な言葉にする。", "")
         replace_once("短い相づち・前置き、または", "")
+    if variant in ("persona_no_preface", "both_no_preface", "scoped_and_no_preface",
+            "preface_examples_only", "both_no_reaction", "both_soft_reaction", "both_contextual_reaction",
+            "both_current_style"):
         replace_once("例: そうね、[EMO thinking] 順番に考えてみましょう。",
             "例: この仮説は、[EMO thinking] 検証が必要ね。")
-    if variant in ("contract_no_preface", "both_no_preface", "scoped_and_no_preface"):
+    if variant in ("contract_no_preface", "both_no_preface", "scoped_and_no_preface",
+            "preface_directions_only", "both_no_reaction", "both_soft_reaction", "both_contextual_reaction",
+            "both_current_style"):
         replace_once("まず短い自然な一言を話し、", "ユーザーに応じて話し、")
-        replace_once("ええ、作ってみるわ。", "作ってみるわ。")
         replace_once("最初の出力は短い話し言葉です。", "最初の出力は話し言葉です。")
         replace_once("最初の相づちと句読点までを先に出します。", "最初の文節と句読点までを先に出します。")
-    if variant == "no_nickname_reaction":
+    if variant in ("contract_no_preface", "both_no_preface", "scoped_and_no_preface",
+            "preface_examples_only", "both_no_reaction", "both_soft_reaction", "both_contextual_reaction",
+            "both_current_style"):
+        replace_once("ええ、作ってみるわ。", "作ってみるわ。")
+    if variant in ("no_nickname_reaction", "both_no_reaction"):
         replace_once("【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。", "")
+    if variant == "both_soft_reaction":
+        replace_once("【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。",
+            "【キャラ特性】「クリスティーナ」と呼ばれた場合は怒って否定し、[EMO angry]を使う。")
+    if variant in ("both_contextual_reaction", "both_current_style"):
+        replace_once("【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。",
+            "【キャラ特性】今回ユーザーがあなたに直接「クリスティーナ」と呼びかけたときだけ、その呼び方に怒って否定し、[EMO angry]を使う。")
+    if variant == "both_current_style":
+        replace_once("自然で口語的な文体を保ち,牧瀬紅莉栖として一貫した口調・性格で話す.",
+            "今回の発言の内容と意図に答え、牧瀬紅莉栖らしい自然で口語的な口調で話す。")
     if variant in ("scoped_nickname_reaction", "scoped_and_no_preface"):
         replace_once("【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。",
             "【重要キャラ特性】呼称への反応は今回の直接の呼びかけだけを対象にし、過去の呼称や文中の引用を持ち出して抗議しない。"
@@ -284,6 +306,7 @@ async def evaluate(args):
         "prompt_variants": args.prompt_variants, "modes": args.modes,
         "serial": args.serial, "request_interval_s": args.request_interval_s, "repeats": args.repeats,
         "concurrency": args.concurrency,
+        "order_seed": args.order_seed,
         "openai_sampling": args.openai_sampling if args.provider == "openai" else None,
         "history_schema": args.history_schema, "history_profiles": args.history_profiles,
         "current_cases": args.current_cases,
@@ -310,6 +333,7 @@ async def evaluate(args):
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     semaphore = asyncio.Semaphore(args.concurrency)
+    order_random = random.Random(args.order_seed)
 
     async def run_arm(repeat, temperature, mode, variant, history_profile):
         persona = get_system_prompt("base")
@@ -356,7 +380,8 @@ async def evaluate(args):
                 return client.remote_llm_messages_query(sent, **kwargs, response_observer=observe)
 
             row = {"case": case, "category": category, "user": user,
-                "input_history_sha256": digest(input_history), "observed": observation}
+                "input_history_sha256": digest(input_history),
+                "system_sha256": digest(messages[0]["content"]), "observed": observation}
             run["turns"].append(row)
             started = time.perf_counter()
             try:
@@ -404,15 +429,16 @@ async def evaluate(args):
     try:
         for mode in args.modes:
             for repeat in range(1, args.repeats + 1):
+                arms = [(temperature, variant, profile) for temperature in args.temperatures
+                    for variant in args.prompt_variants for profile in args.history_profiles]
+                if args.order_seed is not None:
+                    order_random.shuffle(arms)
                 if args.serial:
-                    for temperature in args.temperatures:
-                        for variant in args.prompt_variants:
-                            for profile in args.history_profiles:
-                                await run_arm(repeat, temperature, mode, variant, profile)
+                    for temperature, variant, profile in arms:
+                        await run_arm(repeat, temperature, mode, variant, profile)
                 else:
                     await asyncio.gather(*(run_arm(repeat, temperature, mode, variant, profile)
-                        for temperature in args.temperatures for variant in args.prompt_variants
-                        for profile in args.history_profiles))
+                        for temperature, variant, profile in arms))
         report["status"] = "complete" if all(run["status"] == "complete" for run in report["runs"]) else "incomplete"
     finally:
         connection.close()
@@ -441,6 +467,8 @@ def main():
     parser.add_argument("--modes", nargs="+", choices=("rollout", "fixed_history"), default=["rollout", "fixed_history"])
     parser.add_argument("--serial", action="store_true")
     parser.add_argument("--concurrency", type=int, default=4, choices=range(1, 9))
+    parser.add_argument("--order-seed", type=int,
+        help="shuffle treatment/history arm submission order reproducibly; not a model sampling seed")
     parser.add_argument("--request-interval-s", type=float, default=0)
     args = parser.parse_args()
     if not 900 <= args.max_tokens <= 8192:

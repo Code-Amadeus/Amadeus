@@ -3,6 +3,8 @@
 ## English
 
 Related to [#227](https://github.com/Code-Amadeus/Amadeus/issues/227) and draft PR #229.
+Latest: [Qwen factor controls and a shared conditional candidate](chat-qwen-preface-investigation-2026-10-16.md)
+add 366 separate requests and retain the remaining cross-model tradeoffs.
 Follow-up: [108-request preface side-effect check](chat-preface-safety-evaluation-2026-10-16.md)
 separates a smaller two-cue treatment from the combined ablation; the 933 requests
 and tables below remain the original investigation dataset.
