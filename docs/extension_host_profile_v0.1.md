@@ -109,7 +109,7 @@ requests. Installation trust is not reconstructed by scanning directories.
 ## Data-only desktop themes
 
 Build the [desktop theme example](../examples/extensions/desktop-theme/) and
-install its wheel from Plugins. Enable it, then choose Quiet day or Quiet night
+install its wheel from Settings → General → Manage plugins. Enable it, then choose Quiet day or Quiet night
 in **Settings → General → Appearance**. The example has no dependencies and
 runs no package code. Themes do not enter the Work capability catalog or a Runner.
 

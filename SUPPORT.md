@@ -6,10 +6,14 @@ The initial supported surface is deliberately narrow:
 - CPython 3.12.10;
 - Node.js 22 for the Electron source checkout;
 - the model-less CPU backend as the reproducible baseline;
-- optional CUDA 12.4 ASR/TTS on compatible NVIDIA hardware.
+- optional CUDA 12.4 ASR/TTS on compatible NVIDIA hardware; other local-model
+  builds (`local-cu128`, `local-mps`, `local-rocm`, `local-cpu`) are experimental,
+  see the support matrix in `README.md`.
 
-macOS, Linux, packaged installers, automatic updates, third-party character packs, and
-arbitrary local model combinations are not yet supported contracts.
+macOS and Linux source deployment follow the support matrix in `README.md`
+(installation CI; local-model builds experimental). Packaged installers, automatic
+updates, third-party character packs, and arbitrary local model combinations are not
+yet supported contracts.
 
 When reporting a problem, include the commit, selected profile, relevant IDs and phases,
 and a redacted log excerpt. Do not post `.env`, tokens, conversation text, model or voice

@@ -1,4 +1,4 @@
-# Compact companion panel — 0.15 Alpha candidate
+# Compact companion panel
 
 The optional panel brings a small portrait and speaking card beside a selected Work
 preview. It uses the optional Companion Lite pack at `assets/companion/kurisu/` and

@@ -327,6 +327,7 @@ General disabled, and preservation of General's independent image sizing.
 The user clarified that moving the Tk shell into the repository did not require
 redesigning the card. Restore its original 470×226 logical layout, 0.88 opacity,
 rounded borders, typography, right-click close, and 25%-contrast outer scan sweep.
+(Superseded by #154: VN and Slice cards now both use 0.92 opacity.)
 Keep the shared Companion Lite portrait player and session/playback fixes.
 
 Only the microphone and question-time vision icons are added, in the header on

@@ -467,3 +467,6 @@ event identity.
 The VN runtime preserves repeated observations even when they share a script ID.
 Branch revisits are legitimate input. Transport replay suppression must be owned
 by a source adapter with verified event identity; script IDs are not that identity.
+
+Implementation rationale for the player is recorded in
+[VN Player implementation decisions](vn-player-decisions.md).

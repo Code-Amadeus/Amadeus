@@ -8,7 +8,7 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Voice (T2) and local-model (T2b) packages that a T1 install does not have.
+# Voice (T2) and embedded (T4) packages that a T1 install does not have.
 _NON_CORE_MODULES = (
     "torch",
     "torchaudio",

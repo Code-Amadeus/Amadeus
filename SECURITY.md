@@ -1,7 +1,7 @@
 # Security policy
 
-Amadeus is currently a source Alpha. Only the latest `0.1.x` source snapshot is in
-scope for security fixes. It is designed for a trusted local Windows account and is
+Amadeus is currently a source Alpha. Only the latest released Alpha source snapshot is
+in scope for security fixes. It is designed for a trusted local Windows account and is
 not a hardened multi-user or remote-host service.
 
 Please use GitHub's private vulnerability reporting for this repository when it is

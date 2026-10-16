@@ -255,7 +255,7 @@ class MicInputService:
                 speech_pad_ms=int(speech_pad_ms),
             )
         else:
-            # Energy-endpoint fallback (L2 installs without the vad tier):
+            # Energy-endpoint fallback (T2 installs without the vad tier):
             # speech starts above energy_start_rms; the existing energy_end
             # path already ends the turn without silero.
             vad_iter = None

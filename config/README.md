@@ -46,8 +46,8 @@ cannot prevent native/file-origin backend clients from starting.
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
 groups, graphics, voice input/reference controls, model connections, model roles,
-Provider connections, character, desktop and live presentation/vision settings:
-145 fields in 42 groups. Edit the owning JSON for defaults, types, options,
+Provider connections, character, desktop and live presentation/vision settings.
+Edit the owning JSON for defaults, types, options,
 ranges, desktop editability, application policy, and English/Chinese labels. The
 configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
@@ -216,7 +216,8 @@ sessions stay disabled, and a 30 FPS startup default is still off.
 `RENDER_BC7_CACHE` defaults true for the shared HTTP wallpaper asset server.
 On GPUs exposing WebGL BPTC, displayed UASTC frames are saved as derived BC7
 in the background, then reused on later loads and application launches. The
-2 GiB texture-store CPU + GPU budget is unchanged. Derived files target
+texture-store budget is unchanged by the cache (see
+[Animation frame source](#animation-frame-source)). Derived files target
 4 GiB under `%LOCALAPPDATA%/Amadeus/texture-cache/bc7-v1` on Windows,
 `~/Library/Caches/Amadeus/texture-cache/bc7-v1` on macOS, and
 `$XDG_CACHE_HOME/Amadeus/texture-cache/bc7-v1` (or `~/.cache/...`) on Linux.
@@ -280,7 +281,7 @@ the capability projection before the Settings catalog shows it as a consumer.
 
 TTS mode and language changes are accepted only while Chat and playback are
 idle. `TTS_BACKEND` defaults to the embedded Amadeus GPT-SoVITS v3 rewrite,
-which accepts v3 GPT/SoVITS checkpoint pairs only. Selecting `openai_compatible`
+which accepts v1, v2, v2Pro, v2ProPlus and v3 GPT/SoVITS checkpoint pairs. Selecting `openai_compatible`
 avoids importing the local model stack and sends synthesis text to the
 explicitly configured speech endpoint. Remote TTS defaults to broadly compatible
 buffered WAV responses; `TTS_API_STREAM_PROTOCOL=openai_sse` explicitly enables

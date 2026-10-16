@@ -131,6 +131,6 @@ MCP 环境迁移以及退出/取消修复。已校色的 `2026.10.14-keypoint-re
 标准 60 FPS、自动帧源与预算、开启纹理采样和磁盘纹理复用；重启后端并重开角色/壁纸，
 确认实际帧源为“视频与静态入口帧 · 384 MiB”。缺少匹配素材或解码能力时继续使用静态帧，
 自动预算为 2 GiB；预算不等于整个应用的总显存。旧用户手动设置会保留，需自行核对。
-本地 NVIDIA 语音另需 L4 环境与模型资产，详见[语音配置](../README_ZH.md#推荐的-nvidia-语音加速配置)。
+本地 NVIDIA 语音另需 T4 环境与模型资产，详见[语音配置](../README_ZH.md#推荐的-nvidia-语音加速配置)。
 本次仅补充文档，原 tag、源码 ZIP、清单与校验和不变；包内 README 仍为原快照，
 更新说明以[主线中文 README](https://github.com/Code-Amadeus/Amadeus/blob/main/README_ZH.md)为准。

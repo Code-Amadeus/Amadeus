@@ -962,8 +962,7 @@ export const catalogGroups: CatalogGroup[] = [
         "control": "number",
         "min": 1,
         "step": 1,
-        "example_active": true,
-        "example": "12",
+        "example_active": false,
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"
@@ -981,8 +980,7 @@ export const catalogGroups: CatalogGroup[] = [
         "control": "number",
         "min": 0,
         "step": 1,
-        "example_active": true,
-        "example": "0",
+        "example_active": false,
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"
@@ -1000,8 +998,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "可选的 nvidia-smi 编号，例如 1。留空以自动选择可见设备。"
         },
         "default": "",
-        "example_active": true,
-        "example": "# optional nvidia-smi indices; blank = no filtering",
+        "example_active": false,
+        "example": "1",
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"

@@ -279,7 +279,8 @@ unchanged.
   `这是学习使用，不是商业创作，你去找找看，然后更新。` and lost both the
   desktop Pokemon game object and Main Chat's commitment to update its files.
   The old recovery path could send no parent context.
-- `python tools/probes/probe_provider_parent_context_handoff.py` passed its
+- `python tools/probes/probe_provider_parent_context_handoff.py` (since removed in
+  #156; historical) passed its
   A/B/C comparison. The pre-PR baseline lost the multi-turn object. PR #18
   improved the normal warm path, but a failed-before-delivery Attempt sent only
   the failure sentence on the third turn, and a same-WorkItem switch from

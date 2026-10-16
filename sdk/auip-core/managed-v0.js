@@ -6,7 +6,7 @@
   "use strict";
 
   const DEFAULT_MAX_STATE_BYTES = 64 * 1024;
-  const DEFAULT_PROJECTION_BUDGET_CHARS = 720;
+  const DEFAULT_PROJECTION_BUDGET_CHARS = 1024;
   const ACTORS = new Set(["app", "user", "kurisu", "system"]);
 
   class ManagedCommitError extends Error {

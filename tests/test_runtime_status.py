@@ -185,7 +185,7 @@ def test_asr_status_reports_silero_ready_when_vad_loaded():
 
 
 def test_asr_status_reports_fallback_without_marking_degradation_when_vad_absent():
-    # L2 install: the vad tier is absent — documented degradation, not a fault.
+    # T2 install: the vad tier is absent — documented degradation, not a fault.
     snapshot = _asr_collector_with_vad("fallback")._asr()
 
     assert snapshot["vad"] == "fallback"
@@ -204,7 +204,7 @@ def test_readiness_marks_asr_not_fully_ready_only_for_degraded_vad():
     degraded = _asr_collector_with_vad("degraded", "DLL failure")
     assert degraded._ready({"asr": degraded._asr()})["asr"] is False
 
-    # The L2 fallback tier is the designed shape of ASR: still ready.
+    # The T2 fallback tier is the designed shape of ASR: still ready.
     fallback = _asr_collector_with_vad("fallback")
     assert fallback._ready({"asr": fallback._asr()})["asr"] is True
 
