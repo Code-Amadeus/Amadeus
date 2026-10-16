@@ -2226,7 +2226,6 @@
         gap: 8px;
         max-height: 66%;
         overflow-y: auto;
-        scrollbar-width: thin;
       }
 
       .crt-canvas-permission {
