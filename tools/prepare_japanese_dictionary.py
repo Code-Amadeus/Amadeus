@@ -50,29 +50,19 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
     # A repair targets the reviewed bad pronunciation, not every reading of
     # the same surface. Preserve legitimate alternatives and their costs.
     corrected = []
-    repaired_surfaces = 0
     for row in rows:
         word = normalize(row[0])
         expected = before.get(word)
         matches = expected is not None and unicodedata.normalize("NFC", row[12]) == unicodedata.normalize("NFC", expected)
         if word in corrections and matches:
             row = list(corrections[word])
-            if normalize_surface is not None:
-                surface = normalize_surface(row[0])
-                repaired_surfaces += surface != row[0]
-                row[0] = surface
         corrected.append(row)
     existing = {normalize(row[0]) for row in rows}
     for word, correction in corrections.items():
         if word not in existing:
             row = list(correction)
-            if normalize_surface is not None:
-                surface = normalize_surface(row[0])
-                repaired_surfaces += surface != row[0]
-                row[0] = surface
             corrected.append(row)
     corrected, normalization = normalize_rows(corrected, count_mora, normalize_surface)
-    normalization["repaired_surfaces_normalized"] += repaired_surfaces
     buffer = io.StringIO(newline="")
     csv.writer(buffer, lineterminator="\n").writerows(corrected)
     derivative = buffer.getvalue().encode("utf-8")

@@ -26,13 +26,9 @@ LEARNER = "ｌｅａｒｎｅｒ,1348,1348,504,名詞,固有名詞,一般,*,*,*,
 @pytest.fixture(autouse=True)
 def clear_runtime_sources(monkeypatch):
     monkeypatch.setattr(dictionary, "_runtime_status", {
-        "state": "not_loaded", "ready": False, "version": "", "detail": "Not loaded in this test.",
+        "state": "not_loaded", "ready": False, "version": "", "identity": None, "detail": "Not loaded in this test.",
     })
-    dictionary._sources.cache_clear()
-    dictionary._digest.cache_clear()
     yield
-    dictionary._sources.cache_clear()
-    dictionary._digest.cache_clear()
 
 
 def _prepare(root: Path, *, native: bool = False) -> Path:
@@ -66,7 +62,7 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
     ("ｍｌｐとＭＬＰとＡＰＩ", "mlpとエムエルピーとエーピーアイ"),
     ("openaiとOPENAIとＢｉｌｉｂｉｌｉ", "オープンエーアイとオープンエーアイとビリビリ"),
     ("ＡＰＩaryとＣＡＰＩＴＡＬ", "APIaryとCAPITAL"),
-    ("API's and APIs", "API's and APIs"),
+    ("API's and APIs", "エーピーアイ's and エーピーアイs"),
     ("今日は生ビールを飲む。", "今日は生ビールを飲む。"),
 ])
 def test_latin_words_and_initialisms_are_complete_tokens(text, expected):
@@ -241,7 +237,7 @@ def test_native_mora_counter_uses_pronunciation_without_retokenizing_kana():
         assert count(pronunciation) == expected
 
 
-def test_native_surface_spelling_is_applied_only_to_repaired_readings():
+def test_native_surface_spelling_is_applied_to_all_entries():
     pytest.importorskip("pyopenjtalk")
     count, _ = native_mora_counter()
     surface = native_surface_normalizer()
@@ -250,8 +246,11 @@ def test_native_surface_spelling_is_applied_only_to_repaired_readings():
             _row("ａｌｒｅａｄｙ-ｖａｌｉｄ", "テスト", "0/3")]
     cleaned, report = normalize_rows(rows, count, surface)
     assert cleaned[0][0] == "ｃｏｃａ−ｃｏｌａ" and cleaned[0][12] == "コカコーラ"
-    assert cleaned[1:] == rows[1:]
-    assert report["repaired_surfaces_normalized"] == 1
+    assert cleaned[1][0] == surface(rows[1][0])
+    assert cleaned[1][1:] == rows[1][1:]
+    assert cleaned[2][0] == surface(rows[2][0])
+    assert cleaned[2][1:] == rows[2][1:]
+    assert report["surfaces_normalized"] == 3
 
 
 def _fake_jtalk(root: Path):
@@ -281,7 +280,11 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     jtalk = _fake_jtalk(root)
     status = dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)
     assert status["ready"]
-    assert jtalk.compiled == [str(pack_root / "userdict.csv"), str(personal)]
+    assert len(jtalk.compiled) == 2
+    assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.compiled)
+    assert [Path(path).read_bytes() for path in jtalk.registered[-1]] == [
+        b"compiled " + (pack_root / "userdict.csv").read_bytes(), b"compiled " + personal.read_bytes(),
+    ]
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.registered[-1])
     assert legacy.read_text(encoding="utf-8") == FOLLOWER
     assert not (pack_root / "user.dict").exists()
@@ -303,7 +306,6 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
 def test_runtime_missing_invalid_and_compile_failure_keep_base_frontend(tmp_path):
     jtalk = _fake_jtalk(tmp_path)
     assert dictionary.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)["state"] == "not_installed"
-    dictionary._sources.cache_clear()
     pack_root = _prepare(tmp_path)
     def fail_compile(*args):
         raise RuntimeError("compiler failed")
@@ -312,23 +314,20 @@ def test_runtime_missing_invalid_and_compile_failure_keep_base_frontend(tmp_path
     assert jtalk.registered[-1] == []
     assert not list((tmp_path / ".cache/japanese_dictionary").glob("*.dict"))
     (pack_root / "userdict.csv").write_bytes(b"corrupt")
-    dictionary._sources.cache_clear()
     assert dictionary.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)["state"] == "invalid"
 
 
 def test_audio_cache_distinguishes_dictionary_selection_and_english_is_independent(tmp_path, monkeypatch):
     from tts import first_sentence_audio_cache as audio_cache, pipeline
-    monkeypatch.setattr(dictionary, "PROJECT_ROOT", tmp_path)
-    enabled = [True]
-    monkeypatch.setattr(dictionary, "_enabled", lambda: enabled[0])
+    status = {"identity": "actual-base"}
+    monkeypatch.setattr(pipeline, "japanese_dictionary_status", lambda: status)
     monkeypatch.setattr(pipeline, "current_tts_language_code", lambda: "ja")
     cache = audio_cache.FirstSentenceAudioCache(tmp_path / "audio")
     without = cache.path_for("Follower。", {})
-    _prepare(tmp_path)
-    dictionary._sources.cache_clear()
+    status["identity"] = "actual-installed"
     installed = cache.path_for("Follower。", {})
     assert installed != without
-    enabled[0] = False
+    status["identity"] = "actual-disabled"
     assert cache.path_for("Follower。", {}) not in {without, installed}
     monkeypatch.setattr(pipeline, "current_tts_language_code", lambda: "en")
     assert "japanese_dictionary" not in cache.key_payload("Follower.", {})
@@ -348,9 +347,12 @@ def test_settings_expose_dictionary_failures_and_the_disable_switch(monkeypatch,
         "version": "test", "message": "" if installed else "CSV checksum failed",
     } if pack_id == dictionary_pack.PACK_ID else original(pack_id, **kwargs))
     monkeypatch.setattr(settings, "ENABLE_JAPANESE_USER_DICTIONARY", enabled)
+    monkeypatch.setattr(settings, "TTS_OUTPUT_LANGUAGE", "日文")
     monkeypatch.setattr(dictionary, "_runtime_status", {
         "state": runtime_state, "ready": False, "version": "test", "detail": "Dictionary compilation failed",
     })
+    from tts import pipeline
+    monkeypatch.setattr(pipeline, "japanese_dictionary_status", dictionary.dictionary_runtime_status)
     group = next(item for item in _voice_configuration(settings) if item["id"] == "tts_japanese_dictionary")
     assert group["status"] == expected
     assert group["status_ok"] is (not enabled)

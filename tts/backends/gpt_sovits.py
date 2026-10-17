@@ -95,6 +95,16 @@ class GPTSoVITSBackend(BaseTTSBackend):
         logger.info("[TTS-EMOTION] prewarmed %d distinct references in %.3fs", len(refs), elapsed)
 
     @property
+    def japanese_dictionary_status(self) -> dict:
+        if self.deployment == "subprocess":
+            status = self._ready_info.get("japanese_dictionary") if self._is_running() else None
+            return dict(status) if isinstance(status, dict) else {}
+        if self._inferencer is None:
+            return {}
+        from tts.japanese_dictionary import dictionary_runtime_status
+        return dictionary_runtime_status()
+
+    @property
     def is_rocm(self) -> bool:
         if self.deployment == "subprocess":
             return bool(
@@ -301,6 +311,8 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 yield self._decode_chunk(message)
                 continue
             if kind == "done":
+                if isinstance(message.get("japanese_dictionary"), dict):
+                    self._ready_info["japanese_dictionary"] = dict(message["japanese_dictionary"])
                 return
             if kind == "error":
                 raise TTSBackendError(

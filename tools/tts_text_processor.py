@@ -108,6 +108,17 @@ def convert_english_abbreviations_to_katakana(text: str) -> str:
         known = _SPECIAL_CASES_FOLDED.get(token.casefold())
         if known:
             return known
+        # Unknown short number suffixes belong to the native unit lexicon,
+        # including uppercase units. Known names and longer initialisms (e.g.
+        # 3GPUs) keep their existing pronunciation contract.
+        if len(token) <= 2 and match.start() and text[match.start() - 1].isdecimal():
+            return token
+        suffix = re.search(r"(?:['’][sS]|s)$", token)
+        if suffix:
+            stem = token[:suffix.start()]
+            known = _SPECIAL_CASES_FOLDED.get(stem.casefold())
+            if known or _INITIALISM_PATTERN.fullmatch(stem):
+                return (known or "".join(_LETTER_TO_KATAKANA.get(ch.upper(), ch) for ch in stem)) + suffix.group()
         if not _INITIALISM_PATTERN.fullmatch(token):
             return token
         return "".join(

@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.16.3",
+  "version": "2026.10.18.1",
   "language": "ja",
   "source": {
     "repository": "https://github.com/RVC-Boss/GPT-SoVITS",
@@ -30,7 +30,8 @@
       "spell untranslated whole-token initialisms",
       "recount morae from one explicit native pronunciation while preserving valid accent nuclei",
       "remove only exact duplicate entries",
-      "canonicalize native MeCab surface spelling only for repaired entries; leave unchanged, unreviewed surfaces intact"
+      "yield all one- or two-letter Latin surfaces to the base Japanese dictionary",
+      "canonicalize every surface using native MeCab input spelling, including unchanged contractions and compounds"
     ],
     "unresolved_policy": "Flag non-kana remnants and out-of-range accent candidates for review; retain them without guessing a replacement. Preserve different legitimate readings of the same word."
   },

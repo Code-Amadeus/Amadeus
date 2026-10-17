@@ -89,12 +89,9 @@ class FirstSentenceAudioCache:
             "params": {field: params.get(field) for field in _KEY_FIELDS},
         }
         if output_language == "ja":
-            from tts.japanese_dictionary import dictionary_cache_identity
-            payload["japanese_dictionary"] = dictionary_cache_identity()
+            from tts.pipeline import japanese_dictionary_status
+            payload["japanese_dictionary"] = japanese_dictionary_status().get("identity")
         return payload
-
-    def _fingerprint(self, text: str, params: dict[str, Any]) -> str:
-        return self._fingerprint_payload(self.key_payload(text, params))
 
     @staticmethod
     def _fingerprint_payload(payload: dict[str, Any]) -> str:
@@ -110,8 +107,7 @@ class FirstSentenceAudioCache:
 
     def _legacy_key_payloads(
         self,
-        text: str,
-        params: dict[str, Any],
+        current: dict[str, Any],
     ) -> tuple[dict[str, Any], ...]:
         """Recreate the bounded pre-asset-layout cache identity.
 
@@ -123,7 +119,10 @@ class FirstSentenceAudioCache:
         metadata on the latency-critical lookup path.
         """
 
-        current = self.key_payload(text, params)
+        # Older Japanese entries predate native pronunciation identities and
+        # cannot prove compatibility. Only the English predecessor is live.
+        if "japanese_dictionary" in current:
+            return ()
         language = str(current.get("tts_output_language") or "").strip().lower()
         legacy_language = {"ja": "日文", "en": "英文"}.get(language)
         gpt_name = _portable_basename(current.get("gpt_model"))
@@ -196,6 +195,8 @@ class FirstSentenceAudioCache:
         if not FIRST_SENTENCE_AUDIO_CACHE_ENABLED:
             return None
         current_payload = self.key_payload(text, params)
+        if "japanese_dictionary" in current_payload and not current_payload["japanese_dictionary"]:
+            return None
         current_path = self._path_for_payload(current_payload)
         if current_path.exists():
             current = self._read_entry(
@@ -205,7 +206,7 @@ class FirstSentenceAudioCache:
             if current is not None:
                 return current[0], current[1]
 
-        for legacy_payload in self._legacy_key_payloads(text, params):
+        for legacy_payload in self._legacy_key_payloads(current_payload):
             legacy_path = self._path_for_payload(legacy_payload)
             if legacy_path == current_path or not legacy_path.exists():
                 continue
@@ -268,9 +269,11 @@ class FirstSentenceAudioCache:
             )
             return False
 
-        path = self.path_for(text, params)
         key_payload = self.key_payload(text, params)
-        key = self._fingerprint(text, params)
+        if "japanese_dictionary" in key_payload and not key_payload["japanese_dictionary"]:
+            return False
+        path = self._path_for_payload(key_payload)
+        key = self._fingerprint_payload(key_payload)
         metadata = {
             "schema": _CACHE_SCHEMA,
             "key": key,

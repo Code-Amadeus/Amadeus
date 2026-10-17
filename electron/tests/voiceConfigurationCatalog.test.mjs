@@ -100,6 +100,10 @@ test('Japanese dictionaries are optional and can be disabled with a restart', ()
   const effective = exports.buildVoiceConfigurationCatalog({ ...selection, japaneseDictionaryEnabled: false }, null).find(group => group.id === 'tts_japanese_dictionary')
   assert.equal(effective.fields[0].value, false)
   assert.equal(effective.active, false)
+  const english = exports.buildVoiceConfigurationCatalog(selection, { values: { TTS_OUTPUT_LANGUAGE: '英文' } }).find(group => group.id === 'tts_japanese_dictionary')
+  assert.equal(english.active, false)
+  const switched = exports.buildVoiceConfigurationCatalog({ ...selection, ttsOutputLanguage: 'en' }, { values: { TTS_OUTPUT_LANGUAGE: '日文' } }).find(group => group.id === 'tts_japanese_dictionary')
+  assert.equal(switched.active, false)
 })
 
 test('effective dotenv emotion setting is visible until a stored override changes it', () => {

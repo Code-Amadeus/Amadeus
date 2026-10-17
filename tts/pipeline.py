@@ -86,6 +86,20 @@ _tts_interrupt_epoch: int = 0
 _active_stream_queues: set[asyncio.Queue] = set()
 
 
+def japanese_dictionary_status() -> dict:
+    backend = getattr(_tts_runtime, "backend", None)
+    if _tts_runtime is None:
+        # Offline cache prebuilding uses a direct local inferencer, whose
+        # frontend establishes the same process-local native identity.
+        from tts.japanese_dictionary import dictionary_runtime_status
+        return dictionary_runtime_status()
+    status = getattr(backend, "japanese_dictionary_status", None)
+    return dict(status) if isinstance(status, dict) and status else {
+        "state": "not_loaded", "ready": False, "identity": None, "version": "",
+        "detail": "Japanese frontend has not loaded.",
+    }
+
+
 def emotion_references_enabled() -> bool:
     backend = getattr(_tts_runtime, "backend", None)
     return bool(getattr(backend, "emotion_reference_status", {}).get("ready")) and current_tts_language_code() == "ja"

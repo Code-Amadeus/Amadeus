@@ -63,12 +63,18 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
     """Apply representation repairs; preserve lexical alternatives and accent nuclei."""
     cleaned, seen = [], set()
     stats = {"unicode_normalized_rows": 0, "literal_initialism_readings_repaired": 0,
-             "reading_separators_normalized": 0, "repaired_surfaces_normalized": 0,
+             "reading_separators_normalized": 0, "surfaces_normalized": 0,
+             "short_latin_entries_excluded": 0,
              "mora_counts_repaired": 0, "exact_duplicates_removed": 0}
     unresolved = []
     for number, original in enumerate(rows, 1):
         row = list(original)
-        separator_repaired = False
+        # The Japanese base dictionary owns letters and short Latin tokens,
+        # including measurement suffixes. Imported English fragments must not
+        # displace cm/kg/km or supply unrelated readings for isolated m/w/h.
+        if re.fullmatch(r"[A-Za-z]{1,2}", unicodedata.normalize("NFKC", row[0])):
+            stats["short_latin_entries_excluded"] += 1
+            continue
         row[10:13] = [unicodedata.normalize("NFC", value) for value in row[10:13]]
         stats["unicode_normalized_rows"] += row != original
         joined = [_without_reading_separators(value) for value in row[10:13]]
@@ -77,7 +83,6 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
             accent = int(row[13].split("/")[0])
             if actual is None or 0 < actual and accent <= actual:
                 row[10:13] = joined
-                separator_repaired = True
                 stats["reading_separators_normalized"] += 1
         literal = unicodedata.normalize("NFKC", row[12])
         if (re.fullmatch(r"[A-Z]{2,}", literal)
@@ -90,7 +95,6 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
         if _KANA.fullmatch(row[12]):
             actual = count_mora(row[12])
             accent, declared = map(int, row[13].split("/"))
-            valid_reading = actual is None or 0 < actual and accent <= actual
             if actual is not None and actual != declared:
                 if 0 < actual and accent <= actual:
                     row[13] = f"{accent}/{actual}"
@@ -99,14 +103,13 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
                     unresolved.append({"line": number, "surface": row[0], "pronunciation": row[12],
                                        "reason": "accent_needs_review", "declared": row[13], "native_mora": actual})
         else:
-            valid_reading = False
             unresolved.append({"line": number, "surface": row[0], "pronunciation": row[12],
                                "reason": "non_kana_reading_needs_review"})
-        # Activate a repaired reading using the native input spelling (e.g. ’
-        # and −). Leave unreviewed, unchanged entries exactly as they were.
-        if normalize_surface is not None and valid_reading and separator_repaired:
+        # Surface spelling is a representation rule for every entry, including
+        # unchanged contractions/compounds and readings awaiting lexical review.
+        if normalize_surface is not None:
             surface = normalize_surface(row[0])
-            stats["repaired_surfaces_normalized"] += surface != row[0]
+            stats["surfaces_normalized"] += surface != row[0]
             row[0] = surface
         entry = tuple(row)
         if entry in seen:

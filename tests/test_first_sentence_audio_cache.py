@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tts import first_sentence_audio_cache as cache_module
 from tts.first_sentence_audio_cache import FirstSentenceAudioCache
@@ -20,6 +21,7 @@ def test_prebuilt_expanding_pronunciation_hits_runtime_cache(tmp_path, monkeypat
     monkeypatch.setattr(prebuild, "get_first_sentence_audio_cache", lambda: cache)
     monkeypatch.setattr(pipeline, "get_first_sentence_audio_cache", lambda: cache)
     monkeypatch.setattr(pipeline, "TTS_OUTPUT_LANGUAGE", "日文")
+    monkeypatch.setattr(pipeline, "japanese_dictionary_status", lambda: {"identity": "test-native"})
     monkeypatch.setattr(pipeline, "_tts_interrupt_epoch", 7)
     inferred, played = [], []
 
@@ -56,8 +58,8 @@ def _current_params() -> dict:
             "そういえば,まともに自己紹介していませんでしたね……"
             "牧瀬くりすです.改めまして,よろしく"
         ),
-        "text_language": "日文",
-        "prompt_language": "日文",
+        "text_language": "英文",
+        "prompt_language": "英文",
         "how_to_cut": "不切",
         "top_p": 1,
         "top_k": 5,
@@ -83,7 +85,7 @@ def _configure_current_identity(monkeypatch) -> None:
         "TTS_SOVITS_MODEL_PATH",
         "assets/models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
     )
-    monkeypatch.setattr(pipeline, "current_tts_language_code", lambda: "ja")
+    monkeypatch.setattr(pipeline, "current_tts_language_code", lambda: "en")
 
 
 def _write_entry(
@@ -131,7 +133,7 @@ def test_legacy_asset_layout_cache_is_reused_and_migrated(
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "ん、"
-    legacy_payload = cache._legacy_key_payloads(text, params)[0]
+    legacy_payload = cache._legacy_key_payloads(cache.key_payload(text, params))[0]
     audio = np.linspace(-0.2, 0.2, 2400, dtype=np.float32)
     _write_entry(cache, legacy_payload, audio)
 
@@ -160,7 +162,7 @@ def test_legacy_cache_without_metadata_remains_usable(
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "え、"
-    legacy_payload = cache._legacy_key_payloads(text, params)[0]
+    legacy_payload = cache._legacy_key_payloads(cache.key_payload(text, params))[0]
     audio = np.ones(1200, dtype=np.float32) * 0.05
     _write_entry(cache, legacy_payload, audio, metadata=False)
 
@@ -180,7 +182,7 @@ def test_legacy_cache_with_mismatched_identity_is_rejected(
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "ああ、"
-    legacy_payload = cache._legacy_key_payloads(text, params)[0]
+    legacy_payload = cache._legacy_key_payloads(cache.key_payload(text, params))[0]
     mismatched = dict(legacy_payload)
     mismatched["gpt_model"] = "GPT_weights_v3/different-model.ckpt"
     _write_entry(
@@ -194,11 +196,16 @@ def test_legacy_cache_with_mismatched_identity_is_rejected(
     assert cache.path_for(text, params).exists() is False
 
 
+@pytest.mark.parametrize("language", ["ja", "en"])
 def test_previous_synthesis_revisions_are_not_reused(
     tmp_path,
     monkeypatch,
+    language,
 ) -> None:
     _configure_current_identity(monkeypatch)
+    from tts import pipeline
+    monkeypatch.setattr(pipeline, "current_tts_language_code", lambda: language)
+    monkeypatch.setattr(pipeline, "japanese_dictionary_status", lambda: {"identity": "native"})
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "うーん……"
@@ -229,7 +236,7 @@ def test_legacy_cache_with_malformed_metadata_is_rejected(
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "そうね、"
-    legacy_payload = cache._legacy_key_payloads(text, params)[0]
+    legacy_payload = cache._legacy_key_payloads(cache.key_payload(text, params))[0]
     path = cache._path_for_payload(legacy_payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as stream:
@@ -252,7 +259,7 @@ def test_current_cache_identity_takes_precedence_over_legacy(
     cache = FirstSentenceAudioCache(tmp_path)
     params = _current_params()
     text = "わかったわ。"
-    legacy_payload = cache._legacy_key_payloads(text, params)[0]
+    legacy_payload = cache._legacy_key_payloads(cache.key_payload(text, params))[0]
     legacy_audio = np.ones(900, dtype=np.float32) * 0.1
     current_audio = np.ones(600, dtype=np.float32) * 0.2
     _write_entry(cache, legacy_payload, legacy_audio)

@@ -48,13 +48,16 @@ then removes only identical full rows. Different lexical readings remain.
 The generated `provenance.json` additionally identifies the derivative's
 version, hash, entry count, normalization rules and repair counters.
 
-Version 2026.10.16.3 retains the previous 11 singular-reading repairs and
+Version 2026.10.18.1 retains the previous 11 singular-reading repairs and
 complete `proposer` entry, and reviews the remaining 317 flagged entries:
 94 lexical/script/annotation repairs, 65 phonetic representation repairs and
-158 unchanged entries awaiting stronger evidence. The recipe identifies each
+158 entries retaining their reading/cost/accent fields pending stronger evidence. The recipe identifies each
 reviewed before/after pronunciation, relevant CMU/native evidence and measured
 word-cost adjustments. Other readings of a corrected surface remain available.
-Only repaired entries receive native MeCab surface spelling. `proposer` still
+All surfaces receive native MeCab spelling, including 48 of those retained
+entries; their other fields are unchanged. One- and two-letter Latin surfaces
+yield to the Japanese base dictionary, preserving letter/unit readings. The
+prepared pack has 127,811 entries. `proposer` still
 uses a provisional flat accent;
 native listening review is still required. This does not claim exhaustive
 dictionary accuracy or contextual disambiguation of all Japanese homographs.

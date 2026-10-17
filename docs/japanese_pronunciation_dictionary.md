@@ -15,8 +15,8 @@ loader before installation. Older applications reject the unknown pack ID.
 The first compatible application release has not yet been published.
 
 ```powershell
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.16.3.zip
-python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.16.3.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.18.1.zip
+python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.18.1.zip
 python tools/external_assets.py status
 ```
 
@@ -35,9 +35,10 @@ Resource status reports the pack version and validates the CSV shape,
 provenance hash/count and required notices without importing model libraries.
 The Japanese frontend logs actual compilation/loading failures and keeps the
 base frontend usable. The runtime ready state is separate from pack presence.
-For subprocess synthesis, the parent settings page may show installation status
-before its own frontend has loaded; the sidecar's startup log is the evidence
-of actual dictionary activation.
+Missing optional data is a normal, inactive state. The card is active only for
+Japanese GPT-SoVITS output with a present or loaded source. For subprocess
+synthesis, actual native state and identity travel in the existing ready/done
+messages; installation status is not evidence of native activation.
 
 ## Data and personal files / 数据与个人词条
 
@@ -45,6 +46,10 @@ of actual dictionary activation.
 - Personal CSV entries may live at `assets/text/ja/user.csv`, outside the pack.
   Use OpenJTalk's 15-column CSV format and appropriate entry costs; dictionary
   registration order alone does not promise precedence for duplicate words.
+  Save as UTF-8 **without BOM**: native MeCab would otherwise treat the BOM as
+  part of the first surface. Empty, malformed or uncompileable sources are
+  individually reported with their relative filename and skipped. A broken
+  personal CSV does not disable a valid official pack.
 - If the new pack is absent, the existing
   `GPT_SoVITS/text/ja_userdic/userdict.csv` remains a supported local source.
   An installed pack replaces that legacy source's role; an invalid installed
@@ -52,9 +57,19 @@ of actual dictionary activation.
 - Compilation writes only `.cache/japanese_dictionary/`, keyed by source bytes,
   native runtime version and the installed system dictionary identity. The
   application does not rewrite or distribute personal/legacy CSVs or binaries.
-- First-sentence audio cache keys include the selected dictionary identity, so
-  installing, disabling or updating data cannot reuse audio with old readings
-  after restart. Existing audio files are not deleted.
+  A peer-published binary for the same content key is reused if Windows locks
+  replacement. Successful loading prunes obsolete managed binaries; files still
+  mapped by another live process are retried at a later successful startup.
+- First-sentence audio cache keys identify the native sources **actually loaded**
+  in the synthesis process, including its native runtime/system dictionary.
+  A base fallback has a different identity from a loaded pack. Unknown native
+  state bypasses both cache reads and writes. Japanese pre-identity legacy
+  entries are not migrated; the existing English migration remains supported.
+  Japanese frontend setup precedes backend ready; later lazy language loads
+  refresh the sidecar's identity at inference completion.
+- The optional loader reports unsupported APIs without blocking base frontend
+  import. User dictionaries require the pinned `pyopenjtalk-plus` API; an older
+  `TTS_PYTHON` environment is not silently adapted or claimed fully supported.
 
 用户 CSV 与正式包分开，安装和升级不会覆盖。旧词典目录也不会被删除或改写。
 编译结果是本机缓存，不能作为可维护的词典源。个人重复词条的优先级须通过
@@ -75,8 +90,9 @@ is explicit.
 
 ```powershell
 python tools/prepare_japanese_dictionary.py --source GPT_SoVITS/text/ja_userdic/userdict.csv
-python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.16.3.zip
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.16.3.zip
+python tools/validate_japanese_dictionary.py --output output/japanese_dictionary_validation.json
+python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.18.1.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.18.1.zip
 python tools/audit_japanese_dictionary.py --source assets/text/ja/english/userdict.csv --output output/japanese_dictionary_audit.json
 ```
 
@@ -87,10 +103,11 @@ model paths or rebuild any existing model/voice archive.
 
 ## Quality boundary / 质量范围
 
-Version 2026.10.16.3 reviews the 317 entries left by version 2026.10.16.2:
+Version 2026.10.18.1 retains the review of the 317 entries left by version 2026.10.16.2:
 94 receive reviewed lexical/script/annotation repairs, 65 receive phonetic
-separator or format-control repairs, and 158 remain unchanged pending stronger
-transcription or accent evidence. The local review report records every
+separator or format-control repairs, and 158 retain their readings, costs and
+accent fields pending stronger evidence. Of these, 48 receive surface spelling
+normalization only. The local review report records every
 disposition. An all-kana alternative alone is not proof of lexical correctness.
 Examples include `balloonist` (`二` → `ニ`), `ninth` (`ん` → `ン`), untranslated
 letter names, stray inflection letters and literal LLM explanations.
@@ -100,8 +117,9 @@ not replace every pronunciation sharing that word. Legitimate alternatives
 such as singular/plural `corps` and initialism/plural `CDS/CDs` remain available;
 no context classifier is added to force a single choice.
 
-Native input converts apostrophes and hyphens to `’` and `−`. Only repaired
-entries receive this native surface spelling, and the frontend preserves
+Native input converts apostrophes and hyphens to `’` and `−`. All entries receive
+this native surface spelling, including previously dormant contractions and
+compounds; this changes representation rather than guessing readings. The frontend preserves
 Latin compound punctuation until native tokenization. Standalone punctuation
 and Japanese punctuation keep their normal handling. Native MeCab measurements
 in three synthetic contexts exposed cheap unintended word splits; 109 reviewed
@@ -109,7 +127,16 @@ entry costs were reduced just enough to beat those measured splits. The
 measured costs are stored in the CSV/recipe, with no runtime word-specific
 pronunciation or cost rules. Unconfirmed entries retain their original rows.
 
-The pack contains 128,111 entries. Re-auditing it produces no further structural
+One- and two-letter Latin surfaces are excluded at build time: these fragments
+must yield to the base Japanese dictionary's letter and measurement entries.
+This excludes 328 pre-deduplication rows (300 distinct previous pack rows),
+preventing imported `m`/`w`/`h` fragments from displacing cm/kg/km/mm/ml/kW.
+No per-unit or per-word runtime list is added. Unknown short number suffixes
+also bypass generic initialism expansion; known names and longer initialisms
+such as `3GPUs` retain their existing handling. Native spelling is normalized for
+8,998 pre-deduplication surfaces.
+
+The pack contains 127,811 entries. Re-auditing it produces no further structural
 repairs and leaves the 158 review entries intact. No accent is clamped or
 invented for `guangjo`, whose source accent exceeds the native mora count.
 
@@ -146,13 +173,26 @@ such collisions alone do not prove errors (`path` and `paths` can both be
 
 Whole-token abbreviation preparation handles `MLP` next to Japanese, fullwidth
 Latin text and case variants of existing names, and avoids replacing `API`
-inside `CAPITAL`. It applies to Japanese synthesis text; English output,
+inside `CAPITAL`. Known names/initialisms followed by plural or possessive
+suffixes convert only their stem and preserve the suffix. It applies to Japanese synthesis text; English output,
 subtitles and conversation history retain their original text.
 
 The upstream translation is not exhaustively human-verified. This is an English
 word/name extension, not a general context-sensitive Japanese homograph model
 or a voice/timbre replacement. Native pronunciation/prosody comparisons do not
 replace end-to-end synthesis and human listening acceptance.
+
+The native release gate compares 52 samples, including Latin units and
+inflected names/initialisms, against the actual base `japanese.g2p` prosody path.
+It also checks 172 reviewed rows and nine common contractions in three contexts
+(543 native contexts) and 181 production frontend/native-prosody comparisons.
+An additional 32-unit set has no phoneme changes. It records an `rpm` prosody
+boundary difference for listening review: the reading is the same, and that
+observation alone does not justify changing an existing accent.
+It runs offline with a prepared full pack; core unit tests use synthetic data
+and do not require downloading dictionary or model assets. Pack validation
+checks the hash before parsing CSV and memoizes successes/failures by member
+file stats. Audio cache key generation performs no dictionary-file validation.
 
 ## Publication / 发布
 

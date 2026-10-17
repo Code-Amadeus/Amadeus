@@ -118,6 +118,7 @@ emit({
     "torch": "test+rocm",
     "hip": "7.test",
     "cuda_available": True,
+    "japanese_dictionary": {"state": "ready", "ready": True, "identity": "worker-before"},
 })
 for line in sys.stdin:
     message = json.loads(line)
@@ -138,7 +139,8 @@ for line in sys.stdin:
             request["options"]["marker"],
         ])
         chunk(request_id, [0.25, -0.5], observed)
-    emit({"type": "done", "request_id": request_id})
+    emit({"type": "done", "request_id": request_id,
+          "japanese_dictionary": {"state": "ready", "ready": True, "identity": "worker-native"}})
 '''.lstrip(),
         encoding="utf-8",
     )
@@ -171,8 +173,10 @@ def test_sidecar_round_trip_preserves_request_and_float32_audio(tmp_path, monkey
             "torch": "test+rocm",
             "hip": "7.test",
             "cuda_available": True,
+            "japanese_dictionary": {"state": "ready", "ready": True, "identity": "worker-native"},
         }
         assert backend.deployment == "subprocess"
+        assert backend.japanese_dictionary_status["identity"] == "worker-native"
         assert TTSRuntimeAdapter(backend).is_rocm is True
         assert chunk.sample_rate == 24000
         assert chunk.audio.dtype == np.float32

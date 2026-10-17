@@ -17,6 +17,7 @@ interface VoiceRuntimeSelection {
   aecEnabled: boolean
   emotionReferencesEnabled?: boolean
   japaneseDictionaryEnabled?: boolean
+  ttsOutputLanguage?: string
 }
 
 export function buildVoiceConfigurationCatalog(
@@ -115,7 +116,7 @@ export function buildVoiceConfigurationCatalog(
 
     {
       ...dictionary,
-      active: ttsBackend === 'gpt_sovits' && dictionaryEnabled,
+      active: ttsBackend === 'gpt_sovits' && dictionaryEnabled && ['日文', 'ja'].includes(selection.ttsOutputLanguage || value('TTS_OUTPUT_LANGUAGE')),
       configured: !dictionaryEnabled,
       status: dictionaryEnabled ? unknown : 'Off',
       status_ok: !dictionaryEnabled,

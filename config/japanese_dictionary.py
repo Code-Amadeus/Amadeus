@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import io
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
@@ -23,9 +24,11 @@ class JapaneseDictionaryError(ValueError):
 
 def dictionary_rows(data: bytes) -> Iterator[list[str]]:
     """Check the native 15-column OpenJTalk CSV without importing model extras."""
+    if data.startswith(b"\xef\xbb\xbf"):
+        raise JapaneseDictionaryError("Dictionary CSV has a UTF-8 BOM; save as UTF-8 without BOM so the first entry can match")
     try:
         count = 0
-        for number, row in enumerate(csv.reader(io.StringIO(data.decode("utf-8-sig")), strict=True), 1):
+        for number, row in enumerate(csv.reader(io.StringIO(data.decode("utf-8")), strict=True), 1):
             if len(row) != 15 or not row[0] or not row[11] or not row[12]:
                 raise JapaneseDictionaryError(f"Invalid dictionary entry at line {number}: expected 15 columns and a reading")
             try:
@@ -56,8 +59,7 @@ class JapaneseDictionaryPack:
         return tuple(self.root / name for name in PACK_FILES)
 
 
-def load_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
-    root = Path(root).resolve()
+def _validate_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
     try:
         for name in PACK_FILES:
             path = root / name
@@ -68,12 +70,38 @@ def load_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
             raise JapaneseDictionaryError("Dictionary provenance requires a version and Japanese language")
         data = (root / "userdict.csv").read_bytes()
         digest = hashlib.sha256(data).hexdigest()
+        if raw.get("sha256") != digest:
+            raise JapaneseDictionaryError("Dictionary content does not match its provenance hash")
         count = sum(1 for _ in dictionary_rows(data))
-        if raw.get("sha256") != digest or raw.get("entry_count") != count:
-            raise JapaneseDictionaryError("Dictionary content does not match its provenance hash/count")
+        if raw.get("entry_count") != count:
+            raise JapaneseDictionaryError("Dictionary content does not match its provenance entry count")
         source = raw.get("source")
         if not isinstance(source, dict) or any(not source.get(key) for key in ("repository", "revision", "path", "sha256")):
             raise JapaneseDictionaryError("Dictionary provenance requires a pinned source and source hash")
         return JapaneseDictionaryPack(root, raw["version"], digest, count)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise JapaneseDictionaryError(f"Cannot load dictionary pack: {exc}") from exc
+
+
+@lru_cache(maxsize=8)
+def _cached_pack(root: Path, signatures: tuple) -> tuple[JapaneseDictionaryPack | None, str]:
+    # Cache failures as values too: lru_cache does not retain raised exceptions.
+    try:
+        return _validate_dictionary_pack(root), ""
+    except JapaneseDictionaryError as exc:
+        return None, str(exc)
+
+
+def load_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
+    root = Path(root).resolve()
+    try:
+        signatures = []
+        for name in PACK_FILES:
+            stat = (root / name).lstat()
+            signatures.append((stat.st_mode, stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+    except OSError as exc:
+        raise JapaneseDictionaryError(f"Cannot load dictionary pack: {exc}") from exc
+    pack, error = _cached_pack(root, tuple(signatures))
+    if error:
+        raise JapaneseDictionaryError(error)
+    return pack
