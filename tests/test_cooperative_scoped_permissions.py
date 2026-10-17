@@ -23,6 +23,7 @@ async def _manager(host_factory):
     await asyncio.wait_for(host.adapter.started.wait(), 2)
     child = host.loop.children[host.loop.bound_context_id]
     manager = object.__new__(CooperativeChatManager)
+    manager._closed = False
     manager.runtime = host.runtime
     manager.ingresses = {"conversation-A": host.ingress}
     manager.permission_policy = "ask"
@@ -96,6 +97,122 @@ async def test_global_auto_policy_prevents_cooperative_read_only_deny_then_audit
         second = manager.permission_store.list_cooperative_permission_requests("conversation-A")[-1]
         assert second.status == "denied" and second.options == ["deny"]
         assert manager.runtime.resolve_permission.await_args.args[1].allow is False
+    finally:
+        host.adapter.release.set()
+        manager.permission_store.close()
+        await host.close()
+
+
+async def test_cooperative_owner_commits_automatic_decision_and_projects_its_receipt(
+        host_factory, monkeypatch):
+    from server.event_bus import bus
+
+    host, manager, record = await _manager(host_factory)
+    canvases = []
+    original_emit = bus.emit
+
+    async def emit(method, params):
+        if method == Method.WALLPAPER_CANVAS:
+            canvases.append(params)
+        await original_emit(method, params)
+
+    monkeypatch.setattr(bus, "emit", emit)
+    try:
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+        await manager._handle_provider_event(Method.PROVIDER_EVENT,
+            _event(record, "permission.requested", {"permissionRequest": {
+                "request_id": "automatic-owner", "capability": "mcp.tool.call", "action": "call_tool",
+                "options": ["allow_once", "deny"]}}))
+        permission, = manager.permission_store.list_cooperative_permission_requests("conversation-A")
+        assert manager.authorize_automatic_permission(record.run_id, "automatic-owner") is True
+        stored = manager.permission_store.get_permission_request(permission.request_id)
+        assert stored.status == "allowed"
+        assert stored.metadata["resolution"] == "policy_allowed"
+        assert stored.metadata["resolved_automatically"] is True
+        assert stored.metadata["reason"] == "work_permission_auto_approve"
+        assert manager.authorize_automatic_permission(record.run_id, "automatic-owner") is False
+        canvases.clear()
+        await manager._handle_provider_event(Method.PROVIDER_EVENT, _event(record, "permission.allowed",
+            {"request_id": "automatic-owner", "automatic": True, "decision": "allow_once"}))
+        assert manager.permission_store.get_permission_request(permission.request_id).resolved_at == stored.resolved_at
+        assert manager.permission_receipts[-1]["state"] == "allowed"
+        assert any(value["permissionVisible"] is False
+            and value["permissionRequest"]["id"] == permission.request_id for value in canvases)
+    finally:
+        host.adapter.release.set()
+        manager.permission_store.close()
+        await host.close()
+
+
+@pytest.mark.parametrize("extra", [{"diagnosticOnly": True}, {"retryRequired": True}, {"options": ["deny"]}])
+async def test_cooperative_owner_rechecks_durable_options_and_restrictions(host_factory, monkeypatch, extra):
+    host, manager, record = await _manager(host_factory)
+    try:
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+        await manager._handle_provider_event(Method.PROVIDER_EVENT,
+            _event(record, "permission.requested", {"permissionRequest": {
+                "request_id": "restricted-owner", "capability": "mcp.tool.call", "action": "call_tool",
+                "options": ["allow_once", "deny"], **extra}}))
+        permission, = manager.permission_store.list_cooperative_permission_requests("conversation-A")
+        assert manager.authorize_automatic_permission(record.run_id, "restricted-owner") is False
+        assert manager.permission_store.get_permission_request(permission.request_id).status == "pending"
+    finally:
+        host.adapter.release.set()
+        manager.permission_store.close()
+        await host.close()
+
+
+async def test_cooperative_owner_propagates_automatic_decision_commit_failure(host_factory, monkeypatch):
+    import sqlite3
+
+    host, manager, record = await _manager(host_factory)
+    try:
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+        await manager._handle_provider_event(Method.PROVIDER_EVENT,
+            _event(record, "permission.requested", {"permissionRequest": {
+                "request_id": "commit-owner", "capability": "mcp.tool.call", "action": "call_tool",
+                "options": ["allow_once", "deny"]}}))
+        permission, = manager.permission_store.list_cooperative_permission_requests("conversation-A")
+
+        def failed_commit(*args, **kwargs):
+            raise sqlite3.OperationalError("synthetic cooperative commit failure")
+
+        monkeypatch.setattr(manager.permission_store, "resolve_permission_request", failed_commit)
+        with pytest.raises(sqlite3.OperationalError, match="cooperative commit failure"):
+            manager.authorize_automatic_permission(record.run_id, "commit-owner")
+        assert manager.permission_store.get_permission_request(permission.request_id).status == "pending"
+    finally:
+        host.adapter.release.set()
+        manager.permission_store.close()
+        await host.close()
+
+
+@pytest.mark.parametrize("invalid", ["missing", "wrong-run", "closed", "terminal", "user-decision"])
+async def test_cooperative_owner_rejects_stale_or_resolved_authority(host_factory, monkeypatch, invalid):
+    host, manager, record = await _manager(host_factory)
+    try:
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+        await manager._handle_provider_event(Method.PROVIDER_EVENT,
+            _event(record, "permission.requested", {"permissionRequest": {
+                "request_id": "owner-boundary", "capability": "mcp.tool.call", "action": "call_tool",
+                "options": ["allow_once", "deny"]}}))
+        permission, = manager.permission_store.list_cooperative_permission_requests("conversation-A")
+        child = host.loop.get_context(permission.context_id)
+        request_id = "owner-boundary"
+        if invalid == "missing":
+            request_id = "missing-request"
+        elif invalid == "wrong-run":
+            child.run_id = "another-run"
+        elif invalid == "closed":
+            child.closed = True
+        elif invalid == "terminal":
+            record.status = "cancelled"
+        else:
+            manager.permission_store.resolve_permission_request(permission.request_id, "denied",
+                metadata={"resolution": "user_denied"})
+        before = manager.permission_store.get_permission_request(permission.request_id).to_dict()
+        assert manager.authorize_automatic_permission(record.run_id, request_id) is False
+        assert manager.permission_store.get_permission_request(permission.request_id).to_dict() == before
     finally:
         host.adapter.release.set()
         manager.permission_store.close()

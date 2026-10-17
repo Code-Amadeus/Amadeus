@@ -167,6 +167,8 @@ async def test_same_named_tool_on_another_connection_needs_its_own_grant(native_
 async def test_real_pi_persistent_policy_approves_new_work_until_disabled(native_pi, tmp_path, monkeypatch):
     from config import settings
     from agent_host.provider_runtime import ProviderRuntime
+    from agent_host.work_ledger_store import WorkLedgerStore
+    from server.work_ledger_coordinator import WorkLedgerCoordinator
 
     adapter, _, selected, _ = native_pi
     root = tmp_path / "service"
@@ -174,6 +176,13 @@ async def test_real_pi_persistent_policy_approves_new_work_until_disabled(native
     runtime = ProviderRuntime()
     runtime.register(adapter)
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True)
+    monkeypatch.setattr(settings, "WORK_WORKTREE_ISOLATION", False)
+    monkeypatch.setattr(settings, "WORK_PROJECT_ALLOWLIST", str(tmp_path))
+    store = WorkLedgerStore(tmp_path / "native-approval-ledger.sqlite3")
+    coordinator = WorkLedgerCoordinator(store)
+    coordinator.configure()
+    runtime.set_request_preparer(coordinator.prepare_request)
+    runtime.set_automatic_permission_authorizer(coordinator.authorize_automatic_permission)
     try:
         for _ in range(2):
             selected["steps"] = [{"tool": "mcp__fixture__inspect_fixture", "args": {}}] * 2
@@ -182,6 +191,10 @@ async def test_real_pi_persistent_policy_approves_new_work_until_disabled(native
             assert record.status == "done", record.error
             decisions = [event for event in record.events if event["type"] == "permission.allowed"]
             assert len(decisions) == 2 and all(event["payload"]["automatic"] for event in decisions)
+            permissions = store.list_permission_requests(record.metadata["work"]["work_item_id"])
+            assert len(permissions) == 2
+            assert all(item.status == "allowed" and item.metadata["resolved_automatically"]
+                for item in permissions)
         assert calls(root) == ["inspect"] * 4
         monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
         selected["steps"] = [{"tool": "mcp__fixture__inspect_fixture", "args": {}}]
@@ -202,3 +215,5 @@ async def test_real_pi_persistent_policy_approves_new_work_until_disabled(native
         assert calls(root) == ["inspect"] * 4
     finally:
         await runtime.close()
+        await coordinator.drain_provider_facts()
+        coordinator.close()

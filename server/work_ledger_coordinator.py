@@ -7246,6 +7246,36 @@ class WorkLedgerCoordinator:
             touch_activity=False,
         )
 
+    def authorize_automatic_permission(self, run_id: str, native_request_id: str) -> bool:
+        """只对当前已落库请求提交策略决定；返回后才允许派发。"""
+        clean_run_id = str(run_id or "").strip()
+        clean_request_id = str(native_request_id or "").strip()
+        if not clean_run_id or not clean_request_id:
+            return False
+        attempt = self.store.get_attempt_by_provider_run(clean_run_id)
+        if attempt is None or attempt.execution_status not in _ACTIVE_EXECUTION:
+            return False
+        latest = self.store.latest_attempt(attempt.work_item_id)
+        if latest is None or latest.attempt_id != attempt.attempt_id:
+            return False
+        matches = [permission for permission in self.store.list_permission_requests(
+            attempt.work_item_id, attempt_id=attempt.attempt_id, status="pending")
+            if permission.metadata.get("kind") == "provider_permission"
+            and permission.metadata.get("provider") == attempt.provider
+            and permission.metadata.get("provider_run_id") == clean_run_id
+            and permission.metadata.get("provider_request_id") == clean_request_id]
+        if len(matches) != 1:
+            return False
+        permission = matches[0]
+        if ("allow_once" not in permission.options
+                or permission.metadata.get("diagnostic_only") is True
+                or permission.metadata.get("retry_required") is True):
+            return False
+        self.store.resolve_permission_request(permission.request_id, "allowed", metadata={
+            "resolution": "policy_allowed", "resolved_automatically": True,
+            "reason": "work_permission_auto_approve"})
+        return True
+
     async def resolve_permission(
         self,
         request_id: str,

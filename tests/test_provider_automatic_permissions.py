@@ -9,10 +9,101 @@ from agent_host.provider_types import ProviderEvent, ProviderRunRequest
 from test_provider_abstraction_quality import _InteractiveAdapter
 
 
+def runtime_with_authorizer():
+    runtime = ProviderRuntime()
+    runtime.set_automatic_permission_authorizer(lambda _run_id, _request_id: True)
+    return runtime
+
+
+async def test_automatic_policy_without_durable_owner_does_not_dispatch(monkeypatch):
+    monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True)
+    runtime = ProviderRuntime()
+    adapter = _InteractiveAdapter()
+    runtime.register(adapter)
+    record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Missing owner"))
+    try:
+        await asyncio.wait_for(adapter.started.wait(), 2)
+        with pytest.raises(RuntimeError, match="durable Host owner"):
+            await runtime._emit(record, ProviderEvent(
+                provider=adapter.provider_id, run_id=record.run_id, type="permission.requested",
+                payload={"permissionRequest": {"request_id": "no-owner", "options": ["allow_once", "deny"]}},
+            ))
+        await runtime.apply_permission_policy()
+        assert adapter.responses == []
+    finally:
+        adapter.release.set()
+        await record.task_handle
+        await runtime.close()
+
+
+async def test_cancelled_owner_checkpoint_never_dispatches_or_retries(monkeypatch):
+    monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True)
+    runtime = ProviderRuntime()
+    adapter = _InteractiveAdapter()
+    entered = asyncio.Event()
+
+    async def checkpoint(_run_id, _request_id):
+        entered.set()
+        await asyncio.Future()
+
+    runtime.set_automatic_permission_authorizer(checkpoint)
+    runtime.register(adapter)
+    record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Cancelled owner"))
+    posting = None
+    try:
+        await asyncio.wait_for(adapter.started.wait(), 2)
+        posting = asyncio.create_task(runtime._emit(record, ProviderEvent(
+            provider=adapter.provider_id, run_id=record.run_id, type="permission.requested",
+            payload={"permissionRequest": {"request_id": "cancel-owner", "options": ["allow_once", "deny"]}},
+        )))
+        await asyncio.wait_for(entered.wait(), 2)
+        await runtime.apply_permission_policy()
+        posting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await posting
+        await runtime.apply_permission_policy()
+        assert adapter.responses == []
+    finally:
+        if posting is not None:
+            posting.cancel()
+            await asyncio.gather(posting, return_exceptions=True)
+        adapter.release.set()
+        await record.task_handle
+        await runtime.close()
+
+
+async def test_changed_payload_cannot_reuse_a_pending_permission_identity(monkeypatch):
+    monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+    runtime = runtime_with_authorizer()
+    adapter = _InteractiveAdapter()
+    runtime.register(adapter)
+    record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Request identity"))
+
+    def event(arguments):
+        return ProviderEvent(provider=adapter.provider_id, run_id=record.run_id,
+            type="permission.requested", payload={"permissionRequest": {
+                "request_id": "same-id", "options": ["allow_once", "deny"],
+                "mcpCall": {"toolName": "status", "arguments": arguments},
+            }})
+
+    try:
+        await asyncio.wait_for(adapter.started.wait(), 2)
+        await runtime._emit(record, event({"value": "original"}))
+        monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True)
+        with pytest.raises(ValueError, match="permission request identity"):
+            await runtime._emit(record, event({"value": "changed"}))
+        await runtime.apply_permission_policy()
+        assert adapter.responses == []
+    finally:
+        adapter.release.set()
+        await record.task_handle
+        await runtime.close()
+
+
 @pytest.mark.parametrize("capability", ["mcp.tool.call", "provider.tool.execute"])
 async def test_persistent_auto_approval_applies_to_each_work_and_turns_off_live(monkeypatch, capability):
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
     runtime.register(adapter)
     records = []
@@ -48,7 +139,7 @@ async def test_reusable_authority_is_removed_if_its_canonical_audit_is_cancelled
     from server.event_bus import bus
     from server.protocol import Method
 
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
     granted = False
 
@@ -82,7 +173,7 @@ async def test_hot_enable_waits_for_pending_request_publication(monkeypatch):
     from server.protocol import Method
 
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
     runtime.register(adapter)
     record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Publication race"))
@@ -126,7 +217,7 @@ async def test_hot_enable_waits_for_pending_request_publication(monkeypatch):
 ])
 async def test_auto_policy_does_not_replay_retrospective_or_unsupported_requests(monkeypatch, extra):
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
     runtime.register(adapter)
     record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Approval fixture"))
@@ -145,7 +236,7 @@ async def test_auto_policy_does_not_replay_retrospective_or_unsupported_requests
 
 async def test_enabling_policy_resolves_existing_pending_request_once(monkeypatch):
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
     runtime.register(adapter)
     record = await runtime.start(ProviderRunRequest(provider=adapter.provider_id, task="Pending approval"))
@@ -168,7 +259,7 @@ async def test_enabling_policy_resolves_existing_pending_request_once(monkeypatc
 
 async def test_unknown_automatic_response_is_not_resent(monkeypatch):
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", True, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
 
     async def lose_ack(run_id, response):
@@ -196,7 +287,7 @@ async def test_unknown_automatic_response_is_not_resent(monkeypatch):
 
 async def test_one_unknown_response_does_not_leave_another_work_waiting(monkeypatch):
     monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False, raising=False)
-    runtime = ProviderRuntime()
+    runtime = runtime_with_authorizer()
     adapter = _InteractiveAdapter()
 
     async def resolve(run_id, response):

@@ -4517,6 +4517,51 @@ class CooperativeChatManager:
         loop = owners[0]
         return loop.prepare_runtime_run(request, run_id, intake_authority)
 
+    def authorize_automatic_permission(self, run_id: str, native_request_id: str) -> bool:
+        """核对真实会话与持久请求，并在派发前提交策略决定。"""
+        if (self._closed or self.permission_store is None
+                or self.permission_policy not in {"deny", "ask"}):
+            return False
+        record = self.runtime.get_run(run_id)
+        clean_request_id = str(native_request_id or "").strip()
+        if record is None or record.status not in {"queued", "running"} or not clean_request_id:
+            return False
+        context_id = str(record.metadata.get("cooperative_context_id") or "")
+        session_id = str(record.metadata.get("session_id") or "")
+        owners = [(owner_session, ingress.loop, ingress.loop.get_context(context_id))
+            for owner_session, ingress in self.ingresses.items()
+            if ingress.loop.has_context(context_id)]
+        if len(owners) != 1:
+            return False
+        owner_session, loop, child = owners[0]
+        if (owner_session != session_id or child is None or child.closed
+                or child.provider != record.provider or child.run_id != record.run_id
+                or loop._state is None):
+            return False
+        persisted = loop._state.load_context(context_id)
+        if (persisted is None or persisted["closed"]
+                or persisted["run_id"] != record.run_id
+                or persisted["provider"] != record.provider
+                or persisted["run_status"] not in {"queued", "running"}):
+            return False
+        matches = [permission for permission in
+            self.permission_store.list_cooperative_permission_requests(
+                session_id, context_id=context_id, provider_run_id=record.run_id, status="pending")
+            if permission.metadata.get("kind") == "provider_permission"
+            and permission.metadata.get("provider") == record.provider
+            and permission.metadata.get("provider_request_id") == clean_request_id]
+        if len(matches) != 1:
+            return False
+        permission = matches[0]
+        if ("allow_once" not in permission.options
+                or permission.metadata.get("diagnostic_only") is True
+                or permission.metadata.get("retry_required") is True):
+            return False
+        self.permission_store.resolve_permission_request(permission.request_id, "allowed", metadata={
+            "resolution": "policy_allowed", "resolved_automatically": True,
+            "reason": "work_permission_auto_approve"})
+        return True
+
     async def _handle_provider_event(self, _method: str, params: dict) -> None:
         event_type = str(params.get("type") or "").lower()
         if self.permission_policy not in {"deny", "ask"} or event_type not in {
@@ -4553,24 +4598,28 @@ class CooperativeChatManager:
             if event_type not in {"permission.expired", "permission.allowed"} or (
                     event_type == "permission.allowed" and payload.get("automatic") is not True):
                 return
-            matches = [permission for permission in
-                self.permission_store.list_cooperative_permission_requests(
-                    session_id, context_id=context_id,
-                    provider_run_id=run_id, status="pending")
-                if permission.metadata.get("provider_request_id") == provider_request_id]
+            matches = [permission for permission in requests
+                if permission.metadata.get("provider_request_id") == provider_request_id
+                and (permission.status == "pending" or (event_type == "permission.allowed"
+                    and permission.status == "allowed"
+                    and permission.metadata.get("resolution") == "policy_allowed"
+                    and permission.metadata.get("resolved_automatically") is True
+                    and permission.metadata.get("provider") == provider))]
             if event_type == "permission.allowed":
                 matches = [permission for permission in matches if "allow_once" in permission.options
                     and permission.metadata.get("diagnostic_only") is not True]
             if len(matches) != 1:
                 return
-            try:
-                resolved = self.permission_store.resolve_permission_request(
-                    matches[0].request_id, "allowed" if event_type == "permission.allowed" else "expired",
-                    metadata={"resolution":"policy_allowed" if event_type == "permission.allowed" else "provider_expired",
-                        "resolved_automatically":True,
-                        "reason":str(payload.get("reason") or "")})
-            except WorkLedgerConflict:
-                return
+            resolved = matches[0]
+            if resolved.status == "pending":
+                try:
+                    resolved = self.permission_store.resolve_permission_request(
+                        resolved.request_id, "allowed" if event_type == "permission.allowed" else "expired",
+                        metadata={"resolution":"policy_allowed" if event_type == "permission.allowed" else "provider_expired",
+                            "resolved_automatically":True,
+                            "reason":str(payload.get("reason") or "")})
+                except WorkLedgerConflict:
+                    return
             self.permission_receipts.append({"session_id":session_id,
                 "context_id":context_id, "run_id":run_id,
                 "provider_request_id":provider_request_id,
@@ -4634,6 +4683,10 @@ class CooperativeChatManager:
             idempotency_key=f"provider:{provider}:{run_id}:{request_id}",
             metadata={"kind":"provider_permission", "provider":provider,
                 "provider_request_id":request_id,
+                **({"diagnostic_only":True} if source.get("diagnosticOnly") is True
+                    or source.get("diagnostic_only") is True else {}),
+                **({"retry_required":True} if source.get("retryRequired") is True
+                    or source.get("retry_required") is True else {}),
                 "provider_options":[str(value)[:80] for value in provider_options[:8]],
                 **({"mcp_call": dict(source["mcpCall"])} if isinstance(source.get("mcpCall"), dict) else {}),
                 "resolution_policy":"user_prompt" if ask_user else "automatic_deny"})

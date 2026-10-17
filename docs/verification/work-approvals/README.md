@@ -8,6 +8,50 @@ MCP grant confined to the active Provider run. Desktop settings own persistence;
 Provider Runtime owns policy application and audit, and Pi owns its native
 callback translation. Restoring a native session never restores a grant.
 
+## Review follow-up / 审核修复 (2026-10-17)
+
+The review reproduced an authority-boundary defect on `7bd966f`: an ordinary
+SQLite permission-request write failure was swallowed by the event bus, after
+which Runtime still sent one automatic allow response with zero permission
+records. The new regression selection initially produced 2 passed / 4 failed,
+covering request writes, decision writes, hot enable and an unknown response.
+
+Runtime now requires a trusted Work or Cooperative permission owner to locate
+the exact committed pending request and commit `policy_allowed` before native
+response dispatch. No owner, a failed commit or a cancelled checkpoint cannot
+approve the call. The attempt is reserved before awaiting the owner, so an
+unknown or interrupted response is never resent. This durable decision records
+Host authorization intent; it is not a receipt that the Provider executed the
+operation. Conflicting content cannot reuse an existing pending request ID.
+Settled request identities remain fenced until their run ends, even when an
+expiry write fails. The two expiry/replay probes first failed, then passed
+after retaining that fence. Their expiry fixture was then corrected to include
+the native automatic-expiry flag and assert the observed persistence error;
+both corrected probes pass. Presentation subscribers remain ordinary event-bus
+observers.
+
+Fresh local checks of this follow-up:
+
+- Permission owners, real SQLite persistence faults, Runtime, Work permission
+  service/scopes, Cooperative scopes/contracts and EventBus: **80 passed**.
+- Chat shutdown, Work handler and Provider abstraction: **60 passed** after
+  extending the shutdown test double with the new Runtime hook. The initial
+  run had 54 passed / 6 failed because that test double lacked the setter;
+  those first failures remain distinct from the successful rerun.
+- Real pinned Pi subprocess scopes: **8 passed**, including two newly started
+  automatically approved Work runs with committed decisions and a third run
+  waiting for user approval after the persistent policy is disabled.
+- Repository Ruff, all seven generated architecture views, generated README
+  overview and `git diff --check` passed. No UI source changed in this follow-up;
+  the earlier Electron/render evidence below belongs to its recorded candidate.
+
+中文：本轮先复现“权限请求落库失败但仍自动允许”，再在真实持久化拥有者修复。
+请求记录和策略决定均成功提交后才派发；失败、取消或缺少拥有者时拒绝自动授权。
+决定是授权意图，不能当作执行成功回执；未知结果不重发，相同请求身份不得换参数。
+结算写入失败也不会释放旧请求身份供重放。三组选定回归共 **148 项通过**；首次失败
+与修复后复跑分别保留。只使用临时 SQLite、
+本地合成模型/MCP 和真实 Pi 子进程，未调用外部模型或替换日常安装版。
+
 ## Deterministic checks
 
 - Real Pi 1.2.0 subprocesses, a loopback synthetic model and local MCP peers:
@@ -56,8 +100,8 @@ All six hosted workflows succeeded for the frozen code candidate
 - [Optional character RAG](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693771)
   and [local-model installation candidates](https://github.com/Code-Amadeus/Amadeus/actions/runs/38909693628) passed.
 
-The follow-up verification-note commit changes this Markdown file only;
-executable code and tests remain identical to that tested candidate. The local
+The original verification-note commit `7bd966f` changed this Markdown file only;
+its executable code and tests were identical to that tested candidate. The local
 optional Codex limitations above remain recorded independently of hosted results.
 
 中文：冻结代码的六组远端 CI 全部通过，包括 Windows 三个完整测试分片、安装包启动

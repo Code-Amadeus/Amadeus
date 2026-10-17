@@ -538,6 +538,7 @@ async def bootstrap(port: int = 17777) -> None:
     auip_result_entry_callback = auip_launch.on_app_updated
     bus.on(Method.AUIP_UPDATED, auip_result_entry_callback)
     provider_runtime.set_request_preparer(work_ledger.prepare_request)
+    provider_runtime.set_automatic_permission_authorizer(work_ledger.authorize_automatic_permission)
     work_ledger.adopt_runtime_records(provider_runtime.list_runs())
     work_ledger.configure()
     work_activity = WorkActivityCoordinator()
@@ -1881,6 +1882,16 @@ async def bootstrap(port: int = 17777) -> None:
         cooperative_chat.checkpoint_native_session
     )
 
+    def _authorize_automatic_permission(run_id, native_request_id):
+        record = provider_runtime.get_run(run_id)
+        if record is None or record.status not in {"queued", "running"}:
+            return False
+        owner = (cooperative_chat if str(record.metadata.get("cooperative_context_id") or "").strip()
+            else work_ledger)
+        return owner.authorize_automatic_permission(run_id, native_request_id)
+
+    provider_runtime.set_automatic_permission_authorizer(_authorize_automatic_permission)
+
     async def _query_structured_control(
         messages: list[dict[str, str]],
         *,
@@ -2467,6 +2478,7 @@ async def bootstrap(port: int = 17777) -> None:
                 await auip_narration.close()
             provider_runtime.set_request_preparer(None)
             provider_runtime.set_native_session_checkpoint(None)
+            provider_runtime.set_automatic_permission_authorizer(None)
             provider_runtime.set_start_admission_validator(None)
             try:
                 await provider_runtime.close()
