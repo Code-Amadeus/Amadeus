@@ -275,6 +275,37 @@ export const catalogGroups: CatalogGroup[] = [
           "ja-JP"
         ]
       },
+      "AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Subtitle translation language",
+          "zh-CN": "字幕翻译语言"
+        },
+        "description": {
+          "en-US": "Shared by Chat and ordinary Wallpaper subtitles. VN subtitles keep their own translation policy.",
+          "zh-CN": "Chat 和普通壁纸字幕共用；VN 字幕保持独立的翻译策略。"
+        },
+        "default": "zh-CN",
+        "scope": "session",
+        "runtime_key": "subtitle_translation_language",
+        "options": [
+          {
+            "value": "zh-CN",
+            "label": {
+              "en-US": "Simplified Chinese",
+              "zh-CN": "简体中文"
+            }
+          },
+          {
+            "value": "en-US",
+            "label": {
+              "en-US": "English",
+              "zh-CN": "English"
+            }
+          }
+        ],
+        "example_active": true
+      },
       "AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED": {
         "type": "boolean",
         "title": {
@@ -283,8 +314,8 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": false,
         "description": {
-          "en-US": "Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history.",
-          "zh-CN": "在完成的日语助手消息下显示简体中文。仅用于显示，不会写入对话历史。"
+          "en-US": "Show translations below completed Japanese assistant messages in the selected subtitle language. Display-only; never added to conversation history.",
+          "zh-CN": "在完成的日语助手消息下显示所选语言的译文。仅用于显示，不会写入对话历史。"
         },
         "scope": "session",
         "runtime_key": "chat_translation_subtitles_enabled",
