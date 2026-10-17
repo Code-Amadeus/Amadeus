@@ -165,26 +165,29 @@ class PreTranslationCache:
         self._translate_fn = translate_fn
 
     def set_translate_fn(self, translate_fn: TranslateFn) -> None:
-        """在事件循环启动后注入翻译函数。"""
+        """Bind a translation policy; cached results belong to the old policy."""
         self._translate_fn = translate_fn
+        self.cache.clear()
 
     async def start_translation(self, sentence_id: str, japanese_text: str) -> None:
         normalized = japanese_text.strip()
+        entry = {"chinese": "", "status": "translating"}
         async with self.lock:
-            self.cache[normalized] = {"chinese": "", "status": "translating"}
-        asyncio.create_task(self._translate_task(normalized))
+            self.cache[normalized] = entry
+        # Capture both the policy and its entry. A late completion cannot write
+        # into a replacement entry after a language switch or repeated sentence.
+        asyncio.create_task(self._translate_task(normalized, entry, self._translate_fn))
         logger.info(
             "[PreTranslationCache] started: %s -> %s",
             sentence_id,
             protected_text(normalized, limit=30),
         )
 
-    async def _translate_task(self, japanese_text: str) -> None:
-        if self._translate_fn is None:
+    async def _translate_task(self, japanese_text: str, entry: dict, translate_fn: TranslateFn | None) -> None:
+        if translate_fn is None:
             logger.warning("[PreTranslationCache] translate_fn is not injected; translation skipped")
             async with self.lock:
-                if japanese_text in self.cache:
-                    self.cache[japanese_text]["status"] = "failed"
+                entry["status"] = "failed"
             return
         try:
             logger.info(
@@ -193,25 +196,22 @@ class PreTranslationCache:
             )
             try:
                 chinese_text = await asyncio.wait_for(
-                    self._translate_fn(japanese_text), timeout=12.0
+                    translate_fn(japanese_text), timeout=12.0
                 )
             except asyncio.TimeoutError:
                 async with self.lock:
-                    if japanese_text in self.cache:
-                        self.cache[japanese_text]["status"] = "translating"
+                    entry["status"] = "translating"
                 return
             async with self.lock:
-                if japanese_text in self.cache:
-                    self.cache[japanese_text]["chinese"] = chinese_text
-                    self.cache[japanese_text]["status"] = "completed"
+                entry["chinese"] = chinese_text
+                entry["status"] = "completed"
             logger.info(
                 f"[PreTranslationCache] completed: '{japanese_text[:30]}...' -> '{chinese_text[:30]}...'"
             )
         except Exception as e:
             async with self.lock:
-                if japanese_text in self.cache:
-                    self.cache[japanese_text]["chinese"] = "translation failed"
-                    self.cache[japanese_text]["status"] = "failed"
+                entry["chinese"] = "translation failed"
+                entry["status"] = "failed"
             logger.error(
                 "[PreTranslationCache] failed: %s, %s",
                 protected_text(japanese_text, limit=30),
