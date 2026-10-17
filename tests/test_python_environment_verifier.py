@@ -105,6 +105,30 @@ def test_rocm_build_requires_the_fixed_hip_pair(monkeypatch) -> None:
         verifier._verify_torch_build("rocm")
 
 
+@pytest.mark.parametrize("version,cuda,hip,build", [
+    ("2.7.0+cpu", None, None, "cpu"),
+    ("2.6.0+cu124", "12.4", None, "cu124"),
+    ("2.7.0+cu128", "12.8", None, "cu128"),
+    ("2.9.1+rocm7.2.1", None, "7.2.53211", "rocm"),
+])
+def test_detects_each_locked_torch_build(monkeypatch, version, cuda, hip, build) -> None:
+    _torch(monkeypatch, version, version, cuda=cuda, hip=hip)
+    assert verifier._detect_torch_build() == build
+
+
+def test_macos_wheel_is_detected_as_the_shared_cpu_build(monkeypatch) -> None:
+    _torch(monkeypatch, "2.7.0", "2.7.0")
+    monkeypatch.setattr(verifier.platform, "system", lambda: "Darwin")
+    assert verifier._detect_torch_build() == "cpu"
+
+
+@pytest.mark.parametrize("version,cuda", [("2.7.0", None), ("2.7.0+cu126", "12.6")])
+def test_torch_outside_a_build_extra_belongs_to_no_tier(monkeypatch, version, cuda) -> None:
+    _torch(monkeypatch, version, version, cuda=cuda)
+    with pytest.raises(RuntimeError, match="not a locked build|unlocked CUDA"):
+        verifier._detect_torch_build()
+
+
 def test_dependency_check_targets_the_requested_interpreter(monkeypatch) -> None:
     monkeypatch.setattr(verifier.shutil, "which", lambda _: "uv.exe")
     assert verifier.dependency_check_command("selected/python.exe") == [

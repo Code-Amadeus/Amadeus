@@ -40,7 +40,7 @@ class Blocker:
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split('.')[0] in {'silero_vad', 'torch', 'torchaudio'}:
             self.calls += 1
-            raise ModuleNotFoundError('L2 package absent', name=fullname)
+            raise ModuleNotFoundError('T2 package absent', name=fullname)
 
 blocker = Blocker()
 sys.meta_path.insert(0, blocker)

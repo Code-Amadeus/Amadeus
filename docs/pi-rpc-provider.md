@@ -46,6 +46,45 @@ Pi's native model schema. Existing Amadeus Models UI endpoint settings are not
 automatically translated into Pi configuration. Do not put credentials in
 command-line args.
 
+The managed Pi extension retains the official legacy DeepSeek wire IDs
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`. At `session_start` and
+before each agent turn, only an unregistered current selection of either alias
+can copy the effective canonical `deepseek-flash` metadata through public
+`pi.setModel`. This happens before Pi converts images. No Provider is replaced,
+so native catalog caches and later native refreshes remain intact; configured
+endpoints, authentication and session defaults remain owned by Pi. Registered
+aliases and explicit native/extension Provider registrations take precedence.
+At the first eligible selection in a new Work, the extension reads only alias
+declaration presence from native `models.json`: an alias in `models` or
+`modelOverrides` disables automatic compatibility. The declaration snapshot is
+reused for that Work. If declarations cannot be read or parsed reliably, the
+registry reports an error (including an unrelated Provider), or the repair is
+unavailable or rejected, compatibility is skipped for that Work and Pi's native
+model selection is retained. A fixed warning is shown once without configuration
+contents; this optional repair does not emit a fatal extension error. No file is
+rewritten. Canonical models, Pro and other unknown IDs are unchanged. See DeepSeek's
+[alias compatibility](https://api-docs.deepseek.com/guides/codex) and
+[image input contract](https://api-docs.deepseek.com/guides/vision/).
+The initial native unknown-model warning may still appear because CLI selection
+precedes `session_start`. Changes to declarations or compatibility code require
+a new Pi Work/process; hot editing declarations and manual native `/reload`
+of an already corrected unregistered alias are not supported by this Host path.
+The extension does not trigger catalog or authentication refreshes. A successful
+MCP image tool result alone does not prove the model received or understood it.
+
+中文：维护的 Pi 扩展在 `session_start` 和每轮开始前，仅为当前选中且未注册的上述
+两个精确旧别名，经公开 `pi.setModel` 复用有效 canonical metadata，保留 wire ID，
+并在 Pi 转换图片之前生效。不替换 Provider，原生目录缓存和后续原生 refresh 不变，
+endpoint、认证、默认型号仍由 Pi 管理；已注册别名、显式 native/extension Provider
+优先。新 Work 首次符合条件时，仅读原生 `models.json` 中别名是否出现在 `models`
+或 `modelOverrides`，有声明便不自动兼容；本 Work 复用该声明快照。若声明无法可靠
+读取或解析、注册表报错（包括无关 Provider），或修补不可用、被拒绝，本 Work 跳过
+兼容修补并保留 Pi 原生选择，只提示一次不含配置内容的固定警告；这项可选修补不产生
+致命扩展错误。不改写文件。canonical、Pro 和其他未知型号不受影响。
+初始 CLI 选择早于 `session_start`，因此原生未知型号警告仍可能出现。配置声明或兼容
+代码变更须新建 Pi Work/进程；不支持热改声明，也不承诺手工 `/reload` 已修补未注册
+别名的语义。扩展不主动刷新目录或认证；工具返回图片成功不等于模型已接收或理解。
+
 For interactive Pi login against the same isolated configuration directory:
 
 ```powershell
@@ -281,6 +320,21 @@ disposal before force termination is considered. Tests verify direct server
 exit and sequential-session cleanup. This is not an OS sandbox or a guarantee
 that arbitrary descendants survive neither an abrupt Host/Pi crash nor forced
 termination; the native transport owns its process handling.
+
+### Cancellation and transport disposal / 取消与连接收尾
+
+An acknowledged native abort is the business cancellation result, not proof
+that the Pi/MCP transport has closed. PiAdapter completes and awaits its owned
+transport teardown even if permission-expiration publication fails or the Host
+cancels the producer task again. The original publication error or cancellation
+still propagates; successful disposal also releases the active-run/session
+registrations and signals the run's completion. EOF and the existing close
+deadline remain unchanged; this does not authorize replay or automatic approval.
+
+原生 abort 回执只证明业务取消，不等于 Pi/MCP 连接已经关闭。权限过期事件发布失败，
+或 Host 再次取消 producer 时，PiAdapter 仍等待本轮原连接完成收尾，再释放运行及会话
+登记并标记完成；原发布错误或取消继续向上传播。EOF 和原有关闭时限不变，不重派任务，
+不自动批准权限。真实进程与连接清理应与业务终态分别核验。
 
 Keep `package.json`, `package-lock.json` and the adapter's startup version check
 in sync. Install with `npm ci --ignore-scripts` in `agent_host/pi_runtime` (or the

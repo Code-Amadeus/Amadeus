@@ -31,7 +31,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/character_prompt_snapshots.json"
 VN_FIXTURE = ROOT / "tests/fixtures/vn_prompt_messages.json"
-BASELINE = "e56faa15890af54e66e15f465ed66449e1ee125b"
+BASELINE = "issue-227-shared-conditional-prompt-2026-10-16"
 PROVIDERS = ("browser", "codex", "openclaw")
 SYNTHETIC_ENV = {
     "WORK_CODING_PROVIDER": "codex",
@@ -419,15 +419,9 @@ def test_character_prompts_match_recorded_utf8_bytes(captured_prompts):
     expected = json.loads(FIXTURE.read_text(encoding="utf-8"))["prompts"]
     assert captured_prompts.keys() == expected.keys(), "snapshot coverage changed"
     for name, value in captured_prompts.items():
-        if name == "llama/preheat/messages":
-            old_messages = json.loads(expected[name])
-            new_messages = json.loads(value)
-            assert new_messages[1:] == old_messages[1:]
-            assert new_messages[0] == {"role": "system", "content": captured_prompts[
-                "main/en/base/intent=1,amend=1,retract=1"]}
-            assert new_messages[0] != old_messages[0]
-            continue
         assert value.encode("utf-8") == expected[name].encode("utf-8"), name
+    assert json.loads(captured_prompts["llama/preheat/messages"])[0] == {
+        "role": "system", "content": captured_prompts["main/en/base/intent=1,amend=1,retract=1"]}
 
 
 if __name__ == "__main__":

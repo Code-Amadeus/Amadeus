@@ -556,7 +556,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         if failure is None:
             reply = client.remote_llm_messages_query(
                 messages, on_text=on_text, visual_context=visual, response_observer=observed.append,
-                json_output=json_output,
+                json_output=json_output, temperature=0.7,
                 turn_id="timed-turn",
             )
             assert reply == "".join(parts)
@@ -569,9 +569,18 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         else:
             with pytest.raises(failure, match="stop this query"):
                 client.remote_llm_messages_query(messages, on_text=on_text, visual_context=visual,
-                    json_output=json_output, turn_id="timed-turn")
+                    json_output=json_output, temperature=0.7, turn_id="timed-turn")
             assert stream.consumed == 1
     assert len(calls) == 1
+    if backend in {"openai", "hybrid3"}:
+        # This adapter retains its existing sampling omission.
+        assert "temperature" not in calls[0]
+    else:
+        sampling = (calls[0]["config"] if backend == "gemini" else
+            json.loads(calls[0]["body"]) if backend in {"bedrock", "hybrid"} else
+            calls[0]["json"]["options"] if backend == "ollama" else
+            calls[0]["json"] if backend in local_backends or bearer else calls[0])
+        assert sampling["temperature"] == 0.7
     assert stream.closed
     timing = [record.getMessage() for record in caplog.records
         if "[MODEL-LATENCY]" in record.getMessage()]

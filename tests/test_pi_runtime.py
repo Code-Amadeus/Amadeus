@@ -319,11 +319,14 @@ sys.path.insert(0, {str(RUNTIME_DIR.parents[1])!r})
 from agent_host import pi_web_tools
 from mcp import Client
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 server = MCPServer("fixture-search")
 @server.tool()
 async def web_search_exa(query: str, objective: str, numResults: int = 5) -> str:
     if Path({str(fail)!r}).exists():
-        raise RuntimeError("Search rate limited")
+        if Path({str(fail)!r}).read_text() == "unexpected":
+            raise RuntimeError("synthetic-internal-detail")
+        raise ToolError("Search rate limited")
     return "Title: Requested article — Author Chen / 中文结果\\nURL: " + query
 @asynccontextmanager
 async def connection(spec):
@@ -372,10 +375,15 @@ async def test_real_pi_search_read_open_without_browser_provider(native_pi, tmp_
     assert json.loads(opened.read_text()) == {"url": url + "/article"}
 
 
-async def test_real_pi_search_rate_limit_is_tool_failure_and_conversation_continues(native_pi, tmp_path, local_search_mcp):
+@pytest.mark.parametrize("failure_kind,visible_message", [
+    ("rate-limit", "Search rate limited"), ("unexpected", None),
+])
+async def test_real_pi_search_tool_failure_is_reported_and_conversation_continues(
+    native_pi, tmp_path, local_search_mcp, failure_kind, visible_message,
+):
     adapter, requests, selected, _ = native_pi
     _, fail = local_search_mcp
-    fail.touch()
+    fail.write_text(failure_kind)
     selected.update(tool="web_search", args={"query": "an article", "objective": "Find original sources"})
     events = []
 
@@ -387,7 +395,11 @@ async def test_real_pi_search_rate_limit_is_tool_failure_and_conversation_contin
     assert result.status == "done", result
     output, = [event for event in events if event.type == "tool.result"]
     assert not output.payload["ok"]
-    assert "Search rate limited" in json.dumps(requests[-1]["messages"])
+    transcript = json.dumps(requests[-1]["messages"])
+    # Expected service failures are public; unhandled server details stay private.
+    if visible_message:
+        assert visible_message in transcript
+    assert "synthetic-internal-detail" not in transcript
 
 
 async def test_typecheck_dependencies_do_not_enable_optional_browser_renderer(native_pi, tmp_path):

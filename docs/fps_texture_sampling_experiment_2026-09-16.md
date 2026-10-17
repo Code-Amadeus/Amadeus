@@ -2,7 +2,9 @@
 
 日期：2026-09-16（本地时区 Pacific/Auckland；产物目录使用 UTC）。
 
-后续发布开关：`RENDER_TEXTURE_SAMPLING=false`（默认）。下述 A/B 是开启采样时的实验结果；
+> 历史记录：当前标准 60 FPS 档下 `RENDER_TEXTURE_SAMPLING` 默认开启，`false` 仅作显式覆盖，见 [配置说明](../config/README.md)。下文的“默认关闭”描述实验当时的状态。
+
+当时的发布开关：`RENDER_TEXTURE_SAMPLING=false`（默认）。下述 A/B 是开启采样时的实验结果；
 默认关闭保留原版全帧加载、每 tick 最多推进 4 个源帧、按第 0 帧通知循环结束，以及原有 hold 行为。
 启用后才应用本文的采样和时钟修正。省电档本身不会自动启用实验。
 
@@ -119,10 +121,6 @@ foreach ($probeMode in @('baseline', 'sampled')) {
 ## 本机最终证据
 
 - [随源码保存的汇总证据](evidence/fps-texture-sampling-2026-09-16.json)
-- [A 原版原始数据](../output/diagnostics/fps-textures/2026-09-15T16-10-06.489Z-baseline-30/samples.json)
-- [B 时间采样原始数据](../output/diagnostics/fps-textures/2026-09-15T16-13-14.403Z-sampled-30/samples.json)
-- [汇总数据](../output/diagnostics/fps-textures/summary.json)
-- [A 原版动画样片](../output/diagnostics/fps-textures/2026-09-15T16-10-06.489Z-baseline-30/animation.webm)
-- [B 时间采样动画样片](../output/diagnostics/fps-textures/2026-09-15T16-13-14.403Z-sampled-30/animation.webm)
+- 原始采样、汇总与动画样片位于本机 `output/diagnostics/fps-textures/`（`2026-09-15T16-10-06.489Z-baseline-30`、`2026-09-15T16-13-14.403Z-sampled-30`），该目录被 Git 忽略，未随源码提交。
 
 样片顺序为 idle 约 4 秒、说话 4 秒、停说 3 秒、smile 3 秒；无真实音频。需进一步做可见壁纸宿主、实际语音、更多快速动作与 16GB 机器长时间体验检查，才能决定是否进入正式发布。

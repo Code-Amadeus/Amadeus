@@ -149,7 +149,7 @@ for _cuda_ver in ("v12.1", "v12.2", "v12.4", "v12.6"):
         os.add_dll_directory(_cuda_bin)
         break
 # Eager-load onnxruntime before the torchmetrics chain on local-model installs
-# (CUDA DLL ordering). It is a T2b (local-cu124) dependency: L1 installs skip
+# (CUDA DLL ordering). It is a T4 embedded (build cu124) dependency: T1 installs skip
 # the preload. Supported absence (ModuleNotFoundError naming onnxruntime
 # itself) is skipped; a present-but-broken install surfaces instead of
 # masquerading as absence.
@@ -1785,7 +1785,9 @@ async def bootstrap(port: int = 17777) -> None:
                 if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else "",
             json_output=(source_kind not in ("provider", "host_receipt")
                 if json_output is None else json_output),
-            on_text=on_text, visual_context=visual_context, temperature=0.0,
+            on_text=on_text, visual_context=visual_context,
+            temperature=(settings.COOPERATIVE_CHAT_TEMPERATURE
+                if source_kind in ("user", "provider", "host_receipt") else 0.0),
             max_tokens=max(1, int(settings.COOPERATIVE_CHAT_QUERY_MAX_TOKENS)),
             timeout=max(1.0, float(settings.COOPERATIVE_CHAT_QUERY_TIMEOUT_S)))
 

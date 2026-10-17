@@ -105,7 +105,7 @@ def main() -> None:
                    TTS_REF_AUDIO_JA=str(args.reference), TTS_REF_AUDIO_EN=str(args.reference),
                    TTS_REF_TEXT_JA=args.reference_text, TTS_REF_TEXT_EN=args.reference_text,
                    ENABLE_CUDA_GRAPH=graph, ENABLE_CUDA_GRAPH_PRECAPTURE=graph,
-                   TTS_T2S_FLASH_ATTN="0", BIGVGAN_USE_CUDA_KERNEL="0", TTS_STARTUP_INFERENCE_WARMUP="0")
+                   TTS_T2S_FLASH_ATTN="0", BIGVGAN_USE_CUDA_KERNEL="0")
         request = {"type": "infer_stream", "request_id": "rocm-tutorial-test", "request": {
             "text": args.text, "language": args.language, "reference_language": args.language,
             "reference_audio": str(args.reference), "reference_text": args.reference_text,

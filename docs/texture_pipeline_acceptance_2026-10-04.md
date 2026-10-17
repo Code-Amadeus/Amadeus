@@ -1,5 +1,7 @@
 # 纹理管线：实现与自动验收记录
 
+> 历史记录：PR #155 已以 `f306bc1` 合入；最终采用的方案见 [纹理缓存实现](texture_cache_implementation_2026-10-05.md)。下文的 draft 状态与“均未采用”结论仅反映 2026-10-04 时点。
+
 修订日期：2026-10-04。原主线基线为 `0e7b4840fc4dd7d036b5c76532af5becedd0ed13`。当前实现位于 PR #155 的 `codex/texture-pipeline-draft` 分支；后续修正在独立 worktree 完成。主目录和 main 未随本次审查修正而切换或更新。
 
 **状态：默认仍为 2 GiB 合计预算。恢复环境后补齐了 main、当前 PR、历史片段保留和 4 GiB 四组同 eGPU 的 600 秒对照，见第 7 节。当前 PR 明显减少内存与长帧，但 CPU 高于 main；两个实验方案都未直接采用。PR 保持 draft。**

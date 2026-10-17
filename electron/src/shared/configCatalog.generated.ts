@@ -660,6 +660,33 @@ export const catalogGroups: CatalogGroup[] = [
     "apply": "backend_restart"
   },
   {
+    "id": "chat_sampling",
+    "title": {
+      "en-US": "Main Chat sampling",
+      "zh-CN": "主对话采样"
+    },
+    "description": {
+      "en-US": "Environment configuration for role replies. Planner and control decisions keep their own sampling.",
+      "zh-CN": "角色回复的环境变量配置。规划和控制决策保留各自的采样设置。"
+    },
+    "desktop": false,
+    "apply": "backend_restart",
+    "config": {
+      "COOPERATIVE_CHAT_TEMPERATURE": {
+        "type": "number",
+        "title": {
+          "en-US": "Role reply temperature",
+          "zh-CN": "角色回复温度"
+        },
+        "default": 0.7,
+        "min": 0,
+        "max": 2,
+        "step": 0.1,
+        "example_active": true
+      }
+    }
+  },
+  {
     "id": "deepseek",
     "title": {
       "en-US": "DeepSeek",
@@ -935,8 +962,7 @@ export const catalogGroups: CatalogGroup[] = [
         "control": "number",
         "min": 1,
         "step": 1,
-        "example_active": true,
-        "example": "12",
+        "example_active": false,
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"
@@ -954,8 +980,7 @@ export const catalogGroups: CatalogGroup[] = [
         "control": "number",
         "min": 0,
         "step": 1,
-        "example_active": true,
-        "example": "0",
+        "example_active": false,
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"
@@ -973,8 +998,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "可选的 nvidia-smi 编号，例如 1。留空以自动选择可见设备。"
         },
         "default": "",
-        "example_active": true,
-        "example": "# optional nvidia-smi indices; blank = no filtering",
+        "example_active": false,
+        "example": "1",
         "visible_when": {
           "LOCAL_LLM_TYPE": [
             "llama_server"

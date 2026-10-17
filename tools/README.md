@@ -4,13 +4,13 @@ Start with [CONTRIBUTING](../CONTRIBUTING.md). This index describes entry points
 it does not imply every historical smoke has been qualified on current main.
 Modules may also be imported by tests or other tools.
 
-- Deterministic checks use the locked L1 environment: `uv run --locked --no-sync python tools/run_tests.py`, `python -m ruff check .`, and `python tools/verify_python_environment.py --profile ci`.
+- Deterministic checks use the locked T1 environment: `uv run --locked --no-sync python tools/run_tests.py`, `python -m ruff check .`, and `python tools/verify_python_environment.py --profile ci`.
 - [maintainability_ratchet.py](maintainability_ratchet.py) scans source without models or Git metadata. `--update` only shrinks existing import/environment inventories. R3 retains the explicitly deferred VN context write; R4 checks runtime Python including GPT-SoVITS and excludes tests/tools.
 - Live smoke/E2E scripts can start processes, connect to applications or call configured Providers. Read their module documentation and arguments before choosing a journey. They are not all part of the model-less suite.
 - Audio/model tools require the corresponding optional installation profile and local assets. This index does not establish device or model qualification.
 - [probes/](probes/) contains experimental evidence scripts. [architecture/](architecture/) owns generated architecture views. Bundled upstream helpers retain their provenance and optional dependencies.
 
-Inspected on 2026-10-11. References identify guide/CI mentions, not successful
+Inspected on 2026-10-15. References identify guide/CI mentions, not successful
 execution. Tools without current validation evidence remain unverified until
 their specific journey is run.
 
@@ -20,7 +20,7 @@ their specific journey is run.
 | --- | --- | --- |
 | [build_art_collection.py](build_art_collection.py) | Extend an existing art download collection with an independently optional Lite ZIP. | [docs/external_asset_bundles.md](../docs/external_asset_bundles.md) |
 | [build_source_release.py](build_source_release.py) | Check and assemble a deterministic Amadeus public source archive. | [.github/workflows/source-release.yml](../.github/workflows/source-release.yml) |
-| [character_rag.py](character_rag.py) | Build or inspect the optional character index: python -m tools.character_rag. | [.github/workflows/character-rag.yml](../.github/workflows/character-rag.yml); [docs/configuration_convergence_plan_2026-10-10.md](../docs/configuration_convergence_plan_2026-10-10.md) |
+| [character_rag.py](character_rag.py) | Build or inspect the optional character index: python -m tools.character_rag. | [.github/workflows/character-rag.yml](../.github/workflows/character-rag.yml); [docs/character_rag.md](../docs/character_rag.md) |
 | [check_third_party_provenance.py](check_third_party_provenance.py) | Validate the checked-in third-party provenance inventory. | [.github/workflows/python-linux.yml](../.github/workflows/python-linux.yml); [.github/workflows/source-release.yml](../.github/workflows/source-release.yml) |
 | [external_assets.py](external_assets.py) | Build, verify, and install separately distributed Amadeus runtime assets. | [README.md](../README.md); [README_ZH.md](../README_ZH.md) |
 | [package_companion_character.py](package_companion_character.py) | Package approved, generated small portraits; no runtime authoring-workspace dependency. | [docs/companion-lite-2026-09-19.md](../docs/companion-lite-2026-09-19.md); [docs/external_asset_bundles.md](../docs/external_asset_bundles.md) |
@@ -31,6 +31,9 @@ their specific journey is run.
 | [verify_clean_python_install.ps1](verify_clean_python_install.ps1) | See source for purpose and prerequisites; not independently qualified. | [docs/install_profiles.md](../docs/install_profiles.md) |
 | [verify_python_environment.py](verify_python_environment.py) | Check that an installed environment matches an Amadeus release profile. | [.github/workflows/python-linux.yml](../.github/workflows/python-linux.yml); [.github/workflows/python-local-models.yml](../.github/workflows/python-local-models.yml) |
 | [vn_portrait_overlay_lite.py](vn_portrait_overlay_lite.py) | Standalone VN portrait window using the bundled Companion Lite assets. | [docs/vn-shared-companion-2026-09-19.md](../docs/vn-shared-companion-2026-09-19.md); [docs/vn-text-sources.md](../docs/vn-text-sources.md) |
+| [check_extension_protocol.py](check_extension_protocol.py) | Check the pinned extension protocol copies; optionally verify the canonical Git source. | [docs/extension_host_profile_v0.1.md](../docs/extension_host_profile_v0.1.md) |
+| [extension_package.py](extension_package.py) | Static extension package validation CLI (JSON output). | [docs/extension_host_profile_v0.1.md](../docs/extension_host_profile_v0.1.md) |
+| [rocm_sidecar/](rocm_sidecar/) | `verify_gpu.py` and `verify_sidecar.py` for the experimental Windows ROCm build. | [tools/rocm_sidecar/README.md](rocm_sidecar/README.md) |
 | [watch_chat_events.py](watch_chat_events.py) | See source for purpose and prerequisites; not independently qualified. | [docs/barge_in_aec_interrupt_notes.md](../docs/barge_in_aec_interrupt_notes.md) |
 
 ## Smoke, journey and evaluation tools
@@ -101,6 +104,8 @@ their specific journey is run.
 | [ttfp_test.py](ttfp_test.py) | Benchmark first-sentence TTS latency across early-cut and BigVGAN kernel modes. | No current guide/CI entry reference found. |
 | [tts_latency_report.py](tts_latency_report.py) | Parse app logs and report end-to-end first-sentence latency for Bedrock runs. | No current guide/CI entry reference found. |
 | [tts_text_processor.py](tts_text_processor.py) | TTS 专用文本处理模块。 | No current guide/CI entry reference found. |
+| [asr/](asr/) | Qwen ASR replay and TTS-coexistence benchmarks. | [tools/asr/README_qwen_replay.md](asr/README_qwen_replay.md) |
+| [test_sentence_prefix/ab_test.py](test_sentence_prefix/ab_test.py) | Cross-sentence speech-token prefix A/B test. | No current guide/CI entry reference found. |
 | [verify_flash_attention.py](verify_flash_attention.py) | Explicit FlashAttention import / NVIDIA kernel probe; no models or downloads. | [docs/torch27_candidates.md](../docs/torch27_candidates.md) |
 
 ## Bundled upstream helpers
@@ -131,4 +136,5 @@ their specific journey is run.
 | [validate_auip_entry.py](validate_auip_entry.py) | Boot one completed AUIP HTML entry in an isolated real browser page. | No current guide/CI entry reference found. |
 | [validate_auip_manifest.py](validate_auip_manifest.py) | Validate an Amadeus AUIP v0 manifest. | No current guide/CI entry reference found. |
 | [watch_chat_events.bat](watch_chat_events.bat) | See source for purpose and prerequisites; not independently qualified. | No current guide/CI entry reference found. |
+| [i18n/](i18n/) | `scan_i18n.py` and `locale_diff.py` for locale string inventory and diffs. | No current guide/CI entry reference found. |
 | [ws_request.py](ws_request.py) | Send one backend WebSocket request from a batch file. | No current guide/CI entry reference found. |
