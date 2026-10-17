@@ -44,6 +44,7 @@ export function sessionBanner(launch: Record<string, unknown>, runtime: Record<s
   if (state === 'stopping') return { title: 'Ending session…', detail: 'Releasing the connection and companion controls.', tone: 'waiting' }
   if (state !== 'active') return { title: setupReady ? 'Ready to connect' : 'Finish game setup', detail: setupReady ? 'Start the game connection, or test a few lines first.' : 'Add a game and connect its text source to begin.', tone: 'idle' }
   if (game.status === 'exited') return { title: 'Game has closed', detail: 'End this session, then start again when you are ready.', tone: 'error' }
+  if (bridge.status === 'error') return { title: 'Game connection failed', detail: String(bridge.error || 'Review the error below, then retry or edit this game.'), tone: 'error' }
   if (hook.status === 'exited') return { title: 'Text source has closed', detail: 'Reconnect to the game to resume text capture.', tone: 'error' }
   if (bridge.status !== 'running') return { title: 'Text connection interrupted', detail: 'Waiting for the text source. Check connection details or reconnect.', tone: 'waiting' }
   if (!Number(bridge.lineCount)) return { title: 'Connected · waiting for game text', detail: 'Advance a dialogue line. Menus and pauses may produce no text.', tone: 'waiting' }

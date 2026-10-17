@@ -1,12 +1,20 @@
 """Window-only capture: ownership, buffer lifetime and failure cleanup."""
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import Mock
 import sys
 
 import numpy as np
 import pytest
+import psutil
 
 from server import window_capture
+
+
+@pytest.fixture(autouse=True)
+def prepared_native_helper(monkeypatch):
+    # Worker tests replace Popen; isolate build subprocesses from that mock.
+    monkeypatch.setattr("server.macos_capture.ensure_macos_helper", lambda: Path("/synthetic/helper"))
 
 
 def capture_fixture(monkeypatch, mode, pixel=(15, 45, 120, 255)):
@@ -51,7 +59,8 @@ def test_native_ui_preview_preserves_transparency_and_unpremultiplies_colors(mon
 
 
 @pytest.mark.parametrize("preserve_alpha,mode", [(False, "RGB"), (True, "RGBA")])
-def test_worker_roundtrip_keeps_game_rgb_default_and_optional_ui_alpha(monkeypatch, preserve_alpha, mode):
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_worker_roundtrip_keeps_game_rgb_default_and_optional_ui_alpha(monkeypatch, preserve_alpha, mode, platform):
     import io
     from PIL import Image
     data = io.BytesIO()
@@ -59,11 +68,27 @@ def test_worker_roundtrip_keeps_game_rgb_default_and_optional_ui_alpha(monkeypat
     process = Mock(returncode=0)
     process.communicate.return_value = (data.getvalue(), b"")
     spawn = Mock(return_value=process)
+    monkeypatch.setattr(window_capture.sys, "platform", platform)
     monkeypatch.setattr(window_capture.subprocess, "Popen", spawn)
     with window_capture.capture_window_frame(123, preserve_alpha=preserve_alpha) as frame:
         assert frame.mode == mode
         assert frame.getpixel((0, 0)) == ((119, 79, 39, 128) if preserve_alpha else (119, 79, 39))
     assert ("--preserve-alpha" in spawn.call_args.args[0]) == preserve_alpha
+
+
+def test_mac_worker_carries_window_and_process_identity(monkeypatch):
+    import io
+    from PIL import Image
+    data = io.BytesIO()
+    Image.new("RGB", (1, 1)).save(data, format="PNG")
+    process = Mock(returncode=0, communicate=Mock(return_value=(data.getvalue(), b"")))
+    spawn = Mock(return_value=process)
+    monkeypatch.setattr(window_capture.sys, "platform", "darwin")
+    monkeypatch.setattr(window_capture.subprocess, "Popen", spawn)
+    with window_capture.capture_window_frame(123, expected_pid=42):
+        args = spawn.call_args.args[0]
+        assert args[args.index("--window-id") + 1] == "123"
+        assert args[args.index("--pid") + 1] == "42"
 
 
 @pytest.mark.parametrize("mode,message", [("closed", "closed"), ("timeout", "in time")])
@@ -95,7 +120,7 @@ def test_timed_out_capture_cleans_up_its_worker_tree(monkeypatch):
     process.communicate.side_effect = [window_capture.subprocess.TimeoutExpired("capture", 8), (b"", b"")]
     monkeypatch.setattr(window_capture.subprocess, "Popen", Mock(return_value=process))
     child = Mock()
-    monkeypatch.setattr("psutil.Process", Mock(return_value=Mock(children=Mock(return_value=[child]))))
+    monkeypatch.setattr(psutil, "Process", Mock(return_value=Mock(children=Mock(return_value=[child]))))
     with pytest.raises(RuntimeError, match="timed out"):
         window_capture.capture_window_frame(123)
     child.kill.assert_called_once()

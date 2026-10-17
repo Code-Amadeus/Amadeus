@@ -22,6 +22,8 @@ class VNLaunchHandler(RequestHandler):
         Method.VN_LAUNCH_CAPTURE,
         Method.VN_LAUNCH_OVERLAY,
         Method.VN_LAUNCH_INSPECT,
+        Method.VN_OCR_WINDOWS,
+        Method.VN_OCR_PREVIEW,
     ]
 
     def __init__(self) -> None:
@@ -72,4 +74,19 @@ class VNLaunchHandler(RequestHandler):
             return await manager.capture()
         if method == Method.VN_LAUNCH_OVERLAY:
             return await manager.set_overlay(params)
+        if method == Method.VN_OCR_WINDOWS:
+            from server.vn_text_sources import list_macos_windows
+            return {"windows": await list_macos_windows()}
+        if method == Method.VN_OCR_PREVIEW:
+            from server.vn_text_sources import capture_macos_window_preview
+            window_id = int(params.get("windowId") or params.get("window_id") or 0)
+            window_name = str(params.get("windowName") or params.get("window_name") or "")
+            app_name = str(params.get("appName") or params.get("app_name") or "")
+            pid = int(params.get("pid") or 0)
+            return await capture_macos_window_preview(
+                window_id=window_id or None,
+                window_name=window_name or "",
+                app_name=app_name or "",
+                pid=pid or None,
+            )
         return None

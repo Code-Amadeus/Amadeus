@@ -410,8 +410,15 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     'vn.line': 'Game text', 'vn.reaction': 'Companion', 'vn.summary': 'Story summary',
     'vn.player.event': 'You', 'vn.error': 'Companion error',
   }
-  const sourceReady = !!activeProfile && (!activeProfile.launchGame || !!activeProfile.gameExists)
-    && (activeProfile.textSource === 'luna' ? !!activeProfile.lunaWsUrl : !!(activeProfile.gameExists && activeProfile.agentExists && activeProfile.hookExists))
+  const sourceReady = !!activeProfile && (
+    activeProfile.textSource === 'ocr'
+      ? Boolean(activeProfile.ocrWindowId || activeProfile.ocrWindowName || activeProfile.ocrAppName)
+      : (!activeProfile.launchGame || !!activeProfile.gameExists) && (
+          activeProfile.textSource === 'luna'
+            ? !!activeProfile.lunaWsUrl
+            : !!(activeProfile.gameExists && activeProfile.agentExists && activeProfile.hookExists)
+        )
+  )
   const lineCount = launch.bridge?.lineCount || 0
   const reasonText = (reason?: string, enabled = false) => t(capabilityReason(reason, enabled))
   const banner = sessionBanner(launch, runtime, connected, sourceReady)
@@ -472,7 +479,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           {!profiles.length && <option value="">{t('Add your first game')}</option>}
           {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
         </select>
-        {activeProfile && <span>{t(activeProfile.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')} · {activeProfile.textSource === 'luna' ? 'Luna' : 'Agent'}</span>}
+        {activeProfile && <span>{t(activeProfile.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')} · {activeProfile.textSource === 'ocr' ? 'macOS Vision OCR' : activeProfile.textSource === 'luna' ? 'Luna' : 'Agent'}</span>}
       </div>
       <div className="vn-game-actions">
         <button onClick={() => setEditor({})} disabled={!connected || busy || isActive}>{t('Add game')}</button>
@@ -587,6 +594,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       <details className="vn-raw-events"><summary>{t('Raw events')}</summary>{events.map(item => <div key={item.id}><time>{item.time}</time> <code>{item.method}</code><pre>{item.raw}</pre></div>)}</details>
       </div>
     </details>
-    {editor && <VNProfileEditor initial={editor.initial} capabilityPresets={capabilityPresets} overlayAvailable={overlayAvailable} agentExe={agentExe} inspectGame={gameExe => send('vn.launch.inspect', { gameExe })} onClose={() => setEditor(null)} onSave={saveProfile} />}
+    {editor && <VNProfileEditor initial={editor.initial} capabilityPresets={capabilityPresets} overlayAvailable={overlayAvailable} agentExe={agentExe} inspectGame={gameExe => send('vn.launch.inspect', { gameExe })} send={send} onClose={() => setEditor(null)} onSave={saveProfile} />}
   </div>
 }

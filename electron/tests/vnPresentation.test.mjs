@@ -27,3 +27,8 @@ test('zero text, lost process, lost source and unavailable model never claim liv
   assert.notEqual(sessionBanner(launch, { ...runtime, llm: { configured: false } }, true, true).tone, 'live')
   assert.equal(sessionBanner(launch, { ...runtime, preferences: { commentary_paused: true } }, true, true).title, 'Following quietly')
 })
+test('native source failure shows its cause even after its process exits', () => {
+  const banner = sessionBanner({ status: 'active', hook: { status: 'exited' }, bridge: { status: 'error', error: 'Screen Recording permission required' } }, {}, true, true)
+  assert.equal(banner.tone, 'error')
+  assert.equal(banner.detail, 'Screen Recording permission required')
+})

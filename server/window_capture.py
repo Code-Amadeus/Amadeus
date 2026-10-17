@@ -13,13 +13,44 @@ import sys
 from threading import Event
 
 
-def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool = False):
+def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool = False,
+                         expected_pid: int | None = None):
     """Isolate the native capture lifetime and faults from the long-running host."""
     from PIL import Image
     import psutil
 
     if not hwnd:
         raise RuntimeError("The game window is unavailable.")
+    if sys.platform == "darwin":
+        from server.macos_capture import ensure_macos_helper
+        binary = ensure_macos_helper()
+        args = [str(binary), "--capture-only", "--window-id", str(hwnd)]
+        if expected_pid:
+            args.extend(["--pid", str(expected_pid)])
+        if preserve_alpha:
+            args.append("--preserve-alpha")
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            data, error = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                children = psutil.Process(process.pid).children(recursive=True)
+            except Exception:
+                children = []
+            for child in reversed(children):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+            process.kill()
+            process.communicate()
+            raise RuntimeError("Game-window capture timed out. Restore the game and try again.") from exc
+        if process.returncode or not data:
+            detail = error.decode("utf-8", errors="replace").strip()[-500:]
+            raise RuntimeError(f"Game-window capture failed ({process.returncode}). {detail}")
+        with Image.open(io.BytesIO(data)) as image:
+            return image.convert("RGBA" if preserve_alpha else "RGB")
+
     args = [sys.executable, str(Path(__file__).resolve()), str(hwnd)]
     if preserve_alpha:
         args.append("--preserve-alpha")
