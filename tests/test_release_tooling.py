@@ -348,6 +348,16 @@ def test_gpt_sovits_release_boundary_excludes_optional_or_unverified_material() 
     ]
 
 
+def test_optional_japanese_dictionary_sources_and_notices_have_separate_release_boundaries() -> None:
+    policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
+    sources = ["assets/text/ja/english/userdict.csv", "assets/text/ja/user.csv"]
+    code_and_notices = ["tools/data/japanese_dictionary_corrections.csv", "tools/audit_japanese_dictionary.py",
+                        "LICENSES/JAPANESE-DICTIONARY.md", "docs/japanese_pronunciation_dictionary.md"]
+    selected, excluded = select_paths([*sources, *code_and_notices], policy)
+    assert excluded == sources
+    assert selected == sorted(code_and_notices)
+
+
 def test_gpt_sovits_provenance_records_immediate_upstream_reliance() -> None:
     manifest = json.loads((ROOT / "LICENSES" / "provenance.json").read_text(encoding="utf-8"))
     components = {component["id"]: component for component in manifest["components"]}

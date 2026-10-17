@@ -11,6 +11,7 @@ TTS 专用文本处理模块。
 """
 
 import re
+import unicodedata
 
 # ---------------------------------------------------------------------------
 # 情绪预设
@@ -47,11 +48,11 @@ _LETTER_TO_KATAKANA: dict[str, str] = {
     'Y': 'ワイ',   'Z': 'ゼット',
 }
 
-# 常见缩写 / 品牌名特殊映射（按长度降序排列，确保长的先匹配）
+# 现有缩写 / 品牌名读音；只匹配完整词，大小写变体共用同一条记录。
 _SPECIAL_CASES: dict[str, str] = {
     # Consensus / distributed systems terms
-    'Paxos': 'パクソス', 'PAXOS': 'パクソス', 'paxos': 'パクソス',
-    'Raft': 'ラフト', 'RAFT': 'ラフト', 'raft': 'ラフト',
+    'Paxos': 'パクソス',
+    'Raft': 'ラフト',
     # 技术缩写
     'AI': 'エーアイ', 'GPT': 'ジーピーティー', 'CPU': 'シーピーユー',
     'GPU': 'ジーピーユー', 'API': 'エーピーアイ', 'URL': 'ユーアールエル',
@@ -75,8 +76,7 @@ _SPECIAL_CASES: dict[str, str] = {
     'OpenAI': 'オープンエーアイ', 'ChatGPT': 'チャットジーピーティー',
     'Gemini': 'ジェミニ', 'Claude': 'クロード', 'Copilot': 'コパイロット',
     'GitHub': 'ギットハブ', 'Docker': 'ドッカー',
-    'Bilibili': 'ビリビリ', 'bilibili': 'ビリビリ', 'BiliBili': 'ビリビリ',
-    'BILIBILI': 'ビリビリ',
+    'Bilibili': 'ビリビリ',
     'Windows': 'ウィンドウズ', 'Android': 'アンドロイド', 'Linux': 'リナックス',
     'Bluetooth': 'ブルートゥース', 'Google': 'グーグル', 'Apple': 'アップル',
     'Microsoft': 'マイクロソフト', 'Amazon': 'アマゾン', 'Spotify': 'スポティファイ',
@@ -88,33 +88,34 @@ _SPECIAL_CASES: dict[str, str] = {
     'Figma': 'フィグマ', 'PS': 'ピーエス', 'AE': 'エーイー',
 }
 
-# 按长度降序排列，确保长缩写先匹配
-_SPECIAL_CASES_SORTED = sorted(_SPECIAL_CASES.items(), key=lambda x: len(x[0]), reverse=True)
-
-# 通用大写缩写正则（2-6 个大写字母，可带数字后缀）
-_ABBR_PATTERN = re.compile(r'\b[A-Z]{2,6}(?:[0-9]+[A-Z]*)?\b')
+# Japanese characters are word characters in Python, so \b cannot delimit an
+# initialism next to Japanese. Match complete Latin tokens instead; a known
+# spelling such as API must never replace a substring of CAPITAL.
+_LATIN_LETTERS = "A-Za-zＡ-Ｚａ-ｚ"
+_LATIN_TOKEN_PATTERN = re.compile(rf"[{_LATIN_LETTERS}]+(?:['’＇][{_LATIN_LETTERS}]+)*(?:[0-9０-９]+[{_LATIN_LETTERS}]*)?")
+_INITIALISM_PATTERN = re.compile(r"[A-Z]{2,6}(?:[0-9]+[A-Za-z]*)?")
+_SPECIAL_CASES_FOLDED = {word.casefold(): reading for word, reading in _SPECIAL_CASES.items()}
 
 
 def convert_english_abbreviations_to_katakana(text: str) -> str:
     """
     将英文缩写转换为片假名，使 TTS 逐字母正确朗读。
 
-    处理顺序：
-      1. 特殊映射（优先级最高，按长度降序）
-      2. 通用大写缩写（2-6 字母）逐字母转换
+    按完整英文词匹配；普通单词留给日语前端和可选词典处理。
     """
-    # 1. 特殊映射
-    for abbr, katakana in _SPECIAL_CASES_SORTED:
-        text = text.replace(abbr, katakana)
-
-    # 2. 通用大写缩写
     def _convert(match: re.Match) -> str:
+        token = unicodedata.normalize("NFKC", match.group(0))
+        known = _SPECIAL_CASES_FOLDED.get(token.casefold())
+        if known:
+            return known
+        if not _INITIALISM_PATTERN.fullmatch(token):
+            return token
         return "".join(
             _LETTER_TO_KATAKANA.get(ch.upper(), ch) if ch.isalpha() else ch
-            for ch in match.group(0)
+            for ch in token
         )
 
-    return _ABBR_PATTERN.sub(_convert, text)
+    return _LATIN_TOKEN_PATTERN.sub(_convert, text)
 
 
 def correct_pronunciation_for_tts(text: str) -> str:
@@ -125,7 +126,7 @@ def correct_pronunciation_for_tts(text: str) -> str:
       - 专有名词读音（如「牧瀬紅莉栖」→「牧瀬クリス」）
       - 英文缩写 → 片假名（调用 convert_english_abbreviations_to_katakana）
 
-    如需添加新的修正，在 replacements 字典中追加即可。
+    英文单词的读音修复应放在可选词典的数据中；此处保留现有名称兼容。
     """
     replacements = {
         "牧瀬紅莉栖": "牧瀬クリス",

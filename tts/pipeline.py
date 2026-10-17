@@ -133,7 +133,8 @@ def current_tts_epoch() -> int:
 
 
 def _prepare_synthesis_text(text: str) -> str:
-    return correct_pronunciation_for_tts(_strip_tts_fullwidth_parentheses(text)).strip()
+    prepared = _strip_tts_fullwidth_parentheses(text).strip()
+    return correct_pronunciation_for_tts(prepared) if TTS_OUTPUT_LANGUAGE == "日文" else prepared
 
 
 def _prepare_synthesis_request(text: str, is_first_sentence: bool = False, *, enhanced: bool = False):

@@ -19,6 +19,17 @@
   ],
   "external_packs": [
     {
+      "id": "japanese-pronunciation",
+      "display_name": "Japanese Pronunciation Extension",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["text/ja/english"],
+      "required": ["text/ja/english/userdict.csv", "text/ja/english/provenance.json",
+        "text/ja/english/NOTICE.md", "text/ja/english/GPT-SoVITS-MIT.txt",
+        "text/ja/english/CMUdict-BSD-2-Clause.txt", "text/ja/english/Amadeus-AGPL-3.0.txt"],
+      "validator": "japanese_dictionary"
+    },
+    {
       "id": "voice-kurisu-emotions",
       "display_name": "Kurisu V3 Emotion Reference Pack",
       "spec_version": 1,

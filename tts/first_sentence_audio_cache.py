@@ -77,7 +77,7 @@ class FirstSentenceAudioCache:
             output_language = current_tts_language_code()
         except Exception:
             output_language = "en" if TTS_OUTPUT_LANGUAGE == "英文" else "ja"
-        return {
+        payload = {
             "text": text,
             # Audio produced before this decoder invariant/guard revision may
             # already contain a collapsed long vowel.  Keep it out of the new
@@ -88,6 +88,10 @@ class FirstSentenceAudioCache:
             "sovits_model": TTS_SOVITS_MODEL_PATH,
             "params": {field: params.get(field) for field in _KEY_FIELDS},
         }
+        if output_language == "ja":
+            from tts.japanese_dictionary import dictionary_cache_identity
+            payload["japanese_dictionary"] = dictionary_cache_identity()
+        return payload
 
     def _fingerprint(self, text: str, params: dict[str, Any]) -> str:
         return self._fingerprint_payload(self.key_payload(text, params))
