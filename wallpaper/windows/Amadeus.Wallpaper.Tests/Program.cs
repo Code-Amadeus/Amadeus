@@ -1,6 +1,11 @@
 using System.Text.Json;
+using System.IO.Pipes;
 using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
+using GrpcDotNetNamedPipes;
 using Amadeus.Wallpaper;
+using Amadeus.Wallpaper.Protocol.Desktop;
 using Amadeus.Wallpaper.Protocol.Settings;
 
 if (args.Length == 2 && args[0] == "--cold-start-probe")
@@ -69,11 +74,11 @@ void Phase(string journal, string expected)
     using var saved = JsonDocument.Parse(File.ReadAllText(journal));
     Check(saved.RootElement.GetProperty("Phase").GetString() == expected, "wrong durable operation phase");
 }
-void WriteLegacy(string journal, Snapshot snapshot, bool unconfirmed = false)
+void WriteLegacy(string journal, Snapshot snapshot)
 {
     File.WriteAllText(journal, JsonSerializer.Serialize(new {
         snapshot.Project, snapshot.Monitor, snapshot.Options, snapshot.Wallpapers,
-        snapshot.OwnedProcess, snapshot.Mounted, MountUnconfirmed = unconfirmed
+        snapshot.OwnedProcess, snapshot.Mounted
     }));
 }
 
@@ -297,9 +302,120 @@ await Test("pending RPC can mount late and only a new host identity unlocks reco
     Check(host.ActualItems.Single().Path == "amadeus" && File.Exists(journal), "fixture did not reproduce the late mount");
     Check(await Failure(() => new Session(host, journal).Restore()) is InvalidOperationException, "a visible late mount cleared pending without restart");
     host.ActualItems.Clear();
+    host.LiveProcesses.Clear();
     var restarted = new ProcessIdentity(11, 30);
+    host.RunningProcess = restarted;
+    host.LiveProcesses.Add(restarted);
     await new Session(host, journal).Restore(restarted);
     Check(host.ActualItems.Single().Path == "old" && host.Stopped == restarted && !File.Exists(journal), "actual host restart did not unlock recovery");
+});
+await Test("pending journal records the request receiver separately from cleanup ownership", async (host, session, journal) => {
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    using var saved = JsonDocument.Parse(File.ReadAllText(journal));
+    Check(saved.RootElement.TryGetProperty("RequestProcess", out var receiver), "pending journal has no request receiver identity");
+    Check(JsonSerializer.Deserialize<ProcessIdentity>(receiver) == host.RunningProcess, "request receiver was replaced by cleanup ownership");
+});
+await Test("a live request receiver blocks recovery even if the helper supplies another identity", async (host, session, journal) => {
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    var error = await Failure(() => new Session(host, journal).Restore(new(11, 30)));
+    Check(error is InvalidOperationException && File.Exists(journal), "live request receiver was treated as exited");
+    Check(host.Stopped is null && host.ClosedProjects.Count == 0, "pending recovery changed the live request receiver");
+});
+await Test("manual host restart unlocks pending recovery without helper startup ownership", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    host.LiveProcesses.Clear();
+    host.RunningProcess = new(11, 30);
+    host.LiveProcesses.Add(host.RunningProcess);
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "manual restart did not unlock recovery");
+    Check(host.Stopped is null, "recovery stopped a manually started shared host");
+});
+await Test("a reused PID with a new start identity does not keep the old request alive", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    var previous = host.RunningProcess!;
+    host.LiveProcesses.Clear();
+    host.RunningProcess = previous with { Started = previous.Started + 1 };
+    host.LiveProcesses.Add(host.RunningProcess);
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "PID reuse blocked recovery");
+});
+await Test("receiver identity lookup failure cannot dispatch a mount", async (host, session, journal) => {
+    host.IdentityFailure = new IOException("request receiver identity unavailable");
+    var error = await Failure(() => session.Mount(Before(host)));
+    Check(ReferenceEquals(error, host.IdentityFailure), "receiver lookup error was hidden");
+    Check(host.SetCalls == 0 && host.ClosedProjects.Count == 0, "mount dispatched without a receiver identity");
+    Check(host.RestoreCalls == 1 && !File.Exists(journal), "pre-dispatch failure did not complete settings-only rollback");
+});
+await Test("receiver liveness lookup failure preserves pending recovery for retry", async (host, session, journal) => {
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    host.IdentityFailure = new IOException("request receiver liveness unavailable");
+    var error = await Failure(() => new Session(host, journal).Restore(new(11, 30)));
+    Check(ReferenceEquals(error, host.IdentityFailure) && File.Exists(journal), "unknown liveness was treated as process exit");
+    Check(host.Stopped is null && host.ClosedProjects.Count == 0, "unknown liveness changed the desktop");
+});
+await Test("manual restart recovery keeps a new user wallpaper and its host", async (host, session, journal) => {
+    var owned = host.RunningProcess;
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host, owned)));
+    host.LiveProcesses.Clear();
+    host.RunningProcess = new(11, 30);
+    host.LiveProcesses.Add(host.RunningProcess);
+    host.ActualItems.Add(new("primary", "user-new"));
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "user-new" && host.Stopped is null && !File.Exists(journal), "manual recovery removed a user's new scene or host");
+});
+await Test("recovery after receiver exit retains failures and can retry", async (host, session, journal) => {
+    host.ActualItems.Add(new("primary", "old"));
+    host.FailPendingMount = true;
+    await Failure(() => session.Mount(Before(host)));
+    host.LiveProcesses.Clear();
+    host.RunningProcess = new(11, 30);
+    host.LiveProcesses.Add(host.RunningProcess);
+    host.RestoreFailure = new IOException("recovery options unavailable");
+    var error = await Failure(() => new Session(host, journal).Restore());
+    Check(ReferenceEquals(error, host.RestoreFailure) && File.Exists(journal), "receiver exit was mistaken for restoration success");
+    host.RestoreFailure = null;
+    await new Session(host, journal).Restore();
+    Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "receiver-exit recovery lost retry state");
+});
+await Test("an identity-less pending journal records a conservative exit barrier", async (host, session, journal) => {
+    var before = Before(host);
+    File.WriteAllText(journal, JsonSerializer.Serialize(new {
+        before.Project, before.Monitor, before.Options, before.Wallpapers,
+        before.OwnedProcess, before.Mounted, Phase = "Pending"
+    }));
+    Check(await Failure(() => session.Restore()) is InvalidOperationException, "unknown legacy request was allowed on a running host");
+    using (var saved = JsonDocument.Parse(File.ReadAllText(journal))) {
+        Check(saved.RootElement.TryGetProperty("RequestProcess", out var receiver) &&
+            JsonSerializer.Deserialize<ProcessIdentity>(receiver) == host.RunningProcess, "legacy exit barrier was not persisted");
+    }
+    host.LiveProcesses.Clear();
+    host.RunningProcess = new(11, 30);
+    host.LiveProcesses.Add(host.RunningProcess);
+    await new Session(host, journal).Restore();
+    Check(!File.Exists(journal) && host.Stopped is null, "legacy pending journal could not recover after its exit barrier");
+});
+await Test("an identity-less pending journal can recover when no old host exists", async (host, session, journal) => {
+    var before = Before(host);
+    File.WriteAllText(journal, JsonSerializer.Serialize(new {
+        before.Project, before.Monitor, before.Options, before.Wallpapers,
+        before.OwnedProcess, before.Mounted, Phase = "Pending"
+    }));
+    host.LiveProcesses.Clear();
+    host.RunningProcess = null;
+    session.PrepareRecovery();
+    Phase(journal, "Settled");
+    host.RunningProcess = new(11, 30);
+    host.LiveProcesses.Add(host.RunningProcess);
+    await session.Restore();
+    Check(!File.Exists(journal), "legacy pending journal remained blocked without any possible receiver");
 });
 await Test("a user selection wins after a failed rollback", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
@@ -322,16 +438,6 @@ await Test("legacy journals without a phase keep their original recovery semanti
     await host.SetWallpaper(new("primary", "user-new"));
     await new Session(host, journal).Restore();
     Check(host.ActualItems.Single().Path == "user-new" && !File.Exists(journal), "legacy mounted recovery overwrote a user choice");
-});
-await Test("legacy unconfirmed journals remain pending until host restart", async (host, session, journal) => {
-    var process = new ProcessIdentity(10, 20);
-    var snapshot = Before(host, process);
-    WriteLegacy(journal, snapshot, unconfirmed:true);
-    Check(await Failure(() => session.Restore()) is InvalidOperationException, "legacy uncertainty was silently discarded");
-    Check(File.Exists(journal) && host.ClosedProjects.Count == 0, "legacy pending recovery mutated the host");
-    Check(await Failure(() => session.Restore(process)) is InvalidOperationException, "legacy same process counted as a restart");
-    await session.Restore(new(11, 30));
-    Check(!File.Exists(journal), "legacy pending recovery did not settle after host restart");
 });
 await Test("mounted lifecycle does not repeat a failed mount rollback", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
@@ -397,7 +503,10 @@ await Test("initial journal save failure can release the unstarted owned host", 
 });
 await Test("an existing pending journal prevents outer initialization cleanup", async (host, session, journal) => {
     var process = new ProcessIdentity(10, 20);
-    WriteLegacy(journal, Before(host, process), unconfirmed:true);
+    File.WriteAllText(journal, JsonSerializer.Serialize(new {
+        Project = "amadeus", Monitor = "primary", host.Options, Wallpapers = host.ActualItems,
+        OwnedProcess = process, Mounted = false, Phase = "Pending", RequestProcess = host.RunningProcess
+    }));
     Exception? original = null;
     try { await session.RunMounted(Before(host, process), () => Task.CompletedTask); }
     catch (Exception error) { original=error; await session.ReleaseUnstartedHost(process); }
@@ -436,11 +545,133 @@ await Test("snapshot failure can release a different host started after recovery
     Check(ReferenceEquals(original, host.OptionsReadFailure), "new host snapshot error was replaced");
     Check(host.Stopped == newlyStarted, "cleanup ownership of the prior process prevented releasing the unstarted new host");
 });
+Task BoundRequest(string pipeName, Action<ProcessIdentity> dispatching,
+    Func<NamedPipeClientStream, ProcessIdentity>? identify = null,
+    Action<NamedPipeChannel, Action<NamedPipeClientStream>>? bind = null, DateTime? deadline = null)
+    => WallpaperRequest.Send(pipeName, new SetWallpaperRequest { LivelyInfoPath = "synthetic", MonitorId = "primary" }, dispatching, identify, bind, deadline);
+Method<SetWallpaperRequest, Empty> SetMethod() => new(MethodType.Unary,
+    DesktopService.Descriptor.FullName, "SetWallpaper",
+    Marshallers.Create<SetWallpaperRequest>(value => value.ToByteArray(), SetWallpaperRequest.Parser.ParseFrom),
+    Marshallers.Create<Empty>(value => value.ToByteArray(), Empty.Parser.ParseFrom));
+await Test("real Set transport persists its exact pipe receiver before dispatch", async (host, session, journal) => {
+    var pipeName = "amadeus-wallpaper-contract-" + Guid.NewGuid().ToString("N");
+    using var server = new NamedPipeServer(pipeName);
+    var calls = 0;
+    server.ServiceBinder.AddMethod(SetMethod(), (SetWallpaperRequest _, ServerCallContext _) => {
+        using var saved = JsonDocument.Parse(File.ReadAllText(journal));
+        var identity = JsonSerializer.Deserialize<ProcessIdentity>(saved.RootElement.GetProperty("RequestProcess"));
+        using var receiver = System.Diagnostics.Process.GetCurrentProcess();
+        Check(identity == new ProcessIdentity(Environment.ProcessId, receiver.StartTime.ToUniversalTime().Ticks), "Set executed before its actual receiver identity was persisted");
+        Check(saved.RootElement.GetProperty("Phase").GetString() == "Pending", "Set executed before its pending journal was durable");
+        calls++;
+        return Task.FromResult(new Empty());
+    });
+    server.Start();
+    host.Dispatch = dispatching => BoundRequest(pipeName, dispatching);
+    await session.Mount(Before(host));
+    Check(calls == 1, "bound Set did not execute exactly once");
+    await session.Restore();
+    Check(!File.Exists(journal), "synthetic transport session did not clean up");
+});
+foreach (var stage in new[] { "identity", "journal", "hook" }) {
+    await Test("real Set transport refuses dispatch after " + stage + " failure", async (host, session, journal) => {
+        var pipeName = "amadeus-wallpaper-contract-" + Guid.NewGuid().ToString("N");
+        using var server = new NamedPipeServer(pipeName);
+        var calls = 0;
+        server.ServiceBinder.AddMethod(SetMethod(), (SetWallpaperRequest _, ServerCallContext _) => {
+            calls++;
+            return Task.FromResult(new Empty());
+        });
+        server.Start();
+        var failure = new IOException("synthetic " + stage + " failure");
+        host.ActualItems.Add(new("primary", "old"));
+        host.Dispatch = dispatching => {
+            if (stage == "journal") Directory.CreateDirectory(journal + ".tmp");
+            return BoundRequest(pipeName, dispatching,
+                stage == "identity" ? _ => throw failure : null,
+                stage == "hook" ? (channel, capture) => WallpaperRequest.Bind(channel, capture, null) : null);
+        };
+        var error = await Failure(() => session.Mount(Before(host)));
+        Check(stage == "journal" ? error is UnauthorizedAccessException : stage == "hook"
+            ? error is NotSupportedException : ReferenceEquals(error, failure), "the " + stage + " failure was hidden or replaced");
+        Check(calls == 0 && !File.Exists(journal), "Set executed without its durable receiver identity");
+        Check(host.RestoreCalls == 1 && host.ClosedProjects.Count == 0 && host.ActualItems.Single().Path == "old", "pre-dispatch transport failure did not finish settings-only rollback");
+    });
+}
+await Test("a Set connection arriving after timeout cannot identify persist or send", async (host, session, journal) => {
+    var pipeName = "amadeus-wallpaper-contract-" + Guid.NewGuid().ToString("N");
+    var identities = 0;
+    var dispatches = 0;
+    host.Dispatch = dispatching => BoundRequest(pipeName, identity => {
+        Interlocked.Increment(ref dispatches);
+        dispatching(identity);
+    }, _ => {
+        Interlocked.Increment(ref identities);
+        return new(Environment.ProcessId, 1);
+    }, deadline: DateTime.UtcNow.AddMilliseconds(100));
+    var error = await Failure(() => session.Mount(Before(host))).WaitAsync(TimeSpan.FromSeconds(5));
+    Check(error is RpcException rpc && rpc.StatusCode == StatusCode.DeadlineExceeded, "fixture did not expire before connection");
+    Check(!File.Exists(journal) && host.RestoreCalls == 1, "an unstarted request did not finish settings rollback");
+    using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
+        PipeTransmissionMode.Message, PipeOptions.Asynchronous);
+    await pipe.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    var bytes = await pipe.ReadAsync(new byte[4096]).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+    Check(identities == 0 && dispatches == 0, "an ended Set invocation later identified or persisted its receiver");
+    Check(bytes == 0 && !File.Exists(journal), "an ended Set invocation later wrote request bytes or recreated its journal");
+});
+await Test("timeout waits for an entered persistence boundary before allowing cleanup", async (host, session, journal) => {
+    var pipeName = "amadeus-wallpaper-contract-" + Guid.NewGuid().ToString("N");
+    using var server = new NamedPipeServer(pipeName);
+    server.ServiceBinder.AddMethod(SetMethod(), (SetWallpaperRequest _, ServerCallContext _) => Task.FromResult(new Empty()));
+    server.Start();
+    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var boundaryExited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var release = new ManualResetEventSlim();
+    var deadline = DateTime.UtcNow.AddMilliseconds(500);
+    host.Dispatch = dispatching => BoundRequest(pipeName, identity => {
+        try
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic persistence release was not signalled");
+            dispatching(identity);
+        }
+        finally { boundaryExited.TrySetResult(); }
+    }, deadline: deadline);
+    var mounting = session.Mount(Before(host));
+    try
+    {
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, (deadline - DateTime.UtcNow).TotalMilliseconds) + 100));
+        Check(!mounting.IsCompleted, "Set returned at its deadline while its persistence boundary was still running");
+        Check(File.Exists(journal) && host.RestoreCalls == 0, "deadline cleanup raced the running persistence boundary");
+    }
+    finally
+    {
+        release.Set();
+        await boundaryExited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+    var error = await Failure(() => mounting).WaitAsync(TimeSpan.FromSeconds(5));
+    Check(error is RpcException rpc && rpc.StatusCode == StatusCode.DeadlineExceeded, "the original request deadline was hidden");
+    Phase(journal, "Pending");
+    Check(host.RestoreCalls == 0, "a persisted uncertain request was rolled back as unstarted");
+});
 Console.WriteLine($"{passed} contracts passed.");
 if (failures.Count > 0) throw new AggregateException("Wallpaper contract failures", failures);
 
 sealed class FakeHost : IWallpaperHost
 {
+    public Func<Action<ProcessIdentity>, Task>? Dispatch;
+    public ProcessIdentity? RunningProcess = new(100, 200);
+    public HashSet<ProcessIdentity> LiveProcesses = [new(100, 200)];
+    public Exception? IdentityFailure;
+    public ProcessIdentity? GetRunningProcess() {
+        if (IdentityFailure is not null) throw IdentityFailure;
+        return RunningProcess;
+    }
+    public bool IsProcessRunning(ProcessIdentity identity) {
+        if (IdentityFailure is not null) throw IdentityFailure;
+        return LiveProcesses.Contains(identity);
+    }
     public List<DesktopItem> ActualItems = [];
     public List<DesktopItem>? ReportedItems;
     public HostOptions Options = new(0, 1, false, false);
@@ -470,7 +701,12 @@ sealed class FakeHost : IWallpaperHost
         WallpaperReads++;
         return Task.FromResult((ReportedItems ?? ActualItems).ToList());
     }
-    public Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null) {
+    public async Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null,
+        Action<ProcessIdentity>? requestDispatching = null) {
+        if (requestDispatching is not null) {
+            if (Dispatch is not null) await Dispatch(requestDispatching);
+            else requestDispatching(GetRunningProcess() ?? throw new IOException("no request receiver"));
+        }
         SetCalls++;
         ActualItems.RemoveAll(x => x.Monitor == wallpaper.Monitor);
         // RPC 截止后，服务器仍可在测试明确放行时完成挂载；不调用结算回调。
@@ -479,7 +715,7 @@ sealed class FakeHost : IWallpaperHost
         if (!IgnoreRestoredWallpaper || wallpaper.Path == "amadeus") ActualItems.Add(wallpaper);
         requestSettled?.Invoke();
         if (FailAfterMount) { FailAfterMount = false; OnMountConfirmation?.Invoke(); throw MountFailure; }
-        return Task.CompletedTask;
+        return;
     }
     public void CompletePendingMount() {
         var wallpaper = pendingWallpaper ?? throw new InvalidOperationException("no pending native request");

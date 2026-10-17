@@ -82,7 +82,8 @@ retain the journal and report an error. Confirmation uses the host's reported
 state, subject to the stock Lively protocol limitation described below.
 
 The journal now adds an optional `Phase`: `Preparing` before session settings,
-`Pending` before dispatching `SetWallpaper`, and `Settled` only after the native
+`Pending` with `RequestProcess` (PID and process start time) before dispatching
+`SetWallpaper`, and `Settled` only after the native
 Set RPC returns normally, before mount confirmation. A normal RPC return only
 means that request is no longer pending; it does not prove that a scene mounted.
 Failure during settings preparation restores settings without setting or closing
@@ -102,21 +103,54 @@ handler only releases a newly started host whose identity is still outside that
 ownership and for which no journal exists. Successful cleanup removing a journal
 does not authorize another host shutdown; a later host with a different start
 identity can still be released if initialization fails before takeover.
-A transport/deadline failure before native Set
-returns leaves `Pending`; it does not trigger automatic close, restore or host
-shutdown, because the request may still mount late. Recovery requires a genuinely
-restarted host supplied by the caller; the original owned process identity is
-not accepted as a restart. Fully exit Lively, then run `recover` so this helper
-starts it; manually restarting Lively and leaving it running does not supply a
-newly started identity to this helper. Old journals without a phase keep their
-original semantics; an old `MountUnconfirmed: true` journal is treated as pending.
+A transport/deadline failure after the request receiver is durably recorded but
+before native Set returns leaves `Pending`; it does not trigger automatic close,
+restore or host shutdown, because the request may still mount late.
+`RequestProcess` identifies the actual server of that Set pipe,
+independently of `OwnedProcess`, which only governs cleanup ownership. Recovery
+is blocked while the recorded process identity remains alive. Confirming its
+exit only permits the normal restoration attempt and postcondition checks; it
+does not itself prove restoration. Manually restarting Lively is supported, and
+does not transfer ownership of the new host to Amadeus or authorize stopping a
+host showing a user's new wallpaper. A failed identity query retains the journal
+and reports the failure instead of assuming the old process exited.
+
+The Set adapter is coupled to the locked GrpcDotNetNamedPipes 3.1.0 transport. Its
+single internal `PipeCallback` binding captures the actual request stream; the
+request marshaller reads `GetNamedPipeServerProcessId` after that stream connects
+and persists the identity before any request bytes are written. The adapter does
+not probe a second connection, retry, or substitute a process-name guess. If the
+binding, identity read, or journal write fails, no Set is dispatched and settings
+preparation can roll back. A library upgrade must rerun the real synthetic-pipe
+contracts before accepting this boundary.
+
+The library's response deadline can expire while its background connection or
+serializer is still running. A single dispatch gate closes before `Send` returns
+and waits for an already entered identity/persistence boundary to finish. A
+connection arriving after that closure cannot identify a receiver, save a journal
+or write the Set request, so an unstarted request can finish settings-only rollback.
+If persistence already began, the caller waits for it and retains `Pending` on a
+deadline error. The transport write may still follow that persisted boundary;
+this is uncertain dispatch protected by the journal, not proof of cancellation.
+
+Old published journals without `Phase` retain their original semantics. An older
+development `Pending` journal without `RequestProcess` is checked before starting
+Lively: no existing host permits normal recovery; otherwise the helper persists
+the current host as a conservative exit barrier and asks for one more complete
+exit before reopening managed wallpaper or using `recover`. This barrier is not
+claimed to identify the original request receiver. Ambiguous hosts or identity
+query failures do not release it. The unpublished `MountUnconfirmed` draft field
+and its compatibility branch have been removed; the local development journal
+location and repository build outputs contained no such journal during this
+change, and no existing recovery data was deleted.
 
 Recover any pending journal with this helper before reverting to an older helper.
 Older binaries do not understand `Phase`; downgrade while a journal remains is
 not supported, and no recovery record is reset or deleted to enable it.
 
-日志新增可空 `Phase`：设置准备前为 `Preparing`，派发 `SetWallpaper` 前为
-`Pending`，原生 Set RPC 正常返回后、挂载确认前才写入 `Settled`。正常返回仅表示该
+日志新增可空 `Phase`：设置准备前为 `Preparing`，派发 `SetWallpaper` 前写入
+`Pending` 和 `RequestProcess`（PID 与进程启动时间），原生 Set RPC 正常返回后、
+挂载确认前才写入 `Settled`。正常返回仅表示该
 请求不再 pending，并不证明已挂载。设置阶段失败只恢复可能部分写入的设置，不重设
 或关闭壁纸；已结算的挂载失败恢复原自动回滚，包括原来为空的桌面，并用最初提交的
 确切项目路径关闭自身场景。恢复后仍在原 monitor/path 配对之外报告 Amadeus，或
@@ -128,12 +162,32 @@ not supported, and no recovery record is reset or deleted to enable it.
 Session 已接管某个进程的清理（包括旧日志恢复），即记录其身份；外层异常处理只在
 进程尚未被接管且没有日志时释放新启动的宿主。成功清理删除日志不代表可以再次停止
 宿主；若之后启动的是另一启动身份的宿主，在接管前初始化失败仍可释放该新进程。
-若原生 Set 正常返回前发生传输或 deadline 错误，日志维持 `Pending`，不自动关闭、
-恢复或停止宿主，因为请求仍可能迟到挂载。恢复须由调用方提供真实重启宿主的事实，
-原自有进程的相同身份不能算重启。应完全退出 Lively 后执行 `recover`，让本 helper
-启动它；手动重启后让 Lively 保持运行不会向本 helper 提供新启动的进程身份。
-无 phase 的旧日志保持原语义；旧
-`MountUnconfirmed: true` 按 pending 保守处理。
+若已持久保存请求接收进程、但原生 Set 正常返回前发生传输或 deadline 错误，日志
+维持 `Pending`，不自动关闭、恢复或停止宿主，因为请求仍可能迟到挂载。
+`RequestProcess` 记录该 Set 管道的实际
+服务端进程，与仅用于清理所有权的 `OwnedProcess` 分离。该确切身份仍存活时拒绝恢复；
+确认退出仅允许尝试正常恢复和核验后置条件，不代表恢复已成功。支持用户手动重启
+Lively；这不转移新宿主的所有权，也不授权停止承载用户新壁纸的宿主。身份查询失败
+时保留日志并明确报错，不臆测原进程已退出。
+
+Set 适配器耦合锁定的 GrpcDotNetNamedPipes 3.1.0：仅一处内部 `PipeCallback` 绑定
+取得实际请求流，marshaller 在该流连接后读取 `GetNamedPipeServerProcessId`，并在
+写入任何请求字节前持久保存身份。不另开探测连接，不重试，也不以进程名称猜测替代。
+钩子、身份读取或日志保存失败时不派发 Set，设置准备可正常回滚。升级传输库前必须
+重新通过真实合成管道契约，才能接受该边界。
+
+传输库的响应 deadline 可能先于后台连接或序列化结束。单一派发门在 `Send` 返回前
+关闭，并等待已进入的身份读取／持久化边界完成。关闭后迟到的连接不得再识别进程、
+保存日志或写入 Set 请求，因此尚未开始派发的请求可完成仅恢复设置的回滚。
+若持久化边界已开始，调用方须等待其结束，deadline 错误保留 `Pending`。传输写入
+仍可能随后发生；这是由日志保护的不确定派发，不能据此声称取消成功。
+
+已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的旧开发 `Pending`
+日志在启动 Lively 前检查：没有现存宿主时可进入正常恢复；否则持久保存当前宿主为
+保守退出屏障，要求再次完整退出后重新开启托管壁纸或执行 `recover`。该屏障不声称
+识别出了原请求接收进程；宿主有歧义或身份查询失败时不放行。未发布草稿字段
+`MountUnconfirmed` 及其兼容分支已移除；本轮只读核查本地开发日志位置及仓库构建
+输出时未发现此类日志，未删除任何既有恢复数据。
 
 回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
 时不支持降级，不会为允许降级而重置或删除恢复记录。
@@ -145,23 +199,31 @@ return success without removing a player. A close response plus an empty stream
 cannot prove strong recovery or player exit. For an originally empty desktop,
 the retained baseline empty-report behavior can still delete the journal and
 request owned-host shutdown while an unreported scene remains. This is a known
-unresolved limitation, not an accepted strong-recovery guarantee. No PID
-inference, layout-file inference or timing heuristic is added to hide it.
+unresolved limitation, not an accepted strong-recovery guarantee. Scene removal
+is not inferred from a PID, a layout file or a timing heuristic to hide it.
 
 本次范围仅为按阶段回滚和保留异常，**未修复**原版 Lively 2.2.1.0 的报告及关闭
 协议：`GetWallpapers` 可能假空，项目关闭也可能吞错后返回成功却没有移除播放器。
 关闭回执加空流不能证明强恢复或播放器退出。对于原来为空的桌面，保留的 baseline
 空报告行为仍可能在未报告场景存在时删除日志并请求停止自有宿主。这是明确未解决的
-限制，不能视为强恢复已验收；本轮不加入 PID、磁盘 layout 或延时推断来掩盖它。
+限制，不能视为强恢复已验收；本轮不以 PID、磁盘 layout 或延时推断场景移除来掩盖它。
 
 Deterministic contracts separate fake actual state from reported state and cover
 rollback, retries, late requests, user choices, journal compatibility and both
-errors. The separate `--false-empty-counterexample` diagnostic records the
+errors. Randomly named local pipe contracts additionally verify that Set cannot
+execute before Session persists the actual pipe receiver, and executes zero times
+when identity, persistence or transport binding fails. These pipes never connect
+to Lively or change the desktop. They also cover a connection arriving after its
+response deadline and a persistence boundary blocked across that deadline. The
+separate `--false-empty-counterexample` diagnostic records the
 unresolved false-empty/no-op-close case without adding it to the passing contract
 count. These checks do not establish real Lively mounting or close completion.
 
 离线契约分离 fake 真实状态与报告状态，覆盖回滚、重试、迟到请求、用户选择、日志
-兼容与双重异常。独立 `--false-empty-counterexample` 诊断记录未解决的假空及关闭
+兼容与双重异常。随机命名的本地管道契约还核验：Session 持久保存实际接收进程前
+Set 不得执行，身份、持久化或传输绑定失败时执行次数为零；这些管道不连接 Lively，
+也不改变桌面；还覆盖响应超时后连接迟到、持久化边界阻塞跨越响应超时的竞态。
+独立 `--false-empty-counterexample` 诊断记录未解决的假空及关闭
 no-op 反例，不计入契约通过数；这些检查不证明真实 Lively 挂载或关闭完成。
 
 If Lively must be started with its screenshot-to-wallpaper options temporarily

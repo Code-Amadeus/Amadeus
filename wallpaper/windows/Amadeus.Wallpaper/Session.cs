@@ -9,14 +9,17 @@ public record ProcessIdentity(int Id, long Started);
 public enum MountPhase { Preparing, Pending, Settled }
 public record Snapshot(string Project, string Monitor, HostOptions Options,
     List<DesktopItem> Wallpapers, ProcessIdentity? OwnedProcess, bool Mounted = false,
-    bool MountUnconfirmed = false, MountPhase? Phase = null);
+    MountPhase? Phase = null, ProcessIdentity? RequestProcess = null);
 
 public interface IWallpaperHost
 {
     Task<HostOptions> GetOptions();
     Task<List<DesktopItem>> GetWallpapers();
+    ProcessIdentity? GetRunningProcess();
+    bool IsProcessRunning(ProcessIdentity process);
     // 原生请求正常返回后、场景确认前回调；请求异常结束不得回调。
-    Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null);
+    Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null,
+        Action<ProcessIdentity>? requestDispatching = null);
     Task CloseProject(string project);
     Task SetSessionOptions();
     Task RestoreOptions(HostOptions previous, bool images = true);
@@ -40,20 +43,22 @@ public sealed class Session(IWallpaperHost host, string journal)
     public async Task Mount(Snapshot snapshot)
     {
         if (File.Exists(journal)) throw new InvalidOperationException("Recover the previous wallpaper session first.");
-        snapshot = snapshot with { Mounted = false, MountUnconfirmed = false, Phase = MountPhase.Preparing };
+        snapshot = snapshot with { Mounted = false, Phase = MountPhase.Preparing, RequestProcess = null };
         Save(snapshot);
         managedCleanupProcess = snapshot.OwnedProcess;
         try
         {
             await host.SetSessionOptions();
-            var pending = snapshot with { Phase = MountPhase.Pending };
-            Save(pending);
-            snapshot = pending;
             await host.SetWallpaper(new(snapshot.Monitor, snapshot.Project), () => {
                 // 正常 RPC 返回只排除本请求仍在加载，不代表挂载成功。
                 var settled = snapshot with { Phase = MountPhase.Settled };
                 Save(settled);
                 snapshot = settled;
+            }, process => {
+                // 实际管道已连接、请求字节尚未发出；先持久保存接收进程身份。
+                var pending = snapshot with { Phase = MountPhase.Pending, RequestProcess = process };
+                Save(pending);
+                snapshot = pending;
             });
             Save(snapshot with { Mounted = true, Phase = MountPhase.Settled });
         }
@@ -84,20 +89,33 @@ public sealed class Session(IWallpaperHost host, string journal)
         }
     }
 
-    public async Task Restore(ProcessIdentity? restartedProcess = null)
+    public void PrepareRecovery()
     {
         if (!File.Exists(journal)) return;
-        var snapshot = JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(journal), Json)
-            ?? throw new InvalidDataException("Invalid wallpaper recovery journal.");
-        managedCleanupProcess = restartedProcess ?? snapshot.OwnedProcess;
-        var pending = snapshot.Phase == MountPhase.Pending || snapshot.MountUnconfirmed;
-        if (pending)
+        var snapshot = Read();
+        if (snapshot.Phase != MountPhase.Pending) return;
+        if (snapshot.RequestProcess is null)
         {
-            if (restartedProcess is null || restartedProcess == snapshot.OwnedProcess)
-                throw new InvalidOperationException("Wallpaper mount request is still pending; fully exit Lively, then run recover so the helper can restart it.");
-            snapshot = snapshot with { Mounted = false, MountUnconfirmed = false, Phase = MountPhase.Settled };
-            Save(snapshot);
+            var barrier = host.GetRunningProcess();
+            if (barrier is not null)
+            {
+                // 旧开发日志不能认定原接收进程；记录当前宿主，只作为再次退出的保守屏障。
+                Save(snapshot with { RequestProcess = barrier });
+                throw new InvalidOperationException("This older pending journal lacks its request receiver identity. Fully exit Lively once more, then reopen managed wallpaper or run recover.");
+            }
         }
+        else if (host.IsProcessRunning(snapshot.RequestProcess))
+            throw new InvalidOperationException("Wallpaper mount request may still complete in its original Lively process. Fully exit Lively, then reopen managed wallpaper or run recover.");
+        // 原请求不可能再迟到；这只允许尝试恢复，仍须核验原场景。
+        Save(snapshot with { Mounted = false, Phase = MountPhase.Settled });
+    }
+
+    public async Task Restore(ProcessIdentity? restartedProcess = null)
+    {
+        PrepareRecovery();
+        if (!File.Exists(journal)) return;
+        var snapshot = Read();
+        managedCleanupProcess = restartedProcess ?? snapshot.OwnedProcess;
         if (snapshot.Phase == MountPhase.Preparing)
         {
             // 只可能部分写入设置，尚未发送挂载请求；不重设或关闭任何壁纸。
@@ -153,6 +171,9 @@ public sealed class Session(IWallpaperHost host, string journal)
             await host.StopOwnedProcess(restartedProcess ?? snapshot.OwnedProcess);
         File.Delete(journal);
     }
+
+    Snapshot Read() => JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(journal), Json)
+        ?? throw new InvalidDataException("Invalid wallpaper recovery journal.");
 
     void Save(Snapshot snapshot)
     {
