@@ -154,7 +154,7 @@ def external_asset_pack_status(
             message = str(exc)
 
     if state == "installed" and spec.validator == "japanese_dictionary":
-        from tts.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
+        from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
         try:
             version = load_dictionary_pack(asset_path(asset_root, spec.trees[0])).version
         except JapaneseDictionaryError as exc:

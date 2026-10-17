@@ -10,6 +10,7 @@ import zipfile
 import pytest
 
 from config.asset_packages import AssetPackageError, external_asset_pack_status
+from config import japanese_dictionary as dictionary_pack
 from tools.audit_japanese_dictionary import audit_rows, native_mora_counter, native_surface_normalizer, normalize_rows
 from tools.external_assets import build_bundle, install_bundle, verify_bundle
 from tools.prepare_japanese_dictionary import prepare_dictionary
@@ -48,7 +49,7 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
             data += (",".join(row) + "\n").encode()
     source.write_bytes(data)
     recipe = json.loads((ROOT / "tools/data/japanese_dictionary_source.json").read_text(encoding="utf-8"))
-    recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=len(list(dictionary.dictionary_rows(data))))
+    recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=len(list(dictionary_pack.dictionary_rows(data))))
     recipe_path = root / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     return prepare_dictionary(source, project_root=root, recipe_path=recipe_path,
@@ -84,10 +85,10 @@ def test_pipeline_applies_japanese_readings_only_to_japanese_speech(monkeypatch)
 def test_preparation_records_derivative_and_does_not_edit_source(tmp_path):
     pack_root = _prepare(tmp_path)
     assert (tmp_path / "upstream.csv").read_text(encoding="utf-8") == FOLLOWER + LEARNER
-    pack = dictionary.load_dictionary_pack(pack_root)
-    corrections = list(dictionary.dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
+    pack = dictionary_pack.load_dictionary_pack(pack_root)
+    corrections = list(dictionary_pack.dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
     assert pack.entry_count == len(corrections)
-    readings = {row[0]: row[11] for row in dictionary.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
+    readings = {row[0]: row[11] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
     assert readings == {row[0]: row[11] for row in corrections}
     assert readings["ｆｏｌｌｏｗｅｒ"] == "フォロワー"
     assert readings["ｌｅａｒｎｅｒ"] == "ラーナー"
@@ -97,7 +98,7 @@ def test_preparation_records_derivative_and_does_not_edit_source(tmp_path):
     assert all(path.is_file() for path in pack.files())
     # A maintainer cannot accidentally publish a customized installation as the
     # pinned upstream base, even if it has the expected CSV shape.
-    with pytest.raises(dictionary.JapaneseDictionaryError, match="differs from the pinned"):
+    with pytest.raises(dictionary_pack.JapaneseDictionaryError, match="differs from the pinned"):
         prepare_dictionary(tmp_path / "upstream.csv", project_root=tmp_path / "rejected")
     assert not (tmp_path / "rejected/assets").exists()
 
@@ -113,37 +114,37 @@ def test_optional_bundle_round_trip_preserves_personal_and_legacy_sources(tmp_pa
     legacy = recipient / "GPT_SoVITS/text/ja_userdic/userdict.csv"
     legacy.parent.mkdir(parents=True)
     legacy.write_text(LEARNER, encoding="utf-8")
-    assert external_asset_pack_status(dictionary.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)["state"] == "not_installed"
+    assert external_asset_pack_status(dictionary_pack.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)["state"] == "not_installed"
     archive = tmp_path / "dictionary.zip"
-    manifest = build_bundle(project_root=publisher, output=archive, pack_ids=[dictionary.PACK_ID], index_path=INDEX)
-    assert manifest["file_count"] == len(dictionary.PACK_FILES)
+    manifest = build_bundle(project_root=publisher, output=archive, pack_ids=[dictionary_pack.PACK_ID], index_path=INDEX)
+    assert manifest["file_count"] == len(dictionary_pack.PACK_FILES)
     with zipfile.ZipFile(archive) as bundle:
         assert not any(name.endswith("user.dict") or name.endswith("user.csv") for name in bundle.namelist())
     assert verify_bundle(archive, index_path=INDEX) == manifest
     result = install_bundle(archive, project_root=recipient, index_path=INDEX)
-    assert result["installed_files"] == len(dictionary.PACK_FILES)
+    assert result["installed_files"] == len(dictionary_pack.PACK_FILES)
     assert install_bundle(archive, project_root=recipient, index_path=INDEX)["installed_files"] == 0
-    status = external_asset_pack_status(dictionary.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)
-    assert status["installed"] and status["version"] == dictionary.load_dictionary_pack(pack_root).version
+    status = external_asset_pack_status(dictionary_pack.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)
+    assert status["installed"] and status["version"] == dictionary_pack.load_dictionary_pack(pack_root).version
     assert personal.read_text(encoding="utf-8") == FOLLOWER
     assert legacy.read_text(encoding="utf-8") == LEARNER
     # Existing different data is refused before any recipient file changes.
-    installed_csv = recipient / "assets" / dictionary.PACK_TREE / "userdict.csv"
+    installed_csv = recipient / "assets" / dictionary_pack.PACK_TREE / "userdict.csv"
     installed_csv.write_bytes(b"private edit")
     with pytest.raises(AssetPackageError, match="different|exists|conflict"):
         install_bundle(archive, project_root=recipient, index_path=INDEX)
     assert installed_csv.read_bytes() == b"private edit"
-    assert external_asset_pack_status(dictionary.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)["state"] == "invalid"
+    assert external_asset_pack_status(dictionary_pack.PACK_ID, asset_root=recipient / "assets", index_path=INDEX)["state"] == "invalid"
 
 
 @pytest.mark.parametrize("bad", [b"", b"not,an,entry\n", b"\xff"])
 def test_dictionary_contract_rejects_invalid_csv(bad):
-    with pytest.raises(dictionary.JapaneseDictionaryError):
-        list(dictionary.dictionary_rows(bad))
+    with pytest.raises(dictionary_pack.JapaneseDictionaryError):
+        list(dictionary_pack.dictionary_rows(bad))
 
 
 def _row(surface, pronunciation, accent="0/4"):
-    row = next(dictionary.dictionary_rows(FOLLOWER.encode()))
+    row = next(dictionary_pack.dictionary_rows(FOLLOWER.encode()))
     row[0], row[13] = surface, accent
     row[10:13] = [pronunciation] * 3
     return row
@@ -216,7 +217,7 @@ def test_reviewed_bad_reading_repair_preserves_other_readings_of_the_same_surfac
     recipe_path = tmp_path / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     pack_root = prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path, count_mora=lambda _: None)
-    readings = [row[12] for row in dictionary.dictionary_rows((pack_root / "userdict.csv").read_bytes()) if row[0] == "ｃｏｒｐｓ"]
+    readings = [row[12] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes()) if row[0] == "ｃｏｒｐｓ"]
     assert set(readings) == {"コア", "コアズ"}
     assert source.read_bytes() == data
 
@@ -289,6 +290,12 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     jtalk.__version__ = "test-2"
     dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)
     assert len(jtalk.compiled) == 4, "a changed native runtime must rebuild its cache"
+    for path in jtalk.registered[-1]:
+        Path(path).unlink()
+    assert dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)["ready"]
+    assert len(jtalk.compiled) == 6, "deleting disposable compiled caches must rebuild from the selected CSVs"
+    assert legacy.read_text(encoding="utf-8") == FOLLOWER
+    assert personal.read_text(encoding="utf-8") == LEARNER
     dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=False)
     assert dictionary.dictionary_runtime_status()["state"] == "disabled" and jtalk.registered[-1] == []
 
@@ -339,7 +346,7 @@ def test_settings_expose_dictionary_failures_and_the_disable_switch(monkeypatch,
     monkeypatch.setattr(asset_packages, "external_asset_pack_status", lambda pack_id, **kwargs: {
         "installed": installed, "state": "installed" if installed else "invalid",
         "version": "test", "message": "" if installed else "CSV checksum failed",
-    } if pack_id == dictionary.PACK_ID else original(pack_id, **kwargs))
+    } if pack_id == dictionary_pack.PACK_ID else original(pack_id, **kwargs))
     monkeypatch.setattr(settings, "ENABLE_JAPANESE_USER_DICTIONARY", enabled)
     monkeypatch.setattr(dictionary, "_runtime_status", {
         "state": runtime_state, "ready": False, "version": "test", "detail": "Dictionary compilation failed",
@@ -355,7 +362,7 @@ def test_native_runtime_reads_corrected_words_and_keeps_japanese_intact(tmp_path
     jtalk = pytest.importorskip("pyopenjtalk")
     root = tmp_path / "日本語"
     _prepare(root, native=True)
-    original_source = (root / "assets" / dictionary.PACK_TREE / "userdict.csv").read_bytes()
+    original_source = (root / "assets" / dictionary_pack.PACK_TREE / "userdict.csv").read_bytes()
     try:
         jtalk.unset_user_dict()
         japanese = jtalk.g2p("今日は生ビールを飲みます。")
@@ -369,7 +376,7 @@ def test_native_runtime_reads_corrected_words_and_keeps_japanese_intact(tmp_path
         prepared = correct_pronunciation_for_tts("LeaderとMLPを確認する。")
         assert "エムエルピー" in "".join(feature["read"] for feature in jtalk.run_frontend(prepared.lower()))
         assert jtalk.g2p("今日は生ビールを飲みます。") == japanese
-        assert (root / "assets" / dictionary.PACK_TREE / "userdict.csv").read_bytes() == original_source
+        assert (root / "assets" / dictionary_pack.PACK_TREE / "userdict.csv").read_bytes() == original_source
     finally:
         jtalk.unset_user_dict()
 

@@ -86,7 +86,7 @@ def _resolved_source_files(
 ) -> tuple[Path, ...]:
     asset_root = project_root / "assets"
     if spec.validator == "japanese_dictionary":
-        from tts.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
+        from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
         try:
             files = set(load_dictionary_pack(asset_path(asset_root, spec.trees[0])).files())
         except JapaneseDictionaryError as exc:

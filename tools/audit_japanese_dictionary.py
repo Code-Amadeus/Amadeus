@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.tts_text_processor import convert_english_abbreviations_to_katakana  # noqa: E402
-from tts.japanese_dictionary import dictionary_rows  # noqa: E402
+from config.japanese_dictionary import dictionary_rows  # noqa: E402
 
 _KANA = re.compile(r"[\u30a1-\u30fa\u30fc]+")
 _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N", "cl"})

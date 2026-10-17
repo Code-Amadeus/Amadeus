@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tts.japanese_dictionary import (  # noqa: E402
+from config.japanese_dictionary import (  # noqa: E402
     PACK_TREE, JapaneseDictionaryError, dictionary_rows, load_dictionary_pack,
 )
 from tools.audit_japanese_dictionary import native_mora_counter, native_surface_normalizer, normalize_rows  # noqa: E402

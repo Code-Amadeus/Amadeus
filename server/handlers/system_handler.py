@@ -129,7 +129,8 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
         emotion_pack = external_asset_pack_status(PACK_ID)
     emotion_runtime = tts_pipeline.emotion_reference_status()
     emotion_requested = bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING)
-    from tts.japanese_dictionary import PACK_ID as DICTIONARY_PACK_ID, dictionary_runtime_status
+    from config.japanese_dictionary import PACK_ID as DICTIONARY_PACK_ID
+    from tts.japanese_dictionary import dictionary_runtime_status
     dictionary_pack = external_asset_pack_status(DICTIONARY_PACK_ID)
     dictionary_runtime = dictionary_runtime_status()
     dictionary_enabled = bool(settings.ENABLE_JAPANESE_USER_DICTIONARY)
