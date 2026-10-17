@@ -45,6 +45,7 @@
     "LICENSES/README.md",
     "LICENSES/GPT-SoVITS-MIT.txt",
     "LICENSES/GPT-SoVITS-NESTED-NOTICES.md",
+    "LICENSES/JAPANESE-DICTIONARY.md",
     "LICENSES/GPT-SoVITS-UPSTREAM-RELIANCE.md",
     "LICENSES/PyTorch-BSD-3-Clause.txt",
     "LICENSES/provenance.json",
@@ -57,6 +58,7 @@
     "docs/companion-panel.md",
     "docs/images/companion-panel-speaking.png",
     "docs/external_asset_bundles.md",
+    "docs/japanese_pronunciation_dictionary.md",
     "docs/install_profiles.md",
     "docs/slice-export-review.md",
     "docs/torch27_candidates.md",
@@ -139,6 +141,7 @@
     "wallpaper"
   ],
   "include_files": [
+    "docs/japanese_pronunciation_dictionary.md",
     "docs/mcp_environment.md",
     "docs/backend_shutdown.md",
     "docs/configuration_convergence_plan_2026-10-10.md",
@@ -277,6 +280,7 @@
     "legacy/**",
     "GPT_SoVITS/text/cantonese.py",
     "GPT_SoVITS/text/ja_userdic/**",
+    "assets/text/ja/**",
     "GPT_SoVITS/text/**/*.pickle",
     "tools/AP_BWE_main/**",
     "tools/audio_sr.py",

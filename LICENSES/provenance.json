@@ -40,7 +40,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "The initial Amadeus import has 155 exact blobs, 11 different blobs, and 7 local-only files across 173 non-BigVGAN files when compared with the closest verified upstream baseline; 33 scoped paths changed later, and local_tts_infer.py is the included Amadeus inference overlay. The scoped v2Pro extension adds the upstream ERes2NetV2 speaker encoder and conditioning contract while model weights remain external. The release relies on the immediate RVC-Boss/GPT-SoVITS repository-wide MIT grant while preserving the SoundStorm and opencpop source-chain caveats instead of assigning them an invented standalone license. The separately verified AGPL Cantonese frontend, UVR/AP-BWE utilities, unverified Japanese dictionary, generated caches, model weights, and voices are excluded by policy."
+      "notes": "The initial Amadeus import has 155 exact blobs, 11 different blobs, and 7 local-only files across 173 non-BigVGAN files when compared with the closest verified upstream baseline; 33 scoped paths changed later, and local_tts_infer.py is the included Amadeus inference overlay. The scoped v2Pro extension adds the upstream ERes2NetV2 speaker encoder and conditioning contract while model weights remain external. The release relies on the immediate RVC-Boss/GPT-SoVITS repository-wide MIT grant while preserving the SoundStorm and opencpop source-chain caveats instead of assigning them an invented standalone license. The separately verified AGPL Cantonese frontend, UVR/AP-BWE utilities, local Japanese dictionary copies, generated caches, model weights, and voices are excluded by policy. The optional verified Japanese dictionary has its own provenance record."
     },
     {
       "id": "bert-vits2-cantonese-frontend",
@@ -78,7 +78,21 @@
       "modified": null,
       "release_action": "exclude",
       "gate_status": "ready",
-      "notes": "The custom Japanese dictionary has no checked-in source or redistribution record. Pickle files are generated caches or inactive local data and can be rebuilt or omitted by their current readers. The public source archive excludes all of them without deleting the private checkout copies."
+      "notes": "The existing Japanese CSV was matched after newline normalization to canonical GPT-SoVITS blob 2be580b461185ce18c9000d9ec6c8032623e17fd on 2026-10-16; source and license evidence are recorded separately in JAPANESE-DICTIONARY.md. This legacy local directory may contain personal edits and compiled binaries and remains excluded without deleting it. Pickle files are generated caches or inactive local data and can be rebuilt or omitted."
+    },
+    {
+      "id": "japanese-pronunciation",
+      "name": "Optional Japanese pronunciation dictionary",
+      "category": "external-runtime-data",
+      "paths": ["assets/text/ja/english/**"],
+      "source_url": "https://github.com/RVC-Boss/GPT-SoVITS",
+      "source_revision": "1b47ca07ef43a284e0b8bd7f29d3e1e3ff76082a; userdict.csv blob 2be580b461185ce18c9000d9ec6c8032623e17fd; Amadeus corrections recorded in tools/data/japanese_dictionary_source.json",
+      "license_expression": "AGPL-3.0 AND MIT AND BSD-2-Clause",
+      "license_evidence": ["LICENSES/JAPANESE-DICTIONARY.md", "LICENSES/GPT-SoVITS-MIT.txt", "LICENSES/CMUdict-BSD-2-Clause.txt", "LICENSE"],
+      "modified": true,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "Data is built as an optional external asset bundle, not included in source archives. Its separate pack carries complete notices and generated source/derivative hashes. Immediate upstream MIT reliance and the unrecorded exact CMUdict input revision are explicit; no exhaustive pronunciation or listening validation is claimed. This record does not publish any bundle."
     },
     {
       "id": "gpt-sovits-uvr5-tools",

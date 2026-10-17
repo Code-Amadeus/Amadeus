@@ -27,6 +27,7 @@ WRITE_EXCEPTIONS = {
     ("agent_host/acp_skills.py", "skill_launch_arguments", "json_text"): "Disposable process-launch overlay in TemporaryDirectory; no persistent state or rehydration, removed after Agent exit.",
     ("config/durable_io.py", "_replace", "replace"): "The shared commit point.",
     ("render/texture_cache.py", "TextureDiskCache._publish", "replace"): "Rebuildable cache with contention and quota rules.",
+    ("tts/japanese_dictionary.py", "configure_japanese_dictionary", "replace"): "Rebuildable native dictionary under .cache/japanese_dictionary, keyed by source/system dictionary/runtime; source CSVs are never replaced.",
     ("server/work_export_service.py", "WorkExportService._publish_atomic_replace", "replace"): "Approved export replacement with target identity and hash verification.",
     ("core/character_rag.py", "build_index", "json_text"): "Offline index generation; rebuildable metadata.",
     ("server/interaction_branch.py", "InteractionBranchCoordinator._persist", "json_text"): "Diagnostic snapshots, no runtime rehydration; per-event writes.",

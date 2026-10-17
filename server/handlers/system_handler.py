@@ -129,6 +129,13 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
         emotion_pack = external_asset_pack_status(PACK_ID)
     emotion_runtime = tts_pipeline.emotion_reference_status()
     emotion_requested = bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING)
+    from config.japanese_dictionary import PACK_ID as DICTIONARY_PACK_ID
+    dictionary_pack = external_asset_pack_status(DICTIONARY_PACK_ID)
+    dictionary_runtime = tts_pipeline.japanese_dictionary_status()
+    dictionary_enabled = bool(settings.ENABLE_JAPANESE_USER_DICTIONARY)
+    dictionary_state = "disabled" if not dictionary_enabled else (
+        dictionary_runtime["state"] if dictionary_runtime["state"] != "not_loaded" else dictionary_pack["state"]
+    )
 
     asr_selected = str(settings.ASR_BACKEND or "qwen3_asr").strip().lower()
     tts_selected = str(settings.TTS_BACKEND or "gpt_sovits").strip().lower()
@@ -239,6 +246,20 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
         },
         *(_voice_backend_configuration(group, settings, tts_statuses, tts_selected)
               for group in voice_backend_groups()),
+        {
+            **_catalog_configuration("tts_japanese_dictionary", settings),
+            "active": (tts_selected == "gpt_sovits" and tts_pipeline.current_tts_language_code() == "ja"
+                       and dictionary_enabled and dictionary_state not in {"not_installed", "not_loaded"}),
+            "configured": not dictionary_enabled or dictionary_pack["installed"] or dictionary_runtime["ready"],
+            "status": dictionary_state,
+            "status_ok": dictionary_state in {"disabled", "ready", "installed", "not_installed"},
+            "status_detail": (dictionary_pack.get("message") or (
+                "Optional dictionary is not installed; base Japanese speech remains available."
+                if dictionary_state == "not_installed" else dictionary_runtime["detail"]
+            )) + (
+                " Pack version: " + dictionary_pack["version"] if dictionary_pack.get("version") else ""
+            ),
+        },
         {
             **_catalog_configuration("tts_emotion_references", settings),
 

@@ -137,6 +137,7 @@ def main() -> None:
         )
         raise SystemExit(1) from exc
 
+    from tts.japanese_dictionary import dictionary_runtime_status
     _emit(
         {
             "type": "ready",
@@ -144,6 +145,7 @@ def main() -> None:
             "torch": torch_version,
             "hip": hip_version,
             "cuda_available": cuda_available,
+            "japanese_dictionary": dictionary_runtime_status(),
         }
     )
 
@@ -180,7 +182,8 @@ def main() -> None:
                     _emit_chunk(request_id, sample_rate, audio, str(chunk_text or ""))
             else:
                 raise ValueError(f"unsupported operation: {operation!r}")
-            _emit({"type": "done", "request_id": request_id})
+            _emit({"type": "done", "request_id": request_id,
+                   "japanese_dictionary": dictionary_runtime_status()})
         except Exception as exc:
             _emit({"type": "error", "request_id": request_id, "msg": str(exc)})
 

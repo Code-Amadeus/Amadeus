@@ -83,7 +83,7 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
         if spec_version <= 0:
             raise AssetPackageError(f"external pack {pack_id!r} has an invalid spec version")
         validator = str(entry.get("validator") or "required_files").strip()
-        if validator not in {"required_files", "visual_runtime", "character_pack", "companion_pack", "tts_reference_pack"}:
+        if validator not in {"required_files", "visual_runtime", "character_pack", "companion_pack", "tts_reference_pack", "japanese_dictionary"}:
             raise AssetPackageError(f"external pack {pack_id!r} has an unknown validator")
         spec = AssetPackSpec(
             id=pack_id,
@@ -100,6 +100,8 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
             raise AssetPackageError("companion pack requires exactly one runtime tree")
         if spec.validator == "tts_reference_pack" and len(spec.trees) != 1:
             raise AssetPackageError("TTS reference pack requires exactly one runtime tree")
+        if spec.validator == "japanese_dictionary" and len(spec.trees) != 1:
+            raise AssetPackageError("Japanese dictionary requires exactly one runtime tree")
         specs[pack_id] = spec
     return specs
 
@@ -135,6 +137,7 @@ def external_asset_pack_status(
     present = [path for path in spec.required if asset_path(asset_root, path).is_file()]
     missing = [path for path in spec.required if path not in present]
     message = ""
+    version = ""
     if not present:
         state = "not_installed"
     elif missing:
@@ -147,6 +150,14 @@ def external_asset_pack_status(
         try:
             load_reference_pack(asset_path(asset_root, spec.trees[0]))
         except ReferencePackError as exc:
+            state = "invalid"
+            message = str(exc)
+
+    if state == "installed" and spec.validator == "japanese_dictionary":
+        from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
+        try:
+            version = load_dictionary_pack(asset_path(asset_root, spec.trees[0])).version
+        except JapaneseDictionaryError as exc:
             state = "invalid"
             message = str(exc)
 
@@ -182,5 +193,6 @@ def external_asset_pack_status(
         "required_count": len(spec.required),
         "missing": [path.as_posix() for path in missing],
         "message": message,
+        **({"version": version} if spec.validator == "japanese_dictionary" else {}),
         "install_command": "python tools/external_assets.py install <asset-bundle.zip>",
     }

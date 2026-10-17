@@ -420,6 +420,9 @@ def _load_inferencer():
 
 
 def _synthesize_to_cache(inferencer, item: CacheItem, force: bool) -> tuple[str, float, Path]:
+    # Planning can precede native frontend startup. Recompute the real loaded
+    # pronunciation identity before checking or reporting the cache entry.
+    item = _prepare_item(item.raw_text)
     if item.cached and not force:
         return "hit", 0.0, item.cache_path
 

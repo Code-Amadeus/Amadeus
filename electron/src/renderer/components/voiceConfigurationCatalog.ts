@@ -16,6 +16,8 @@ interface VoiceRuntimeSelection {
   wakeEnabled: boolean
   aecEnabled: boolean
   emotionReferencesEnabled?: boolean
+  japaneseDictionaryEnabled?: boolean
+  ttsOutputLanguage?: string
 }
 
 export function buildVoiceConfigurationCatalog(
@@ -34,12 +36,15 @@ export function buildVoiceConfigurationCatalog(
     ASR_BACKEND: selection.asrBackend, WAKE_ENABLED: selection.wakeEnabled,
     AEC_REALTIME_ENABLED: selection.aecEnabled,
     ...(selection.emotionReferencesEnabled === undefined ? {} : { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: selection.emotionReferencesEnabled }),
+    ...(selection.japaneseDictionaryEnabled === undefined ? {} : { ENABLE_JAPANESE_USER_DICTIONARY: selection.japaneseDictionaryEnabled }),
   }
   const unknown = 'Backend status unavailable'
   const conversation = catalogConfiguration('conversation_asr', snapshot, runtimeValues)
   const wake = catalogConfiguration('wake_asr', snapshot, runtimeValues)
   const acoustic = catalogConfiguration('acoustic_pipeline', snapshot, runtimeValues)
   const emotion = catalogConfiguration('tts_emotion_references', snapshot, runtimeValues)
+  const dictionary = catalogConfiguration('tts_japanese_dictionary', snapshot, runtimeValues)
+  const dictionaryEnabled = dictionary.fields[0].value === true
   const asrBackend = conversation.fields.find(field => field.key === 'ASR_BACKEND')?.value
   const wakeEnabled = wake.fields.find(field => field.key === 'WAKE_ENABLED')?.value
   const aecEnabled = acoustic.fields.find(field => field.key === 'AEC_REALTIME_ENABLED')?.value
@@ -110,6 +115,13 @@ export function buildVoiceConfigurationCatalog(
     },
 
     {
+      ...dictionary,
+      active: ttsBackend === 'gpt_sovits' && dictionaryEnabled && ['日文', 'ja'].includes(selection.ttsOutputLanguage || value('TTS_OUTPUT_LANGUAGE')),
+      configured: !dictionaryEnabled,
+      status: dictionaryEnabled ? unknown : 'Off',
+      status_ok: !dictionaryEnabled,
+    },
+    {
       ...emotion,
 
       active: ttsBackend === 'gpt_sovits' && emotionEnabled === true,
@@ -122,7 +134,7 @@ export function buildVoiceConfigurationCatalog(
 }
 
 export const voiceConfigurationSections = {
-  output: new Set(['speech_synthesis', 'voice_reference_profile', 'tts_emotion_references',
+  output: new Set(['speech_synthesis', 'voice_reference_profile', 'tts_emotion_references', 'tts_japanese_dictionary',
     ...voiceBackendGroups.filter(group => group.section === 'output').map(group => group.id)]),
   input: new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline']),
   remote: new Set(['asr_remote', ...voiceBackendGroups.filter(group => group.section === 'remote').map(group => group.id)]),

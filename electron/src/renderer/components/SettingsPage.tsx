@@ -1117,12 +1117,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   })
   const artifactConfiguration = mergeGroups([catalogConfiguration("auip_artifact_style", catalogDesktop)], asConfigurationGroups(config.artifact_configuration))
   const backendVoiceConfiguration = asConfigurationGroups(config.voice_configuration)
+  const dictionaryRuntimeValue = backendVoiceConfiguration.find(group => group.id === 'tts_japanese_dictionary')?.fields.find(field => field.key === 'ENABLE_JAPANESE_USER_DICTIONARY')?.value
   const voiceCatalog = buildVoiceConfigurationCatalog({
         asrBackend: desktop?.sources?.ASR_BACKEND === 'user' ? desktop.values.ASR_BACKEND : val('asr_backend', 'qwen3_asr'),
         ttsBackend: desktop?.sources?.TTS_BACKEND === 'user' ? desktop.values.TTS_BACKEND : val('tts_backend', 'gpt_sovits'),
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
         aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? Boolean(desktopCatalogFields.AEC_REALTIME_ENABLED.default) : bool('aec_realtime_enabled'),
         emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
+        japaneseDictionaryEnabled: typeof dictionaryRuntimeValue === 'boolean' ? dictionaryRuntimeValue : undefined,
+        ttsOutputLanguage: val('tts_output_language', 'ja'),
       }, { ...catalogDesktop, extensions: desktop?.extensions }, locale)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
@@ -1133,6 +1136,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       ...backend,
       ...base,
       fields,
+      // This optional capability also requires a present/loaded native source;
+      // the enabled startup switch alone does not make it active.
+      ...(base.id === 'tts_japanese_dictionary' ? { active: Boolean(base.active && backend.active) } : {}),
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,

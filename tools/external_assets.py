@@ -85,7 +85,13 @@ def _resolved_source_files(
     spec: AssetPackSpec,
 ) -> tuple[Path, ...]:
     asset_root = project_root / "assets"
-    if spec.validator == "tts_reference_pack":
+    if spec.validator == "japanese_dictionary":
+        from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
+        try:
+            files = set(load_dictionary_pack(asset_path(asset_root, spec.trees[0])).files())
+        except JapaneseDictionaryError as exc:
+            raise AssetPackageError(f"{spec.id}: {exc}") from exc
+    elif spec.validator == "tts_reference_pack":
         from tts.reference_pack import ReferencePackError, load_reference_pack
         try:
             pack = load_reference_pack(asset_path(asset_root, spec.trees[0]))
@@ -524,6 +530,7 @@ def main() -> int:
                     print(
                         f"{row['id']}: {row['state']} "
                         f"({row['present_required']}/{row['required_count']} required files)"
+                        + (f" version={row['version']}" if row.get("version") else "")
                     )
             return 0
         if args.command == "build":

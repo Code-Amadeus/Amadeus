@@ -3077,6 +3077,42 @@ export const catalogGroups: CatalogGroup[] = [
     "apply": "backend_restart"
   },
   {
+    "id": "tts_japanese_dictionary",
+    "title": {
+      "en-US": "Japanese pronunciation dictionary",
+      "zh-CN": "日语发音词典"
+    },
+    "description": {
+      "en-US": "Use an optionally installed dictionary for English words and names in local Japanese speech.",
+      "zh-CN": "为本地日语语音使用可选安装的英文单词与人名读音词典。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "ENABLE_JAPANESE_USER_DICTIONARY": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use installed Japanese dictionaries",
+          "zh-CN": "使用已安装的日语词典"
+        },
+        "description": {
+          "en-US": "Does not download a dictionary. Install japanese-pronunciation separately. Turn off to use the base dictionary; restart the backend after changes.",
+          "zh-CN": "不会下载词典，请单独安装 japanese-pronunciation。关闭后使用基础词典；更改后需重启后端。"
+        },
+        "default": true,
+        "accepted_values": [
+          "true",
+          "false",
+          "1",
+          "0",
+          "yes",
+          "no"
+        ],
+        "example_active": true
+      }
+    }
+  },
+  {
     "id": "voice_reference_profile",
     "title": {
       "en-US": "Voice reference profile",
