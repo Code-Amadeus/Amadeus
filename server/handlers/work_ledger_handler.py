@@ -18,6 +18,7 @@ from server.protocol import Method
 from server.event_bus import bus
 from server.work_ledger_coordinator import DEFAULT_WORK_SURFACE, WorkLedgerCoordinator
 from server.ws_handler import RequestHandler
+from server.permission_grants import expire_failed_dispatch_grant
 
 logger = logging.getLogger("server")
 
@@ -173,6 +174,8 @@ class WorkLedgerHandler(RequestHandler):
         if target == "permission" and action in {
             "allow",
             "allow_once",
+            "allow_work",
+            "revoke_work",
             "approve_once",
             "deny",
             "reject",
@@ -445,7 +448,7 @@ class WorkLedgerHandler(RequestHandler):
         *,
         canvas_action: str = "",
     ) -> dict[str, Any]:
-        current = self.coordinator.snapshot(surface=DEFAULT_WORK_SURFACE)
+        current = self.coordinator.snapshot(surface=self._surface(params))
 
         def reject(error: str) -> dict[str, Any]:
             return {
@@ -496,6 +499,8 @@ class WorkLedgerHandler(RequestHandler):
         if action not in {
             "allow",
             "allow_once",
+            "allow_work",
+            "revoke_work",
             "approve_once",
             "deny",
             "reject",
@@ -509,7 +514,10 @@ class WorkLedgerHandler(RequestHandler):
             if action in {"retry_export", "abandon_export"}
             else "pendingPermissionRequestId"
         )
-        if str(selected.get(current_request_field) or "") != request_id:
+        current_grant = any(grant.get("id") == request_id
+            for grant in current.get("activePermissionGrants", []))
+        if (not current_grant if action == "revoke_work"
+                else str(selected.get(current_request_field) or "") != request_id):
             return reject(
                 "export_recovery_not_current"
                 if action in {"retry_export", "abandon_export"}
@@ -523,6 +531,13 @@ class WorkLedgerHandler(RequestHandler):
             return reject("permission_work_item_mismatch")
         if request.attempt_id != attempt_id:
             return reject("permission_attempt_mismatch")
+        for names, expected in (
+            (("run_id", "runId"), request.metadata.get("provider_run_id")),
+            (("session_id", "sessionId"), request.metadata.get("session_id")),
+        ):
+            supplied = str(params.get(names[0]) or params.get(names[1]) or "")
+            if supplied and supplied != str(expected or ""):
+                return reject("permission_owner_mismatch")
 
         if action == "review_file":
             try:
@@ -538,8 +553,8 @@ class WorkLedgerHandler(RequestHandler):
         # into an approval.  Deny remains available as a fail-safe even for a
         # malformed legacy request with no options.
         if (
-            action in {"allow", "allow_once", "approve_once"}
-            and "allow_once" not in request.options
+            action in {"allow", "allow_once", "approve_once", "allow_work"}
+            and ("allow_work" if action == "allow_work" else "allow_once") not in request.options
         ):
             return reject("permission_option_not_allowed")
 
@@ -548,22 +563,42 @@ class WorkLedgerHandler(RequestHandler):
             and request.metadata.get("diagnostic_only") is not True
             and request.metadata.get("host_seeded") is not True
         )
+        preauthorized = False
         if provider_permission:
             if self._provider_permission is None:
                 return reject("provider_permission_runtime_unavailable")
             run_id = str(request.metadata.get("provider_run_id") or "").strip()
             if not run_id:
                 return reject("provider_permission_run_missing")
-            outcome = self._provider_permission(
-                run_id,
-                ProviderPermissionResponse(
-                    request_id=str(request.metadata.get("provider_request_id") or ""),
-                    allow=action in {"allow", "allow_once", "approve_once"},
-                ),
-            )
-            if inspect.isawaitable(outcome):
-                outcome = await outcome
+            attempt = self.coordinator.store.get_attempt(attempt_id)
+            if (attempt is None or attempt.provider_run_id != run_id
+                    or attempt.execution_status not in {"queued", "running"}):
+                return reject("provider_permission_run_not_current")
+            if action == "allow_work":
+                context = self.coordinator.permission_service.context(request_id,
+                    work_item_id=work_item_id, attempt_id=attempt_id)
+                self.coordinator.permission_service.resolve(context, allow=True, scope="work")
+                preauthorized = True
+            try:
+                outcome = self._provider_permission(
+                    run_id,
+                    ProviderPermissionResponse(
+                        request_id=str(request.metadata.get("provider_request_id") or ""),
+                        allow=action in {"allow", "allow_once", "approve_once", "allow_work"},
+                        scope="work" if action in {"allow_work", "revoke_work"} else "once",
+                    ),
+                )
+                if inspect.isawaitable(outcome):
+                    outcome = await outcome
+            except BaseException:
+                if preauthorized:
+                    expire_failed_dispatch_grant(self.coordinator.store, request_id)
+                raise
             if not isinstance(outcome, dict) or outcome.get("accepted") is not True:
+                if preauthorized:
+                    expire_failed_dispatch_grant(self.coordinator.store, request_id)
+                    await self.coordinator.publish_snapshot(reason="permission.dispatch_failed")
+                    current = self.coordinator.snapshot(surface=self._surface(params))
                 return reject(
                     str(
                         (outcome or {}).get("reason")
@@ -573,7 +608,11 @@ class WorkLedgerHandler(RequestHandler):
                     or "provider_permission_rejected"
                 )
 
-        if action == "retry_export":
+        if preauthorized:
+            resolved = self.coordinator.store.get_permission_request(request_id)
+            await self.coordinator.publish_snapshot(reason="permission.allowed_work")
+            result = {"permission": resolved.to_dict(), "exportedPaths": []}
+        elif action == "retry_export":
             result = await self.coordinator.resume_export(
                 request_id,
                 work_item_id=work_item_id,
@@ -588,17 +627,18 @@ class WorkLedgerHandler(RequestHandler):
         else:
             result = await self.coordinator.resolve_permission(
                 request_id,
-                allow=action in {"allow", "allow_once", "approve_once"},
+                allow=action in {"allow", "allow_once", "approve_once", "allow_work"},
+                scope="work" if action in {"allow_work", "revoke_work"} else "once",
                 work_item_id=work_item_id,
                 attempt_id=attempt_id,
             )
-        snapshot = result.get("work") if isinstance(result.get("work"), dict) else self.coordinator.snapshot()
+        snapshot = self.coordinator.snapshot(surface=self._surface(params))
         return {
             "ok": True,
             "target": "permission",
             "action": (
                 action
-                if action in {"retry_export", "abandon_export"}
+                if action in {"retry_export", "abandon_export", "allow_work", "revoke_work"}
                 else (
                     "allow_once"
                     if action in {"allow", "allow_once", "approve_once"}

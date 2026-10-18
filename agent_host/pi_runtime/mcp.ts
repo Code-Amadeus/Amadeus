@@ -1,11 +1,19 @@
 /** Host-selected MCP configuration; Pi owns discovery and tool execution. */
 import { createMcpExtension, type ExtensionAPI, type LoadedMcpConfig, type McpServerEntry } from '@earendil-works/pi-coding-agent'
 import { StdioTransport, StreamableHttpTransport } from '@earendil-works/pi-mcp'
+import { createHash } from 'node:crypto'
 
 const snapshotKey = Symbol.for('amadeus.pi.hostMcpSnapshot')
 
 type HostMcpConfig = Omit<LoadedMcpConfig, 'servers'> & { servers: (McpServerEntry & { displayName: string })[] }
-type ApprovalLabel = (input: Record<string, unknown>) => string
+type McpCall = {
+  connectionId: string; connectionName: string; configurationRevision: string
+  toolName: string; arguments: Record<string, unknown>
+}
+export type McpApproval = {
+  label: (input: Record<string, unknown>) => string
+  call: (input: Record<string, unknown>) => McpCall | undefined
+}
 const resourceTools = new Set(['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'])
 
 function approvalLabel(value: string): string {
@@ -32,9 +40,9 @@ function hostSnapshot(): HostMcpConfig {
   return owner[snapshotKey]!
 }
 
-export function registerHostMcp(pi: ExtensionAPI): Map<string, ApprovalLabel> {
+export function registerHostMcp(pi: ExtensionAPI): Map<string, McpApproval> {
   const config = hostSnapshot()
-  const tools = new Map<string, ApprovalLabel>()
+  const tools = new Map<string, McpApproval>()
   if (!config.servers.length && !config.errors.length) return tools
 
   createMcpExtension({
@@ -59,7 +67,7 @@ export function registerHostMcp(pi: ExtensionAPI): Map<string, ApprovalLabel> {
       // names have been shortened and hashed. Host display names remain visible.
       const entry = config.servers.find(entry => tool.label.startsWith(`${entry.name}/`))
       const label = entry ? `${connectionLabel(entry)} / ${tool.label.slice(entry.name.length + 1)}` : tool.label
-      tools.set(tool.name, input => {
+      tools.set(tool.name, { label: input => {
         if (!resourceTools.has(tool.name)) return approvalLabel(label)
         // Native resource operations choose their server at invocation time.
         // Match Pi's string trimming for display without rewriting the input.
@@ -69,7 +77,19 @@ export function registerHostMcp(pi: ExtensionAPI): Map<string, ApprovalLabel> {
           : tool.name === 'read_mcp_resource' ? 'Server not specified'
           : `All bound connections: ${config.servers.map(connectionLabel).join(', ')}`
         return approvalLabel(`${tool.label} / ${scope}`)
-      })
+      }, call: input => {
+        // 仅确切连接可建立复用授权；聚合查询和未知连接继续逐次审批。
+        const selected = resourceTools.has(tool.name)
+          ? config.servers.find(item => item.name === (typeof input.server === 'string' ? input.server.trim() : ''))
+          : entry
+        if (!selected) return undefined
+        const toolName = resourceTools.has(tool.name) ? tool.name : tool.label.slice(selected.name.length + 1)
+        // 配置、工具协议和原始参数共同决定授权身份，展示截断不参与匹配。
+        const configurationRevision = createHash('sha256')
+          .update(JSON.stringify({ connection: selected, parameters: tool.parameters })).digest('hex')
+        return { connectionId: selected.name, connectionName: approvalLabel(selected.displayName),
+          configurationRevision, toolName, arguments: input }
+      } })
       pi.registerTool(tool)
     },
   })

@@ -17,6 +17,7 @@ from agent_host.work_ledger_types import ArtifactRecord, PermissionRequestRecord
 from server.auip_app_source import discover_approved_auip_app, discover_launchable_auip_app, discover_registered_auip_app
 from server.scratch_workspace import is_scratch_path
 from server.work_activity_snapshot import ACTIVITY_METADATA_KEY, activity_report_fields
+from server.permission_grants import active_grants, permission_projection
 from server.work_artifact_source import TEXT_SUFFIXES, latest_artifacts_by_path
 
 
@@ -622,6 +623,8 @@ class WorkReadModel:
             "pendingPermissionRequestId": (
                 latest_permission.request_id if latest_permission is not None else ""
             ),
+            "permissionRequest": permission_projection(latest_permission) if latest_permission else None,
+            "activePermissionGrants": active_grants(permissions) if execution in _ACTIVE_EXECUTION else [],
             "recoverableExportRequestId": (
                 recoverable_export.request_id if recoverable_export is not None else ""
             ),

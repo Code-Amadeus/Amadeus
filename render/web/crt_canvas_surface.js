@@ -1108,10 +1108,14 @@
       }
 
       .crt-canvas-actions,
-      .crt-canvas-permission div {
+      .crt-canvas-permission-actions {
         display: flex;
         align-items: center;
         gap: 7px;
+      }
+
+      .crt-canvas-permission-actions {
+        flex-wrap: wrap;
       }
 
       .crt-canvas-permission span {
@@ -2212,12 +2216,20 @@
         font-size: 10px;
       }
 
-      .crt-canvas-permission {
+      .crt-canvas-permissions {
         position: absolute;
         left: 12px;
         right: 12px;
         bottom: 12px;
         z-index: 2;
+        display: grid;
+        gap: 8px;
+        max-height: 66%;
+        overflow-y: auto;
+      }
+
+      .crt-canvas-permission {
+        min-width: 0;
         padding: 11px;
         border: 1px solid rgba(192, 145, 255, 0.44);
         border-radius: 14px;
@@ -2249,6 +2261,13 @@
       }
 
       .crt-canvas-permission code {
+        overflow-wrap: anywhere;
+      }
+
+      .crt-canvas-permission pre {
+        max-height: 144px;
+        overflow: auto;
+        white-space: pre-wrap;
         overflow-wrap: anywhere;
       }
 
@@ -2389,6 +2408,9 @@
         permission: "Permission", recovery: "Recovery", providerBlocked: "Provider blocked",
         choice: "Choice", selectionFailed: "Selection could not be applied",
         allowOnce: "Allow once", deny: "Deny", dismiss: "Dismiss",
+        allowWork: "Allow identical calls for this Work", revokeWork: "Revoke", activeGrants: "Active Work permissions",
+        exactCall: "Only this connection, tool and exactly the same arguments; expires when this Work ends or is cancelled.",
+        autoApprove: "Automatic approval is on for all Work, including MCP and shell. It stays on until turned off.", autoApproveSettings: "Manage approval in Settings > Providers > Work approval, or turn it off on the Work page.",
       },
       "zh-CN": {
         expand: "展开面板", fold: "收起面板", ready: "就绪",
@@ -2399,6 +2421,9 @@
         permission: "权限", recovery: "恢复", providerBlocked: "执行受阻",
         choice: "请选择", selectionFailed: "无法应用这次选择",
         allowOnce: "仅允许一次", deny: "拒绝", dismiss: "关闭",
+        allowWork: "本次 Work 允许相同调用", revokeWork: "撤销", activeGrants: "本次 Work 的有效授权",
+        exactCall: "仅限此连接、工具和完全相同的参数；本次 Work 结束或取消后失效。",
+        autoApprove: "所有 Work 已开启自动审批，包括 MCP 和 Shell；将持续生效直到手动关闭。", autoApproveSettings: "在设置 > Providers > Work 审批中管理，或在 Work 页面关闭。",
       },
       "ja-JP": {
         expand: "パネルを開く", fold: "パネルを閉じる", ready: "待機",
@@ -2409,6 +2434,9 @@
         permission: "権限", recovery: "復旧", providerBlocked: "実行ブロック",
         choice: "選択", selectionFailed: "選択を適用できませんでした",
         allowOnce: "今回のみ許可", deny: "拒否", dismiss: "閉じる",
+        allowWork: "この Work で同一呼び出しを許可", revokeWork: "取り消す", activeGrants: "この Work の有効な権限",
+        exactCall: "この接続・ツール・完全に同じ引数に限定。Work の終了またはキャンセル時に失効します。",
+        autoApprove: "すべての Work で MCP・シェルを含む自動承認が有効です。手動で無効にするまで続きます。", autoApproveSettings: "設定 > Providers > Work approval、または Work ページで無効にできます。",
       },
     };
 
@@ -2471,6 +2499,9 @@
       workActionError: "",
       permissionVisible: false,
       permissionRequest: null,
+      activePermissionGrants: [],
+      activePermissionGrantOwner: null,
+      workPermissionAutoApprove: false,
       permissionSubmitting: false,
       permissionError: "",
       attentionRequest: null,
@@ -3408,6 +3439,11 @@
       const taskDock = normalizeTaskDock(projection);
       if (!taskDock) return false;
       state.taskDock = taskDock;
+      if (typeof projection.workPermissionAutoApprove === "boolean") state.workPermissionAutoApprove = projection.workPermissionAutoApprove;
+      applyActivePermissionGrants(Object.assign({}, projection, { workContext: {
+        workItemId: projection.selectedWorkItemId,
+        attemptId: projection.selected && projection.selected.attemptId,
+      } }));
       const selected = projection && projection.selected && typeof projection.selected === "object"
         ? projection.selected
         : null;
@@ -3441,7 +3477,12 @@
       const options = rawOptions
         .map((item) => compactText(item && typeof item === "object" ? (item.kind || item.id) : item, 80).toLowerCase().replace(/-/g, "_"))
         .map((item) => item === "approve_once" || item === "allow" ? "allow_once" : (item === "reject" || item === "reject_once" ? "deny" : item))
-        .filter((item, index, values) => ["allow_once", "deny", "retry_export", "abandon_export"].includes(item) && values.indexOf(item) === index);
+        .filter((item, index, values) => ["allow_once", "allow_work", "deny", "retry_export", "abandon_export"].includes(item) && values.indexOf(item) === index);
+      const call = value.mcpCall;
+      const mcpCall = call && typeof call === "object" && !Array.isArray(call)
+        && call.connectionId && call.toolName && own(call, "arguments")
+        ? { connectionId: String(call.connectionId), toolName: String(call.toolName), arguments: call.arguments }
+        : null;
       const previews = (Array.isArray(value.previews) ? value.previews : [])
         .filter((item) => item && typeof item === "object" && !Array.isArray(item))
         .map((item) => ({
@@ -3473,7 +3514,55 @@
         previewComplete: value.previewComplete === true || value.preview_complete === true,
         previewVersion: nonNegativeCount(value.previewVersion == null ? value.preview_version : value.previewVersion),
         previews,
+        mcpCall,
+        grantStatus: compactText(value.grantStatus, 40),
+        useCount: nonNegativeCount(value.useCount),
       };
+    }
+
+    function applyActivePermissionGrants(data) {
+      const incoming = (Array.isArray(data.activePermissionGrants) ? data.activePermissionGrants : []).map(normalizePermissionRequest)
+        .filter((grant) => grant && grant.id && grant.mcpCall && grant.grantStatus === "active");
+      const metadata = data.metadata || {};
+      const context = data.workContext || state.workContext || {};
+      const sample = incoming[0] || {};
+      const cooperative = metadata.owner_kind === "cooperative_run" || sample.ownerKind === "cooperative_run";
+      const runId = String(metadata.provider_run_id || sample.runId || "");
+      const workItemId = String(context.workItemId || context.work_item_id || sample.workItemId || "");
+      if (metadata.owner_kind === "cooperative_run") {
+        const owner = state.activePermissionGrantOwner;
+        const sessionId = String(metadata.session_id || sample.sessionId || "");
+        const lifecycleOnly = data.permissionVisible === false && data.open !== true && data.expanded !== true;
+        if (!lifecycleOnly || (owner && owner.ownerKind === "cooperative_run"
+            && owner.runId === runId && owner.sessionId === sessionId)) {
+          state.activePermissionGrantOwner = { ownerKind: "cooperative_run", runId, sessionId };
+        }
+      } else if (own(data, "workContext")) {
+        state.activePermissionGrantOwner = workItemId ? { ownerKind: "work_attempt", workItemId,
+          attemptId: String(context.attemptId || context.attempt_id || "") } : null;
+      } else if (metadata.session_id && state.activePermissionGrantOwner
+          && state.activePermissionGrantOwner.ownerKind === "cooperative_run"
+          && state.activePermissionGrantOwner.sessionId !== String(metadata.session_id)) {
+        state.activePermissionGrantOwner = null;
+      } else if (!state.activePermissionGrantOwner && incoming.length) {
+        state.activePermissionGrantOwner = sample;
+      }
+      if (!Array.isArray(data.activePermissionGrants)) return;
+      const sameOwner = (grant) => cooperative
+        ? grant.ownerKind === "cooperative_run" && grant.runId === runId
+        : grant.ownerKind !== "cooperative_run" && grant.workItemId === workItemId;
+      state.activePermissionGrants = state.activePermissionGrants.filter((grant) => !sameOwner(grant)).concat(incoming);
+    }
+
+    function currentPermissionGrants() {
+      const owner = state.activePermissionGrantOwner;
+      if (!owner) return [];
+      const sessionId = String(state.taskDock && state.taskDock.currentSessionId || "");
+      return state.activePermissionGrants.filter((grant) => owner.ownerKind === "cooperative_run"
+        ? grant.ownerKind === "cooperative_run" && grant.runId === owner.runId
+          && grant.sessionId === owner.sessionId && (!sessionId || grant.sessionId === sessionId)
+        : grant.ownerKind !== "cooperative_run" && grant.workItemId === owner.workItemId
+          && grant.attemptId === owner.attemptId);
     }
 
     function normalizeAttentionRequest(value) {
@@ -3538,7 +3627,7 @@
     function presentationKey(data) {
       if (!data || typeof data !== "object" || Array.isArray(data)) return "";
       const ignored = new Set([
-        "taskDock", "workContext", "permissionRequest", "permissionVisible",
+        "taskDock", "workContext", "permissionRequest", "permissionVisible", "activePermissionGrants", "workPermissionAutoApprove",
         "open", "expanded", "visible", "ttlMs", "timeoutMs", "lifecycle",
         "size", "sizePreset", "revision", "clear", "action",
       ]);
@@ -4384,6 +4473,37 @@
       ].join("");
     }
 
+    function exactMcpCall(call) {
+      if (!call) return "";
+      return "<p>" + escapeHtml(ui("exactCall")) + "</p><code>"
+        + escapeHtml(call.connectionId + " / " + call.toolName) + "</code><pre>"
+        + escapeHtml(JSON.stringify(call.arguments, null, 2)) + "</pre>";
+    }
+
+    function activePermissionGrantsPane() {
+      const grants = currentPermissionGrants();
+      if (!grants.length) return "";
+      return "<section class=\"crt-canvas-permission\"><span>" + escapeHtml(ui("activeGrants")) + "</span>"
+        + grants.map((grant) => "<div>" + exactMcpCall(grant.mcpCall)
+          + "<button type=\"button\" data-permission-action=\"revoke_work\" data-permission-grant-id=\""
+          + escapeAttr(grant.id) + "\"" + (state.permissionSubmitting ? " disabled" : "") + ">"
+          + escapeHtml(ui("revokeWork")) + "</button></div>").join("")
+        + (state.permissionError ? "<p class=\"crt-canvas-permission-error\">" + escapeHtml(state.permissionError) + "</p>" : "")
+        + "</section>";
+    }
+
+    function permissionPolicyPane() {
+      if (!state.workPermissionAutoApprove) return "";
+      return "<section class=\"crt-canvas-permission\"><p>" + escapeHtml(ui("autoApprove"))
+        + "</p><p>" + escapeHtml(ui("autoApproveSettings")) + "</p></section>";
+    }
+
+    function permissionRegion() {
+      const content = permissionPane() + activePermissionGrantsPane() + permissionPolicyPane();
+      return content ? "<div class=\"crt-canvas-permissions\" role=\"region\" aria-label=\""
+        + escapeAttr(ui("permission")) + "\" tabindex=\"0\">" + content + "</div>" : "";
+    }
+
     function permissionPane() {
       if (!state.permissionVisible) return "";
       const request = state.permissionRequest || {
@@ -4433,6 +4553,9 @@
       if (optionSet.includes("allow_once")) {
         buttons.push("<button type=\"button\" data-permission-action=\"allow_once\"" + (state.permissionSubmitting ? " disabled" : "") + ">" + escapeHtml(ui("allowOnce")) + "</button>");
       }
+      if (optionSet.includes("allow_work") && request.mcpCall) {
+        buttons.push("<button type=\"button\" data-permission-action=\"allow_work\"" + (state.permissionSubmitting ? " disabled" : "") + ">" + escapeHtml(ui("allowWork")) + "</button>");
+      }
       if (optionSet.includes("deny")) {
         buttons.push("<button type=\"button\" data-permission-action=\"deny\"" + (state.permissionSubmitting ? " disabled" : "") + ">" + escapeHtml(diagnosticOnly ? ui("dismiss") : ui("deny")) + "</button>");
       }
@@ -4448,24 +4571,29 @@
         "<strong>" + escapeHtml(request.capability + " / " + request.action) + "</strong>",
         "<p>" + escapeHtml(request.reason) + "</p>",
         scopes,
+        exactMcpCall(request.mcpCall),
         previewRows,
         "<p>" + escapeHtml(request.reversibility) + (diagnosticOnly ? " This run cannot be approved in place; dismiss it. If more work is needed, describe the next task to Amadeus." : (request.retryRequired ? " A new provider run is required after approval." : "")) + "</p>",
         state.permissionError ? "<p class=\"crt-canvas-permission-error\">" + escapeHtml(state.permissionError) + "</p>" : "",
-        "<div>" + buttons.join("") + "</div>",
+        "<div class=\"crt-canvas-permission-actions\">" + buttons.join("") + "</div>",
         "</section>",
       ].join("");
     }
 
     async function handlePermissionAction(button) {
       const action = String(button && button.getAttribute("data-permission-action") || "");
-      const request = state.permissionRequest;
-      if (!request || !request.id || !["allow_once", "deny", "retry_export", "abandon_export", "review_file"].includes(action)) {
+      const revoking = action === "revoke_work";
+      const request = revoking
+        ? currentPermissionGrants().find((grant) => grant.id === String(button.getAttribute("data-permission-grant-id") || ""))
+        : state.permissionRequest;
+      if (!request || !request.id || !["allow_once", "allow_work", "revoke_work", "deny", "retry_export", "abandon_export", "review_file"].includes(action)) {
         state.permissionError = "Permission request is incomplete. Refresh the task card and try again.";
         render();
         return;
       }
       const reviewing = action === "review_file";
-      if (!reviewing && (!Array.isArray(request.options) || !request.options.includes(action))) return;
+      if (!reviewing && !revoking && (!Array.isArray(request.options) || !request.options.includes(action))) return;
+      if (action === "allow_work" && !request.mcpCall) return;
       state.permissionSubmitting = true;
       state.permissionError = "";
       render();
@@ -4486,6 +4614,12 @@
           });
         if (reviewing) actionPayload.relative_path = String(button.getAttribute("data-export-relative-path") || "");
         await postCanvasAction("permission", action, actionPayload);
+        if (revoking) {
+          state.activePermissionGrants = state.activePermissionGrants.filter((grant) => grant.id !== request.id);
+          state.permissionSubmitting = false;
+          render();
+          return;
+        }
         if (reviewing) {
           state.permissionSubmitting = false;
           render();
@@ -4646,6 +4780,7 @@
       state.actions = [];
       state.permissionVisible = false;
       state.permissionRequest = null;
+      state.activePermissionGrantOwner = null;
       state.permissionSubmitting = false;
       state.workExecutionSubmitting = false;
       state.workPreviewSubmitting = false;
@@ -4697,7 +4832,7 @@
         taskDockPane(),
         canvasModeTabs(),
         body,
-        permissionPane(),
+        permissionRegion(),
         attentionPane(),
       ].join("");
       const cardChanged = nextCardHtml !== renderedCardHtml;
@@ -4998,6 +5133,8 @@
           state.expanded = false;
           state.permissionVisible = false;
           state.permissionRequest = null;
+          state.activePermissionGrants = [];
+          state.activePermissionGrantOwner = null;
           state.permissionSubmitting = false;
           state.workActionError = "";
           state.permissionError = "";
@@ -5157,6 +5294,8 @@
         const incomingPermission = own(data, "permissionRequest")
           ? normalizePermissionRequest(data.permissionRequest)
           : undefined;
+        applyActivePermissionGrants(data);
+        if (typeof data.workPermissionAutoApprove === "boolean") state.workPermissionAutoApprove = data.workPermissionAutoApprove;
         if (data.permissionVisible === false) {
           const currentPermission = state.permissionRequest;
           const samePermission = !currentPermission || (incomingPermission

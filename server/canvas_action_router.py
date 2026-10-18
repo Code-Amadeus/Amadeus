@@ -246,7 +246,7 @@ class CanvasActionRouter:
             "approve_once": "allow_once",
             "reject": "deny",
         }.get(action, action)
-        if normalized not in {"allow_once", "deny", "retry_export", "abandon_export", "review_file"}:
+        if normalized not in {"allow_once", "allow_work", "revoke_work", "deny", "retry_export", "abandon_export", "review_file"}:
             return {"ok": False, "error": "unsupported_action"}
         owner_kind = str(
             data.get("owner_kind")
@@ -256,7 +256,7 @@ class CanvasActionRouter:
         if owner_kind not in {"", "work_attempt", "cooperative_run"}:
             return {"ok": False, "error": "unsupported_permission_owner"}
         if owner_kind == "cooperative_run":
-            if normalized not in {"allow_once", "deny"}:
+            if normalized not in {"allow_once", "allow_work", "revoke_work", "deny"}:
                 return {"ok": False, "error": "unsupported_action"}
             if self._cooperative_permission_action is None:
                 return {"ok": False,
@@ -276,7 +276,8 @@ class CanvasActionRouter:
                     data.get("provider_request_id")
                     or data.get("providerRequestId") or ""
                 ).strip(),
-                "allow": normalized == "allow_once",
+                "allow": normalized in {"allow_once", "allow_work"},
+                "decision": normalized,
             }
             if not all(payload[key] for key in (
                     "permission_request_id", "session_id", "run_id",
@@ -314,6 +315,8 @@ class CanvasActionRouter:
             "project_id": str(data.get("project_id") or data.get("projectId") or ""),
             "work_item_id": work_item_id,
             "run_id": str(data.get("run_id") or data.get("runId") or ""),
+            "session_id": str(data.get("session_id") or data.get("sessionId") or ""),
+            "surface": str(data.get("surface") or ""),
             "attempt_id": attempt_id,
             "revision": revision,
         }

@@ -8,7 +8,7 @@ import os
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from agent_host.provider_contract import (
@@ -305,6 +305,8 @@ class ProviderRuntime:
         self._runs: dict[str, ProviderRunRecord] = {}
         self._input_locks: dict[str, asyncio.Lock] = {}
         self._cancel_tasks: dict[str, asyncio.Task[dict[str, Any]]] = {}
+        self._permission_requests: dict[tuple[str, str], dict[str, Any]] = {}
+        self._automatic_permission_authorizer: Callable[[str, str], Any] | None = None
         self._request_preparer: Callable[..., Any] | None = None
         self._native_session_checkpoint: Callable[[str, ProviderSessionHandle], Any] | None = None
         self._start_admission_validator: Callable[
@@ -341,6 +343,12 @@ class ProviderRuntime:
         The callback returns normally only after its required persistence succeeds.
         """
         self._native_session_checkpoint = callback
+
+    def set_automatic_permission_authorizer(
+        self, callback: Callable[[str, str], Any] | None,
+    ) -> None:
+        """安装可信 Host 权限拥有者；严格返回 True 表示自动决定已提交。"""
+        self._automatic_permission_authorizer = callback
 
     def set_start_admission_validator(
         self,
@@ -1403,20 +1411,31 @@ class ProviderRuntime:
                 "reason": str(outcome.get("reason") or "adapter_rejected_permission_response"),
                 "run": record.to_dict(),
             }
-        await self._emit(
-            record,
-            ProviderEvent(
-                provider=record.provider,
-                run_id=record.run_id,
-                type="permission.allowed" if response.allow else "permission.denied",
-                payload={
-                    "request_id": response.request_id,
-                    "decision": "allow_once" if response.allow else "deny",
-                    "automatic": response.automatic,
-                    **({"reason":response.reason} if response.reason else {}),
-                },
-            ),
-        )
+        try:
+            await self._emit(
+                record,
+                ProviderEvent(
+                    provider=record.provider,
+                    run_id=record.run_id,
+                    type=("permission.allowed" if response.allow else
+                          "permission.revoked" if response.scope == "work" else "permission.denied"),
+                    payload={
+                        "request_id": response.request_id,
+                        "decision": ("allow_work" if response.allow else "revoke_work")
+                            if response.scope == "work" else "allow_once" if response.allow else "deny",
+                        "scope": response.scope,
+                        "automatic": response.automatic,
+                        **({"reason":response.reason} if response.reason else {}),
+                    },
+                ),
+            )
+        except BaseException:
+            if response.scope == "work" and response.allow:
+                # 发布被取消时收回可复用权限；不重发已经派发的动作。
+                rollback = resolve(record.run_id, replace(response, allow=False))
+                if inspect.isawaitable(rollback):
+                    await rollback
+            raise
         return {"accepted": True, "run": record.to_dict()}
 
     async def append_input(self, run_id: str, text: str) -> ProviderInputDelivery:
@@ -1855,7 +1874,93 @@ class ProviderRuntime:
                 del record.events[:dropped]
                 record.metadata["events_dropped"] = int(record.metadata.get("events_dropped") or 0) + dropped
             record.updated_at = time.time()
+        permission_request = self._permission_source(event.payload)
+        permission_id = self._permission_id(permission_request)
+        permission_key = (record.run_id, permission_id)
+        if event.type in {"permission.requested", "permission.required"} and permission_id:
+            previous = self._permission_requests.get(permission_key)
+            if previous is not None and previous["source"] != permission_request:
+                # 同一身份的调用内容变化后，不得借用先前记录自动授权。
+                previous["automatic_attempted"] = True
+                raise ValueError("Provider reused a permission request identity with different content")
+            self._permission_requests.setdefault(permission_key,
+                {"source": copy.deepcopy(permission_request), "automatic_attempted": False, "published": False})
+        elif event.type in {"permission.allowed", "permission.approved", "permission.granted",
+                "permission.denied", "permission.rejected", "permission.expired"}:
+            pending = self._permission_requests.get(permission_key)
+            if pending is not None:
+                # 落库可能失败；保留本轮已结算身份，禁止旧 pending 记录授权重放。
+                pending["published"] = False
+                pending["automatic_attempted"] = True
+        elif event.type in {"run.finished", "run.failed", "run.cancelled"}:
+            for key in tuple(self._permission_requests):
+                if key[0] == record.run_id:
+                    del self._permission_requests[key]
         await bus.emit(Method.PROVIDER_EVENT, data)
+        if event.type in {"permission.requested", "permission.required"}:
+            pending = self._permission_requests.get(permission_key)
+            if pending is not None:
+                pending["published"] = True
+            await self._apply_automatic_permission(record, event.payload)
+
+    @staticmethod
+    def _permission_source(payload: dict) -> dict:
+        return next((payload[key] for key in
+            ("permissionRequest", "permission_request", "request", "permission")
+            if isinstance(payload.get(key), dict)), payload)
+
+    @staticmethod
+    def _permission_id(source: dict) -> str:
+        return str(source.get("request_id") or source.get("requestId")
+            or source.get("id") or source.get("toolUseId") or source.get("tool_use_id") or "").strip()
+
+    async def apply_permission_policy(self) -> None:
+        """将最新用户策略应用于当前仍等待的请求，不重发已尝试的响应。"""
+        failures = []
+        for (run_id, _), pending in tuple(self._permission_requests.items()):
+            record = self._runs.get(run_id)
+            if record is not None:
+                try:
+                    await self._apply_automatic_permission(record, pending["source"])
+                except Exception as exc:
+                    # 一个连接的未知回执不能阻塞其他 Work；失败统一向调用方报告。
+                    failures.append(exc)
+        if failures:
+            raise ExceptionGroup("Some pending permission responses could not be confirmed; none will be resent", failures)
+
+    async def _apply_automatic_permission(self, record: ProviderRunRecord, payload: dict) -> None:
+        from config import settings
+
+        if not getattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False):
+            return
+        request_id = self._permission_id(self._permission_source(payload))
+        pending = self._permission_requests.get((record.run_id, request_id))
+        if pending is None or not pending["published"] or pending["automatic_attempted"]:
+            return
+        source = pending["source"]
+        if (source.get("diagnosticOnly") is True or source.get("diagnostic_only") is True
+                or source.get("retryRequired") is True or source.get("retry_required") is True):
+            return
+        options = source.get("options", source.get("choices", []))
+        values = options if isinstance(options, list) else [options]
+        kinds = {str(value.get("kind") or value.get("id") or value.get("value"))
+            if isinstance(value, dict) else str(value) for value in values}
+        if not kinds.intersection({"allow_once", "allow", "approve_once"}):
+            return
+        # 广播完成不代表落库；先占用本次尝试，再由权限拥有者提交自动决定。
+        pending["automatic_attempted"] = True
+        authorizer = self._automatic_permission_authorizer
+        if authorizer is None:
+            raise RuntimeError("Automatic permission approval requires a durable Host owner")
+        committed = authorizer(record.run_id, request_id)
+        if inspect.isawaitable(committed):
+            committed = await committed
+        if committed is not True:
+            raise RuntimeError("Automatic permission decision was not committed by its Host owner")
+        if not getattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False):
+            return
+        await self.resolve_permission(record.run_id, ProviderPermissionResponse(
+            request_id, True, automatic=True, reason="work_permission_auto_approve"))
 
     @staticmethod
     def _apply_request_contract(

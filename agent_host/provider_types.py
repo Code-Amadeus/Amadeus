@@ -343,6 +343,7 @@ class ProviderPermissionResponse:
     allow: bool
     automatic: bool = False
     reason: str = ""
+    scope: Literal["once", "work"] = "once"
 
     def __post_init__(self) -> None:
         request_id = str(self.request_id or "").strip()
@@ -352,6 +353,10 @@ class ProviderPermissionResponse:
             raise ValueError("provider permission request_id is too long")
         if not isinstance(self.allow, bool) or not isinstance(self.automatic, bool):
             raise TypeError("provider permission decision flags must be boolean")
+        if self.scope not in {"once", "work"}:
+            raise ValueError("unsupported provider permission scope")
+        if self.scope == "work" and self.automatic:
+            raise ValueError("reusable permission requires an explicit user decision")
         reason = str(self.reason or "").strip()
         if len(reason) > 240:
             raise ValueError("provider permission reason is too long")

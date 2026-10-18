@@ -255,6 +255,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
                 auip_narration_callback=None, auip_narration=None,
                 provider_runtime=SimpleNamespace(set_request_preparer=Mock(),
                     set_native_session_checkpoint=Mock(),
+                    set_automatic_permission_authorizer=Mock(),
                     set_start_admission_validator=Mock(), close=provider_close),
             provider_activity_h=SimpleNamespace(close=AsyncMock()),
             work_h=SimpleNamespace(drain_inputs=drain_inputs),
