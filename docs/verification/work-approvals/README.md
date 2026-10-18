@@ -8,6 +8,27 @@ MCP grant confined to the active Provider run. Desktop settings own persistence;
 Provider Runtime owns policy application and audit, and Pi owns its native
 callback translation. Restoring a native session never restores a grant.
 
+## Hosted follow-up / 远端复查 (2026-10-18)
+
+Hosted checks for `a5d699e` finished with 14 successes and two failures. The
+Windows `python-suites (0)` job had exactly one failing suite:
+`test_vts_worker_lifecycle.py` (13 passed / 2 failed). Both cases executed the
+actual application cleanup against a Runtime test double missing the newly
+required `set_automatic_permission_authorizer` hook. The aggregate
+`cpu-model-less` gate consequently failed; its smoke prerequisite succeeded.
+The [original failed job](https://github.com/Code-Amadeus/Amadeus/actions/runs/39020511237/job/117361196306)
+is retained separately from subsequent checks.
+
+The same 13 passed / 2 failed result was reproduced locally before the fixture
+was corrected. Adding the missing mock hook keeps the real cleanup path under
+test and changes no production code. The VTS worker and Chat ingress lifecycle
+modules then passed **44 tests**; narrow Ruff and diff checks also passed.
+New-head hosted CI must be assessed independently of this successful local rerun.
+
+中文：远端两项失败实际来自同一个测试接口遗漏，汇总门禁随之失败。先在本地复现
+VTS 模块 13 过 / 2 失败，再补齐测试替身的新接口；VTS 与 Chat 生命周期合计
+44 项通过。生产代码未改，原远端失败保留，新提交 CI 与本地复跑分开记录。
+
 ## Review follow-up / 审核修复 (2026-10-17)
 
 The review reproduced an authority-boundary defect on `7bd966f`: an ordinary
