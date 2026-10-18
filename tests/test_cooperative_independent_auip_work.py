@@ -1,6 +1,7 @@
 """Focused app effects and independent Work retain their own admission owners."""
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -20,6 +21,7 @@ from server.auip_control_decision import AuipControlDecisionResolver
 from server.auip_b2 import AuipB2Coordinator
 from server.event_bus import bus
 from server.protocol import Method
+from server.work_artifact_registry import _filesystem_baseline
 from test_auip_control_decision import _Runtime, _Catalog
 from test_auip_b2 import _runtime
 from test_cooperative_pending_turn import pending_host as pending_host
@@ -131,8 +133,16 @@ async def test_independent_effects_use_exact_work_clause_and_one_real_publicatio
         await context.finish()
 
 
-async def test_slow_app_does_not_hold_work_acceptance_or_later_chat(composition):
+async def test_slow_app_does_not_hold_work_acceptance_or_later_chat(composition, monkeypatch):
     context, state, text, source, _, _, publisher = composition
+
+    async def filesystem_baseline(cwd):
+        return await asyncio.to_thread(_filesystem_baseline, Path(cwd))
+
+    # 隔离 Git 启动成本，保留真实目录、基线和台账。
+    monkeypatch.setattr("server.scratch_workspace._git_init", lambda _directory:None)
+    monkeypatch.setattr("server.work_artifact_registry.capture_workspace_baseline",
+        filesystem_baseline)
     state.release_app.clear()
     try:
         await context.handler.send_text(text, session_id=context.session_id, turn_id="slow-compound")
@@ -142,11 +152,16 @@ async def test_slow_app_does_not_hold_work_acceptance_or_later_chat(composition)
         ingress = context.manager.ingresses[context.session_id]
         work = dict(ingress.receipts["slow-compound"])
         assert work["state"] == "work_started"
+        assert not state.release_app.is_set()
+        attempt = context.host.work.get_attempt(work["attempt_id"])
+        assert attempt is not None
+        assert attempt.metadata["git_baseline"]["source"] == "filesystem"
         assert not ingress.loop._foreground.locked()
         assert not publisher.receipts
         await context.handler.send_text("谢啦", session_id=context.session_id, turn_id="later")
         await asyncio.wait_for(context.handler._stream_task, 2)
         assert any(row["cause"] == "later" for row in ingress.loop.history if row["source"] == "kurisu")
+        assert not state.release_app.is_set()
         # The old presentation may be discarded, but accepted domain work survives.
         state.release_app.set()
         await asyncio.gather(original_stream, return_exceptions=True)

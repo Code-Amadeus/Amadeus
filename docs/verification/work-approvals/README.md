@@ -8,6 +8,58 @@ MCP grant confined to the active Provider run. Desktop settings own persistence;
 Provider Runtime owns policy application and audit, and Pi owns its native
 callback translation. Restoring a native session never restores a grant.
 
+## Windows concurrency-test follow-up / Windows 并发测试复查 (2026-10-18)
+
+The hosted Windows shard for `f9d4a0c` failed one case in
+`test_cooperative_independent_auip_work.py` (44 passed / 1 failed), so its
+aggregate gate also failed. Other Windows shards and the smoke job passed.
+The [original failed job](https://github.com/Code-Amadeus/Amadeus/actions/runs/39081969148/job/117540598847)
+is retained; this is distinct from the earlier VTS test-double failure below.
+
+The app had already entered its synthetic pending operation. The timeout was
+the next two-second wait for the Work adapter to start. That wait also included
+real Host intake, scratch Git initialization and Git baseline collection, up
+to seven external Git processes unrelated to this test's independence contract.
+The CI trace does not identify which individual process was slow. The original
+case and all 45 module cases passed on local replay; on the supported CPython
+3.12.10 baseline, adding a controlled 2.25-second delay only to Git initialization
+reproduced the same wait failure while the product still dispatched both domains
+concurrently.
+
+The repair is confined to this test. It uses a real private scratch directory,
+real SQLite/dispatch and the existing filesystem baseline implementation, while
+excluding Git subprocess startup. The stored baseline source is asserted as
+`filesystem`. The app is explicitly asserted to remain blocked both when Work
+starts and when later Chat completes. All original assertions and the two-second
+hang guard remain; production scheduling and permission code are unchanged.
+The separate scratch-destination and artifact-registry suites retain real Git.
+
+Fresh checks on CPython 3.12.10:
+
+- The controlled slow-Git probe failed before the repair and passed after it.
+- A negative control deliberately serializing Work behind the blocked app still
+  failed at the same event wait after the repair, demonstrating the test still
+  detects an independence violation.
+- The target passed in five fresh consecutive pytest processes.
+- The full affected module plus scratch-destination and artifact-registry
+  suites passed **75 tests**, with zero failures/skips; these overlapping checks
+  are not added to the earlier 148-test or 44-test selections.
+- Narrow Ruff, diff and UTF-8 checks passed. No external model request or real
+  desktop operation was used.
+
+Final hosted status is reported on PR #234's checks and description; local
+results do not substitute for the new head's hosted checks.
+
+中文：本次是 `f9d4a0c` 的独立应用／Work 并发测试等待超时，原模块 44 过／1 失败，
+汇总门禁随之失败，与此前 VTS 替身遗漏分开记录。应用分支已进入，Work 启动前仍有
+真实 Git 初始化和基线采集；CI 未记录具体哪条 Git 命令慢。本地原模块能通过，另在
+3.12.10 上仅注入 2.25 秒 Git 延迟，复现了相同超时机制。
+
+修复只隔离该测试无关的 Git 进程，保留真实临时目录、台账、派发和持久化 filesystem
+基线；原断言和两秒上限未放宽。正控恢复通过，故意让应用阻塞 Work 的反控仍失败，
+目标连续五个独立进程通过，相关三模块合计 **75 项通过**。生产代码和权限门禁未改；
+真实 Git 仍由专属测试覆盖。首次远端失败、受控复现、本地复跑和新 head 远端状态分别记录。
+
 ## Hosted follow-up / 远端复查 (2026-10-18)
 
 Hosted checks for `a5d699e` finished with 14 successes and two failures. The
