@@ -215,6 +215,29 @@ def test_missing_or_failed_warmup_keeps_default_backend(backend, monkeypatch):
     assert backend.emotion_reference_status['state'] == 'not_installed'
 
 
+@pytest.mark.parametrize('error_type', [IndexError, ImportError])
+def test_optional_warmup_exception_keeps_default_synthesis_available(backend, monkeypatch, error_type):
+    engine = backend._inferencer
+    original = engine.warm_reference_cache
+    error = error_type('synthetic optional reference failure')
+
+    def warm(audio, *args):
+        if audio == 'default.wav':
+            return original(audio, *args)
+        raise error
+
+    monkeypatch.setattr(engine, 'warm_reference_cache', warm)
+    backend._configure_emotion_references()
+
+    assert backend.emotion_reference_status['state'] == 'invalid'
+    assert backend.emotion_reference_status['detail'] == str(error)
+    assert not backend.emotion_reference_status['ready']
+    assert backend._inferencer is engine and backend._emotion_pack is None
+    audio = backend.synthesize(TTSSynthesisRequest('Hello.', options={'emotion': 'sad'}))
+    assert audio.sample_rate == 24000 and audio.audio.size > 0
+    assert 'semantic_reference' not in engine.requests[-1]
+
+
 @pytest.mark.parametrize('bad', ['../outside.wav', '/outside.wav', 'C:/outside.wav', 'sad\\file.wav'])
 def test_pack_rejects_escaping_members(backend, bad):
     root = gpt_sovits._PROJECT_ROOT / 'assets' / PACK_TREE
