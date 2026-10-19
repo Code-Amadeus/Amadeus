@@ -18,32 +18,48 @@ from server.work_observer import ObserverSession, WorkObserverCoordinator
 
 def test_primary_language_does_not_follow_wallpaper_caption_mode():
     fake_pipeline = types.SimpleNamespace(TTS_OUTPUT_LANGUAGE="日文")
-    original_mode = wallpaper_subtitle_runtime.get_mode()
+    original = presentation_runtime.get_config()
 
     try:
         with patch.dict(sys.modules, {"tts.pipeline": fake_pipeline}):
-            for mode in ("zh", "ja", "bilingual", "off"):
-                wallpaper_subtitle_runtime.set_mode(mode, render_current=False)
-                assert current_assistant_language() == "japanese"
+            for language in ("zh-CN", "en-US"):
+                presentation_runtime.set_config(
+                    {"subtitle_translation_language": language}, render_current=False,
+                )
+                for mode in ("zh", "ja", "bilingual", "off"):
+                    wallpaper_subtitle_runtime.set_mode(mode, render_current=False)
+                    assert current_assistant_language() == "japanese"
     finally:
-        wallpaper_subtitle_runtime.set_mode(original_mode, render_current=False)
+        presentation_runtime.set_config(original, render_current=False)
 
 
 def test_presentation_locale_and_caption_mode_are_independent():
     original = presentation_runtime.get_config()
     try:
+        for language in ("zh-CN", "en-US"):
+            presentation_runtime.set_config(
+                {"presentation_locale": "en-US", "wallpaper_caption_mode": "source",
+                 "subtitle_translation_language": language},
+                render_current=False,
+            )
+            assert presentation_runtime.get_config() == {
+                "presentation_locale": "en-US",
+                "wallpaper_caption_mode": "source",
+                "subtitle_translation_language": language,
+            }
+            presentation_runtime.set_legacy_caption_setting("bilingual", render_current=False)
+            assert presentation_runtime.get_config() == {
+                "presentation_locale": "zh-CN",
+                "wallpaper_caption_mode": "bilingual",
+                "subtitle_translation_language": language,
+            }
         presentation_runtime.set_config(
-            {"presentation_locale": "en-US", "wallpaper_caption_mode": "source"},
-            render_current=False,
+            {"subtitle_translation_language": "zh-CN"}, render_current=False,
         )
-        assert presentation_runtime.get_config() == {
-            "presentation_locale": "en-US",
-            "wallpaper_caption_mode": "source",
-        }
-        presentation_runtime.set_legacy_caption_setting("bilingual", render_current=False)
         assert presentation_runtime.get_config() == {
             "presentation_locale": "zh-CN",
             "wallpaper_caption_mode": "bilingual",
+            "subtitle_translation_language": "zh-CN",
         }
     finally:
         presentation_runtime.set_config(original, render_current=False)
@@ -59,14 +75,30 @@ def test_presentation_update_has_one_canonical_profile_and_renderer():
     original = presentation_runtime.get_config()
     rendered = []
     try:
+        presentation_runtime.set_config(
+            {"presentation_locale": "en-US", "wallpaper_caption_mode": "source",
+             "subtitle_translation_language": "zh-CN"}, render_current=False,
+        )
         presentation_runtime.set_renderer(rendered.append)
         rendered.clear()
         presentation_runtime.set_config(
-            {"presentation_locale": "ja-JP", "wallpaper_caption_mode": "off"}
+            {"presentation_locale": "ja-JP", "wallpaper_caption_mode": "off",
+             "subtitle_translation_language": "en-US"}
         )
         assert rendered == [
-            {"presentation_locale": "ja-JP", "wallpaper_caption_mode": "off"}
+            {"presentation_locale": "ja-JP", "wallpaper_caption_mode": "off",
+             "subtitle_translation_language": "en-US"}
         ]
+        assert presentation_runtime.set_config({"subtitle_translation_language": "zh-CN"}) == [
+            "subtitle_translation_language",
+        ]
+        assert len(rendered) == 2
+        assert rendered[-1] == {
+            "presentation_locale": "ja-JP", "wallpaper_caption_mode": "off",
+            "subtitle_translation_language": "zh-CN",
+        }
+        assert presentation_runtime.set_config({"subtitle_translation_language": "zh-CN"}) == []
+        assert len(rendered) == 2
         assert "wallpaper_subtitle_language" not in presentation_runtime.get_config()
     finally:
         presentation_runtime.set_renderer(None)

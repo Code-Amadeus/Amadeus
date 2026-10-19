@@ -1,8 +1,12 @@
-"""Output-open retry replaces its owner and preserves shared-state failures."""
+"""Output lifecycle, bounded open recovery, and shared native ownership."""
+import asyncio
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
 from tts.playback import StreamPlayer
@@ -130,3 +134,186 @@ def test_retry_respects_shared_portaudio_owners(monkeypatch, capture_alive, fail
         if capture is not None:
             terminate_pyaudio(capture)
     assert references == 0
+
+
+class _ObservedRLock:
+    """Report real lock contention so races need no sleep or scheduling guess."""
+
+    def __init__(self, watched_thread):
+        self.lock = threading.RLock()
+        self.watched_thread = watched_thread
+        self.attempted = threading.Event()
+        self.blocked = None
+
+    def __enter__(self):
+        acquired = self.lock.acquire(blocking=False)
+        if threading.current_thread().name == self.watched_thread:
+            self.blocked = not acquired
+            self.attempted.set()
+        if not acquired:
+            self.lock.acquire()
+        return self
+
+    def __exit__(self, *_args):
+        self.lock.release()
+
+
+def _named_call(name, call):
+    threading.current_thread().name = name
+    return call()
+
+
+@pytest.fixture
+def lifecycle_player(monkeypatch):
+    streams = []
+
+    def open_stream(**kwargs):
+        stream = SimpleNamespace(rate=kwargs["rate"], write=Mock(), close=Mock(),
+                                 stop_stream=Mock(), is_active=lambda: True)
+        streams.append(stream)
+        return stream
+
+    owner = SimpleNamespace(open=Mock(side_effect=open_stream), terminate=Mock())
+    monkeypatch.setitem(sys.modules, "pyaudio", SimpleNamespace(
+        PyAudio=lambda: owner, paFloat32=1))
+    player = StreamPlayer(SimpleNamespace(publish_mouth_value=Mock()))
+    yield player, owner, streams
+    player.cleanup()
+
+
+def _write_samples(player, *, queued=False, is_current=None):
+    audio = np.full(480, 0.1, dtype=np.float32)
+    rate = player._current_rate
+    if queued:
+        asyncio.run(player.write_audio_async(
+            audio, sample_rate=rate, mouth_envelope=True, is_current=is_current))
+    else:
+        player._write_audio_sync(audio, sample_rate=rate, is_current=is_current)
+
+
+@pytest.mark.parametrize("rate", [24000, 48000])
+@pytest.mark.parametrize("queued", [False, True])
+def test_reinitialize_during_stop_keeps_the_replacement_stream(lifecycle_player, monkeypatch, rate, queued):
+    player, _, streams = lifecycle_player
+    player.initialize(24000)
+    old_stream = player.stream
+    lock = _ObservedRLock("reinitialize")
+    player._stream_lock = lock
+    draining, resume_stop = threading.Event(), threading.Event()
+    original_drain = player._drain_audio_writer_queue
+
+    def drain():
+        if threading.current_thread().name == "stop":
+            draining.set()
+            assert resume_stop.wait(5), "stop was not released"
+        original_drain()
+
+    monkeypatch.setattr(player, "_drain_audio_writer_queue", drain)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stopping = pool.submit(_named_call, "stop", player.stop)
+        try:
+            assert draining.wait(5), "stop did not reach queue draining"
+            reopening = pool.submit(_named_call, "reinitialize", lambda: player.initialize(rate))
+            assert lock.attempted.wait(5), "initialization did not attempt the device lock"
+            # On the broken implementation initialization can finish inside the
+            # paused stop. Let it finish to reproduce the lost replacement exactly.
+            if not lock.blocked:
+                reopening.result(timeout=5)
+        finally:
+            resume_stop.set()
+        stopping.result(timeout=5)
+        reopening.result(timeout=5)
+
+    assert len(streams) == 2
+    assert player.is_playing and player.stream is streams[1]
+    assert player._current_rate == rate
+    old_stream.close.assert_called_once()
+    player.stream.close.assert_not_called()
+    _write_samples(player, queued=queued)
+    written = b"".join(call.args[0] for call in player.stream.write.call_args_list)
+    assert written == np.full(480, 0.1, dtype=np.float32).tobytes()
+
+
+@pytest.mark.parametrize("warm", [False, True])
+def test_stop_during_open_leaves_a_consistently_stopped_player(lifecycle_player, warm):
+    player, owner, streams = lifecycle_player
+    if warm:
+        player.initialize(24000)
+    lock = _ObservedRLock("stop")
+    player._stream_lock = lock
+    opening, resume_open = threading.Event(), threading.Event()
+    original_open = owner.open.side_effect
+
+    def open_stream(**kwargs):
+        if threading.current_thread().name == "initialize":
+            opening.set()
+            assert resume_open.wait(5), "device open was not released"
+        return original_open(**kwargs)
+
+    owner.open.side_effect = open_stream
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        initializing = pool.submit(_named_call, "initialize", lambda: player.initialize(48000))
+        try:
+            assert opening.wait(5), "initialization did not reach device open"
+            stopping = pool.submit(_named_call, "stop", player.stop)
+            assert lock.attempted.wait(5), "stop did not attempt the device lock"
+        finally:
+            resume_open.set()
+        initializing.result(timeout=5)
+        stopping.result(timeout=5)
+
+    assert player.stream is None and not player.is_playing
+    for stream in streams:
+        stream.close.assert_called_once()
+    _write_samples(player)  # A stopped player drops PCM without an empty-stream error.
+    assert all(not stream.write.called for stream in streams)
+    player.initialize(24000)
+    _write_samples(player)
+    assert player.stream is streams[-1] and player.stream.write.called
+
+
+@pytest.mark.parametrize("queued", [False, True])
+def test_stop_waits_for_inflight_write_and_stale_windows_do_not_resume(lifecycle_player, queued):
+    player, _, _ = lifecycle_player
+    player.initialize(24000)
+    stream = player.stream
+    lock = _ObservedRLock("stop")
+    player._stream_lock = lock
+    writing, resume_write, current = threading.Event(), threading.Event(), threading.Event()
+    current.set()
+
+    def write(_data):
+        writing.set()
+        assert resume_write.wait(5), "native write was not released"
+        stream.close.assert_not_called()
+
+    stream.write.side_effect = write
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        playing = pool.submit(_write_samples, player, queued=queued, is_current=current.is_set)
+        try:
+            assert writing.wait(5), "playback did not reach native write"
+            # The host invalidates the playback epoch before stopping the device.
+            current.clear()
+            stopping = pool.submit(_named_call, "stop", player.stop)
+            assert lock.attempted.wait(5), "stop did not attempt the device lock"
+            stream.close.assert_not_called()
+        finally:
+            resume_write.set()
+        playing.result(timeout=5)
+        stopping.result(timeout=5)
+
+    stream.write.assert_called_once()
+    assert len(stream.write.call_args.args[0]) == 240 * 4
+    stream.close.assert_called_once()
+    assert player.stream is None and not player.is_playing
+
+
+def test_stop_from_window_callback_remains_reentrant(lifecycle_player):
+    player, _, _ = lifecycle_player
+    player.initialize(24000)
+    stream = player.stream
+    player._write_audio_sync(np.ones(480, dtype=np.float32),
+                             before_window=lambda _window: player.stop())
+    stream.write.assert_not_called()
+    stream.close.assert_called_once()
+    assert player.stream is None and not player.is_playing

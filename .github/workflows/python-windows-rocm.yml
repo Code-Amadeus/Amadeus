@@ -16,6 +16,7 @@ on:
       - tests/test_local_tts_device_context.py
       - tests/test_local_tts_semantic_guard.py
       - tests/test_local_tts_reference_cache.py
+      - tests/test_playback_device_recovery.py
       - tests/test_profile_contract.py
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
@@ -35,6 +36,7 @@ on:
       - tests/test_local_tts_device_context.py
       - tests/test_local_tts_semantic_guard.py
       - tests/test_local_tts_reference_cache.py
+      - tests/test_playback_device_recovery.py
       - tests/test_profile_contract.py
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
@@ -80,6 +82,7 @@ jobs:
           tests/test_local_tts_device_context.py
           tests/test_local_tts_semantic_guard.py
           tests/test_local_tts_reference_cache.py
+          tests/test_playback_device_recovery.py
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
           tests/test_qwen3_asr_sidecar_bootstrap.py

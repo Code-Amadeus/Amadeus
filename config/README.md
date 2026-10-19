@@ -44,6 +44,16 @@ cannot prevent native/file-origin backend clients from starting.
 
 ## Shared configuration declarations
 
+The Language & captions group includes `AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE`
+(`zh-CN` by default, or `en-US`). It selects the target language of the existing
+shared Japanese subtitle translator for Chat and ordinary Wallpaper playback.
+Saving applies without a backend restart: Chat refreshes its translations and
+new Wallpaper captions use the selected language. A caption already on screen
+finishes its normal playback lifetime. The two surfaces keep their independent
+enablement/display modes; speech and conversation history are unchanged.
+VN retains its separate translation settings and cache, including VN captions
+shown on Wallpaper. Slice process language is also independent.
+
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
 groups, graphics, voice input/reference controls, model connections, model roles,
 Provider connections, character, desktop and live presentation/vision settings.

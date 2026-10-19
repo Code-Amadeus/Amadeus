@@ -141,6 +141,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const { t } = useI18n()
   const [messages, setMessages] = useState<Message[]>([])
   const [chatTranslationEnabled, setChatTranslationEnabled] = useState(false)
+  const [chatTranslationLanguage, setChatTranslationLanguage] = useState('zh-CN')
   const [chatTranslations, setChatTranslations] = useState<Record<string, string>>({})
   const [workActivities, setWorkActivities] = useState<ChatWorkActivityRun[]>([])
   const [attentionRequests, setAttentionRequests] = useState<AttentionRequest[]>([])
@@ -334,6 +335,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const enabled = values.chat_translation_subtitles_enabled === true
       if (!cancelled) {
         setChatTranslationEnabled(enabled)
+        setChatTranslationLanguage(String(values.subtitle_translation_language || 'zh-CN'))
       }
     }
     const unsubscribe = subscribe('system.config', applyConfig)
@@ -389,12 +391,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   }, [attentionResolving, connected, send])
 
   useEffect(() => {
-    if (!chatTranslationEnabled) {
-      chatTranslationGenerationRef.current += 1
-      chatTranslationRequestedRef.current.clear()
-      setChatTranslations({})
-      return
-    }
+    chatTranslationGenerationRef.current += 1
+    chatTranslationRequestedRef.current.clear()
+    setChatTranslations({})
+  }, [chatTranslationEnabled, chatTranslationLanguage])
+
+  useEffect(() => {
+    if (!chatTranslationEnabled) return
 
     const generation = chatTranslationGenerationRef.current
     for (const candidate of chatTranslationCandidates(messages)) {
@@ -417,7 +420,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         }
       })
     }
-  }, [chatTranslationEnabled, messages, send])
+  }, [chatTranslationEnabled, chatTranslationLanguage, messages, send])
 
   // auto-scroll
   useEffect(() => {

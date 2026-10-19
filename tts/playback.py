@@ -318,9 +318,12 @@ class StreamPlayer:
         )
 
     def stop(self) -> None:
-        self.is_playing = False
-        self._drain_audio_writer_queue()
         with self._stream_lock:
+            # Serialize the whole stop with initialize(), including the state
+            # change and queue drain. Otherwise a concurrent open can publish a
+            # new stream that this stop detaches while leaving is_playing true.
+            self.is_playing = False
+            self._drain_audio_writer_queue()
             stream = self.stream
             # Detach first so concurrent writer work cannot reuse a stream
             # whose shutdown has begun. PyAudio Stream has no abort_stream(),

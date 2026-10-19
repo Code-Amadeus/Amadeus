@@ -71,7 +71,7 @@ def current_text() -> str:
         if zh and ja and zh != ja:
             return f"{zh}\n{ja}"
         return zh or ja
-    # Chinese mode is intentionally strict: playback often sends the Japanese
+    # Translated mode is intentionally strict: playback often sends the Japanese
     # sentence first and fills the translated subtitle later. Falling back to
     # Japanese here makes the CRT flicker between languages.
     return zh
