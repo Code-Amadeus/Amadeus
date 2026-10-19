@@ -38,10 +38,10 @@ _KEY_FIELDS = (
 )
 
 _CACHE_SCHEMA = "first_sentence_audio_cache.v1"
-# Earlier entries can contain the generated lead, an unverified remote voice,
-# or speech conditioned on an extra full stop after a Japanese comma.
-# Regenerate derived audio once after correcting that punctuation boundary.
-_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.punctuation.v4"
+# Earlier entries can contain synthetic silence returned after reference
+# preparation failed. Regenerate derived audio after fixing that error path;
+# the revision also applies to legacy asset-layout lookups.
+_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.punctuation.reference_errors.v5"
 
 
 def _portable_basename(value: Any) -> str:

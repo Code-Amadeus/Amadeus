@@ -83,7 +83,9 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 if any(cache.get(key) is None for key in ("prompt", "phones1", "bert1")):
                     raise ReferencePackError(f"Could not warm semantic reference: {ref.audio.name}")
             infer._sync_sovits_timing()
-        except (ReferencePackError, RuntimeError, OSError, ValueError) as exc:
+        except Exception as exc:
+            # Optional pack preparation must not prevent default TTS startup.
+            # Live synthesis still propagates its own reference errors.
             self.emotion_reference_status = {"state": "invalid", "ready": False, "detail": str(exc)}
             logger.warning("[TTS-EMOTION] unavailable; default TTS remains active: %s", exc)
             return

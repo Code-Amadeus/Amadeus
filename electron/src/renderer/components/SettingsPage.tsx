@@ -1446,7 +1446,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       <RoleAssignmentCard
                         icon="Language"
                         title="Presentation translation"
-                        description="Shared translation used by Chat, Wallpaper, and VN presentation policies."
+                        description="Shared subtitle translation for Chat and Wallpaper. VN uses its own translation settings."
                         assignment={configuredTranslationModels.length ? `${t('Automatic')} · ${configuredTranslationModels.join(', ')}` : 'Automatic · No configured model'}
                         policy="Automatic selection"
                         status={configuredTranslationModels.length ? 'Available' : 'Needs setup'}

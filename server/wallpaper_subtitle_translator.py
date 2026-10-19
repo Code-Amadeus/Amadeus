@@ -1,4 +1,4 @@
-"""Provider-selectable Japanese -> Chinese presentation subtitle translator.
+"""Shared Japanese presentation subtitle translator with a selectable target language.
 
 Wallpaper/Lively and GUI Chat may share this provider configuration and output
 cleaning, but each surface owns its own enablement and render state.  This
@@ -19,6 +19,7 @@ from typing import Any
 import aiohttp
 
 from config import settings
+from server import presentation_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,8 @@ _CLIENTS: dict[tuple[str, str], Any] = {}
 _CLIENTS_LOCK = Lock()
 
 _SYSTEM_PROMPT = (
-    "Translate Japanese assistant speech into concise, natural Simplified Chinese "
-    "subtitles. Return only the Chinese translation. Preserve names, technical "
+    "Translate Japanese assistant speech into concise, natural {language} "
+    "subtitles. Return only the {language} translation. Preserve names, technical "
     "terms, URLs, commands, and code identifiers. Do not add explanations, "
     "markdown, quotes, labels, or new facts."
 )
@@ -40,6 +41,12 @@ class SubtitleTranslatorConfig:
     base_url: str
     timeout_s: float
     max_tokens: int
+    target_language: str = "zh-CN"
+
+
+def _system_prompt(config: SubtitleTranslatorConfig) -> str:
+    language = {"zh-CN": "Simplified Chinese", "en-US": "English"}[config.target_language]
+    return _SYSTEM_PROMPT.format(language=language)
 
 
 def get_translation_runtime_info() -> dict[str, str | float | int]:
@@ -50,15 +57,16 @@ def get_translation_runtime_info() -> dict[str, str | float | int]:
         "base_url": _redact_url(config.base_url),
         "timeout_s": config.timeout_s,
         "max_tokens": config.max_tokens,
+        "target_language": config.target_language,
     }
 
 
-async def translate_presentation_subtitle(japanese_text: str) -> str:
+async def translate_presentation_subtitle(japanese_text: str, *, target_language: str | None = None) -> str:
     text = str(japanese_text or "").strip()
     if not text:
         return ""
 
-    config = _resolve_config()
+    config = _resolve_config(target_language=target_language)
     providers = _provider_order(config.provider)
     last_error: Exception | None = None
     started = asyncio.get_running_loop().time()
@@ -68,7 +76,7 @@ async def translate_presentation_subtitle(japanese_text: str) -> str:
             attempt = _config_for_provider(config, provider)
             result = await _translate_with_config(text, attempt)
             result = _clean_translation(result)
-            if _looks_like_valid_translation(result):
+            if _looks_like_valid_translation(result, config.target_language):
                 elapsed_ms = int((asyncio.get_running_loop().time() - started) * 1000)
                 logger.info(
                     "presentation subtitle translated provider=%s model=%s chars_in=%d chars_out=%d elapsed_ms=%d",
@@ -99,13 +107,13 @@ async def translate_presentation_subtitle(japanese_text: str) -> str:
     return ""
 
 
-async def translate_wallpaper_subtitle(japanese_text: str) -> str:
+async def translate_wallpaper_subtitle(japanese_text: str, *, target_language: str | None = None) -> str:
     """Compatibility entry point for the established Wallpaper pipeline."""
 
-    return await translate_presentation_subtitle(japanese_text)
+    return await translate_presentation_subtitle(japanese_text, target_language=target_language)
 
 
-def _resolve_config() -> SubtitleTranslatorConfig:
+def _resolve_config(*, target_language: str | None = None) -> SubtitleTranslatorConfig:
     provider = (
         os.environ.get("AMADEUS_SUBTITLE_TRANSLATE_PROVIDER")
         or os.environ.get("AMADEUS_WALLPAPER_SUBTITLE_TRANSLATE_PROVIDER")
@@ -123,6 +131,7 @@ def _resolve_config() -> SubtitleTranslatorConfig:
             base_url="",
             timeout_s=max(3.0, timeout_s),
             max_tokens=max(80, max_tokens),
+            target_language=target_language or presentation_runtime.get_subtitle_translation_language(),
         ),
         provider,
     )
@@ -152,6 +161,7 @@ def _config_for_provider(base: SubtitleTranslatorConfig, provider: str) -> Subti
         base_url=base_url,
         timeout_s=base.timeout_s,
         max_tokens=base.max_tokens,
+        target_language=base.target_language,
     )
 
 
@@ -185,7 +195,7 @@ async def _translate_openai_compatible(text: str, config: SubtitleTranslatorConf
     kwargs: dict[str, Any] = {
         "model": config.model,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": _system_prompt(config)},
             {"role": "user", "content": text},
         ],
         "stream": False,
@@ -225,7 +235,7 @@ async def _translate_gemini(text: str, config: SubtitleTranslatorConfig) -> str:
                 "parts": [
                     {
                         "text": (
-                            f"{_SYSTEM_PROMPT}\n\nJapanese text:\n{text}"
+                            f"{_system_prompt(config)}\n\nJapanese text:\n{text}"
                         )
                     }
                 ],
@@ -277,21 +287,22 @@ def _get_openai_client(provider: str, api_key: str, base_url: str):
 def _clean_translation(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"^```(?:\w+)?\s*|\s*```$", "", text, flags=re.S)
-    text = re.sub(r"^(?:中文|简体中文|翻译|translation)\s*[:：]\s*", "", text, flags=re.I)
+    text = re.sub(r"^(?:中文|简体中文|英文|英语|翻译|English|translation)\s*[:：]\s*", "", text, flags=re.I)
     if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1].strip()
     return text.strip()
 
 
-def _looks_like_valid_translation(value: str) -> bool:
+def _looks_like_valid_translation(value: str, target_language: str = "zh-CN") -> bool:
     text = str(value or "").strip()
     if not text:
         return False
     if re.fullmatch(r"[\s.。…!?！？,，、;；:：-]+", text):
         return False
-    # At least one CJK ideograph keeps short subtitle fragments such as
-    # "嗯。" valid, while rejecting pure punctuation or echoed metadata.
-    return bool(re.search(r"[\u4e00-\u9fff]", text))
+    # Retain the lightweight script check for short fragments such as "嗯。"
+    # or "OK.". The model owns translation semantics.
+    script = r"[A-Za-z]" if target_language == "en-US" else r"[\u4e00-\u9fff]"
+    return bool(re.search(script, text))
 
 
 def _env_int(name: str, default: int) -> int:

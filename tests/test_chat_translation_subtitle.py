@@ -7,6 +7,8 @@ import pytest
 
 from core.session_manager import conversation_history
 from server import chat_translation_runtime
+from server import presentation_runtime
+from server import wallpaper_subtitle_translator
 from server.handlers.chat_handler import ChatHandler
 from server.handlers.system_handler import SystemHandler
 from server.protocol import Method
@@ -114,3 +116,41 @@ def test_system_setting_applies_chat_translation_toggle_without_restart() -> Non
             chat_translation_runtime.set_config({"chat_translation_subtitles_enabled": original})
 
     asyncio.run(run())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("language,translation", [("zh-CN", "工作完成了。"), ("en-US", "Work is complete.")])
+async def test_shared_language_setting_controls_chat_and_wallpaper_without_changing_vn(
+        monkeypatch, language, translation):
+    from server import vn_tts_bridge
+
+    monkeypatch.setattr(presentation_runtime, "_renderer", None)
+    monkeypatch.setattr(presentation_runtime, "_subtitle_translation_language", "zh-CN")
+    monkeypatch.setattr(chat_translation_runtime, "_enabled", True)
+    vn_cache = {"ゲームよ。": {"chinese": "是游戏。", "status": "completed"}}
+    monkeypatch.setattr(vn_tts_bridge, "_VN_SUBTITLE_CACHE", vn_cache)
+    monkeypatch.setenv("AMADEUS_SUBTITLE_TRANSLATE_PROVIDER", "openai")
+    observed_languages = []
+
+    async def translate(_text, config):
+        observed_languages.append(config.target_language)
+        return translation
+
+    monkeypatch.setattr(wallpaper_subtitle_translator, "_translate_with_config", translate)
+    handler = SystemHandler()
+    handler._get_config = AsyncMock(side_effect=lambda _: presentation_runtime.get_config())
+    with patch("server.handlers.system_handler.bus.emit", new=AsyncMock()):
+        result = await handler._set_config({"values": {"subtitle_translation_language": language}})
+    assert result["values"]["subtitle_translation_language"] == language
+    assert (await chat_translation_runtime.translate_completed_message("作業は終わったわ。"))["translation"] == translation
+    assert await wallpaper_subtitle_translator.translate_wallpaper_subtitle("作業は終わったわ。") == translation
+    assert observed_languages == [language, language]
+    assert vn_tts_bridge._VN_SUBTITLE_CACHE == {"ゲームよ。": {"chinese": "是游戏。", "status": "completed"}}
+
+
+@pytest.mark.asyncio
+async def test_shared_language_setting_rejects_unsupported_target(monkeypatch):
+    monkeypatch.setattr(presentation_runtime, "_subtitle_translation_language", "zh-CN")
+    with pytest.raises(ValueError, match="unsupported subtitle_translation_language"):
+        await SystemHandler()._set_config({"values": {"subtitle_translation_language": "fr-FR"}})
+    assert presentation_runtime.get_subtitle_translation_language() == "zh-CN"
