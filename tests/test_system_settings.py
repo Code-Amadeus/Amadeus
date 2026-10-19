@@ -43,6 +43,8 @@ def test_context_reading_settings_show_optional_availability_and_actual_runtime(
     def pack_status(pack_id):
         if pack_id == "japanese-context-reading":
             return {"installed": installed, "state": "installed" if installed else "not_installed"}
+        if pack_id == "japanese-pronunciation":
+            return {"installed": False, "state": "not_installed"}
         return original_status(pack_id)
 
     monkeypatch.setattr(settings, "ENABLE_JAPANESE_CONTEXT_READING", enabled)
@@ -50,7 +52,7 @@ def test_context_reading_settings_show_optional_availability_and_actual_runtime(
     monkeypatch.setattr(settings, "TTS_OUTPUT_LANGUAGE", "日文")
     monkeypatch.setattr(asset_packages, "external_asset_pack_status", pack_status)
     monkeypatch.setattr(pipeline, "japanese_dictionary_status", lambda: {
-        "state": "not_loaded", "detail": "Not loaded",
+        "state": "not_loaded", "ready": False, "detail": "Not loaded",
         "reading_model": {"state": state, "ready": state == "ready", "detail": "Observed native state"},
     })
     group = next(group for group in _voice_configuration(settings) if group["id"] == "tts_japanese_reading")
