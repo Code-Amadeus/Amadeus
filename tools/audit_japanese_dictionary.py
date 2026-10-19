@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.tts_text_processor import convert_english_abbreviations_to_katakana  # noqa: E402
-from config.japanese_dictionary import dictionary_rows  # noqa: E402
+from config.japanese_dictionary import LATIN_WORD_BOUNDARY, dictionary_rows, latin_word_key  # noqa: E402
 
 _KANA = re.compile(r"[\u30a1-\u30fa\u30fc]+")
 _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N", "cl"})
@@ -28,11 +28,10 @@ _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N",
 _FINAL_CONSONANTS = {
     "ズ": {"Z", "S"}, "ド": {"D", "T"}, "ング": {"NG"},
 }
-LATIN_WORD_COST_FLOOR = 10300
 
 
 def word_key(value: str) -> str:
-    return unicodedata.normalize("NFKC", value).translate(str.maketrans("’−", "'-")).casefold()
+    return latin_word_key(value)
 
 
 def cmu_pronunciations(data: bytes) -> dict[str, set[tuple[str, ...]]]:
@@ -54,7 +53,7 @@ def final_phone_risk(reading: str, pronunciations: set[tuple[str, ...]]) -> bool
     return False
 
 
-def native_base_word_lookup() -> Callable[[str], bool]:
+def native_base_word_lookup() -> Callable[..., bool]:
     import pyopenjtalk
 
     # Independent base instance: installed official/personal dictionaries must
@@ -62,12 +61,22 @@ def native_base_word_lookup() -> Callable[[str], bool]:
     jtalk = pyopenjtalk.OpenJTalk(pyopenjtalk.OPEN_JTALK_DICT_DIR)
 
     @lru_cache(maxsize=None)
-    def known(word: str) -> bool:
-        word = word_key(word)
+    def describe(word: str) -> tuple[bool, str | None]:
         _, morphs = jtalk.run_mecab_detailed(word)
         tokens = [m for m in morphs if not m["is_ignored"]]
-        return (len(tokens) == 1 and not tokens[0]["is_unknown"]
-                and tokens[0]["surface"] == jtalk.normalize_for_mecab(word))
+        if len(tokens) != 1 or tokens[0]["surface"] != jtalk.normalize_for_mecab(word):
+            return False, None
+        if not tokens[0]["is_unknown"]:
+            return True, tokens[0]["features"][8]
+        features = jtalk.run_frontend(word)
+        reading = features[0]["read"] if len(features) == 1 else None
+        return False, reading
+
+    def known(word: str, reading: str | None = None) -> bool:
+        lexical, base_reading = describe(word_key(word))
+        # A redundant initialism/letter reading needs no imported override
+        # either (rpm). Keep unknown words whose imported reading adds value.
+        return lexical or reading is not None and reading == base_reading
 
     return known
 
@@ -82,18 +91,18 @@ def native_base_hashes() -> dict[str, str]:
 
 
 def filter_extension_rows(rows: list[list[str]], phones: dict[str, set[tuple[str, ...]]],
-                          base_word: Callable[[str], bool], *,
-                          cost_floor: int = LATIN_WORD_COST_FLOOR) -> tuple[list[list[str]], dict]:
+                          base_word: Callable[..., bool]) -> tuple[list[list[str]], dict]:
     """Yield known words to the base and quarantine suspect readings offline."""
     kept, excluded = [], []
     counts = Counter()
     direct_flags = [row for row in rows if final_phone_risk(row[11], phones.get(word_key(row[0]), set()))]
     suspect = {word_key(row[0]) for row in direct_flags}
-    repriced = 0
+    base_words = {word_key(row[0]) for row in rows if base_word(word_key(row[0]), row[11])}
+    bounded = 0
     for number, row in enumerate(rows, 1):
         word = word_key(row[0])
         reasons = []
-        if base_word(word):
+        if word in base_words:
             reasons.append("base_dictionary_word")
         # A contaminated surface can have several shifted alternatives. Do not
         # merely promote the next unverified variant (e.g. directly -> director).
@@ -104,21 +113,21 @@ def filter_extension_rows(rows: list[list[str]], phones: dict[str, set[tuple[str
             excluded.append({"normalized_line": number, "surface": word, "reading": row[12],
                              "reasons": reasons})
         else:
-            # Imported short words must not cheaply split a known base word.
-            # Use one floor for plain Latin words; punctuation-bearing compounds
-            # need their existing cost to compete with native boundary splits.
-            if re.fullmatch(r"[a-z]+", word) and int(row[3]) < cost_floor:
+            # Match a complete frontend token, never a fragment of another word.
+            # Preserve source costs; changing costs merely trades competing splits.
+            if re.search(r"[a-z]", word) and not (row[0].startswith(LATIN_WORD_BOUNDARY)
+                                                         and row[0].endswith(LATIN_WORD_BOUNDARY)):
                 row = list(row)
-                row[3] = str(cost_floor)
-                repriced += 1
+                row[0] = LATIN_WORD_BOUNDARY + row[0] + LATIN_WORD_BOUNDARY
+                bounded += 1
             kept.append(row)
     return kept, {"input_entries": len(rows), "output_entries": len(kept), "excluded_entries": len(excluded),
-                  "reason_counts": dict(counts), "latin_word_cost_floor": cost_floor,
+                  "reason_counts": dict(counts),
                   "direct_final_phone_flags": len(direct_flags),
                   "direct_final_phone_suffix_counts": dict(Counter(
                       next(ending for ending in _FINAL_CONSONANTS if row[11].endswith(ending))
                       for row in direct_flags)),
-                  "latin_word_costs_raised": repriced, "excluded": excluded}
+                  "latin_word_boundaries_added": bounded, "excluded": excluded}
 
 
 def _without_reading_separators(value: str) -> str:
@@ -169,7 +178,7 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
         # The Japanese base dictionary owns letters and short Latin tokens,
         # including measurement suffixes. Imported English fragments must not
         # displace cm/kg/km or supply unrelated readings for isolated m/w/h.
-        if re.fullmatch(r"[A-Za-z]{1,2}", unicodedata.normalize("NFKC", row[0])):
+        if re.fullmatch(r"[a-z]{1,2}", word_key(row[0])):
             stats["short_latin_entries_excluded"] += 1
             continue
         row[10:13] = [unicodedata.normalize("NFC", value) for value in row[10:13]]
@@ -220,7 +229,7 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
 
 def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str], int | None],
                normalize_surface: Callable[[str], str] | None = None,
-               base_word: Callable[[str], bool] | None = None) -> dict:
+               base_word: Callable[..., bool] | None = None) -> dict:
     words = defaultdict(list)
     for number, row in enumerate(rows, 1):
         key = word_key(row[0])
@@ -247,7 +256,7 @@ def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str],
                                        "disposition": "review_only; Japanese loanword forms may legitimately coincide"})
     _, normalization = normalize_rows(rows, count_mora, normalize_surface)
     duplicates = Counter(tuple(row) for row in rows)
-    _, extension = filter_extension_rows(rows, phones, base_word or (lambda _: False))
+    _, extension = filter_extension_rows(rows, phones, base_word or (lambda *_: False))
     return {"entries": len(rows), "distinct_surfaces": len(words),
             "cmudict_sha256": hashlib.sha256(cmu_data).hexdigest(),
             "exact_duplicate_rows": sum(count - 1 for count in duplicates.values()),

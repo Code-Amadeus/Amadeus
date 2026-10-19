@@ -6,10 +6,12 @@ import json
 import pytest
 
 from tools.audit_japanese_dictionary import (
-    LATIN_WORD_COST_FLOOR, cmu_pronunciations, filter_extension_rows, final_phone_risk,
+    cmu_pronunciations, filter_extension_rows, final_phone_risk,
     native_base_word_lookup, word_key,
 )
 from test_japanese_dictionary import _row
+from config.japanese_dictionary import LATIN_WORD_BOUNDARY
+from tts.japanese_dictionary import with_latin_word_boundaries
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +20,7 @@ def isolate_native_status(monkeypatch):
     monkeypatch.setattr(runtime, "_runtime_status", {
         "state": "not_loaded", "ready": False, "identity": None, "version": "", "detail": "Not loaded",
     })
+    monkeypatch.setattr(runtime, "_official_latin_words", frozenset())
 
 
 @pytest.mark.parametrize("reading,phones,risky", [
@@ -39,19 +42,23 @@ def test_final_phone_screening_includes_variants_and_documents_false_positives(r
     assert final_phone_risk(reading, phones) is risky
 
 
-def test_filter_yields_base_words_quarantines_variants_and_bounds_fragment_costs():
+def test_filter_yields_base_words_quarantines_variants_and_bounds_whole_words():
     rows = [_row("Ｈｅｌｐ", "ヘルプト"), _row("directly", "ディレクターズ"),
-            _row("directly", "ディレクター"), _row("follower", "フォロワー"),
-            _row("don't", "ドント"), _row("pricy", "プライシー")]
-    rows[-1][3] = "12000"
+            _row("directly", "ディレクター"), _row("direct", "ダイレクト"), _row("follower", "フォロワー"),
+            _row("don't", "ドント"), _row("pricy", "プライシー"), _row("hel", "ヘル")]
+    rows[-2][3] = "12000"
     before = [list(row) for row in rows]
     phones = cmu_pronunciations(b"DIRECTLY D ER0 EH1 K T L IY0\nDIRECTLY(1) D IH0 R EH1 K T L IY0\n")
-    kept, report = filter_extension_rows(rows, phones, lambda word: word == "help")
-    assert {row[0] for row in kept} == {"follower", "don't", "pricy"}
-    assert [row[3] for row in kept] == [str(LATIN_WORD_COST_FLOOR), rows[-2][3], "12000"]
+    kept, report = filter_extension_rows(rows, phones, lambda word, _: word == "help")
+    assert {row[0] for row in kept} == {LATIN_WORD_BOUNDARY + w + LATIN_WORD_BOUNDARY
+                                       for w in ("direct", "follower", "don't", "pricy", "hel")}
+    costs = {word_key(row[0]): row[3] for row in kept}
+    assert costs["hel"] == rows[-1][3]
+    assert costs["direct"] == rows[3][3] and costs["follower"] == rows[4][3]
+    assert costs["don't"] == rows[5][3] and costs["pricy"] == "12000"
     assert report["reason_counts"] == {"base_dictionary_word": 1, "cmu_final_phone_risk": 2}
     assert rows == before, "filtering must not rewrite its evidence input"
-    assert filter_extension_rows(kept, phones, lambda _: False)[0] == kept
+    assert filter_extension_rows(kept, phones, lambda *_: False)[0] == kept
     assert word_key("Ｌｅｔ’ｓ") == "let's"
 
 
@@ -60,23 +67,39 @@ def test_native_base_lookup_does_not_treat_letter_spelling_as_a_word():
     known = native_base_word_lookup()
     assert all(known(word) for word in ("Help", "learn", "Two", "with", "Production"))
     assert not any(known(word) for word in ("model", "welcome", "directly", "deadline"))
+    assert known("rpm", "アールピーエム")
+    assert not known("model", "モデル")
 
 
-def test_native_cost_floor_preserves_known_words_and_retains_unknown_word_support(tmp_path: Path):
+def test_boundaries_require_a_complete_registered_token_and_preserve_numeric_units():
+    words = frozenset({"mode", "con", "ion", "don't"})
+    text = "model icon production 100rpm 100L 100人"
+    assert with_latin_word_boundaries(text, words) == text
+    boundary = LATIN_WORD_BOUNDARY
+    assert with_latin_word_boundaries("MODEとdon't", words) == boundary + "MODE" + boundary + "と" + boundary + "don't" + boundary
+
+
+def test_native_boundaries_prevent_prefix_and_suffix_intrusion_without_repricing(tmp_path: Path):
     native = pytest.importorskip("pyopenjtalk")
     base = native.OpenJTalk(native.OPEN_JTALK_DICT_DIR)
-    rows = [_row("ｈｉｌｔ", "ヒルト", "1/3"), _row("ｐｒｏ", "プロ", "1/2"),
+    rows = [_row("ｈｉｌｔｏｎ", "ヒルトン"), _row("ｐｒｏｄｕｃｔｉｏｎ", "プロダクション"),
+            _row("ｈｉｌｔ", "ヒルト", "1/3"), _row("ｐｒｏ", "プロ", "1/2"),
             _row("ｄｕｃｔ", "ダクト", "1/3"), _row("ｉｏｎ", "イオン", "1/3"),
-            _row("ｆｏｌｌｏｗｅｒ", "フォロワー", "0/4")]
+            _row("ｆｏｌｌｏｗｅｒ", "フォロワー", "0/4"), _row("ｃｏｎ", "コン", "1/2"),
+            _row("ｍｏｄｅ", "モード", "1/3")]
     kept, _ = filter_extension_rows(rows, {}, native_base_word_lookup())
+    words = frozenset(word_key(row[0]) for row in kept)
     source, binary = tmp_path / "source.csv", tmp_path / "user.dict"
     source.write_text("".join(",".join(row) + "\n" for row in kept), encoding="utf-8")
     native.mecab_dict_index(str(source), str(binary))
     extension = native.OpenJTalk(native.OPEN_JTALK_DICT_DIR, userdic=str(binary).encode())
-    for text in ("production", "hiltonを確認する。", "これはhiltonです。"):
-        assert extension.run_frontend(text) == base.run_frontend(text)
-    for text in ("follower", "followerを確認する。", "これはfollowerです。"):
-        assert any(f["read"] == "フォロワー" for f in extension.run_frontend(text))
+    for word in ("production", "hilton", "icon", "model", "100人", "100rpm", "１００ＭＬ"):
+        for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。")):
+            text = prefix + word + suffix
+            assert extension.run_frontend(with_latin_word_boundaries(text, words)) == base.run_frontend(text)
+    for word, reading in (("follower", "フォロワー"), ("hilt", "ヒルト"), ("con", "コン"), ("mode", "モード")):
+        for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。")):
+            assert any(f["read"] == reading for f in extension.run_frontend(with_latin_word_boundaries(prefix + word + suffix, words)))
 
 
 def test_reported_regressions_through_preparation_and_production_frontend(tmp_path, monkeypatch):
@@ -114,7 +137,7 @@ def test_reported_regressions_through_preparation_and_production_frontend(tmp_pa
         assert configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
         for word in bad.keys() - {"let's"}:
             assert phones(word) == baseline[word]
-        assert [f["read"] for f in native.run_frontend("let’s")] == ["レッツ"]
+        assert [f["read"] for f in native.run_frontend(with_latin_word_boundaries("let’s"))] == ["レッツ"]
         assert phones("let’s") == phones("レッツ")
         assert source.read_bytes() == data
     finally:

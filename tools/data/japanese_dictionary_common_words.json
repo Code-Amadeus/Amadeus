@@ -73,6 +73,7 @@
     "default",
     "desktop",
     "device",
+    "direct",
     "directed",
     "directly",
     "display",
@@ -113,8 +114,8 @@
     "github",
     "graph",
     "has",
-    "help",
     "Help",
+    "help",
     "history",
     "host",
     "hot",
@@ -298,7 +299,9 @@
     "Two": "ツー",
     "with": "ウィズ",
     "Production": "プロダクション",
-    "let’s": "レッツ"
+    "let’s": "レッツ",
+    "mode": "モード",
+    "direct": "ダイレクト"
   },
   "base_fallback_words": [
     "model",

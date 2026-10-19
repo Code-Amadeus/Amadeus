@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.20.1",
+  "version": "2026.10.20.2",
   "language": "ja",
   "source": {
     "repository": "https://github.com/RVC-Boss/GPT-SoVITS",
@@ -94,17 +94,12 @@
       "word": "component",
       "before": "コンポーネンツ",
       "after": "コンポーネント",
-      "cost_before": 608,
-      "cost_after": 0,
-      "reason": "Singular T and plural TS are distinct in CMUdict. Native full-pack validation also exposes comp + on + ent splitting at cost 608; cost 0 keeps the corrected whole word."
-    },
-    {
-      "word": "components",
-      "before": "コンポーネンツ",
-      "after": "コンポーネンツ",
-      "cost_before": 659,
-      "cost_after": 0,
-      "reason": "Keep the existing plural reading selected after repairing the singular entry cost; native validation must preserve both whole-word readings."
+      "reason": "Singular T and plural TS are distinct in CMUdict. Preserve the source cost; whole-token boundaries prevent comp + on + ent splitting.",
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": 0,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "developer",
@@ -171,7 +166,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -208,8 +203,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "amd",
@@ -371,7 +369,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -408,8 +406,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "balloonist",
@@ -485,7 +486,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -522,8 +523,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "busloads",
@@ -705,7 +709,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -742,8 +746,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "circuit's",
@@ -784,7 +791,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -821,8 +828,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "condo",
@@ -850,7 +860,7 @@
           "accent": "1/3"
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -887,8 +897,11 @@
           ]
         }
       },
-      "cost_before": 398,
-      "cost_after": 278
+      "retired_cost_calibration": {
+        "source_cost": 398,
+        "previous_derivative_cost": 278,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "corps",
@@ -966,7 +979,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1003,8 +1016,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "cricket's",
@@ -1047,7 +1063,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1084,8 +1100,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "criminalist's",
@@ -1138,7 +1157,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1175,8 +1194,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": -1048
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": -1048,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "debarment",
@@ -1243,7 +1265,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1280,8 +1302,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "dentist",
@@ -1558,7 +1583,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1595,8 +1620,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "economist's",
@@ -1712,7 +1740,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1749,8 +1777,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "economists'",
@@ -1840,7 +1871,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1865,8 +1896,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -2221
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -2221,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "embassy's",
@@ -1890,7 +1924,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -1927,8 +1961,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "endocrinologist's",
@@ -1989,7 +2026,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2026,8 +2063,11 @@
           ]
         }
       },
-      "cost_before": 1016,
-      "cost_after": -845
+      "retired_cost_calibration": {
+        "source_cost": 1016,
+        "previous_derivative_cost": -845,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "ernest's",
@@ -2068,7 +2108,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2105,8 +2145,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "everest's",
@@ -2142,7 +2185,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2179,8 +2222,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "experienced",
@@ -2232,7 +2278,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2269,8 +2315,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "fluoresce",
@@ -2341,7 +2390,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2378,8 +2427,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "grant's",
@@ -2420,7 +2472,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2457,8 +2509,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": -1361
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": -1361,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "hermetically",
@@ -2633,7 +2688,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2670,8 +2725,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "hoechst's",
@@ -2732,7 +2790,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2769,8 +2827,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "hospice's",
@@ -2795,7 +2856,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2832,8 +2893,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "illusionist's",
@@ -2882,7 +2946,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -2919,8 +2983,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": -1048
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": -1048,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "intruder",
@@ -3038,7 +3105,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3075,8 +3142,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "jfet",
@@ -3158,7 +3228,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3195,8 +3265,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -1100
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -1100,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "lawrence",
@@ -3272,7 +3345,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3309,8 +3382,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -1100
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -1100,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "luxottica's",
@@ -3389,7 +3465,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3426,8 +3502,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "marlboro's",
@@ -3474,7 +3553,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3511,8 +3590,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "marriott's",
@@ -3536,7 +3618,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3573,8 +3655,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "matsushita's",
@@ -3616,7 +3701,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3653,8 +3738,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -1100
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -1100,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "medalist's",
@@ -3701,7 +3789,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3738,8 +3826,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "meteorologist",
@@ -3823,7 +3914,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3860,8 +3951,11 @@
           ]
         }
       },
-      "cost_before": 914,
-      "cost_after": -946
+      "retired_cost_calibration": {
+        "source_cost": 914,
+        "previous_derivative_cost": -946,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "mississippi's",
@@ -3908,7 +4002,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -3945,8 +4039,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": -1048
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": -1048,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "mormonism",
@@ -4134,7 +4231,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4171,8 +4268,11 @@
           ]
         }
       },
-      "cost_before": 451,
-      "cost_after": -1415
+      "retired_cost_calibration": {
+        "source_cost": 451,
+        "previous_derivative_cost": -1415,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "ninth",
@@ -4216,7 +4316,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4253,8 +4353,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "office's",
@@ -4277,7 +4380,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4314,8 +4417,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "personalizes",
@@ -4392,7 +4498,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4429,8 +4535,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "politz",
@@ -4475,7 +4584,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4512,8 +4621,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": -1361
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": -1361,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "post's",
@@ -4552,7 +4664,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4589,8 +4701,11 @@
           ]
         }
       },
-      "cost_before": 451,
-      "cost_after": -1415
+      "retired_cost_calibration": {
+        "source_cost": 451,
+        "previous_derivative_cost": -1415,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "purchaser",
@@ -4650,7 +4765,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4687,8 +4802,11 @@
           ]
         }
       },
-      "cost_before": 451,
-      "cost_after": -1415
+      "retired_cost_calibration": {
+        "source_cost": 451,
+        "previous_derivative_cost": -1415,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "sarajevo's",
@@ -4714,7 +4832,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4751,8 +4869,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "schubert's",
@@ -4775,7 +4896,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4812,8 +4933,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -1203
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -1203,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "scientist's",
@@ -4896,7 +5020,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -4933,8 +5057,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "scout's",
@@ -4973,7 +5100,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5010,8 +5137,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": -1361
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": -1361,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "shevardnadze's",
@@ -5039,7 +5169,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5076,8 +5206,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": -997
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": -997,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "sizes",
@@ -5148,7 +5281,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5185,8 +5318,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": -1361
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": -1361,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "soviet's",
@@ -5229,7 +5365,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5266,8 +5402,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": -1308
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": -1308,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "stowaway",
@@ -5366,7 +5505,7 @@
           ]
         },
         "accent_policy": "reuse documented existing/native nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5403,8 +5542,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": -896
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": -896,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "suvs",
@@ -5474,7 +5616,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5511,8 +5653,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": -1255
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": -1255,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "t-shirt",
@@ -5534,7 +5679,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5571,8 +5716,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": 91
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": 91,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "t-shirts",
@@ -5595,7 +5743,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5632,8 +5780,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 144
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 144,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "thrusts",
@@ -5757,7 +5908,7 @@
           }
         ],
         "accent_policy": "preserve existing valid nucleus",
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5794,8 +5945,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -1151
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -1151,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "wurtzel",
@@ -5947,7 +6101,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -5990,8 +6144,11 @@
           ]
         }
       },
-      "cost_before": 914,
-      "cost_after": 141
+      "retired_cost_calibration": {
+        "source_cost": 914,
+        "previous_derivative_cost": 141,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "anglo-catholicism",
@@ -6024,7 +6181,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6061,8 +6218,11 @@
           ]
         }
       },
-      "cost_before": 1016,
-      "cost_after": 644
+      "retired_cost_calibration": {
+        "source_cost": 1016,
+        "previous_derivative_cost": 644,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "bar-mitzvah",
@@ -6088,7 +6248,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6125,8 +6285,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": 326
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": 326,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "bas-reliefs",
@@ -6165,7 +6328,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6205,8 +6368,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": 631
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": 631,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "broken-tooth",
@@ -6232,7 +6398,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6269,8 +6435,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 384
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 384,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "brothers-in-law",
@@ -6297,7 +6466,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6340,8 +6509,11 @@
           ]
         }
       },
-      "cost_before": 914,
-      "cost_after": 141
+      "retired_cost_calibration": {
+        "source_cost": 914,
+        "previous_derivative_cost": 141,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "carpe-diem",
@@ -6367,7 +6539,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6407,8 +6579,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": 588
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": 588,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "champaign-urbana",
@@ -6436,7 +6611,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6473,8 +6648,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": 594
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": 594,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "churchhouse",
@@ -6522,7 +6700,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6559,8 +6737,11 @@
           ]
         }
       },
-      "cost_before": 608,
-      "cost_after": 223
+      "retired_cost_calibration": {
+        "source_cost": 608,
+        "previous_derivative_cost": 223,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "computer-generated",
@@ -6593,7 +6774,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6630,8 +6811,11 @@
           ]
         }
       },
-      "cost_before": 1066,
-      "cost_after": 699
+      "retired_cost_calibration": {
+        "source_cost": 1066,
+        "previous_derivative_cost": 699,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "daughters-in-law",
@@ -6657,7 +6841,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6700,8 +6884,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": 193
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": 193,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "diaz-calderon",
@@ -6729,7 +6916,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6768,8 +6955,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": -1024
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": -1024,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "diego-garcia",
@@ -6797,7 +6987,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6834,8 +7024,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 384
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 384,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "dumb-ass",
@@ -6858,7 +7051,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6895,8 +7088,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 166
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 166,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "el-greco",
@@ -6920,7 +7116,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -6957,8 +7153,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 160
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 160,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "ex-boyfriends",
@@ -6986,7 +7185,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7023,8 +7222,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": 421
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": 421,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "ex-girlfriends",
@@ -7053,7 +7255,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7090,8 +7292,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 473
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 473,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "face-to-face",
@@ -7116,7 +7321,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7159,8 +7364,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -14
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -14,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "foot-and-mouth",
@@ -7186,7 +7394,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7229,8 +7437,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 100
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 100,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "french-polynesia",
@@ -7260,7 +7471,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7297,8 +7508,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": 594
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": 594,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "goings-ons",
@@ -7323,7 +7537,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7360,8 +7574,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": 273
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": 273,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "great-grandfather",
@@ -7391,7 +7608,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7428,8 +7645,11 @@
           ]
         }
       },
-      "cost_before": 1016,
-      "cost_after": 644
+      "retired_cost_calibration": {
+        "source_cost": 1016,
+        "previous_derivative_cost": 644,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "hit-and-run",
@@ -7454,7 +7674,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7497,8 +7717,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -68
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -68,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "homo-erectus",
@@ -7526,7 +7749,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7566,8 +7789,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 711
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 711,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "ieee",
@@ -7615,7 +7841,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7652,8 +7878,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 166
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 166,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "jean-michel",
@@ -7678,7 +7907,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7715,8 +7944,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": 330
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": 330,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "jean-michele",
@@ -7741,7 +7973,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7778,8 +8010,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 383
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 383,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "juarez-espin",
@@ -7822,7 +8057,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7862,8 +8097,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 695
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 695,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "kebab-n-curry",
@@ -7890,7 +8128,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7933,8 +8171,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": 25
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": 25,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "life-affirming",
@@ -7960,7 +8201,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -7997,8 +8238,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 487
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 487,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "might-have-beens",
@@ -8024,7 +8268,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8067,8 +8311,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": 211
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": 211,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "modus-operandi",
@@ -8096,7 +8343,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8133,8 +8380,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 489
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 489,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "moholy-nagy",
@@ -8161,7 +8411,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8201,8 +8451,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": 657
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": 657,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "moseley-braun",
@@ -8228,7 +8481,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8265,8 +8518,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": 437
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": 437,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "non-communists",
@@ -8296,7 +8552,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8336,8 +8592,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": -226
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": -226,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "non-discrimination",
@@ -8370,7 +8629,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8418,8 +8677,11 @@
           ]
         }
       },
-      "cost_before": 1066,
-      "cost_after": -488
+      "retired_cost_calibration": {
+        "source_cost": 1066,
+        "previous_derivative_cost": -488,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "non-governmental",
@@ -8450,7 +8712,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8490,8 +8752,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": -123
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": -123,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "non-transferable",
@@ -8522,7 +8787,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8562,8 +8827,11 @@
           ]
         }
       },
-      "cost_before": 965,
-      "cost_after": -123
+      "retired_cost_calibration": {
+        "source_cost": 965,
+        "previous_derivative_cost": -123,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "o'canas",
@@ -8586,7 +8854,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8623,8 +8891,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": -1361
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": -1361,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "off-duty",
@@ -8647,7 +8918,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8684,8 +8955,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 166
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 166,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "one-on-one",
@@ -8709,7 +8983,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8753,8 +9027,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": -290
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": -290,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "one-year",
@@ -8777,7 +9054,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8815,8 +9092,11 @@
           ]
         }
       },
-      "cost_before": 556,
-      "cost_after": 163
+      "retired_cost_calibration": {
+        "source_cost": 556,
+        "previous_derivative_cost": 163,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "pee-pee",
@@ -8837,7 +9117,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8874,8 +9154,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": 109
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": 109,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "peeping",
@@ -8922,7 +9205,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -8965,8 +9248,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -14
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -14,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "rock-and-roll",
@@ -8992,7 +9278,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9035,8 +9321,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": 46
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": 46,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "rpm",
@@ -9112,7 +9401,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9155,8 +9444,11 @@
           ]
         }
       },
-      "cost_before": 914,
-      "cost_after": -289
+      "retired_cost_calibration": {
+        "source_cost": 914,
+        "previous_derivative_cost": -289,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "serbo-croatian",
@@ -9184,7 +9476,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9224,8 +9516,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 800
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 800,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "sheath-knife",
@@ -9248,7 +9543,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9285,8 +9580,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 384
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 384,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "sisters-in-law",
@@ -9313,7 +9611,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9356,8 +9654,11 @@
           ]
         }
       },
-      "cost_before": 863,
-      "cost_after": 89
+      "retired_cost_calibration": {
+        "source_cost": 863,
+        "previous_derivative_cost": 89,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "sons-in-law",
@@ -9381,7 +9682,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9430,8 +9731,11 @@
           ]
         }
       },
-      "cost_before": 711,
-      "cost_after": -205
+      "retired_cost_calibration": {
+        "source_cost": 711,
+        "previous_derivative_cost": -205,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "soviet-union",
@@ -9460,7 +9764,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9499,8 +9803,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": -1081
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": -1081,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "speaking",
@@ -9549,7 +9856,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9586,8 +9893,11 @@
           ]
         }
       },
-      "cost_before": 762,
-      "cost_after": 384
+      "retired_cost_calibration": {
+        "source_cost": 762,
+        "previous_derivative_cost": 384,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "two-day",
@@ -9608,7 +9918,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9645,8 +9955,11 @@
           ]
         }
       },
-      "cost_before": 504,
-      "cost_after": 109
+      "retired_cost_calibration": {
+        "source_cost": 504,
+        "previous_derivative_cost": 109,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "two-dimensional",
@@ -9675,7 +9988,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9712,8 +10025,11 @@
           ]
         }
       },
-      "cost_before": 914,
-      "cost_after": 533
+      "retired_cost_calibration": {
+        "source_cost": 914,
+        "previous_derivative_cost": 533,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "two-thirds",
@@ -9736,7 +10052,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9773,8 +10089,11 @@
           ]
         }
       },
-      "cost_before": 659,
-      "cost_after": 273
+      "retired_cost_calibration": {
+        "source_cost": 659,
+        "previous_derivative_cost": 273,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "untruths",
@@ -9836,7 +10155,7 @@
             ]
           }
         ],
-        "native_cost_calibration": {
+        "retired_native_cost_calibration": {
           "runtime": "0.4.1.post9",
           "rule": "Minimal cost reduction to beat observed unintended splits in three synthetic contexts; no whole-word reading alternative is overridden.",
           "observations": [
@@ -9879,8 +10198,11 @@
           ]
         }
       },
-      "cost_before": 813,
-      "cost_after": 46
+      "retired_cost_calibration": {
+        "source_cost": 813,
+        "previous_derivative_cost": 46,
+        "status": "superseded_by_whole_token_boundaries; source cost restored"
+      }
     },
     {
       "word": "let's",
@@ -9908,11 +10230,9 @@
     "baseline_sha256": "91b3a3c1aa37b7eea96b5815b40e48c0f6a15d02136f956d9deb340df35131f2",
     "baseline_review_entries": 317,
     "policy": "Exact bad-reading repairs preserve other lexical alternatives. Unconfirmed lexical transcriptions or accent nuclei are retained. Native compilation and labels do not replace human listening.",
-    "cost_calibration_completed": true,
     "lexical_repairs": 94,
     "representation_repairs": 65,
     "retained_entries": 158,
-    "calibrated_entry_costs": 109,
     "evidence_files": {
       "cmudict": {
         "path": "GPT_SoVITS/text/cmudict-fast.rep",
@@ -9926,6 +10246,10 @@
           "char.bin": "888ee94c5a8a7a26d24ab3f1b7155441351954fd51ea06b4a2f78bd742492b2f"
         }
       }
+    },
+    "retired_cost_calibration": {
+      "entries": 109,
+      "status": "Historical selection evidence only; whole-token boundaries supersede every cost override. All source row costs are preserved."
     }
   },
   "extension_filter": {
@@ -9937,12 +10261,11 @@
       "char.bin": "888ee94c5a8a7a26d24ab3f1b7155441351954fd51ea06b4a2f78bd742492b2f"
     },
     "rules": [
-      "Exclude every imported row for a surface selected as one known whole word by an independent base MeCab instance; unknown letter-spelled tokens do not count as known words.",
+      "Exclude every imported surface selected as one known whole word by an independent base MeCab instance. Also exclude redundant whole-token readings identical to the base letter/initialism reading (e.g. rpm); other unknown letter-spelled words remain eligible for improved readings.",
       "Quarantine all variants of a surface if any reading ends in ズ without CMU S/Z, ド without D/T, or ング without NG. Accept every CMU pronunciation variant. These are the external audit rules; omit its unreachable ッド branch. Do not promote another unverified shifted reading.",
-      "Raise plain Latin word costs to one common floor, keeping higher existing costs and punctuation-bearing compound costs; prevent cheap imported fragments from splitting known base words."
+      "Surround each retained Latin surface with native fullwidth spaces. Immediately before frontend analysis, mark only complete tokens present in the successfully registered official CSV. Both edges prevent prefix, interior and suffix matches. Unlisted tokens, units, base/legacy/personal-only paths keep their input unchanged. Preserve every original source cost."
     ],
-    "limitations": "Final-phone screening is conservative quarantine, not proof of an error or a proposed replacement. Legitimate loanword adaptations can be excluded. Interior shifts and vowel-ending errors can escape this rule. The common cost floor is qualified against all base-owned imported words in three native contexts and the retained reviewed-word gate, not all possible Japanese contexts. No runtime word exceptions are added.",
-    "latin_word_cost_floor": 10300,
+    "limitations": "Final-phone screening is conservative quarantine, not proof of an error or a proposed replacement. Legitimate loanword adaptations can be excluded. Interior shifts and vowel-ending errors can escape this rule. The prepared CSV requires the matching frontend token-boundary integration; raw pyopenjtalk callers must apply it too. No runtime word exceptions are added. Native selection/prosody checks do not replace listening review.",
     "cmudict_hash_normalization": "UTF-8 bytes with CRLF normalized to LF",
     "external_audit": {
       "input_pack_version": "2026.10.18.1",
@@ -9956,6 +10279,7 @@
       "frequent_doc_rows": 49,
       "frequent_doc_distinct_words": 48,
       "flag_list_sha256": "b8446675edbd1ff0796b76ad6167e8e20266b198a9829d8f60bc0e37e0f73e2a"
-    }
+    },
+    "latin_word_boundary": "U+3000 at both edges"
   }
 }

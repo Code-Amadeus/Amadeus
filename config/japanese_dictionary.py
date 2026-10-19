@@ -9,13 +9,19 @@ import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
+import unicodedata
 
 PACK_ID = "japanese-pronunciation"
 PACK_TREE = "text/ja/english"
+LATIN_WORD_BOUNDARY = "\u3000"
 PACK_FILES = (
     "userdict.csv", "provenance.json", "NOTICE.md",
     "GPT-SoVITS-MIT.txt", "CMUdict-BSD-2-Clause.txt", "Amadeus-AGPL-3.0.txt",
 )
+
+
+def latin_word_key(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).translate(str.maketrans("’−", "'-")).casefold().strip(" ")
 
 
 class JapaneseDictionaryError(ValueError):

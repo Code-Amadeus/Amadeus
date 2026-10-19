@@ -48,27 +48,32 @@ then removes only identical full rows. Different lexical readings remain.
 The generated `provenance.json` additionally identifies the derivative's
 version, hash, entry count, normalization rules and repair counters.
 
-Version 2026.10.20.1 retains the previous correction history and adds a
+Version 2026.10.20.2 retains the previous correction history and adds a
 source-backed `let's → レッツ` repair: the existing `lets` entry has the same
-CMU phones. Its accent annotation is reused, not newly validated by listening.
+CMU phones. Its accent annotation is reused, not validated by listening.
 The historical 317-row review comprises 94 lexical/script/annotation repairs,
 65 representation repairs and 158 unconfirmed readings. The release filter
-subsequently yields known whole words to the pinned base dictionary and
-quarantines every variant of CMU final-phone risk surfaces. The CMU file and
-base dictionary hashes, rules and complete exclusion records are in provenance.
-The direct flags exactly reproduce the external 1,557-row TSV; extending
-quarantine to its other same-surface variants excludes another 112 rows.
-This screen admits false positives and can miss other errors; it is not a claim
-that each excluded row is wrong. A uniform 10,300 floor for plain Latin word
-costs supersedes earlier per-entry cost calibration, preventing observed cheap
-fragment splits of known base words without runtime word exceptions.
+yields known whole words and redundant letter readings to the pinned base
+and quarantines every variant of CMU final-phone risk surfaces. CMU/base
+hashes, rules and complete exclusion records are in provenance. The direct
+flags reproduce the external 1,557-row TSV; quarantine of their other variants
+excludes another 112 rows. This screen admits false positives and can miss
+other errors; it does not establish that each excluded row is wrong.
 
-From 127,811 normalized entries, 2,422 are excluded (769 base-owned rows,
-1,669 CMU-risk rows, 16 overlap), leaving 125,389. The floor raises 116,922
-retained costs. Three-context validation covers all 746 base-owned surfaces;
-289 common English words extend the former 52-control sample. The gate does
-not establish exhaustive lexical accuracy. `proposer` still uses a provisional
-flat accent; waveform/listening acceptance remains outstanding.
+The prepared CSV and frontend share full-token boundaries on retained Latin
+entries. Only complete registered official tokens are marked, preventing
+prefix and suffix intrusion while leaving unlisted/base/legacy/personal-only
+inputs unchanged. All original source costs are preserved; historical cost
+calibration and the common floor are retired. This CSV requires the matching
+frontend integration, not only an OpenJTalk user-dictionary registration.
+
+From 127,808 normalized entries, 2,502 are excluded (849 base-owned rows,
+1,669 CMU-risk rows, 16 overlap), leaving 125,306. Three-context validation
+covers all 814 base-owned surfaces, and 290 common English words extend the
+former 52-control sample. Native selection across 122,978 retained distinct
+surfaces in three contexts loses no previously selected whole-word match.
+These checks do not establish exhaustive lexical accuracy. `proposer` still
+uses a provisional flat accent; waveform/listening acceptance is outstanding.
 
 The upstream default branch was rechecked on 2026-10-20 at
 `b4570b876f5c086819ba84e3215472733c6a7b70`: the CSV still has the same Git blob

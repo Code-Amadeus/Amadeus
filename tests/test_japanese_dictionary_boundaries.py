@@ -13,6 +13,7 @@ from test_japanese_dictionary import _fake_jtalk, _prepare, _row, LEARNER
 
 @pytest.fixture(autouse=True)
 def isolate_native_status(monkeypatch):
+    monkeypatch.setattr(runtime, "_official_latin_words", frozenset())
     monkeypatch.setattr(runtime, "_runtime_status", {
         "state": "not_loaded", "ready": False, "identity": None, "version": "", "detail": "Not loaded",
     })
@@ -147,7 +148,7 @@ def test_native_units_and_contractions_against_base_frontend(tmp_path):
         assert runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)["ready"]
         assert [japanese.g2p(correct_pronunciation_for_tts(text)) for text in texts] == before
         for word, reading in (("don't", "ドント"), ("I'm", "アイム")):
-            assert "".join(f["read"] for f in jtalk.run_frontend(word.lower())) == reading
+            assert "".join(f["read"] for f in jtalk.run_frontend(runtime.with_latin_word_boundaries(word.lower()))) == reading
             assert "UNK" not in japanese.g2p(word)
     finally:
         jtalk.unset_user_dict()

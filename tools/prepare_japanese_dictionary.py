@@ -31,7 +31,7 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
                        recipe_path: Path = RECIPE_PATH, corrections_path: Path = CORRECTIONS_PATH,
                        overwrite: bool = False, count_mora: Callable[[str], int | None] | None = None,
                        normalize_surface: Callable[[str], str] | None = None,
-                       base_word: Callable[[str], bool] | None = None) -> Path:
+                       base_word: Callable[..., bool] | None = None) -> Path:
     recipe = json.loads(Path(recipe_path).read_text(encoding="utf-8"))
     data = Path(source).read_bytes().replace(b"\r\n", b"\n")
     if hashlib.sha256(data).hexdigest() != recipe["source"]["sha256"]:
@@ -68,7 +68,9 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
         expected = before.get(word)
         matches = expected is not None and unicodedata.normalize("NFC", row[12]) == unicodedata.normalize("NFC", expected)
         if word in corrections and matches:
+            original_cost = row[3]
             row = list(corrections[word])
+            row[3] = original_cost
         corrected.append(row)
     existing = {normalize(row[0]) for row in rows}
     for word, correction in corrections.items():
@@ -76,8 +78,7 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
             row = list(correction)
             corrected.append(row)
     corrected, normalization = normalize_rows(corrected, count_mora, normalize_surface)
-    corrected, filtering = filter_extension_rows(corrected, cmu_pronunciations(cmu_data), base_word,
-                                                 cost_floor=policy["latin_word_cost_floor"])
+    corrected, filtering = filter_extension_rows(corrected, cmu_pronunciations(cmu_data), base_word)
     buffer = io.StringIO(newline="")
     csv.writer(buffer, lineterminator="\n").writerows(corrected)
     derivative = buffer.getvalue().encode("utf-8")

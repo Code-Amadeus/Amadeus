@@ -11,12 +11,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from config.japanese_dictionary import PACK_TREE, dictionary_rows, load_dictionary_pack  # noqa: E402
+from config.japanese_dictionary import LATIN_WORD_BOUNDARY, PACK_TREE, dictionary_rows, load_dictionary_pack  # noqa: E402
 from tools.audit_japanese_dictionary import (  # noqa: E402
     cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup, word_key,
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts  # noqa: E402
-from tts.japanese_dictionary import configure_japanese_dictionary  # noqa: E402
+from tts.japanese_dictionary import configure_japanese_dictionary, with_latin_word_boundaries  # noqa: E402
 
 # Numeric Latin suffixes, inflected initialisms/names, native Japanese and
 # punctuation exercise both sides of the optional pack's authority boundary.
@@ -68,28 +68,37 @@ def validate(project_root: Path) -> dict:
     if hashlib.sha256(cmu_data).hexdigest() != policy["cmudict_sha256"]:
         raise RuntimeError("Release gate requires the recipe's CMU screening data")
     cmu = cmu_pronunciations(cmu_data)
-    _, screening = filter_extension_rows(rows, cmu, base_word, cost_floor=policy["latin_word_cost_floor"])
+    correction_data = (ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes().replace(b"\r\n", b"\n")
+    if hashlib.sha256(correction_data).hexdigest() != metadata["corrections_sha256"]:
+        raise RuntimeError("Release gate requires the pack's correction recipe")
+    corrected = list(dictionary_rows(correction_data))
+    excluded = policy["results"]["excluded"]
+    _, screening = filter_extension_rows(rows, cmu, base_word)
     vocabulary_data = json.loads((ROOT / "tools/data/japanese_dictionary_common_words.json").read_text(encoding="utf-8"))
     common = vocabulary_data["words"]
-    excluded = policy["results"]["excluded"]
     base_owned = sorted({item["surface"] for item in excluded if "base_dictionary_word" in item["reasons"]})
-    corrected = list(dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
     jtalk = pyopenjtalk.OpenJTalk(pyopenjtalk.OPEN_JTALK_DICT_DIR)
     surface = jtalk.normalize_for_mecab
 
+    def native_text(text: str) -> str:
+        return with_latin_word_boundaries(correct_pronunciation_for_tts(text).lower())
+
+    def lexical_surface(value: str) -> str:
+        return value.strip(LATIN_WORD_BOUNDARY)
+
     def target_readings(text: str, word: str) -> list[str]:
-        return [f["read"] for f in pyopenjtalk.run_frontend(correct_pronunciation_for_tts(text).lower())
-                if f["string"] == surface(word)]
+        return [f["read"] for f in pyopenjtalk.run_frontend(native_text(text))
+                if lexical_surface(f["string"]) == surface(word)]
     expected = defaultdict(set)
     for row in rows:
-        expected[row[0]].add(row[11])
+        expected[lexical_surface(row[0])].add(row[11])
     failures, contexts, frontend_words = [], 0, 0
     if screening["excluded_entries"]:
         failures.append({"kind": "unscreened_entries", "entries": screening["excluded"]})
-    if screening["latin_word_costs_raised"]:
-        failures.append({"kind": "unbounded_word_costs", "count": screening["latin_word_costs_raised"]})
+    if screening["latin_word_boundaries_added"]:
+        failures.append({"kind": "missing_word_boundaries", "count": screening["latin_word_boundaries_added"]})
     try:
-        pyopenjtalk.unset_user_dict()
+        configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=False)
         baseline = {text: production_phones(text) for text in BASE_SAMPLES}
         unit_baseline = {text: production_phones(text) for text in UNIT_SAMPLES}
         # Compare every base-owned imported surface, not just a hand-picked
@@ -97,11 +106,19 @@ def validate(project_root: Path) -> dict:
         base_controls = {prefix + word + suffix for word in base_owned
                          for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。"))}
         english_controls = base_controls | set(common) | set(REPORTED_CONTEXTS)
+        space_controls = base_controls | set(BASE_SAMPLES) | set(UNIT_SAMPLES) | set(vocabulary_data["base_fallback_words"])
         english_baseline = {text: production_phones(text) for text in sorted(english_controls)}
         context_baseline = {text: target_readings(text, word) for text, word in REPORTED_CONTEXTS.items()}
         status = configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=True)
         if not status["ready"]:
             raise RuntimeError(status["detail"])
+        boundary_checks = 0
+        for text in sorted(space_controls):
+            prepared = correct_pronunciation_for_tts(text).lower()
+            bounded = with_latin_word_boundaries(prepared)
+            boundary_checks += 1
+            if bounded != prepared:
+                failures.append({"kind": "unexpected_base_token_boundary", "text": text})
         for text, before in baseline.items():
             after = production_phones(text)
             if after != before:
@@ -125,12 +142,12 @@ def validate(project_root: Path) -> dict:
             if must_preserve and after != before:
                 failures.append({"kind": "english_base_regression", "text": text, "before": before, "after": after})
             if text in common:
-                observed = pyopenjtalk.run_frontend(correct_pronunciation_for_tts(text).lower())
+                observed = pyopenjtalk.run_frontend(native_text(text))
                 reading = vocabulary_data["reviewed_readings"].get(text)
                 if reading and [f["read"] for f in observed] != [reading]:
                     failures.append({"kind": "reviewed_english_reading", "text": text, "expected": reading,
                                      "observed": observed})
-                vocabulary.append({"word": text, "base_owned": base_word(text),
+                vocabulary.append({"word": text, "base_owned": word_key(text) in base_owned,
                                    "quarantined": word_key(text) in quarantined,
                                    "changed": after != before, "readings": [f["read"] for f in observed]})
         sentence_results = []
@@ -152,7 +169,8 @@ def validate(project_root: Path) -> dict:
                 # of the base or of conservative release-data exclusions.
                 continue
             for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。")):
-                whole = [f for f in pyopenjtalk.run_frontend(prefix + word.lower() + suffix) if f["string"] == key]
+                whole = [f for f in pyopenjtalk.run_frontend(with_latin_word_boundaries(prefix + word.lower() + suffix))
+                         if lexical_surface(f["string"]) == key]
                 contexts += 1
                 if len(whole) != 1 or whole[0]["read"] not in expected[key]:
                     failures.append({"kind": "whole_word", "word": word, "prefix": prefix, "suffix": suffix, "observed": whole})
@@ -164,6 +182,7 @@ def validate(project_root: Path) -> dict:
                 failures.append({"kind": "frontend", "word": word, "phones": phones})
         return {"version": pack.version, "entry_count": pack.entry_count, "sha256": pack.sha256,
                 "base_samples": len(BASE_SAMPLES), "native_contexts": contexts,
+                "unmodified_base_inputs": boundary_checks,
                 "additional_unit_phoneme_checks": len(UNIT_SAMPLES),
                 "base_owned_words": len(base_owned), "english_base_contexts": len(base_controls),
                 "common_english_words": len(common), "common_english_results": vocabulary,
@@ -173,7 +192,7 @@ def validate(project_root: Path) -> dict:
                 "production_frontend_words": frontend_words, "failures": failures,
                 "limitations": "Native phoneme/prosody and token-selection checks; no waveform or listening acceptance."}
     finally:
-        pyopenjtalk.unset_user_dict()
+        configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=False)
 
 
 def main() -> int:

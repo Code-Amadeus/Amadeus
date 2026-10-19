@@ -5,14 +5,36 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+import re
 import tempfile
 
 from config.asset_paths import PROJECT_ROOT
-from config.japanese_dictionary import PACK_TREE, dictionary_rows, load_dictionary_pack
+from config.japanese_dictionary import (
+    LATIN_WORD_BOUNDARY, PACK_TREE, dictionary_rows, latin_word_key, load_dictionary_pack,
+)
 
 logger = logging.getLogger(__name__)
 _runtime_status = {"state": "not_loaded", "ready": False, "version": "", "identity": None,
                    "detail": "Japanese frontend has not loaded."}
+_official_latin_words: frozenset[str] = frozenset()
+
+_LATIN_TOKEN = re.compile(
+    r"[0-9０-９]*[A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ0-9０-９]*"
+    r"(?:['’＇−－-][A-Za-zＡ-Ｚａ-ｚ0-9０-９]+)*['’＇]?"
+)
+
+
+def with_latin_word_boundaries(text: str, words: frozenset[str] | None = None) -> str:
+    """Native-ignored spaces make official entries match complete Latin tokens.
+
+    Apply after sentence/punctuation splitting. Both edges are necessary: an
+    imported word must not consume either the prefix or suffix of another word.
+    Only registered official words are marked. Other text keeps the original
+    base, legacy and personal dictionary behavior, including measurement units.
+    """
+    words = _official_latin_words if words is None else words
+    return _LATIN_TOKEN.sub(lambda match: (LATIN_WORD_BOUNDARY + match.group() + LATIN_WORD_BOUNDARY
+                                          if latin_word_key(match.group()) in words else match.group()), text)
 
 
 def _enabled() -> bool:
@@ -26,7 +48,8 @@ def dictionary_runtime_status() -> dict:
 
 def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, enabled: bool | None = None) -> dict:
     """Load independent sources without making optional failures fatal."""
-    global _runtime_status
+    global _runtime_status, _official_latin_words
+    _official_latin_words = frozenset()
     state, version, identity = "invalid", "", None
     detail = "Optional Japanese dictionary unavailable."
     reset = None
@@ -40,7 +63,8 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         project_root = Path(project_root).resolve()
         base = Path(os.fsdecode(jtalk.OPEN_JTALK_DICT_DIR))
         system = (base / "sys.dic").stat()
-        native_key = (jtalk.__version__, str(base), system.st_size, system.st_mtime_ns)
+        native_key = (jtalk.__version__, str(base), system.st_size, system.st_mtime_ns,
+                      "latin-whole-words.v1")
         compiled, digests, issues = [], [], []
         cache = project_root / ".cache/japanese_dictionary"
         official = project_root / "assets" / PACK_TREE / "userdict.csv"
@@ -63,6 +87,9 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                 if pack is not None:
                     if digest != pack.sha256:
                         raise ValueError("Dictionary changed during loading; restart after installation finishes")
+                    official_words = frozenset(latin_word_key(row[0]) for row in dictionary_rows(data)
+                                               if row[0].startswith(LATIN_WORD_BOUNDARY)
+                                               and row[0].endswith(LATIN_WORD_BOUNDARY))
                 else:
                     for _ in dictionary_rows(data):
                         pass
@@ -102,6 +129,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
             digests.append(digest)
             if pack is not None:
                 version = pack.version
+                _official_latin_words = official_words
             elif source == legacy:
                 version = "legacy-local"
         identity = hashlib.sha256(repr((native_key, tuple(digests))).encode()).hexdigest()
@@ -128,6 +156,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         # Configuration, native API and reset errors belong to this optional
         # boundary. An unsupported runtime must still import the base frontend.
         identity = None
+        _official_latin_words = frozenset()
         state = "unsupported" if state == "unsupported" else "invalid"
         detail = str(exc)
         if callable(reset):

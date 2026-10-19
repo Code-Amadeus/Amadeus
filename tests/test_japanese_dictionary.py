@@ -25,6 +25,7 @@ LEARNER = "ｌｅａｒｎｅｒ,1348,1348,504,名詞,固有名詞,一般,*,*,*,
 
 @pytest.fixture(autouse=True)
 def clear_runtime_sources(monkeypatch):
+    monkeypatch.setattr(dictionary, "_official_latin_words", frozenset())
     monkeypatch.setattr(dictionary, "_runtime_status", {
         "state": "not_loaded", "ready": False, "version": "", "identity": None, "detail": "Not loaded in this test.",
     })
@@ -39,7 +40,8 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
         # Preserve the real competing short words: a corrected full-word row
         # must actually win native segmentation, not merely exist in the CSV.
         for surface, reading, cost in [("ｃｏｍｐ", "コンプ", "344"),
-                                        ("ｏｎ", "オン", "227"), ("ｅｎｔ", "エント", "287")]:
+                                        ("ｏｎ", "オン", "227"), ("ｅｎｔ", "エント", "287"),
+                                        ("ｃｏｍｐｏｎｅｎｔｓ", "コンポーネンツ", "659")]:
             row = _row(surface, reading, "1/3" if surface != "ｏｎ" else "1/2")
             row[3] = cost
             data += (",".join(row) + "\n").encode()
@@ -50,7 +52,7 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     return prepare_dictionary(source, project_root=root, recipe_path=recipe_path,
                               count_mora=None if native else lambda _: None,
-                              base_word=None if native else lambda _: False)
+                              base_word=None if native else lambda *_: False)
 
 
 @pytest.mark.parametrize("text,expected", [
@@ -88,7 +90,8 @@ def test_preparation_records_derivative_and_does_not_edit_source(tmp_path):
     # adaptations; condo -> コンド is a documented false positive (CMU OW).
     accepted = [row for row in corrections if row[0] != "ｃｏｎｄｏ"]
     assert pack.entry_count == len(accepted)
-    readings = {row[0]: row[11] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
+    readings = {row[0].strip(dictionary_pack.LATIN_WORD_BOUNDARY): row[11]
+                for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
     assert readings == {row[0]: row[11] for row in accepted}
     assert readings["ｆｏｌｌｏｗｅｒ"] == "フォロワー"
     assert readings["ｌｅａｒｎｅｒ"] == "ラーナー"
@@ -206,6 +209,7 @@ def test_reviewed_bad_reading_repair_preserves_other_readings_of_the_same_surfac
     repair = next(entry for entry in recipe["corrections"] if entry["word"] == "corps")
     bad = _row("ｃｏｒｐｓ", repair["before"], "18/75")
     legitimate_plural = _row("ｃｏｒｐｓ", "コアズ", "1/3")
+    bad[3], legitimate_plural[3] = "977", "1234"
     source = tmp_path / "upstream.csv"
     # csv.writer handles the commas and quotes inside the original LLM annotation.
     import csv
@@ -218,9 +222,13 @@ def test_reviewed_bad_reading_repair_preserves_other_readings_of_the_same_surfac
     recipe_path = tmp_path / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     pack_root = prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path,
-                                   count_mora=lambda _: None, base_word=lambda _: False)
-    readings = [row[12] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes()) if row[0] == "ｃｏｒｐｓ"]
+                                   count_mora=lambda _: None, base_word=lambda *_: False)
+    readings = [row[12] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())
+                if row[0].strip(dictionary_pack.LATIN_WORD_BOUNDARY) == "ｃｏｒｐｓ"]
     assert set(readings) == {"コア", "コアズ"}
+    costs = {row[12]: row[3] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())
+             if row[0].strip(dictionary_pack.LATIN_WORD_BOUNDARY) == "ｃｏｒｐｓ"}
+    assert costs == {"コア": "977", "コアズ": "1234"}
     assert source.read_bytes() == data
 
 
@@ -286,6 +294,8 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     jtalk = _fake_jtalk(root)
     status = dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)
     assert status["ready"]
+    boundary = dictionary_pack.LATIN_WORD_BOUNDARY
+    assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "Follower" + boundary + " model 100rpm"
     assert len(jtalk.compiled) == 2
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.compiled)
     assert [Path(path).read_bytes() for path in jtalk.registered[-1]] == [
@@ -307,6 +317,7 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     assert personal.read_text(encoding="utf-8") == LEARNER
     dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=False)
     assert dictionary.dictionary_runtime_status()["state"] == "disabled" and jtalk.registered[-1] == []
+    assert dictionary.with_latin_word_boundaries("Follower") == "Follower"
 
 
 def test_runtime_missing_invalid_and_compile_failure_keep_base_frontend(tmp_path):
@@ -317,6 +328,7 @@ def test_runtime_missing_invalid_and_compile_failure_keep_base_frontend(tmp_path
         raise RuntimeError("compiler failed")
     jtalk.mecab_dict_index = fail_compile
     assert dictionary.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)["state"] == "invalid"
+    assert dictionary.with_latin_word_boundaries("Follower") == "Follower"
     assert jtalk.registered[-1] == []
     assert not list((tmp_path / ".cache/japanese_dictionary").glob("*.dict"))
     (pack_root / "userdict.csv").write_bytes(b"corrupt")
@@ -379,7 +391,7 @@ def test_native_runtime_reads_corrected_words_and_keeps_japanese_intact(tmp_path
                                "Bank": "バンク", "Component": "コンポーネント", "Components": "コンポーネンツ",
                                "Handler": "ハンドラー", "Dentist": "デンティスト", "Balloonist": "バルーニスト",
                                "Ninth": "ナインス", "Intruder": "イントルーダー", "Lawrence": "ローレンス"}.items():
-            features = jtalk.run_frontend(word.lower())
+            features = jtalk.run_frontend(dictionary.with_latin_word_boundaries(word.lower()))
             assert len(features) == 1 and features[0]["read"] == expected
         prepared = correct_pronunciation_for_tts("LeaderとMLPを確認する。")
         assert "エムエルピー" in "".join(feature["read"] for feature in jtalk.run_frontend(prepared.lower()))
