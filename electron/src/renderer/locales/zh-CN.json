@@ -880,7 +880,7 @@
   "Shared capabilities, implementations, and scene use.": "共享能力、实现来源与场景使用情况。",
   "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.": "共享的快速首句端点。Hybrid 搭配 Bedrock，Hybrid2 搭配 DeepSeek，Hybrid3 搭配 OpenAI 兼容服务；可选的 Hybrid BAT 启动器与上方配置共用 llama.cpp 可执行文件和 GGUF 设置。",
   "Shared model-backed translation with independent display and speech policies in each scene.": "由共享模型提供翻译，各场景分别管理显示与语音策略。",
-  "Shared translation used by Chat, Wallpaper, and VN presentation policies.": "聊天、壁纸与 VN 呈现策略共用的翻译职责。",
+  "Shared subtitle translation for Chat and Wallpaper. VN uses its own translation settings.": "Chat 和壁纸共用字幕翻译；VN 使用独立的翻译设置。",
   "Shared visual understanding and capture paths": "共享视觉理解与采集路径",
   "Shared voice setup": "共享语音配置",
   "Shorten the highlighted field before saving.": "请缩短标出的内容后再保存。",

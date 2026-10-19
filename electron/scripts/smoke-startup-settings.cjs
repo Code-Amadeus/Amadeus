@@ -23,6 +23,7 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
     (_request, callback) => callback({ cancel: true }))
   const { DesktopSettingsStore } = await import(pathToFileURL(path.join(root, 'electron/dist/main/desktopSettings.js')).href)
+  const { catalogApplication } = await import(pathToFileURL(path.join(root, 'electron/dist/shared/configCatalog.js')).href)
   const { ExtensionInstaller, ExtensionPackageHelper } = await import(pathToFileURL(path.join(root, 'electron/dist/main/extensions.js')).href)
   const { isWallpaperStartup } = await import(pathToFileURL(path.join(root, 'electron/dist/main/startupMode.js')).href)
   const file = path.join(profile, 'settings.json')
@@ -39,6 +40,7 @@ app.whenReady().then(async () => {
     GRAPHICS_PROFILE: null, RENDER_MAX_FPS: null, RENDER_TEXTURE_SAMPLING: null,
     WORK_EXECUTION_PROVIDER: null, COOPERATIVE_CHAT_PROVIDER: 'openclaw',
     AMADEUS_VISION_ENABLED: 'false', AMADEUS_VISION_MODE: 'watching',
+    AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE: null,
   } })
   store.markApplied({})
   ipcMain.handle('get-backend-connection', () => null)
@@ -82,6 +84,21 @@ app.whenReady().then(async () => {
   fs.mkdirSync(output, { recursive: true })
   fs.writeFileSync(path.join(output, 'startup-settings.png'), (await win.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   console.log('PASS offline GUI startup choices persist and select the next launch without backend restart')
+  await until(`Boolean(document.querySelector('select[aria-label="Subtitle translation language"]'))`)
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('select[aria-label="Subtitle translation language"]').value`), 'zh-CN')
+  for (const language of ['en-US', 'zh-CN']) {
+    await win.webContents.executeJavaScript(`(() => {
+      const select = document.querySelector('select[aria-label="Subtitle translation language"]');
+      select.value = ${JSON.stringify(language)};
+      select.dispatchEvent(new Event('change', { bubbles: true })); return true;
+    })()`)
+    await until(`(async () => (await window.amadeus.getDesktopSettings()).values.AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE === ${JSON.stringify(language)})()`)
+    const saved = new DesktopSettingsStore(file, '').snapshot({})
+    assert.equal(saved.values.AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE, language)
+    assert.equal(catalogApplication('AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE'), 'host')
+    assert.ok(saved.pendingRevisions.AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE)
+  }
+  console.log('PASS shared subtitle language persists offline and waits for live application without restart')
   await win.webContents.executeJavaScript(`(() => {
     const section = document.getElementById('settings-vision');
     section.querySelector('button[aria-pressed]').click(); return true;
