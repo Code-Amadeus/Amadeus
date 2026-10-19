@@ -11,7 +11,7 @@ test('voice setup remains discoverable without a running backend', () => {
   }, null)
   assert.deepEqual(new Set(groups.map(group => group.id)), new Set([
     'conversation_asr', 'asr_remote', 'wake_asr', 'acoustic_pipeline',
-    'speech_synthesis', 'voice_reference_profile', 'tts_emotion_references', 'tts_japanese_dictionary',
+    'speech_synthesis', 'voice_reference_profile', 'tts_emotion_references', 'tts_japanese_dictionary', 'tts_japanese_reading',
     ...voiceBackendGroups.map(group => group.id),
   ]))
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Optional')
@@ -104,6 +104,16 @@ test('Japanese dictionaries are optional and can be disabled with a restart', ()
   assert.equal(english.active, false)
   const switched = exports.buildVoiceConfigurationCatalog({ ...selection, ttsOutputLanguage: 'en' }, { values: { TTS_OUTPUT_LANGUAGE: '日文' } }).find(group => group.id === 'tts_japanese_dictionary')
   assert.equal(switched.active, false)
+})
+
+test('Japanese context reading follows the saved switch and output language', () => {
+  const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: false, ttsOutputLanguage: 'ja' }
+  const group = (selected, values = {}) => exports.buildVoiceConfigurationCatalog(selected, { values }).find(item => item.id === 'tts_japanese_reading')
+  assert.equal(group(selection).fields[0].value, true)
+  assert.equal(group(selection, { ENABLE_JAPANESE_CONTEXT_READING: 'false' }).active, false)
+  assert.equal(group({ ...selection, ttsOutputLanguage: 'en' }).active, false)
+  assert.equal(group({ ...selection, ttsBackend: 'remote' }).active, false)
+  assert.equal(group({ ...selection, japaneseReadingEnabled: false }).fields[0].value, false)
 })
 
 test('effective dotenv emotion setting is visible until a stored override changes it', () => {

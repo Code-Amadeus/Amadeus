@@ -3,6 +3,7 @@ import re
 import pyopenjtalk
 
 from tts.japanese_dictionary import configure_japanese_dictionary, with_latin_word_boundaries
+from tts.japanese_reading import run_frontend
 
 configure_japanese_dictionary(pyopenjtalk)
 
@@ -93,7 +94,9 @@ def preprocess_jap(text, with_prosody=False):
             if with_prosody:
                 text += pyopenjtalk_g2p_prosody(sentence)[1:-1]
             else:
-                p = pyopenjtalk.g2p(with_latin_word_boundaries(sentence))
+                features = run_frontend(pyopenjtalk, with_latin_word_boundaries(sentence))
+                labels = pyopenjtalk.make_label(features)
+                p = " ".join(re.search(r"\-(.*?)\+", label).group(1) for label in labels[1:-1])
                 text += p.split(" ")
 
         if i < len(marks):
@@ -133,7 +136,7 @@ def pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True):
         modeling for neural TTS`: https://doi.org/10.1587/transinf.2020EDP7104
 
     """
-    labels = pyopenjtalk.make_label(pyopenjtalk.run_frontend(with_latin_word_boundaries(text)))
+    labels = pyopenjtalk.make_label(run_frontend(pyopenjtalk, with_latin_word_boundaries(text)))
     N = len(labels)
 
     phones = []

@@ -137,6 +137,15 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
         dictionary_runtime["state"] if dictionary_runtime["state"] != "not_loaded" else dictionary_pack["state"]
     )
 
+    from config.japanese_reading import PACK_ID as READING_PACK_ID
+    reading_pack = external_asset_pack_status(READING_PACK_ID)
+    reading_runtime = dictionary_runtime.get("reading_model", {"state": "not_loaded", "ready": False,
+                                                               "detail": "Japanese frontend has not loaded."})
+    reading_enabled = bool(settings.ENABLE_JAPANESE_CONTEXT_READING)
+    reading_state = "disabled" if not reading_enabled else str(reading_runtime["state"])
+    if reading_enabled and reading_state == "not_loaded":
+        reading_state = reading_pack["state"]
+
     asr_selected = str(settings.ASR_BACKEND or "qwen3_asr").strip().lower()
     tts_selected = str(settings.TTS_BACKEND or "gpt_sovits").strip().lower()
     asr_statuses = asr_backend_statuses(asr_selected)
@@ -258,6 +267,16 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                 if dictionary_state == "not_installed" else dictionary_runtime["detail"]
             )) + (
                 " Pack version: " + dictionary_pack["version"] if dictionary_pack.get("version") else ""
+            ),
+        },
+        {
+            **_catalog_configuration("tts_japanese_reading", settings),
+            "active": tts_selected == "gpt_sovits" and settings.TTS_OUTPUT_LANGUAGE == "日文" and reading_enabled and (reading_pack["installed"] or reading_runtime["ready"]),
+            "configured": not reading_enabled or reading_pack["installed"] or reading_runtime["ready"],
+            "status": reading_state,
+            "status_ok": reading_state in {"disabled", "ready", "installed", "not_installed"},
+            "status_detail": reading_runtime["detail"] if reading_state != "not_installed" else (
+                "Optional context-reading model is not installed; base Japanese speech remains available."
             ),
         },
         {

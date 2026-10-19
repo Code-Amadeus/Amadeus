@@ -160,6 +160,29 @@
         "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
       ],
       "validator": "required_files"
+    },
+    {
+      "id": "japanese-context-reading",
+      "display_name": "Japanese Context Reading Model (tsqyomi v5)",
+      "spec_version": 1,
+      "paths": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
+      ],
+      "trees": [],
+      "required": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
+      ],
+      "validator": "required_files"
     }
   ]
 }

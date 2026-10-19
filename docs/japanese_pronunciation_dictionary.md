@@ -103,6 +103,11 @@ model paths or rebuild any existing model/voice archive.
 
 ## Quality boundary / 质量范围
 
+Japanese kanji readings that depend on context are a separate optional capability;
+see [Japanese contextual readings](japanese_context_reading.md). Its model and
+switch are independent of this English loanword pack. Disabling this dictionary
+does not disable an installed context-reading model.
+
 Version 2026.10.20.2 retains the historical review of 317 entries: 94
 lexical/script/annotation repairs, 65 separator/format repairs, and 158
 unconfirmed readings. Those decisions are evidence, not mandatory release

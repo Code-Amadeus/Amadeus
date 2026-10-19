@@ -25,6 +25,40 @@ class _FakeASRManager:
         self.closed = True
 
 
+@pytest.mark.parametrize("enabled,state,installed,active,ok", [
+    (True, "not_loaded", False, False, True),
+    (True, "ready", True, True, True),
+    (True, "invalid", True, True, False),
+    (False, "ready", True, False, True),
+])
+def test_context_reading_settings_show_optional_availability_and_actual_runtime(
+    monkeypatch, enabled, state, installed, active, ok,
+) -> None:
+    from config import settings
+    from config import asset_packages
+    from tts import pipeline
+
+    original_status = asset_packages.external_asset_pack_status
+
+    def pack_status(pack_id):
+        if pack_id == "japanese-context-reading":
+            return {"installed": installed, "state": "installed" if installed else "not_installed"}
+        return original_status(pack_id)
+
+    monkeypatch.setattr(settings, "ENABLE_JAPANESE_CONTEXT_READING", enabled)
+    monkeypatch.setattr(settings, "TTS_BACKEND", "gpt_sovits")
+    monkeypatch.setattr(settings, "TTS_OUTPUT_LANGUAGE", "日文")
+    monkeypatch.setattr(asset_packages, "external_asset_pack_status", pack_status)
+    monkeypatch.setattr(pipeline, "japanese_dictionary_status", lambda: {
+        "state": "not_loaded", "detail": "Not loaded",
+        "reading_model": {"state": state, "ready": state == "ready", "detail": "Observed native state"},
+    })
+    group = next(group for group in _voice_configuration(settings) if group["id"] == "tts_japanese_reading")
+    assert group["active"] is active
+    assert group["status_ok"] is ok
+    assert group["status"] == ("disabled" if not enabled else "not_installed" if not installed else state)
+
+
 def test_settings_connection_descriptors_never_return_secret_values() -> None:
     from config import settings
 

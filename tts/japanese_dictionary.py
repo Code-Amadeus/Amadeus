@@ -43,7 +43,13 @@ def _enabled() -> bool:
 
 
 def dictionary_runtime_status() -> dict:
-    return dict(_runtime_status)
+    from tts.japanese_reading import reading_runtime_status
+    status = dict(_runtime_status)
+    reading = reading_runtime_status()
+    status["reading_model"] = reading
+    if status.get("identity") and reading["ready"]:
+        status["identity"] = hashlib.sha256(repr((status["identity"], reading["identity"])).encode()).hexdigest()
+    return status
 
 
 def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, enabled: bool | None = None) -> dict:
@@ -167,4 +173,6 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         logger.warning("[JapaneseDictionary] Optional dictionary unavailable: %s", exc)
     _runtime_status = {"state": state, "ready": state == "ready", "version": version,
                        "identity": identity, "detail": detail}
+    from tts.japanese_reading import configure_japanese_reading
+    configure_japanese_reading(jtalk, project_root=project_root)
     return dictionary_runtime_status()

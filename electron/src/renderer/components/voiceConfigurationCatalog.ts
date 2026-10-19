@@ -17,6 +17,7 @@ interface VoiceRuntimeSelection {
   aecEnabled: boolean
   emotionReferencesEnabled?: boolean
   japaneseDictionaryEnabled?: boolean
+  japaneseReadingEnabled?: boolean
   ttsOutputLanguage?: string
 }
 
@@ -44,6 +45,11 @@ export function buildVoiceConfigurationCatalog(
   const acoustic = catalogConfiguration('acoustic_pipeline', snapshot, runtimeValues)
   const emotion = catalogConfiguration('tts_emotion_references', snapshot, runtimeValues)
   const dictionary = catalogConfiguration('tts_japanese_dictionary', snapshot, runtimeValues)
+  const reading = catalogConfiguration('tts_japanese_reading', snapshot, {
+    ...runtimeValues,
+    ...(selection.japaneseReadingEnabled === undefined ? {} : { ENABLE_JAPANESE_CONTEXT_READING: selection.japaneseReadingEnabled }),
+  })
+  const readingEnabled = reading.fields[0].value === true
   const dictionaryEnabled = dictionary.fields[0].value === true
   const asrBackend = conversation.fields.find(field => field.key === 'ASR_BACKEND')?.value
   const wakeEnabled = wake.fields.find(field => field.key === 'WAKE_ENABLED')?.value
@@ -122,6 +128,13 @@ export function buildVoiceConfigurationCatalog(
       status_ok: !dictionaryEnabled,
     },
     {
+      ...reading,
+      active: ttsBackend === 'gpt_sovits' && readingEnabled && ['日文', 'ja'].includes(selection.ttsOutputLanguage || value('TTS_OUTPUT_LANGUAGE')),
+      configured: !readingEnabled,
+      status: readingEnabled ? unknown : 'Off',
+      status_ok: !readingEnabled,
+    },
+    {
       ...emotion,
 
       active: ttsBackend === 'gpt_sovits' && emotionEnabled === true,
@@ -134,7 +147,7 @@ export function buildVoiceConfigurationCatalog(
 }
 
 export const voiceConfigurationSections = {
-  output: new Set(['speech_synthesis', 'voice_reference_profile', 'tts_emotion_references', 'tts_japanese_dictionary',
+  output: new Set(['speech_synthesis', 'voice_reference_profile', 'tts_emotion_references', 'tts_japanese_dictionary', 'tts_japanese_reading',
     ...voiceBackendGroups.filter(group => group.section === 'output').map(group => group.id)]),
   input: new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline']),
   remote: new Set(['asr_remote', ...voiceBackendGroups.filter(group => group.section === 'remote').map(group => group.id)]),

@@ -350,11 +350,16 @@ def test_gpt_sovits_release_boundary_excludes_optional_or_unverified_material() 
 
 def test_optional_japanese_dictionary_sources_and_notices_have_separate_release_boundaries() -> None:
     policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
-    sources = ["assets/text/ja/english/userdict.csv", "assets/text/ja/user.csv"]
-    code_and_notices = ["config/japanese_dictionary.py", "tools/data/japanese_dictionary_corrections.csv", "tools/audit_japanese_dictionary.py",
+    sources = ["assets/text/ja/english/userdict.csv", "assets/text/ja/user.csv",
+               "assets/text/ja/context-reading/model.onnx", "assets/text/ja/context-reading/tokenizer.json",
+               "assets/text/ja/context-reading/metadata.json", "assets/text/ja/context-reading/provenance.json"]
+    code_and_notices = ["config/japanese_reading.py", "tts/japanese_reading.py", "tools/prepare_japanese_reading.py",
+                        "tools/validate_japanese_reading.py", "tools/data/japanese_reading_cases.json",
+                        "docs/japanese_context_reading.md", "LICENSES/TSQYOMI.md", "LICENSES/TSQYOMI-MIT.txt",
+                        "config/japanese_dictionary.py", "tools/data/japanese_dictionary_corrections.csv", "tools/audit_japanese_dictionary.py",
                         "LICENSES/JAPANESE-DICTIONARY.md", "docs/japanese_pronunciation_dictionary.md"]
     selected, excluded = select_paths([*sources, *code_and_notices], policy)
-    assert excluded == sources
+    assert excluded == sorted(sources)
     assert selected == sorted(code_and_notices)
 
 

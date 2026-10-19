@@ -463,6 +463,25 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Unmodified canonical example used to verify the pinned protocol against Host rendering policy. Exact digest is recorded in protocol-source.json."
+    },
+    {
+      "id": "japanese-context-reading",
+      "name": "Optional tsqyomi v5 Japanese context-reading model",
+      "category": "external-runtime-data",
+      "paths": [
+        "assets/text/ja/context-reading/**"
+      ],
+      "source_url": "https://huggingface.co/tsukumijima/tsqyomi-models",
+      "source_revision": "81add61ddba9669d328e307c883d05d77d60f5f4; v5/model.onnx, v5/tokenizer.json, v5/metadata.json",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/TSQYOMI.md",
+        "LICENSES/TSQYOMI-MIT.txt"
+      ],
+      "modified": false,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "Unchanged model assets are optional external runtime data. Exact hashes and the upstream MIT notice (Copyright (c) 2026 Aivis Project) are retained; exact training-data provenance is not established. No model publication is authorized by this record."
     }
   ]
 }

@@ -1,0 +1,748 @@
+{
+  "description": "Synthetic contrastive Japanese reading cases. Expected lexical readings are acceptance targets, not a claim of native-speaker listening acceptance. Multiple accepted forms record real ambiguity or orthographic conventions.",
+  "cases": [
+    {
+      "text": "彼は上手に歌う。",
+      "surface": "上手",
+      "readings": [
+        "ジョウズ"
+      ],
+      "sense": "skilled"
+    },
+    {
+      "text": "彼女は料理が上手だ。",
+      "surface": "上手",
+      "readings": [
+        "ジョウズ"
+      ],
+      "sense": "skilled"
+    },
+    {
+      "text": "舞台の上手に立つ。",
+      "surface": "上手",
+      "readings": [
+        "カミテ"
+      ],
+      "sense": "stage right"
+    },
+    {
+      "text": "役者が舞台の上手から登場する。",
+      "surface": "上手",
+      "readings": [
+        "カミテ"
+      ],
+      "sense": "stage right"
+    },
+    {
+      "text": "彼の方が一枚上手だ。",
+      "surface": "上手",
+      "readings": [
+        "ウワテ"
+      ],
+      "sense": "one step ahead"
+    },
+    {
+      "text": "彼は歌が下手だ。",
+      "surface": "下手",
+      "readings": [
+        "ヘタ"
+      ],
+      "sense": "unskilled"
+    },
+    {
+      "text": "下手に触ると壊れる。",
+      "surface": "下手",
+      "readings": [
+        "ヘタ"
+      ],
+      "sense": "carelessly"
+    },
+    {
+      "text": "舞台の下手から登場する。",
+      "surface": "下手",
+      "readings": [
+        "シモテ"
+      ],
+      "sense": "stage left"
+    },
+    {
+      "text": "照明を舞台の下手に置く。",
+      "surface": "下手",
+      "readings": [
+        "シモテ"
+      ],
+      "sense": "stage left"
+    },
+    {
+      "text": "人気のある店です。",
+      "surface": "人気",
+      "readings": [
+        "ニンキ"
+      ],
+      "sense": "popularity"
+    },
+    {
+      "text": "この商品は人気が高い。",
+      "surface": "人気",
+      "readings": [
+        "ニンキ"
+      ],
+      "sense": "popularity"
+    },
+    {
+      "text": "人気のない夜道を歩く。",
+      "surface": "人気",
+      "readings": [
+        "ヒトケ"
+      ],
+      "sense": "absence of people"
+    },
+    {
+      "text": "深夜の公園には人気がない。",
+      "surface": "人気",
+      "readings": [
+        "ヒトケ"
+      ],
+      "sense": "absence of people"
+    },
+    {
+      "text": "大人気の映画を見た。",
+      "surface": "大人気",
+      "readings": [
+        "ダイニンキ"
+      ],
+      "sense": "very popular"
+    },
+    {
+      "text": "大人気ないことを言うな。",
+      "surface": "大人気",
+      "readings": [
+        "オトナゲ"
+      ],
+      "sense": "immature"
+    },
+    {
+      "text": "市場価格を確認する。",
+      "surface": "市場",
+      "readings": [
+        "シジョウ"
+      ],
+      "sense": "economic market"
+    },
+    {
+      "text": "市場の動向を分析する。",
+      "surface": "市場",
+      "readings": [
+        "シジョウ"
+      ],
+      "sense": "economic market"
+    },
+    {
+      "text": "朝の市場で野菜を買う。",
+      "surface": "市場",
+      "readings": [
+        "イチバ"
+      ],
+      "sense": "physical marketplace"
+    },
+    {
+      "text": "魚市場へ行く。",
+      "surface": "魚市場",
+      "readings": [
+        "ウオイチバ"
+      ],
+      "sense": "fish market"
+    },
+    {
+      "text": "今日は生ビールを飲む。",
+      "surface": "生ビール",
+      "readings": [
+        "ナマビール"
+      ],
+      "sense": "draft beer"
+    },
+    {
+      "text": "生きる意味を考える。",
+      "surface": "生きる",
+      "readings": [
+        "イキル"
+      ],
+      "sense": "live"
+    },
+    {
+      "text": "生徒が学校へ行く。",
+      "surface": "生徒",
+      "readings": [
+        "セイト"
+      ],
+      "sense": "student"
+    },
+    {
+      "text": "生の演奏を聞く。",
+      "surface": "生",
+      "readings": [
+        "ナマ"
+      ],
+      "sense": "live performance"
+    },
+    {
+      "text": "この世に生を受ける。",
+      "surface": "生",
+      "readings": [
+        "セイ"
+      ],
+      "sense": "life"
+    },
+    {
+      "text": "本を開く。",
+      "surface": "開く",
+      "readings": [
+        "ヒラク"
+      ],
+      "sense": "open a book"
+    },
+    {
+      "text": "会議を開く。",
+      "surface": "開く",
+      "readings": [
+        "ヒラク"
+      ],
+      "sense": "hold a meeting"
+    },
+    {
+      "text": "ドアが開く。",
+      "surface": "開く",
+      "readings": [
+        "アク",
+        "ヒラク"
+      ],
+      "sense": "both ordinary readings are acceptable here"
+    },
+    {
+      "text": "この行を削除する。",
+      "surface": "行",
+      "readings": [
+        "ギョウ"
+      ],
+      "sense": "line of text"
+    },
+    {
+      "text": "銀行で働く。",
+      "surface": "銀行",
+      "readings": [
+        "ギンコウ"
+      ],
+      "sense": "bank"
+    },
+    {
+      "text": "学校へ行く。",
+      "surface": "行く",
+      "readings": [
+        "イク",
+        "ユク"
+      ],
+      "sense": "go"
+    },
+    {
+      "text": "一日中待つ。",
+      "surface": "一日中",
+      "readings": [
+        "イチニチジュウ"
+      ],
+      "sense": "all day"
+    },
+    {
+      "text": "四月一日に出発する。",
+      "surface": "一日",
+      "readings": [
+        "ツイタチ"
+      ],
+      "sense": "first day of the month"
+    },
+    {
+      "text": "一日だけ休む。",
+      "surface": "一日",
+      "readings": [
+        "イチニチ"
+      ],
+      "sense": "one day"
+    },
+    {
+      "text": "何を食べますか。",
+      "surface": "何",
+      "readings": [
+        "ナニ"
+      ],
+      "sense": "what object"
+    },
+    {
+      "text": "何が起きたのですか。",
+      "surface": "何",
+      "readings": [
+        "ナニ"
+      ],
+      "sense": "what subject"
+    },
+    {
+      "text": "これは何ですか。",
+      "surface": "何",
+      "readings": [
+        "ナン"
+      ],
+      "sense": "what is this"
+    },
+    {
+      "text": "何という名前ですか。",
+      "surface": "何と",
+      "readings": [
+        "ナント"
+      ],
+      "sense": "what name; native lexicon groups the following particle with 何"
+    },
+    {
+      "text": "今日は風が強い。",
+      "surface": "風",
+      "readings": [
+        "カゼ"
+      ],
+      "sense": "wind"
+    },
+    {
+      "text": "そんな風に言わないで。",
+      "surface": "風",
+      "readings": [
+        "フウ"
+      ],
+      "sense": "in that way"
+    },
+    {
+      "text": "風邪をひいた。",
+      "surface": "風邪",
+      "readings": [
+        "カゼ"
+      ],
+      "sense": "cold illness"
+    },
+    {
+      "text": "この方は医者です。",
+      "surface": "方",
+      "readings": [
+        "カタ"
+      ],
+      "sense": "person"
+    },
+    {
+      "text": "赤い方を選ぶ。",
+      "surface": "方",
+      "readings": [
+        "ホウ",
+        "ホオ"
+      ],
+      "sense": "alternative; old frontend uses phonetic read field"
+    },
+    {
+      "text": "食べ方を教える。",
+      "surface": "方",
+      "readings": [
+        "カタ"
+      ],
+      "sense": "way of doing"
+    },
+    {
+      "text": "唐辛子は辛い。",
+      "surface": "辛い",
+      "readings": [
+        "カライ"
+      ],
+      "sense": "spicy"
+    },
+    {
+      "text": "失恋して辛い。",
+      "surface": "辛い",
+      "readings": [
+        "ツライ"
+      ],
+      "sense": "painful"
+    },
+    {
+      "text": "部屋の中に入る。",
+      "surface": "中",
+      "readings": [
+        "ナカ"
+      ],
+      "sense": "inside"
+    },
+    {
+      "text": "日本中で話題になった。",
+      "surface": "日本中",
+      "readings": [
+        "ニホンジュウ",
+        "ニッポンジュウ"
+      ],
+      "sense": "throughout Japan"
+    },
+    {
+      "text": "荷物が重い。",
+      "surface": "重い",
+      "readings": [
+        "オモイ"
+      ],
+      "sense": "heavy"
+    },
+    {
+      "text": "荷物を重ねる。",
+      "surface": "重ねる",
+      "readings": [
+        "カサネル"
+      ],
+      "sense": "stack"
+    },
+    {
+      "text": "橋の端で箸を使う。",
+      "surface": "箸",
+      "readings": [
+        "ハシ"
+      ],
+      "sense": "chopsticks"
+    },
+    {
+      "text": "雨が降り、飴を買った。",
+      "surface": "飴",
+      "readings": [
+        "アメ"
+      ],
+      "sense": "candy; lexical accent still needs separate acceptance"
+    },
+    {
+      "text": "明日は晴れる。",
+      "surface": "明日",
+      "readings": [
+        "アシタ",
+        "アス"
+      ],
+      "sense": "both ordinary readings are accepted"
+    },
+    {
+      "text": "大人になった。",
+      "surface": "大人",
+      "readings": [
+        "オトナ"
+      ],
+      "sense": "adult"
+    },
+    {
+      "text": "小豆を煮る。",
+      "surface": "小豆",
+      "readings": [
+        "アズキ"
+      ],
+      "sense": "azuki beans"
+    },
+    {
+      "text": "紅茶を飲む。",
+      "surface": "紅茶",
+      "readings": [
+        "コウチャ"
+      ],
+      "sense": "black tea"
+    },
+    {
+      "text": "こんにちは、元気ですか。",
+      "surface": "元気",
+      "readings": [
+        "ゲンキ"
+      ],
+      "sense": "wellbeing"
+    },
+    {
+      "text": "ピアノが上手な友達がいる。",
+      "surface": "上手",
+      "readings": [
+        "ジョウズ"
+      ],
+      "sense": "skilled",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "彼女は字を書くのが上手です。",
+      "surface": "上手",
+      "readings": [
+        "ジョウズ"
+      ],
+      "sense": "skilled",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "上手な説明で助かった。",
+      "surface": "上手",
+      "readings": [
+        "ジョウズ"
+      ],
+      "sense": "skilled",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "舞台の上手側に幕がある。",
+      "surface": "上手",
+      "readings": [
+        "カミテ"
+      ],
+      "sense": "stage right",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "舞台の下手で待機してください。",
+      "surface": "下手",
+      "readings": [
+        "シモテ"
+      ],
+      "sense": "stage left",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "彼は下手な嘘をついた。",
+      "surface": "下手",
+      "readings": [
+        "ヘタ"
+      ],
+      "sense": "unskilled",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "下手をすると事故になる。",
+      "surface": "下手",
+      "readings": [
+        "ヘタ"
+      ],
+      "sense": "carelessly",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "上手を取って相手を投げる。",
+      "surface": "上手",
+      "readings": [
+        "ウワテ"
+      ],
+      "sense": "sumo grip",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "人気がある歌手の新曲を聞く。",
+      "surface": "人気",
+      "readings": [
+        "ニンキ"
+      ],
+      "sense": "popularity",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "人気のない廃屋に入った。",
+      "surface": "人気",
+      "readings": [
+        "ヒトケ"
+      ],
+      "sense": "absence of people",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "市場経済の仕組みを学ぶ。",
+      "surface": "市場",
+      "readings": [
+        "シジョウ"
+      ],
+      "sense": "economic market",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "市場で鮮魚を仕入れる。",
+      "surface": "市場",
+      "readings": [
+        "イチバ"
+      ],
+      "sense": "physical marketplace",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "国際市場で取引する。",
+      "surface": "市場",
+      "readings": [
+        "シジョウ"
+      ],
+      "sense": "economic market",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "彼の生き方が好きです。",
+      "surface": "生き方",
+      "readings": [
+        "イキカタ"
+      ],
+      "sense": "way of life",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "生半可な知識では足りない。",
+      "surface": "生半可",
+      "readings": [
+        "ナマハンカ"
+      ],
+      "sense": "superficial",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "辛いカレーを食べた。",
+      "surface": "辛い",
+      "readings": [
+        "カライ"
+      ],
+      "sense": "spicy",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "仕事を失って辛い。",
+      "surface": "辛い",
+      "readings": [
+        "ツライ"
+      ],
+      "sense": "painful",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "何を買ったのですか。",
+      "surface": "何",
+      "readings": [
+        "ナニ"
+      ],
+      "sense": "what object",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "何でも相談してください。",
+      "surface": "何でも",
+      "readings": [
+        "ナンデモ"
+      ],
+      "sense": "anything",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "何故そう思うのですか。",
+      "surface": "何故",
+      "readings": [
+        "ナゼ"
+      ],
+      "sense": "why",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "今何時ですか。",
+      "surface": "何時",
+      "readings": [
+        "ナンジ"
+      ],
+      "sense": "what clock time",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "工事中の道路は通れない。",
+      "surface": "工事中",
+      "readings": [
+        "コウジチュウ"
+      ],
+      "sense": "during construction",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "世界中を旅したい。",
+      "surface": "世界中",
+      "readings": [
+        "セカイジュウ"
+      ],
+      "sense": "throughout the world",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "風に揺れる木を見上げる。",
+      "surface": "風",
+      "readings": [
+        "カゼ"
+      ],
+      "sense": "wind",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "こんな風に書いてください。",
+      "surface": "風",
+      "readings": [
+        "フウ"
+      ],
+      "sense": "in this way",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "彼女の方が速い。",
+      "surface": "方",
+      "readings": [
+        "ホウ",
+        "ホオ"
+      ],
+      "sense": "alternative",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "親方が来た。",
+      "surface": "親方",
+      "readings": [
+        "オヤカタ"
+      ],
+      "sense": "master",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "大人の対応をする。",
+      "surface": "大人",
+      "readings": [
+        "オトナ"
+      ],
+      "sense": "adult",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "東京の日本橋を渡る。",
+      "surface": "日本橋",
+      "readings": [
+        "ニホンバシ"
+      ],
+      "sense": "Tokyo place name",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "大阪の日本橋で買い物をする。",
+      "surface": "日本橋",
+      "readings": [
+        "ニッポンバシ"
+      ],
+      "sense": "Osaka place name",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "明後日にまた会おう。",
+      "surface": "明後日",
+      "readings": [
+        "アサッテ",
+        "ミョウゴニチ"
+      ],
+      "sense": "day after tomorrow",
+      "partition": "additional_contexts"
+    },
+    {
+      "text": "四月一日は休日です。",
+      "surface": "一日",
+      "readings": [
+        "ツイタチ"
+      ],
+      "sense": "calendar day",
+      "partition": "additional_contexts"
+    }
+  ]
+}

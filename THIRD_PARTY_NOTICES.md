@@ -165,6 +165,13 @@ compiled caches remain excluded from source archives. `tools/uvr5/**` is also
 excluded because no Amadeus Electron/server/TTS runtime caller reaches that
 upstream WebUI utility tree.
 
+### Optional Japanese context-reading model
+
+The optional Japanese context-reading model is distributed separately. Its exact
+upstream model/tokenizer/metadata revision, MIT copyright/license notice and
+training-provenance limits are recorded in `LICENSES/TSQYOMI.md`. No model bytes
+are included in the application source archive.
+
 ### Character, model, and voice material
 
 Character frames, videos, unverified packaged audio, model weights, LoRA

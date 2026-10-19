@@ -109,7 +109,10 @@
     "docs/extension_host_profile_v0.1.md",
     "server/extensions/theme-tokens.v0.json",
     "tests/fixtures/extension_protocol_theme.json",
-    "tests/fixtures/extension_theme_colors.json"
+    "tests/fixtures/extension_theme_colors.json",
+    "docs/japanese_context_reading.md",
+    "LICENSES/TSQYOMI.md",
+    "LICENSES/TSQYOMI-MIT.txt"
   ],
   "include_roots": [
     "characters",
@@ -269,7 +272,8 @@
     "docs/images/extensions/theme-native-mixed-update.jpg",
     "docs/images/extensions/theme-native-mixed-pending.jpg",
     "docs/images/extensions/theme-native-mixed-chat.jpg",
-    "docs/images/extensions/theme-native-removed-identity.jpg"
+    "docs/images/extensions/theme-native-removed-identity.jpg",
+    "docs/japanese_context_reading.md"
   ],
   "exclude_globs": [
     "docs/reports/**",
