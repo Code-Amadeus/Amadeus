@@ -22,6 +22,103 @@ from config.japanese_dictionary import dictionary_rows  # noqa: E402
 
 _KANA = re.compile(r"[\u30a1-\u30fa\u30fc]+")
 _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N", "cl"})
+# A screening rule, not an English-to-Japanese translator. Loanword adaptation
+# can violate these correspondences. Exclude a flagged imported row rather than
+# invent its replacement; keep every CMU pronunciation alternative eligible.
+_FINAL_CONSONANTS = {
+    "ズ": {"Z", "S"}, "ド": {"D", "T"}, "ング": {"NG"},
+}
+LATIN_WORD_COST_FLOOR = 10300
+
+
+def word_key(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).translate(str.maketrans("’−", "'-")).casefold()
+
+
+def cmu_pronunciations(data: bytes) -> dict[str, set[tuple[str, ...]]]:
+    phones = defaultdict(set)
+    for line in data.decode("utf-8").splitlines():
+        fields = line.split()
+        if fields and not fields[0].startswith(";;;"):
+            phones[fields[0].split("(", 1)[0].casefold()].add(tuple(fields[1:]))
+    return dict(phones)
+
+
+def final_phone_risk(reading: str, pronunciations: set[tuple[str, ...]]) -> bool:
+    phones = {tuple(re.sub(r"[012]$", "", p) for p in variant) for variant in pronunciations if variant}
+    if not phones:
+        return False
+    for ending, expected in _FINAL_CONSONANTS.items():
+        if reading.endswith(ending):
+            return not any(p[-1] in expected for p in phones)
+    return False
+
+
+def native_base_word_lookup() -> Callable[[str], bool]:
+    import pyopenjtalk
+
+    # Independent base instance: installed official/personal dictionaries must
+    # never decide which upstream entries the release builder accepts.
+    jtalk = pyopenjtalk.OpenJTalk(pyopenjtalk.OPEN_JTALK_DICT_DIR)
+
+    @lru_cache(maxsize=None)
+    def known(word: str) -> bool:
+        word = word_key(word)
+        _, morphs = jtalk.run_mecab_detailed(word)
+        tokens = [m for m in morphs if not m["is_ignored"]]
+        return (len(tokens) == 1 and not tokens[0]["is_unknown"]
+                and tokens[0]["surface"] == jtalk.normalize_for_mecab(word))
+
+    return known
+
+
+def native_base_hashes() -> dict[str, str]:
+    import os
+    import pyopenjtalk
+
+    root = Path(os.fsdecode(pyopenjtalk.OPEN_JTALK_DICT_DIR))
+    return {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+            for name in ("sys.dic", "matrix.bin", "char.bin")}
+
+
+def filter_extension_rows(rows: list[list[str]], phones: dict[str, set[tuple[str, ...]]],
+                          base_word: Callable[[str], bool], *,
+                          cost_floor: int = LATIN_WORD_COST_FLOOR) -> tuple[list[list[str]], dict]:
+    """Yield known words to the base and quarantine suspect readings offline."""
+    kept, excluded = [], []
+    counts = Counter()
+    direct_flags = [row for row in rows if final_phone_risk(row[11], phones.get(word_key(row[0]), set()))]
+    suspect = {word_key(row[0]) for row in direct_flags}
+    repriced = 0
+    for number, row in enumerate(rows, 1):
+        word = word_key(row[0])
+        reasons = []
+        if base_word(word):
+            reasons.append("base_dictionary_word")
+        # A contaminated surface can have several shifted alternatives. Do not
+        # merely promote the next unverified variant (e.g. directly -> director).
+        if word in suspect:
+            reasons.append("cmu_final_phone_risk")
+        if reasons:
+            counts.update(reasons)
+            excluded.append({"normalized_line": number, "surface": word, "reading": row[12],
+                             "reasons": reasons})
+        else:
+            # Imported short words must not cheaply split a known base word.
+            # Use one floor for plain Latin words; punctuation-bearing compounds
+            # need their existing cost to compete with native boundary splits.
+            if re.fullmatch(r"[a-z]+", word) and int(row[3]) < cost_floor:
+                row = list(row)
+                row[3] = str(cost_floor)
+                repriced += 1
+            kept.append(row)
+    return kept, {"input_entries": len(rows), "output_entries": len(kept), "excluded_entries": len(excluded),
+                  "reason_counts": dict(counts), "latin_word_cost_floor": cost_floor,
+                  "direct_final_phone_flags": len(direct_flags),
+                  "direct_final_phone_suffix_counts": dict(Counter(
+                      next(ending for ending in _FINAL_CONSONANTS if row[11].endswith(ending))
+                      for row in direct_flags)),
+                  "latin_word_costs_raised": repriced, "excluded": excluded}
 
 
 def _without_reading_separators(value: str) -> str:
@@ -122,17 +219,14 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
 
 
 def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str], int | None],
-               normalize_surface: Callable[[str], str] | None = None) -> dict:
+               normalize_surface: Callable[[str], str] | None = None,
+               base_word: Callable[[str], bool] | None = None) -> dict:
     words = defaultdict(list)
     for number, row in enumerate(rows, 1):
-        key = unicodedata.normalize("NFKC", row[0]).translate(str.maketrans("’−", "'-")).casefold()
+        key = word_key(row[0])
         words[key].append((number, row))
-    phones = defaultdict(set)
-    cmu_data = Path(cmudict).read_bytes()
-    for line in cmu_data.decode("utf-8").splitlines():
-        fields = line.split()
-        if fields:
-            phones[fields[0].split("(", 1)[0].casefold()].add(tuple(fields[1:]))
+    cmu_data = Path(cmudict).read_bytes().replace(b"\r\n", b"\n")
+    phones = cmu_pronunciations(cmu_data)
     multiple = [{"surface": word, "readings": sorted({row[12] for _, row in entries}),
                  "lines": [line for line, _ in entries]}
                 for word, entries in words.items() if len({row[12] for _, row in entries}) > 1]
@@ -153,11 +247,13 @@ def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str],
                                        "disposition": "review_only; Japanese loanword forms may legitimately coincide"})
     _, normalization = normalize_rows(rows, count_mora, normalize_surface)
     duplicates = Counter(tuple(row) for row in rows)
+    _, extension = filter_extension_rows(rows, phones, base_word or (lambda _: False))
     return {"entries": len(rows), "distinct_surfaces": len(words),
             "cmudict_sha256": hashlib.sha256(cmu_data).hexdigest(),
             "exact_duplicate_rows": sum(count - 1 for count in duplicates.values()),
             "multiple_reading_surfaces": len(multiple), "multiple_readings": multiple,
             "inflection_candidate_count": len(candidates), "inflection_candidates": candidates,
+            "extension_filter": extension,
             "normalization": normalization,
             "limitations": "Candidates do not prove lexical errors. Legitimate heteronyms and loanword inflections are retained. No LLM, network, waveform synthesis or semantic classifier is used."}
 
@@ -165,12 +261,14 @@ def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str],
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--cmudict", type=Path, default=PROJECT_ROOT / "GPT_SoVITS/text/cmudict-fast.rep")
+    parser.add_argument("--cmudict", type=Path, default=PROJECT_ROOT / "GPT_SoVITS/text/cmudict.rep")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     count, version = native_mora_counter()
     source_data = args.source.read_bytes()
-    report = audit_rows(list(dictionary_rows(source_data)), args.cmudict, count, native_surface_normalizer())
+    report = audit_rows(list(dictionary_rows(source_data)), args.cmudict, count, native_surface_normalizer(),
+                        native_base_word_lookup())
+    report["base_dictionary_sha256"] = native_base_hashes()
     report["source_sha256"] = hashlib.sha256(source_data).hexdigest()
     report["native_runtime"] = version
     args.output.parent.mkdir(parents=True, exist_ok=True)

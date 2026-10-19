@@ -15,8 +15,8 @@ loader before installation. Older applications reject the unknown pack ID.
 The first compatible application release has not yet been published.
 
 ```powershell
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.18.1.zip
-python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.18.1.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.1.zip
+python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.20.1.zip
 python tools/external_assets.py status
 ```
 
@@ -91,8 +91,8 @@ is explicit.
 ```powershell
 python tools/prepare_japanese_dictionary.py --source GPT_SoVITS/text/ja_userdic/userdict.csv
 python tools/validate_japanese_dictionary.py --output output/japanese_dictionary_validation.json
-python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.18.1.zip
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.18.1.zip
+python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.20.1.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.1.zip
 python tools/audit_japanese_dictionary.py --source assets/text/ja/english/userdict.csv --output output/japanese_dictionary_audit.json
 ```
 
@@ -103,73 +103,51 @@ model paths or rebuild any existing model/voice archive.
 
 ## Quality boundary / 质量范围
 
-Version 2026.10.18.1 retains the review of the 317 entries left by version 2026.10.16.2:
-94 receive reviewed lexical/script/annotation repairs, 65 receive phonetic
-separator or format-control repairs, and 158 retain their readings, costs and
-accent fields pending stronger evidence. Of these, 48 receive surface spelling
-normalization only. The local review report records every
-disposition. An all-kana alternative alone is not proof of lexical correctness.
-Examples include `balloonist` (`二` → `ニ`), `ninth` (`ん` → `ン`), untranslated
-letter names, stray inflection letters and literal LLM explanations.
+Version 2026.10.20.1 retains the historical review of 317 entries: 94
+lexical/script/annotation repairs, 65 separator/format repairs, and 158
+unconfirmed readings. Those decisions are evidence, not mandatory release
+inclusions. The build subsequently applies the conservative extension policy
+below; exclusions and cost changes also apply to historically reviewed rows.
+The correction CSV now has 173 rows. The additional `let's` repair reuses
+`lets → レッツ` and its accent annotation: both have CMU `L EH1 T S`.
 
-The correction recipe targets the reviewed **before pronunciation**; it does
-not replace every pronunciation sharing that word. Legitimate alternatives
-such as singular/plural `corps` and initialism/plural `CDS/CDs` remain available;
-no context classifier is added to force a single choice.
+Preparation applies these rules offline, after representation repairs:
 
-Native input converts apostrophes and hyphens to `’` and `−`. All entries receive
-this native surface spelling, including previously dormant contractions and
-compounds; this changes representation rather than guessing readings. The frontend preserves
-Latin compound punctuation until native tokenization. Standalone punctuation
-and Japanese punctuation keep their normal handling. Native MeCab measurements
-in three synthetic contexts exposed cheap unintended word splits; 109 reviewed
-entry costs were reduced just enough to beat those measured splits. The
-measured costs are stored in the CSV/recipe, with no runtime word-specific
-pronunciation or cost rules. Unconfirmed entries retain their original rows.
+- Yield every surface recognized as one known whole word by an independent
+  base MeCab instance to that base. Unknown letter-spelled tokens do not qualify.
+  Pin the native runtime and `sys.dic`, `matrix.bin`, `char.bin` hashes.
+- Quarantine every variant of a surface if any reading's final Katakana
+  consonant conflicts with every CMU pronunciation variant: ズ requires S/Z,
+  ド requires D/T, and ング requires NG. These match the external audit; its
+  unreachable ッド branch is omitted. Removing only one bad variant could promote
+  another shifted reading, as with `directly → director`.
+- Raise plain Latin word costs to a common floor of 10,300, preserving higher
+  costs and punctuation-bearing compound costs. Removing same-name rows alone
+  lets cheap fragments split known words (`production → pro + duct + ion`).
+  This uniform floor supersedes the earlier per-entry cost calibration. At
+  10,200, native `hilt + on` still beat `hilton` by one cost unit in one control
+  context; 10,300 passes all 746 base-word controls in three contexts while
+  preserving the retained reviewed-word/compound gate.
 
-One- and two-letter Latin surfaces are excluded at build time: these fragments
-must yield to the base Japanese dictionary's letter and measurement entries.
-This excludes 328 pre-deduplication rows (300 distinct previous pack rows),
-preventing imported `m`/`w`/`h` fragments from displacing cm/kg/km/mm/ml/kW.
-No per-unit or per-word runtime list is added. Unknown short number suffixes
-also bypass generic initialism expansion; known names and longer initialisms
-such as `3GPUs` retain their existing handling. Native spelling is normalized for
-8,998 pre-deduplication surfaces.
+From 127,811 normalized rows, the policy excludes 2,422 rows: 769 base-owned
+rows and 1,669 rows associated with CMU-risk surfaces (16 overlap). It raises
+116,922 retained plain-word costs. The resulting pack contains 125,389 rows.
+The provenance records each exclusion's normalized input line, surface,
+reading and reason. CMU data and base dictionary hashes are pinned.
 
-The pack contains 127,811 entries. Re-auditing it produces no further structural
-repairs and leaves the 158 review entries intact. No accent is clamped or
-invented for `guangjo`, whose source accent exceeds the native mora count.
+The direct flags exactly reproduce all 1,557 external TSV records (ズ 807,
+ド 523, ング 227); none of those original word/reading pairs remain. The
+additional 112 same-surface variants are quarantined to avoid promoting
+another shifted row. These are conservative exclusions, not 1,669 proven errors. For
+example, `with → ウィズ` and `condo → コンド` can be legitimate loanword
+adaptations despite a flagged final consonant. The rule can miss interior
+shifts and vowel-ending errors. It neither guesses replacements nor promises
+exhaustive dictionary accuracy. The older singular/inflection collision list
+remains review-only (`path` and `paths` can both be `パス`).
 
-The earlier version's 11 singular-reading repairs are retained:
-`follower`, `learner`, `abstraction`, `acronym`, `adapter`, `airline`,
-`applicator`, `bank`, `component`, `developer`, and `handler`. Their plural
-entries remain intact. It also adds the complete `proposer` → `プロポーザー`
-entry; its flat accent is provisional pending listening review.
-The `component` row also has its entry cost corrected from 608 to 0: native
-full-pack validation otherwise selects `comp + on + ent`, despite the correct
-whole-word reading being present. The corresponding `components` cost changes
-from 659 to 0 to keep its existing plural reading selected. Both sides are
-checked by the native test. These repairs stay in dictionary data.
-
-Build-time normalization uses general rules: NFC in reading fields,
-removing phonetic-neutral separators only from otherwise pure kana when the
-existing accent remains valid, spelling untranslated whole-token initialisms,
-counting morae from one explicit
-native pronunciation while preserving valid accent nuclei, and removing only
-identical full rows. It does not strip English plural suffixes automatically
-or merge different readings of one word. Passing kana through ordinary g2p
-would retokenize it and can incorrectly split small kana; the audit feeds the
-pronunciation directly to the native label builder instead.
-
-Preparation records repair counters before deduplication; the release's 65
-representation repairs are explicitly tracked alongside their measured costs.
-The audit also lists CMUdict singular/inflection collisions as review candidates;
-such collisions alone do not prove errors (`path` and `paths` can both be
-`パス`). It does not guess replacements for these entries.
-
-运行时没有新增逐词判断。原词条修复记录在 correction CSV；通用数据清理在构建时
-执行，来源、修复理由、规则及计数均随包保存。不同读音保留，无法确定的重音或
-机器翻译残留只生成待核对清单。后续可沿用同一审计流程逐批修复原数据。
+运行时没有新增逐词判断。构建时优先使用基础词典，隔离词尾音可疑的整个词形，
+并统一限制普通拉丁词条的低代价拆词行为。隔离清单包含误报，不等于全部确认有错；
+词内错位及部分元音结尾错误仍需审计。可确认的 `let's` 错行使用已有 `lets` 的读音修复。
 
 Whole-token abbreviation preparation handles `MLP` next to Japanese, fullwidth
 Latin text and case variants of existing names, and avoids replacing `API`
@@ -182,17 +160,26 @@ word/name extension, not a general context-sensitive Japanese homograph model
 or a voice/timbre replacement. Native pronunciation/prosody comparisons do not
 replace end-to-end synthesis and human listening acceptance.
 
-The native release gate compares 52 samples, including Latin units and
-inflected names/initialisms, against the actual base `japanese.g2p` prosody path.
-It also checks 172 reviewed rows and nine common contractions in three contexts
-(543 native contexts) and 181 production frontend/native-prosody comparisons.
-An additional 32-unit set has no phoneme changes. It records an `rpm` prosody
-boundary difference for listening review: the reading is the same, and that
-observation alone does not justify changing an existing accent.
-It runs offline with a prepared full pack; core unit tests use synthetic data
-and do not require downloading dictionary or model assets. Pack validation
-checks the hash before parsing CSV and memoizes successes/failures by member
-file stats. Audio cache key generation performs no dictionary-file validation.
+The native release gate compares the original 52 controls and 32 additional
+unit samples against the production `japanese.g2p` path. It also compares all
+746 base-owned imported words in three contexts (2,238 controls), exercises
+289 frozen common English words, including all 48 distinct words in the
+external 49-row frequent-document subset, and validates the 11 reported regressions
+with six reviewed readings and five unchanged base fallbacks. The broader
+vocabulary is selected from frequent tracked Markdown words and flagged
+surfaces; inclusion alone is not a pronunciation correctness oracle. Changes
+for other unknown words are recorded for review.
+
+Retained corrected rows and contractions pass 537 native contexts and 179
+production frontend/prosody comparisons. There are no failures or unit-prosody
+changes in this candidate. These results apply to these controls and the
+pinned native environment; they do not establish zero regressions across all
+English vocabulary or replace waveform/listening acceptance.
+
+The gate runs offline with a prepared full pack. Core tests use synthetic data
+and require no dictionary/model downloads. Pack validation checks hash before
+parsing CSV and memoizes success/failure by member stats. Audio cache keys
+perform no dictionary-file validation.
 
 ## Publication / 发布
 

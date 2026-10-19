@@ -18,7 +18,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.japanese_dictionary import (  # noqa: E402
     PACK_TREE, JapaneseDictionaryError, dictionary_rows, load_dictionary_pack,
 )
-from tools.audit_japanese_dictionary import native_mora_counter, native_surface_normalizer, normalize_rows  # noqa: E402
+from tools.audit_japanese_dictionary import (  # noqa: E402
+    cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup,
+    native_mora_counter, native_surface_normalizer, normalize_rows,
+)
 
 RECIPE_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_source.json"
 CORRECTIONS_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_corrections.csv"
@@ -27,7 +30,8 @@ CORRECTIONS_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_corrections.cs
 def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
                        recipe_path: Path = RECIPE_PATH, corrections_path: Path = CORRECTIONS_PATH,
                        overwrite: bool = False, count_mora: Callable[[str], int | None] | None = None,
-                       normalize_surface: Callable[[str], str] | None = None) -> Path:
+                       normalize_surface: Callable[[str], str] | None = None,
+                       base_word: Callable[[str], bool] | None = None) -> Path:
     recipe = json.loads(Path(recipe_path).read_text(encoding="utf-8"))
     data = Path(source).read_bytes().replace(b"\r\n", b"\n")
     if hashlib.sha256(data).hexdigest() != recipe["source"]["sha256"]:
@@ -40,13 +44,22 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
     correction_data = Path(corrections_path).read_bytes().replace(b"\r\n", b"\n")
     corrections = {normalize(row[0]): row for row in dictionary_rows(correction_data)}
     before = {normalize(item["word"]): item["before"] for item in recipe["corrections"]}
+    policy = recipe["extension_filter"]
+    cmu_data = (PROJECT_ROOT / policy["cmudict_path"]).read_bytes().replace(b"\r\n", b"\n")
+    if hashlib.sha256(cmu_data).hexdigest() != policy["cmudict_sha256"]:
+        raise JapaneseDictionaryError("CMU screening data differs from the pinned recipe")
     if count_mora is None:
         count_mora, runtime_version = native_mora_counter()
         if runtime_version != recipe["normalization"]["native_runtime"]:
             raise JapaneseDictionaryError("Prepare with the recipe's pinned pyopenjtalk-plus runtime")
         normalize_surface = native_surface_normalizer() if normalize_surface is None else normalize_surface
+        if native_base_hashes() != policy["base_dictionary_sha256"]:
+            raise JapaneseDictionaryError("Base dictionary differs from the pinned recipe")
+        base_word = native_base_word_lookup() if base_word is None else base_word
     else:
         runtime_version = "injected"
+        if base_word is None:
+            raise JapaneseDictionaryError("An injected mora counter also requires an explicit base-word lookup")
     # A repair targets the reviewed bad pronunciation, not every reading of
     # the same surface. Preserve legitimate alternatives and their costs.
     corrected = []
@@ -63,6 +76,8 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
             row = list(correction)
             corrected.append(row)
     corrected, normalization = normalize_rows(corrected, count_mora, normalize_surface)
+    corrected, filtering = filter_extension_rows(corrected, cmu_pronunciations(cmu_data), base_word,
+                                                 cost_floor=policy["latin_word_cost_floor"])
     buffer = io.StringIO(newline="")
     csv.writer(buffer, lineterminator="\n").writerows(corrected)
     derivative = buffer.getvalue().encode("utf-8")
@@ -70,6 +85,7 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
                 "corrections_sha256": hashlib.sha256(correction_data).hexdigest(),
                 "normalization": {**recipe["normalization"],
                                   "results": {key: value for key, value in normalization.items() if key != "unresolved"}},
+                "extension_filter": {**policy, "results": filtering},
                 "native_runtime": runtime_version}
     files = {
         "userdict.csv": derivative,

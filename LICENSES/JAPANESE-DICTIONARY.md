@@ -48,19 +48,31 @@ then removes only identical full rows. Different lexical readings remain.
 The generated `provenance.json` additionally identifies the derivative's
 version, hash, entry count, normalization rules and repair counters.
 
-Version 2026.10.18.1 retains the previous 11 singular-reading repairs and
-complete `proposer` entry, and reviews the remaining 317 flagged entries:
-94 lexical/script/annotation repairs, 65 phonetic representation repairs and
-158 entries retaining their reading/cost/accent fields pending stronger evidence. The recipe identifies each
-reviewed before/after pronunciation, relevant CMU/native evidence and measured
-word-cost adjustments. Other readings of a corrected surface remain available.
-All surfaces receive native MeCab spelling, including 48 of those retained
-entries; their other fields are unchanged. One- and two-letter Latin surfaces
-yield to the Japanese base dictionary, preserving letter/unit readings. The
-prepared pack has 127,811 entries. `proposer` still
-uses a provisional flat accent;
-native listening review is still required. This does not claim exhaustive
-dictionary accuracy or contextual disambiguation of all Japanese homographs.
+Version 2026.10.20.1 retains the previous correction history and adds a
+source-backed `let's → レッツ` repair: the existing `lets` entry has the same
+CMU phones. Its accent annotation is reused, not newly validated by listening.
+The historical 317-row review comprises 94 lexical/script/annotation repairs,
+65 representation repairs and 158 unconfirmed readings. The release filter
+subsequently yields known whole words to the pinned base dictionary and
+quarantines every variant of CMU final-phone risk surfaces. The CMU file and
+base dictionary hashes, rules and complete exclusion records are in provenance.
+The direct flags exactly reproduce the external 1,557-row TSV; extending
+quarantine to its other same-surface variants excludes another 112 rows.
+This screen admits false positives and can miss other errors; it is not a claim
+that each excluded row is wrong. A uniform 10,300 floor for plain Latin word
+costs supersedes earlier per-entry cost calibration, preventing observed cheap
+fragment splits of known base words without runtime word exceptions.
+
+From 127,811 normalized entries, 2,422 are excluded (769 base-owned rows,
+1,669 CMU-risk rows, 16 overlap), leaving 125,389. The floor raises 116,922
+retained costs. Three-context validation covers all 746 base-owned surfaces;
+289 common English words extend the former 52-control sample. The gate does
+not establish exhaustive lexical accuracy. `proposer` still uses a provisional
+flat accent; waveform/listening acceptance remains outstanding.
+
+The upstream default branch was rechecked on 2026-10-20 at
+`b4570b876f5c086819ba84e3215472733c6a7b70`: the CSV still has the same Git blob
+and contents as the pinned source above.
 
 The CSV and notices are distributed separately as the optional
 `japanese-pronunciation` asset pack. Large generated pack files remain outside

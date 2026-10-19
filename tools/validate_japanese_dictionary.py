@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -11,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config.japanese_dictionary import PACK_TREE, dictionary_rows, load_dictionary_pack  # noqa: E402
+from tools.audit_japanese_dictionary import (  # noqa: E402
+    cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup, word_key,
+)
 from tools.tts_text_processor import correct_pronunciation_for_tts  # noqa: E402
 from tts.japanese_dictionary import configure_japanese_dictionary  # noqa: E402
 
@@ -37,36 +41,75 @@ UNIT_SAMPLES = tuple("100" + unit + "です" for unit in (
     "g", "mg", "kg", "t", "m", "cm", "mm", "km", "ml", "mL", "L", "kW", "MW", "W", "V", "mV",
     "A", "mA", "Hz", "kHz", "MHz", "GHz", "s", "ms", "ns", "kB", "MB", "GB", "TB", "dB", "rpm", "℃",
 ))
+REPORTED_CONTEXTS = {
+    "Helpを押して。": "help", "このbugからlearnしましょう。": "learn", "Twoつ目の方法。": "two",
+    "Python with Docker。": "with", "Productionに出す。": "production", "モデルのresetをする。": "reset",
+    **{f"この{word}を確認して。": word for word in ("model", "welcome", "directly", "reset", "deadline")},
+}
 
 
 def validate(project_root: Path) -> dict:
     import pyopenjtalk
     sys.path.insert(0, str(ROOT / "GPT_SoVITS"))
     from text import japanese
+    from text.cleaner import clean_text
+
+    def production_phones(text: str) -> list[str]:
+        return clean_text(correct_pronunciation_for_tts(text), "ja", "v2")[0]
     project_root = project_root.resolve()
     pack = load_dictionary_pack(project_root / "assets" / PACK_TREE)
     rows = list(dictionary_rows((pack.root / "userdict.csv").read_bytes()))
+    metadata = json.loads((pack.root / "provenance.json").read_text(encoding="utf-8"))
+    policy = metadata["extension_filter"]
+    if native_base_hashes() != policy["base_dictionary_sha256"]:
+        raise RuntimeError("Release gate requires the recipe's base dictionary")
+    base_word = native_base_word_lookup()
+    cmu_data = (ROOT / policy["cmudict_path"]).read_bytes().replace(b"\r\n", b"\n")
+    if hashlib.sha256(cmu_data).hexdigest() != policy["cmudict_sha256"]:
+        raise RuntimeError("Release gate requires the recipe's CMU screening data")
+    cmu = cmu_pronunciations(cmu_data)
+    _, screening = filter_extension_rows(rows, cmu, base_word, cost_floor=policy["latin_word_cost_floor"])
+    vocabulary_data = json.loads((ROOT / "tools/data/japanese_dictionary_common_words.json").read_text(encoding="utf-8"))
+    common = vocabulary_data["words"]
+    excluded = policy["results"]["excluded"]
+    base_owned = sorted({item["surface"] for item in excluded if "base_dictionary_word" in item["reasons"]})
+    corrected = list(dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
     jtalk = pyopenjtalk.OpenJTalk(pyopenjtalk.OPEN_JTALK_DICT_DIR)
     surface = jtalk.normalize_for_mecab
+
+    def target_readings(text: str, word: str) -> list[str]:
+        return [f["read"] for f in pyopenjtalk.run_frontend(correct_pronunciation_for_tts(text).lower())
+                if f["string"] == surface(word)]
     expected = defaultdict(set)
     for row in rows:
         expected[row[0]].add(row[11])
     failures, contexts, frontend_words = [], 0, 0
+    if screening["excluded_entries"]:
+        failures.append({"kind": "unscreened_entries", "entries": screening["excluded"]})
+    if screening["latin_word_costs_raised"]:
+        failures.append({"kind": "unbounded_word_costs", "count": screening["latin_word_costs_raised"]})
     try:
         pyopenjtalk.unset_user_dict()
-        baseline = {text: japanese.g2p(correct_pronunciation_for_tts(text)) for text in BASE_SAMPLES}
-        unit_baseline = {text: japanese.g2p(correct_pronunciation_for_tts(text)) for text in UNIT_SAMPLES}
+        baseline = {text: production_phones(text) for text in BASE_SAMPLES}
+        unit_baseline = {text: production_phones(text) for text in UNIT_SAMPLES}
+        # Compare every base-owned imported surface, not just a hand-picked
+        # sample. Include Japanese contexts so cheap prefix splits cannot pass.
+        base_controls = {prefix + word + suffix for word in base_owned
+                         for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。"))}
+        english_controls = base_controls | set(common) | set(REPORTED_CONTEXTS)
+        english_baseline = {text: production_phones(text) for text in sorted(english_controls)}
+        context_baseline = {text: target_readings(text, word) for text, word in REPORTED_CONTEXTS.items()}
         status = configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=True)
         if not status["ready"]:
             raise RuntimeError(status["detail"])
         for text, before in baseline.items():
-            after = japanese.g2p(correct_pronunciation_for_tts(text))
+            after = production_phones(text)
             if after != before:
                 failures.append({"kind": "base_regression", "text": text, "before": before, "after": after})
         unit_prosody_changes = []
         without_prosody = lambda phones: [phone for phone in phones if phone not in {"[", "]", "#"}]
         for text, before in unit_baseline.items():
-            after = japanese.g2p(correct_pronunciation_for_tts(text))
+            after = production_phones(text)
             if without_prosody(after) != without_prosody(before):
                 failures.append({"kind": "unit_phonemes", "text": text, "before": before, "after": after})
             elif after != before:
@@ -74,11 +117,40 @@ def validate(project_root: Path) -> dict:
                 # reading. Record it for listening review without inventing an
                 # accent correction or a per-unit exclusion.
                 unit_prosody_changes.append({"text": text, "before": before, "after": after})
-        corrected = list(dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
+        vocabulary = []
+        quarantined = {item["surface"] for item in excluded} - {word_key(row[0]) for row in rows}
+        for text, before in english_baseline.items():
+            after = production_phones(text)
+            must_preserve = text in base_controls or text in vocabulary_data["base_fallback_words"]
+            if must_preserve and after != before:
+                failures.append({"kind": "english_base_regression", "text": text, "before": before, "after": after})
+            if text in common:
+                observed = pyopenjtalk.run_frontend(correct_pronunciation_for_tts(text).lower())
+                reading = vocabulary_data["reviewed_readings"].get(text)
+                if reading and [f["read"] for f in observed] != [reading]:
+                    failures.append({"kind": "reviewed_english_reading", "text": text, "expected": reading,
+                                     "observed": observed})
+                vocabulary.append({"word": text, "base_owned": base_word(text),
+                                   "quarantined": word_key(text) in quarantined,
+                                   "changed": after != before, "readings": [f["read"] for f in observed]})
+        sentence_results = []
+        for text, word in REPORTED_CONTEXTS.items():
+            before, after = context_baseline[text], target_readings(text, word)
+            if len(before) != 1 or after != before:
+                failures.append({"kind": "reported_sentence_reading", "text": text, "word": word,
+                                 "before": before, "after": after})
+            # Other English words may legitimately improve (Python in the
+            # with sentence). Keep the full production-path observation visible.
+            sentence_results.append({"text": text, "word": word, "before": before, "after": after,
+                                     "sentence_phones_changed": production_phones(text) != english_baseline[text]})
         words = {row[0]: row[0] for row in corrected}
         words.update({surface(word): word for word in CONTRACTIONS})
         for key, word in words.items():
             key = surface(key.lower())
+            if key not in expected:
+                # Corrections are historical evidence, not mandatory overrides
+                # of the base or of conservative release-data exclusions.
+                continue
             for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。")):
                 whole = [f for f in pyopenjtalk.run_frontend(prefix + word.lower() + suffix) if f["string"] == key]
                 contexts += 1
@@ -93,6 +165,10 @@ def validate(project_root: Path) -> dict:
         return {"version": pack.version, "entry_count": pack.entry_count, "sha256": pack.sha256,
                 "base_samples": len(BASE_SAMPLES), "native_contexts": contexts,
                 "additional_unit_phoneme_checks": len(UNIT_SAMPLES),
+                "base_owned_words": len(base_owned), "english_base_contexts": len(base_controls),
+                "common_english_words": len(common), "common_english_results": vocabulary,
+                "external_sentence_contexts": len(REPORTED_CONTEXTS),
+                "external_sentence_results": sentence_results,
                 "unit_prosody_changes_for_review": unit_prosody_changes,
                 "production_frontend_words": frontend_words, "failures": failures,
                 "limitations": "Native phoneme/prosody and token-selection checks; no waveform or listening acceptance."}
@@ -108,7 +184,8 @@ def main() -> int:
     report = validate(args.project_root)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({key: value for key, value in report.items() if key != "failures"}))
+    print(json.dumps({key: value for key, value in report.items()
+                      if key not in {"failures", "common_english_results", "external_sentence_results"}}))
     print(f"Failures: {len(report['failures'])}")
     return int(bool(report["failures"]))
 

@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.18.1",
+  "version": "2026.10.20.1",
   "language": "ja",
   "source": {
     "repository": "https://github.com/RVC-Boss/GPT-SoVITS",
@@ -9881,6 +9881,25 @@
       },
       "cost_before": 813,
       "cost_after": 46
+    },
+    {
+      "word": "let's",
+      "before": "レットアップス",
+      "after": "レッツ",
+      "reason": "CMU LET'S and LETS have identical L EH1 T S phones. Reuse the existing lets row's レッツ reading and 1/3 accent annotation instead of the shifted let-ups reading; keep the original let's word cost.",
+      "evidence": {
+        "upstream_source_lines": [
+          69568,
+          69591
+        ],
+        "cmu_phones": [
+          "L",
+          "EH1",
+          "T",
+          "S"
+        ],
+        "accent_basis": "Reuse the existing same-phoneme lets entry; no listening acceptance claimed."
+      }
     }
   ],
   "review": {
@@ -9907,6 +9926,36 @@
           "char.bin": "888ee94c5a8a7a26d24ab3f1b7155441351954fd51ea06b4a2f78bd742492b2f"
         }
       }
+    }
+  },
+  "extension_filter": {
+    "cmudict_path": "GPT_SoVITS/text/cmudict.rep",
+    "cmudict_sha256": "0e601d017d6e6f958443d41cd8922b4cd7598b3ba2056253a33f3e5a35f38494",
+    "base_dictionary_sha256": {
+      "sys.dic": "0328ca62355100aba6df13af56912ad88cf10246e2a286005b89cb8ce2cef652",
+      "matrix.bin": "62fd16b4f64c851d5dc352ef0d5740c5fc83ddc7c203b2b0b1fc5271969a14ce",
+      "char.bin": "888ee94c5a8a7a26d24ab3f1b7155441351954fd51ea06b4a2f78bd742492b2f"
+    },
+    "rules": [
+      "Exclude every imported row for a surface selected as one known whole word by an independent base MeCab instance; unknown letter-spelled tokens do not count as known words.",
+      "Quarantine all variants of a surface if any reading ends in ズ without CMU S/Z, ド without D/T, or ング without NG. Accept every CMU pronunciation variant. These are the external audit rules; omit its unreachable ッド branch. Do not promote another unverified shifted reading.",
+      "Raise plain Latin word costs to one common floor, keeping higher existing costs and punctuation-bearing compound costs; prevent cheap imported fragments from splitting known base words."
+    ],
+    "limitations": "Final-phone screening is conservative quarantine, not proof of an error or a proposed replacement. Legitimate loanword adaptations can be excluded. Interior shifts and vowel-ending errors can escape this rule. The common cost floor is qualified against all base-owned imported words in three native contexts and the retained reviewed-word gate, not all possible Japanese contexts. No runtime word exceptions are added.",
+    "latin_word_cost_floor": 10300,
+    "cmudict_hash_normalization": "UTF-8 bytes with CRLF normalized to LF",
+    "external_audit": {
+      "input_pack_version": "2026.10.18.1",
+      "input_csv_sha256": "adb58cb77524441d68d2f1db0c952e999536034341cfd0b542fc4c3b55d39c63",
+      "flagged_rows": 1557,
+      "suffix_counts": {
+        "ズ": 807,
+        "ド": 523,
+        "ング": 227
+      },
+      "frequent_doc_rows": 49,
+      "frequent_doc_distinct_words": 48,
+      "flag_list_sha256": "b8446675edbd1ff0796b76ad6167e8e20266b198a9829d8f60bc0e37e0f73e2a"
     }
   }
 }

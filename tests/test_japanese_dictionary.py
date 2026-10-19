@@ -49,7 +49,8 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
     recipe_path = root / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     return prepare_dictionary(source, project_root=root, recipe_path=recipe_path,
-                              count_mora=None if native else lambda _: None)
+                              count_mora=None if native else lambda _: None,
+                              base_word=None if native else lambda _: False)
 
 
 @pytest.mark.parametrize("text,expected", [
@@ -83,14 +84,18 @@ def test_preparation_records_derivative_and_does_not_edit_source(tmp_path):
     assert (tmp_path / "upstream.csv").read_text(encoding="utf-8") == FOLLOWER + LEARNER
     pack = dictionary_pack.load_dictionary_pack(pack_root)
     corrections = list(dictionary_pack.dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
-    assert pack.entry_count == len(corrections)
+    # Conservative final-phone screening also quarantines legitimate loanword
+    # adaptations; condo -> コンド is a documented false positive (CMU OW).
+    accepted = [row for row in corrections if row[0] != "ｃｏｎｄｏ"]
+    assert pack.entry_count == len(accepted)
     readings = {row[0]: row[11] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
-    assert readings == {row[0]: row[11] for row in corrections}
+    assert readings == {row[0]: row[11] for row in accepted}
     assert readings["ｆｏｌｌｏｗｅｒ"] == "フォロワー"
     assert readings["ｌｅａｒｎｅｒ"] == "ラーナー"
     provenance = json.loads((pack_root / "provenance.json").read_text(encoding="utf-8"))
     assert provenance["normalization"]["rules"]
-    assert provenance["normalization"]["results"]["output_entries"] == pack.entry_count
+    assert provenance["normalization"]["results"]["output_entries"] == provenance["extension_filter"]["results"]["input_entries"]
+    assert provenance["extension_filter"]["results"]["output_entries"] == pack.entry_count
     assert all(path.is_file() for path in pack.files())
     # A maintainer cannot accidentally publish a customized installation as the
     # pinned upstream base, even if it has the expected CSV shape.
@@ -212,7 +217,8 @@ def test_reviewed_bad_reading_repair_preserves_other_readings_of_the_same_surfac
     recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=2)
     recipe_path = tmp_path / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
-    pack_root = prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path, count_mora=lambda _: None)
+    pack_root = prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path,
+                                   count_mora=lambda _: None, base_word=lambda _: False)
     readings = [row[12] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes()) if row[0] == "ｃｏｒｐｓ"]
     assert set(readings) == {"コア", "コアズ"}
     assert source.read_bytes() == data
