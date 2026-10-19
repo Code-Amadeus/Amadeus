@@ -385,38 +385,28 @@ await Test("recovery after receiver exit retains failures and can retry", async 
     await new Session(host, journal).Restore();
     Check(host.ActualItems.Single().Path == "old" && !File.Exists(journal), "receiver-exit recovery lost retry state");
 });
-await Test("an identity-less pending journal records a conservative exit barrier", async (host, session, journal) => {
-    var before = Before(host);
-    File.WriteAllText(journal, JsonSerializer.Serialize(new {
-        before.Project, before.Monitor, before.Options, before.Wallpapers,
-        before.OwnedProcess, before.Mounted, Phase = "Pending"
-    }));
-    Check(await Failure(() => session.Restore()) is InvalidOperationException, "unknown legacy request was allowed on a running host");
-    using (var saved = JsonDocument.Parse(File.ReadAllText(journal))) {
-        Check(saved.RootElement.TryGetProperty("RequestProcess", out var receiver) &&
-            JsonSerializer.Deserialize<ProcessIdentity>(receiver) == host.RunningProcess, "legacy exit barrier was not persisted");
-    }
-    host.LiveProcesses.Clear();
-    host.RunningProcess = new(11, 30);
-    host.LiveProcesses.Add(host.RunningProcess);
-    await new Session(host, journal).Restore();
-    Check(!File.Exists(journal) && host.Stopped is null, "legacy pending journal could not recover after its exit barrier");
-});
-await Test("an identity-less pending journal can recover when no old host exists", async (host, session, journal) => {
-    var before = Before(host);
-    File.WriteAllText(journal, JsonSerializer.Serialize(new {
-        before.Project, before.Monitor, before.Options, before.Wallpapers,
-        before.OwnedProcess, before.Mounted, Phase = "Pending"
-    }));
-    host.LiveProcesses.Clear();
-    host.RunningProcess = null;
-    session.PrepareRecovery();
-    Phase(journal, "Settled");
-    host.RunningProcess = new(11, 30);
-    host.LiveProcesses.Add(host.RunningProcess);
-    await session.Restore();
-    Check(!File.Exists(journal), "legacy pending journal remained blocked without any possible receiver");
-});
+foreach (var running in new[] { true, false }) {
+    await Test("an identity-less pending journal is invalid with host running=" + running, async (host, session, journal) => {
+        host.ActualItems.Add(new("primary", "old"));
+        var before = Before(host);
+        var invalid = JsonSerializer.Serialize(new {
+            before.Project, before.Monitor, before.Options, before.Wallpapers,
+            before.OwnedProcess, before.Mounted, Phase = "Pending"
+        });
+        File.WriteAllText(journal, invalid);
+        if (!running) {
+            host.LiveProcesses.Clear();
+            host.RunningProcess = null;
+        }
+        var error = await Failure(() => session.Restore());
+        Check(error is InvalidDataException, "pending journal without a receiver was not rejected as invalid");
+        Check(File.ReadAllText(journal) == invalid, "invalid journal was rewritten or deleted");
+        Check(host.SetCalls == 0 && host.RestoreCalls == 0 && host.WallpaperReads == 0 &&
+            host.ClosedProjects.Count == 0 && host.Stopped is null, "invalid journal recovery touched the host");
+        Check(host.ActualItems.SequenceEqual(before.Wallpapers) && host.Options == before.Options,
+            "invalid journal recovery changed the desktop");
+    });
+}
 await Test("a user selection wins after a failed rollback", async (host, session, journal) => {
     host.ActualItems.Add(new("primary", "old"));
     host.FailAfterMount = true;
@@ -664,10 +654,6 @@ sealed class FakeHost : IWallpaperHost
     public ProcessIdentity? RunningProcess = new(100, 200);
     public HashSet<ProcessIdentity> LiveProcesses = [new(100, 200)];
     public Exception? IdentityFailure;
-    public ProcessIdentity? GetRunningProcess() {
-        if (IdentityFailure is not null) throw IdentityFailure;
-        return RunningProcess;
-    }
     public bool IsProcessRunning(ProcessIdentity identity) {
         if (IdentityFailure is not null) throw IdentityFailure;
         return LiveProcesses.Contains(identity);
@@ -705,7 +691,10 @@ sealed class FakeHost : IWallpaperHost
         Action<ProcessIdentity>? requestDispatching = null) {
         if (requestDispatching is not null) {
             if (Dispatch is not null) await Dispatch(requestDispatching);
-            else requestDispatching(GetRunningProcess() ?? throw new IOException("no request receiver"));
+            else {
+                if (IdentityFailure is not null) throw IdentityFailure;
+                requestDispatching(RunningProcess ?? throw new IOException("no request receiver"));
+            }
         }
         SetCalls++;
         ActualItems.RemoveAll(x => x.Monitor == wallpaper.Monitor);

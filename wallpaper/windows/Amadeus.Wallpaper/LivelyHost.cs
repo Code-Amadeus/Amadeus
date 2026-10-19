@@ -94,17 +94,6 @@ public sealed class LivelyHost : IWallpaperHost
     public static Process? Running() => Process.GetProcessesByName("Lively")
         .FirstOrDefault(p => p.SessionId == Process.GetCurrentProcess().SessionId);
 
-    public ProcessIdentity? GetRunningProcess()
-    {
-        var processes = Process.GetProcessesByName("Lively");
-        try
-        {
-            if (processes.Length > 1) throw new InvalidOperationException("Multiple Lively hosts prevent establishing the older pending session's exit barrier; fully exit the relevant Lively instances and retry.");
-            return processes.Length == 0 ? null : new(processes[0].Id, processes[0].StartTime.ToUniversalTime().Ticks);
-        }
-        finally { foreach (var process in processes) process.Dispose(); }
-    }
-
     public bool IsProcessRunning(ProcessIdentity identity)
     {
         Process process;

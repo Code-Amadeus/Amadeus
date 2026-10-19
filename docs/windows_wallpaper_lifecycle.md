@@ -133,16 +133,12 @@ If persistence already began, the caller waits for it and retains `Pending` on a
 deadline error. The transport write may still follow that persisted boundary;
 this is uncertain dispatch protected by the journal, not proof of cancellation.
 
-Old published journals without `Phase` retain their original semantics. An older
-development `Pending` journal without `RequestProcess` is checked before starting
-Lively: no existing host permits normal recovery; otherwise the helper persists
-the current host as a conservative exit barrier and asks for one more complete
-exit before reopening managed wallpaper or using `recover`. This barrier is not
-claimed to identify the original request receiver. Ambiguous hosts or identity
-query failures do not release it. The unpublished `MountUnconfirmed` draft field
-and its compatibility branch have been removed; the local development journal
-location and repository build outputs contained no such journal during this
-change, and no existing recovery data was deleted.
+Old published journals without `Phase` retain their original semantics. A
+`Pending` journal without `RequestProcess` is invalid: recovery reports an error
+without rewriting the journal or changing the desktop. That format and
+`MountUnconfirmed` existed only in this PR's unpublished drafts; neither main nor
+v0.17.0-alpha.0 wrote `Phase`. Their compatibility branches have been removed
+because no existing local journal required them. No recovery data was deleted.
 
 Recover any pending journal with this helper before reverting to an older helper.
 Older binaries do not understand `Phase`; downgrade while a journal remains is
@@ -182,12 +178,10 @@ Set 适配器耦合锁定的 GrpcDotNetNamedPipes 3.1.0：仅一处内部 `PipeC
 若持久化边界已开始，调用方须等待其结束，deadline 错误保留 `Pending`。传输写入
 仍可能随后发生；这是由日志保护的不确定派发，不能据此声称取消成功。
 
-已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的旧开发 `Pending`
-日志在启动 Lively 前检查：没有现存宿主时可进入正常恢复；否则持久保存当前宿主为
-保守退出屏障，要求再次完整退出后重新开启托管壁纸或执行 `recover`。该屏障不声称
-识别出了原请求接收进程；宿主有歧义或身份查询失败时不放行。未发布草稿字段
-`MountUnconfirmed` 及其兼容分支已移除；本轮只读核查本地开发日志位置及仓库构建
-输出时未发现此类日志，未删除任何既有恢复数据。
+已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的 `Pending` 日志
+视为无效：恢复明确报错，不改写日志或改变桌面。该格式和 `MountUnconfirmed` 仅
+存在于本 PR 未发布的草稿；main 与 v0.17.0-alpha.0 均未写过 `Phase`。没有现存本地
+日志需要这些兼容分支，因此已将其移除；未删除任何恢复数据。
 
 回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
 时不支持降级，不会为允许降级而重置或删除恢复记录。

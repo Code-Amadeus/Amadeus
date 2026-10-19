@@ -48,7 +48,7 @@ try
         Report(new { status = "clean" });
         return 0;
     }
-    // 旧 Pending 日志须在启动新宿主前建立退出屏障，避免把新进程误作旧请求证据。
+    // 启动宿主前先验证 Pending 日志及其原请求接收进程。
     session.PrepareRecovery();
     await host.EnsureRunning();
     await session.Restore(host.StartedProcess);

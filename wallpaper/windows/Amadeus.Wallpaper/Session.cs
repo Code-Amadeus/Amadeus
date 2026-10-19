@@ -15,7 +15,6 @@ public interface IWallpaperHost
 {
     Task<HostOptions> GetOptions();
     Task<List<DesktopItem>> GetWallpapers();
-    ProcessIdentity? GetRunningProcess();
     bool IsProcessRunning(ProcessIdentity process);
     // 原生请求正常返回后、场景确认前回调；请求异常结束不得回调。
     Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null,
@@ -95,16 +94,8 @@ public sealed class Session(IWallpaperHost host, string journal)
         var snapshot = Read();
         if (snapshot.Phase != MountPhase.Pending) return;
         if (snapshot.RequestProcess is null)
-        {
-            var barrier = host.GetRunningProcess();
-            if (barrier is not null)
-            {
-                // 旧开发日志不能认定原接收进程；记录当前宿主，只作为再次退出的保守屏障。
-                Save(snapshot with { RequestProcess = barrier });
-                throw new InvalidOperationException("This older pending journal lacks its request receiver identity. Fully exit Lively once more, then reopen managed wallpaper or run recover.");
-            }
-        }
-        else if (host.IsProcessRunning(snapshot.RequestProcess))
+            throw new InvalidDataException("Invalid wallpaper recovery journal: Pending requires a request receiver identity.");
+        if (host.IsProcessRunning(snapshot.RequestProcess))
             throw new InvalidOperationException("Wallpaper mount request may still complete in its original Lively process. Fully exit Lively, then reopen managed wallpaper or run recover.");
         // 原请求不可能再迟到；这只允许尝试恢复，仍须核验原场景。
         Save(snapshot with { Mounted = false, Phase = MountPhase.Settled });
