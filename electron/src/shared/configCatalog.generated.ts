@@ -3108,6 +3108,78 @@ export const catalogGroups: CatalogGroup[] = [
     "apply": "backend_restart"
   },
   {
+    "id": "tts_japanese_dictionary",
+    "title": {
+      "en-US": "Japanese pronunciation dictionary",
+      "zh-CN": "日语发音词典"
+    },
+    "description": {
+      "en-US": "Use an optionally installed dictionary for English words and names in local Japanese speech.",
+      "zh-CN": "为本地日语语音使用可选安装的英文单词与人名读音词典。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "ENABLE_JAPANESE_USER_DICTIONARY": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use installed Japanese dictionaries",
+          "zh-CN": "使用已安装的日语词典"
+        },
+        "description": {
+          "en-US": "Does not download a dictionary. Install japanese-pronunciation separately. Turn off to use the base dictionary; restart the backend after changes.",
+          "zh-CN": "不会下载词典，请单独安装 japanese-pronunciation。关闭后使用基础词典；更改后需重启后端。"
+        },
+        "default": true,
+        "accepted_values": [
+          "true",
+          "false",
+          "1",
+          "0",
+          "yes",
+          "no"
+        ],
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "tts_japanese_reading",
+    "title": {
+      "en-US": "Experimental Japanese contextual readings",
+      "zh-CN": "实验性日语语境读音"
+    },
+    "description": {
+      "en-US": "Optional experiment with known reading regressions. Installing the model does not enable it.",
+      "zh-CN": "存在已知读音回归的可选实验；安装模型不会自动启用。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "ENABLE_JAPANESE_CONTEXT_READING": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use installed context-reading model",
+          "zh-CN": "使用已安装的语境读音模型"
+        },
+        "description": {
+          "en-US": "Default off; known context errors remain. CPU inference adds hundreds of MiB of process memory; usage varies with runtime and workload. Install japanese-context-reading separately; no automatic download. Restart the backend after changes.",
+          "zh-CN": "默认关闭，仍有已知语境误读。CPU 推理会增加数百 MiB 进程内存，用量随运行时与负载变化。需单独安装 japanese-context-reading，不会自动下载；更改后重启后端生效。"
+        },
+        "default": false,
+        "accepted_values": [
+          "true",
+          "false",
+          "1",
+          "0",
+          "yes",
+          "no"
+        ],
+        "example_active": true
+      }
+    }
+  },
+  {
     "id": "voice_reference_profile",
     "title": {
       "en-US": "Voice reference profile",

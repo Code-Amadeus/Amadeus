@@ -19,6 +19,17 @@
   ],
   "external_packs": [
     {
+      "id": "japanese-pronunciation",
+      "display_name": "Japanese Pronunciation Extension",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["text/ja/english"],
+      "required": ["text/ja/english/userdict.csv", "text/ja/english/provenance.json",
+        "text/ja/english/NOTICE.md", "text/ja/english/GPT-SoVITS-MIT.txt",
+        "text/ja/english/CMUdict-BSD-2-Clause.txt", "text/ja/english/Amadeus-AGPL-3.0.txt"],
+      "validator": "japanese_dictionary"
+    },
+    {
       "id": "voice-kurisu-emotions",
       "display_name": "Kurisu V3 Emotion Reference Pack",
       "spec_version": 1,
@@ -147,6 +158,29 @@
         "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
         "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
         "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "japanese-context-reading",
+      "display_name": "Japanese Context Reading Model (tsqyomi v5)",
+      "spec_version": 1,
+      "paths": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
+      ],
+      "trees": [],
+      "required": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
       ],
       "validator": "required_files"
     }

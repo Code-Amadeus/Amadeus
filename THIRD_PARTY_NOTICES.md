@@ -156,10 +156,21 @@ checkout is unchanged.
 ### GPT-SoVITS caches, custom Japanese dictionary, and UVR5 utility
 
 Generated `*.pickle` lookup caches and `GPT_SoVITS/text/ja_userdic/**` are
-excluded. The cache readers rebuild or omit them, while the custom Japanese
-dictionary has no recorded distribution source. `tools/uvr5/**` is also
+excluded. The cache readers rebuild or omit them. The local Japanese CSV has
+now been matched to a pinned canonical GPT-SoVITS source; the independently
+prepared optional `japanese-pronunciation` pack carries the CSV's provenance,
+corrections and upstream/CMUdict/Amadeus license notices. See
+`LICENSES/JAPANESE-DICTIONARY.md`. Its large files, personal dictionaries and
+compiled caches remain excluded from source archives. `tools/uvr5/**` is also
 excluded because no Amadeus Electron/server/TTS runtime caller reaches that
 upstream WebUI utility tree.
+
+### Optional Japanese context-reading model
+
+The optional Japanese context-reading model is distributed separately. Its exact
+upstream model/tokenizer/metadata revision, MIT copyright/license notice and
+training-provenance limits are recorded in `LICENSES/TSQYOMI.md`. No model bytes
+are included in the application source archive.
 
 ### Character, model, and voice material
 

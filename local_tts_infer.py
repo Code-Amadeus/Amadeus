@@ -221,6 +221,10 @@ class TTSInferencer:
 
             # 初始化语言字典
             self._init_language_dict()
+            # Establish the native pronunciation identity before backend ready
+            # and the host's first-sentence cache lookup, in either process.
+            if _default_lang_code() == "ja":
+                __import__("text.japanese")
 
             # 初始化SSL模型。BERT 特征只有中文文本需要，日文/英文用零向量，
             # 所以 BERT 在第一次需要时才加载（_ensure_bert_model）。

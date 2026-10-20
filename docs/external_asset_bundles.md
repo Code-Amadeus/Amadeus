@@ -137,6 +137,14 @@ reviewed before publishing either voice archive.
 
 ## Archive contract
 
+The independent optional `japanese-pronunciation` pack contains a pinned,
+corrected Japanese word/name CSV and its provenance/license notices. Build,
+verify and install use the existing commands; compiled and personal dictionaries
+are excluded. This requires an application version with the new catalog entry.
+See [Japanese pronunciation dictionary](japanese_pronunciation_dictionary.md).
+It can be appended to an existing resource Release without rebuilding the other
+archives; keep dictionary versions as distinct immutable filenames.
+
 The optional `voice-kurisu-emotions` pack adds paired Japanese semantic references
 to an existing Windows CUDA V3 installation. It uses the same bundle contract
 and installer; it does not include model weights or overwrite default references.
