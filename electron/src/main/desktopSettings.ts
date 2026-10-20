@@ -555,7 +555,10 @@ export class DesktopSettingsStore {
       mcpConnectionsLocked: environment[MCP_CONNECTIONS_ENV] !== undefined,
       extensionSecurity: stored.extensionSecurity ? { status: stored.extensionSecurity.status, ...(stored.extensionSecurity.status === 'ready' ? { sequence: stored.extensionSecurity.sequence, checkedAt: stored.extensionSecurity.checkedAt } : {}) } : { status: 'unseen' },
       extensions: Object.values(stored.extensions).map(record => this.extensionSummary(record, pendingKeys.includes(EXTENSIONS_ENV), this.validatedExtensionIds.has(record.id), stored.extensionSecurity)),
-      extensionErrors: [...this.extensionErrors, ...this.extensionWarnings, ...(environment[EXTENSIONS_ENV] !== undefined
+      extensionErrors: [...this.extensionErrors, ...this.extensionWarnings,
+        ...([...this.appliedExtensions.values()].some(record => record.enabled && extensionRequiresRestart(record.manifest) && securityBlock(stored.extensionSecurity, record))
+          ? ['A running extension is blocked by security policy or unreadable security state. Stop or restart the backend.'] : []),
+        ...(environment[EXTENSIONS_ENV] !== undefined
         ? ['Parent AMADEUS_EXTENSIONS was ignored; extension startup is owned by desktop installation records.'] : [])],
     }
   }

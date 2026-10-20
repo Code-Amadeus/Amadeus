@@ -1,6 +1,7 @@
 {
   "A centered PNG copy is stored in the app's local assets. The original file is never modified.": "居中处理后的 PNG 副本会保存在应用本地资源中，原始文件不会被修改。",
   "A companion for your next story": "一起走进下一段故事",
+  "A running extension is blocked by security policy or unreadable security state. Stop or restart the backend.": "正在运行的插件受到安全封禁或本地安全状态损坏影响。请停止或重启后端。",
   "ACP agents — Experimental": "ACP 代理——实验性",
   "ACP v1 preset using a referenced Anthropic credential.": "使用所引用 Anthropic 凭据的 ACP v1 预设。",
   "ACP v1 preset using a referenced DeepSeek credential.": "使用所引用 DeepSeek 凭据的 ACP v1 预设。",

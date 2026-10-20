@@ -1148,3 +1148,18 @@ test('a blocked active theme falls back immediately with the security reason', a
   await f.installer.restoreBuiltinTheme()
   assert.equal((await f.installer.themeState()).reason, '')
 })
+
+test('lost durable inventory still reports an actually running blocked backend', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'fixture-value' } })
+  f.store.acceptExtensionApplication(f.store.storedExtensionRecords()[0])
+  for (const file of [f.file, f.file + '.bak']) fs.writeFileSync(file, Buffer.alloc(100))
+  const snapshot = f.store.snapshot({})
+  assert.deepEqual(snapshot.extensions, [])
+  assert.equal(snapshot.extensionSecurity.status, 'unavailable')
+  assert.ok(snapshot.extensionErrors.some(message => message.includes('Stop or restart the backend')))
+  assert.equal(f.store.extensionFrontendClosed(f.metadata.id), true)
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(!f.store.snapshot({}).extensionErrors.some(message => message.includes('Stop or restart the backend')))
+})
