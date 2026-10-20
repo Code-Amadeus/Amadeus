@@ -134,3 +134,43 @@ finding, missing required file, or a future unresolved component.
 These are useful failures. Do not turn them into broad exceptions merely to
 make the command green; either resolve the evidence, exclude the component, or
 record a narrow, reviewed policy exception.
+
+## 5. Publish the application and optional resources together
+
+Publish checked optional dictionary resources as separate attachments of the
+**application Release**, alongside the source ZIP, `source-manifest.json` and
+`SHA256SUMS.txt`. The dictionary remains optional; do not embed it in the source
+archive or combine it with voice/model media. The Release notes identify the
+application version, dictionary data version, tested compatibility and limits.
+The resource page links to that application Release.
+
+Before publishing each application version:
+
+1. Synchronize Python/Electron versions and lockfiles, record changes and upgrade
+   requirements, and pass the final preparation commit's required CI.
+2. Tag the accepted mainline commit. Wait for the tag's **Source Release** workflow
+   to pass installation, build, previous-release upgrade, packaging and startup
+   using only extracted sources. Download its source archive and manifest.
+3. Choose the checked dictionary for this application. Run the production
+   `validate_japanese_dictionary.py` gate with this application's code; verify and
+   clean-install the ZIP through this application's `external_assets.py`. If the
+   data is unchanged, reuse the identical ZIP only after it passes these checks.
+   For corrected/expanded data, prepare a new data version and immutable filename.
+4. Create a draft application Release and attach the tested source ZIP, source
+   manifest, dictionary ZIP and dictionary checksum sidecar. `SHA256SUMS.txt`
+   covers every attached payload (including the dictionary and source manifest).
+   Record source/license notices and any experimental or unqualified behavior.
+5. Verify uploaded names, sizes and digests before publishing. Download the
+   public files and recheck their SHA-256, source member manifest and dictionary
+   installation. Update the resource page after the application Release is live.
+
+Do not hardcode a dictionary data version into the application or require future
+code to support an old resource indefinitely. The existing asset `spec_version`
+is the format compatibility boundary. A breaking pack change advances that
+contract and ships a matching resource with the new application. Keep older
+Release assets for their corresponding application versions; never replace a
+same-named published ZIP. No recurring publication or automatic upload is implied.
+
+Starting pair: application `v0.17.1-alpha.0`, optional dictionary `2026.10.20.3`.
+The separate `japanese-context-reading` model is not part of this distribution;
+its known quality failures remain disclosed and it is disabled by default.
