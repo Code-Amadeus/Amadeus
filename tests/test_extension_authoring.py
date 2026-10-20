@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -108,3 +109,51 @@ def test_target_admission_matches_native_validator(tmp_path):
         validate_manifest(manifest)
     result = cli('check-package', directory)
     assert result.returncode == 1 and json.loads(result.stdout)['error'] == str(error.value)
+
+
+@pytest.mark.parametrize('defect', ['version', 'sdk', 'entry_point'])
+def test_source_check_discloses_unchecked_wheel_metadata(tmp_path, defect):
+    source = ROOT / 'examples/extensions/mimo-tts/src/amadeus_example_mimo'
+    directory = tmp_path / source.name
+    shutil.copytree(source, directory)
+    manifest = json.loads((directory / 'amadeus-extension.json').read_text(encoding='utf-8'))
+    manifest['engines']['platforms'] = [sys.platform]
+    (directory / 'amadeus-extension.json').write_text(json.dumps(manifest), encoding='utf-8')
+    version = '9.9.0' if defect == 'version' else manifest['version']
+    metadata = f"Name: example\nVersion: {version}\n"
+    if defect == 'sdk':
+        metadata += 'Requires-Dist: amadeus-extension-sdk==9.9\n'
+    wheel = tmp_path / 'example-0.1.0-py3-none-any.whl'
+    with zipfile.ZipFile(wheel, 'w') as archive:
+        for resource in directory.rglob('*'):
+            if resource.is_file():
+                archive.write(resource, resource.relative_to(tmp_path).as_posix())
+        archive.writestr('example-0.1.0.dist-info/METADATA', metadata)
+        entry = 'wrong_package' if defect == 'entry_point' else directory.name
+        archive.writestr('example-0.1.0.dist-info/entry_points.txt',
+                         f"[amadeus.extensions]\n{manifest['id']} = {entry}\n")
+    source_result = cli('check-package', directory)
+    assert source_result.returncode == 0
+    payload = json.loads(source_result.stdout)
+    assert 'host_admission' not in payload['checked']
+    assert 'wheel_metadata' in payload['not_checked']
+    assert 'check-wheel' in payload['next_step']
+    source_text = cli('check-package', directory, '--format', 'text')
+    assert 'Host admission' not in source_text.stdout
+    assert 'Not checked: wheel metadata' in source_text.stdout
+    assert 'check-wheel' in source_text.stdout
+    with pytest.raises(ValueError) as installer_error:
+        inspect_wheel(wheel)
+    wheel_result = cli('check-wheel', wheel)
+    assert wheel_result.returncode == 1
+    assert json.loads(wheel_result.stdout)['error'] == str(installer_error.value)
+
+
+def test_wrong_source_directory_is_input_error_not_validator_unavailable(tmp_path):
+    for directory in [tmp_path, tmp_path / 'missing']:
+        result = cli('check-package', directory)
+        payload = json.loads(result.stdout)
+        assert result.returncode == 1 and not payload['ok']
+        assert 'amadeus-extension.json' in payload['error']
+        assert 'unavailable' not in payload
+        assert str(tmp_path) not in result.stdout

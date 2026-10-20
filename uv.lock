@@ -589,6 +589,13 @@ voice = [
     { name = "soundfile" },
 ]
 
+[package.dev-dependencies]
+extension-authoring = [
+    { name = "jsonschema" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'local-models'", specifier = "==1.12.0" },
@@ -705,6 +712,13 @@ requires-dist = [
     { name = "x-transformers", marker = "extra == 'local-models'", specifier = "==2.19.6" },
 ]
 provides-extras = ["acp", "rag", "voice", "vad", "torch-cpu", "local-models", "local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm", "dev"]
+
+[package.metadata.requires-dev]
+extension-authoring = [
+    { name = "jsonschema" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+]
 
 [[package]]
 name = "annotated-doc"

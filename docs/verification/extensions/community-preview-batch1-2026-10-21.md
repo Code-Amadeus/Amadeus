@@ -8,9 +8,11 @@ Host 实验分支为 `codex/extension-community-preview`，基线为主线
 
 ## 本批交付
 
-- D0：新增统一作者入口；主仓中英文 README、贡献说明和 ROADMAP 链接到当前路径。
+- D0（部分完成）：新增统一作者入口；主仓中英文 README、贡献说明和 ROADMAP 链接到当前路径。
   Host profile 保留当前契约，历史验收移到独立文件并保留旧标题锚点。协议仓首页修正了
   “未合并实验”的过期表述；没有改变规范、SDK 或其来源 pin。
+  协议仓首页仍链接旧 Host profile，尚不能到达新作者入口；必须先合入 Host，再把协议仓
+  README 指向合入后精确提交的 `docs/extension_authoring.md`，验证公开链接后才能结案 D0。
 - D1：已有静态 CLI 新增 `profile`、`check-package`、`check-wheel` 和显式文本输出。
   默认 Electron JSON helper 结果保持兼容。wheel 检查在临时快照中复用生产
   `validate_installed` 检查资源和 Skill 元数据，不导入插件、不执行 pip。
@@ -70,7 +72,9 @@ MCP 和 Skill 绑定 Pi。窗口没有复制个人凭据，没有配置远程模
 
 启动前确认 17777 空闲，并拒绝覆盖已有后端。实验窗口仍使用生产固定端口 17777；
 它的设置、会话、账本、缓存与数据独立，但不能与另一实例的后端同时占用该端口。
-关闭实验窗口应走正常退出；先关闭它再启动日常实例。
+首次验收后曾保持窗口运行；本轮外审修订已停止实验进程，17777 的监听已释放。
+普通关闭只收起了窗口，没有结束实例；核对 PID、命令行和后端父子归属后终止了该实验
+进程树。这次停止不计作正常退出验收，后续启动日常实例前仍须确认端口空闲。
 
 Computer Use 已观察到实际 Chat 窗口；原生控件几何捕获不稳定，因此没有把后续点击尝试
 计作通过，也没有用其他应用的画面作为证据。完整 GUI 结果来自上面的现有生产应用 smoke。
@@ -87,3 +91,48 @@ Computer Use 已观察到实际 Chat 窗口；原生控件几何捕获不稳定�
 
 下一批从已可用的 D1 入口出发，按批准计划并行推进 D2 和 S0，继续保留首版收录政策与
 Host 运行契约的边界。阶段退出证据以新的精确提交和验收记录更新。
+
+
+## 外审修订（2026-10-21）
+
+外审核对基于 `4818e2ee`，其独立测试为 67 通过、1 跳过；本段不会把外审未重跑的
+生命周期和 Notes 调用记作新证据。首批 GUI 是 `fd17e707` 加当时未提交改动的结果，
+15 项均通过；并非对 `4818e2ee` 的干净快照另跑一次。
+
+- 修正 D1 检查范围：源码目录只检查清单和资源，wheel 元数据明确列为未检查并指向
+  `check-wheel`。以 MiMo 资源构造不兼容 SDK、版本不符和错误入口点的 wheel，断言
+  wheel CLI 和安装器一致拒绝；未在 CLI 添加第二套元数据规则。
+- 错误源码目录返回缺少 `amadeus-extension.json` 的输入错误，不带 `unavailable`。
+  原 Electron helper 默认 JSON 契约保持兼容。
+- 最小依赖改为 `pyproject.toml` 的 `extension-authoring` 组，从 `uv.lock` 导出哈希清单；
+  删除独立 `.in`。`uv lock --offline` 只新增组元数据，没有改任何包版本。CI 比对导出，
+  并用 Host 的锁定构建工具构建六个参考 wheel，在最小环境逐个执行 `check-wheel`。
+- Host profile 的当前部分恢复 accepted/rejected/unconfirmed 语义，恢复 DSH stdout 和
+  Windows WRITE_OWNER 限制的摘要与 ACP 文档链接。历史验收保留日期和旧锚点。
+- 10-11、10-12 内部中文计划作为带明确历史标注的参考保留；插件施工顺序已被 10-21
+  计划取代。移除未发布内部材料的死链和本机 build 备份路径依赖，不将记忆候选当作
+  社区作者或目录的前置。
+- 已删除两个指向日常工作区的 node_modules junction。删除前核对路径和目标，使用
+  非递归目录联接删除；删除后主仓锁文件摘要与顶层条目数均相同（Electron 324、Pi 90）。
+  实验工作区运行 `npm ci`，两个 node_modules 现在都是独立普通目录。没有归档 worktree。
+  此后归档前仍须检查外部联接，不能把本次依赖替换当作所有未来文件的保证。
+
+本轮修订形成单独提交，作为 D2/S0 后续工作的校验器候选基线；D0 的跨仓公开入口仍待
+Host 合入后完成。当前没有新增插件类型、商店入口、下载能力或权限，也没有改 SDK pin。
+
+
+### 外审修订验证
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| 作者 CLI、安装与资源、协议来源回归 | 58 通过、1 跳过；Windows 上 POSIX 执行位用例跳过 |
+| 发行工具与 SDK 构建回归 | 28 项通过；首次因删除的 `.in` 仍在 Git 索引中产生 1 项失败，暂存删除后该项复验通过 |
+| 依赖导出 | `uv export --locked --only-group extension-authoring --no-emit-project --no-header` 与已保存文件逐字节一致 |
+| 新建最小 Python 环境 | 8 个锁定依赖按哈希安装；6 个参考 wheel 用离线 `uv build` 重建并通过 `check-wheel` |
+| 独立 Node 依赖 | `npm ci` 成功；Electron/Pi node_modules 均为普通目录；未改 npm 锁文件 |
+| Electron | 独立依赖下 `npm run build` 成功，extensions/extensionSettings/extensionTheme 共 89 项通过 |
+| 文档与静态检查 | 5 份改动的作者/profile/计划文档的相对文件链接可解析；ruff 和 Git whitespace 检查通过 |
+
+本轮未重跑 GUI、主题生命周期或 Notes MCP 远程/原生调用；这些仍只引用首批明确范围的
+证据。新建 Node 环境的 npm 审计报告仍有 8 项 moderate，未在此次外审修订中升级依赖；
+构建仍显示已有的大 chunk 提示。D2/S0 的功能交付与验收仍按下一批单独记录。

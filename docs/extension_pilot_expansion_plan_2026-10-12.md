@@ -1,12 +1,15 @@
 # 插件基线收口与后续贡献候选
 
+> 历史计划：插件施工顺序已由 [2026-10-21 社区预览与商店计划](extension_community_preview_and_store_plan_2026-10-21.md) 取代。
+> 以下日期、基线与记忆 M0 → M2 → M1 顺序仅记录当时决定；记忆仍为独立候选，不是当前插件施工前置。
+
 > 更新：2026-10-14。P0/P1/P2 已完成并合入；P3 以后保留为设计候选，未启动。
 > 本轮仅做文档收口。后续优先讨论 Host 记忆 M0 → M2 → M1；不自动按旧阶段表继续扩展类型。
 
 ## 0. 文档职责与基线
 
 已实现支持范围、边界和验收见 [Host profile](https://github.com/Code-Amadeus/Amadeus/blob/b5a889eccd30301957219d6f8a562f00d62a3ad7/docs/extension_host_profile_v0.1.md)；本文件只说明候选贡献及依赖。
-原始审计和旧施工快照已备份在 `build/extension-doc-closeout-20261014/originals/`，不再与当前基线混排。
+原始内部审计和本地备份未随本仓发布，不作为读者前置材料；可复核的历史边界见 [插件验收历史](extension_validation_history_2026-10-13.md)。
 
 - Host main `b5a889e`：#189/#198/#197/#188/#191/#192 全部已合并。
 - 协议 #1/#2 全部已合并；main `bf1a848` 保留 Host pin `b30df73`。SDK 源 `49449a0`、wheel 摘要 `274bd66b81932c8ea50f39f58e7bf91530a8015196acfcf9bcfd77fa2d8b8084` 不变。
@@ -396,7 +399,7 @@ P3/P4/P5 的候选设计不表示当前契约已经开放。ASR final/speculativ
 
 ## 11. 下一步优先级与开工门槛
 
-当前推荐顺序是：文档收口 → 记忆设计 Issue/验收范围 → M0 → M2 → M1，见[记忆衔接计划](extension_module_implementation_plan_2026-10-11.md)。本轮没有启动其中的实现。
+2026-10-14 当时推荐顺序是：文档收口 → 记忆设计 Issue/验收范围 → M0 → M2 → M1，见[记忆衔接计划](extension_module_implementation_plan_2026-10-11.md)。本轮没有启动其中的实现。
 
 | 独立候选 | 技术依赖 | 不应误解为 |
 |---|---|---|

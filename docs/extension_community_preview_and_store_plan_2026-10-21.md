@@ -113,7 +113,7 @@ S0 至 S2 使用维护者参考包和 fixture 独立验收。S3 可以收录维�
 
 先把已有 `tools/extension_package.py` 整理成对外有文档的目标 Host 校验入口，复用 `validate_manifest`、`inspect_wheel`、`validate_config`、`validate_installed`。作者取得固定 Host 源码快照后，可在最小检查环境中使用工具，不必安装完整 Host。首版不要求作者工具成为独立 PyPI 产品。
 
-静态检查的直接依赖为 jsonschema、packaging、PyYAML；拟提供 `tools/requirements-extension-authoring.in` 与带哈希的 `.txt`，固定全部传递依赖，使用 `pip --require-hashes` 安装。示例构建另列所需构建工具，实际运行和 GUI 使用 Host 支持的环境，不能把静态检查环境描述为完整执行环境。
+静态检查的直接依赖为 jsonschema、packaging、PyYAML；在 `pyproject.toml` 声明 `extension-authoring` 依赖组，从同一份 `uv.lock` 用 `uv export` 生成带哈希的 `tools/requirements-extension-authoring.txt`，CI 比对导出结果，固定全部传递依赖而不维护第二份锁，使用 `pip --require-hashes` 安装。示例构建另列所需构建工具，实际运行和 GUI 使用 Host 支持的环境，不能把静态检查环境描述为完整执行环境。
 
 当前 `inspect_wheel` 按运行解释器的平台和 Python 版本准入。首版目录 CI 固定使用 Windows runner 与 CPython 3.12.10，固定包含 D1 的 Host 校验器 commit、协议 pin 和检查依赖锁，不跟随浮动 main。首次可用 pin 由 D1 完成后记录；后续升级必须重新验证。暂不增加目标环境模拟参数；其他系统上的作者会得到本机准入结果，Windows 资格由固定 CI/实机给出。
 
@@ -131,14 +131,15 @@ S0 至 S2 使用维护者参考包和 fixture 独立验收。S3 可以收录维�
 - `server/extensions/package.py`、`profile.py`、`sdk.py`：只补目标 Host 所需的公共检查结果，避免把 Electron 运行环境规则迁入静态验证器。
 - `tests/test_extensions.py`、`test_extension_resources.py`、`test_extension_sdk_build.py`：复用有效和无效包用例。
 - 拟新增 `tests/test_extension_authoring.py`：验证作者入口与 Host helper 对同一输入结论一致。
-- 拟新增 `tools/requirements-extension-authoring.in` 与 `.txt`：最小静态依赖及完整哈希锁。
+- `pyproject.toml` 的 `extension-authoring` 依赖组与 `uv.lock`：唯一解析来源；`tools/requirements-extension-authoring.txt` 为带哈希的派生导出，CI 检查漂移。
 - `docs/extension_authoring.md`：文档化现有命令及新增选项，明确静态检查不执行包。
 - 协议仓只有在发现实际重复规则时才抽取共享静态规则；遵守规范来源与许可归属，不能把 Host AGPL 代码直接改标为 Apache-2.0。
 
 **依赖与验收**
 
 - 依赖 D0 确定的支持范围；不依赖商店或开发目录模式。
-- 相同有效/无效包在作者 CLI 与安装 helper 得到相同准入结论。
+- 对同一 wheel，`check-wheel` 与安装 helper 的静态准入结论一致；`check-package` 只承诺清单与资源检查，不具备 wheel 元数据，必须将入口点、清单/wheel 版本一致性和 SDK 依赖列为未检查，并提示安装前运行 `check-wheel`。
+- 用 SDK 要求不兼容、版本不一致和入口点不匹配的 wheel 验证上述边界：源码可以通过已声明范围，但 wheel 检查必须与安装器一致拒绝；错误的源码目录应提示缺少 `amadeus-extension.json`，不能冒称校验器不可用。
 - 该一致性指相同目标 Host 下的通用包检查；目录首版政策另行判断。一个被当前 Host 正常支持、但因第三方依赖等原因不满足首版目录政策的包，仍应通过原有本地准入，目录拒绝原因须明确来自收录政策。
 - 干净最小环境能完成所有静态检查，不导入模型、音频或 Provider 运行时；锁文件可复现安装。`platforms: ["win32"]` 的有效包在固定 Windows CI 通过，在其他平台报告实际不兼容，不能被通用 Linux 收录任务误拒。
 - 覆盖未知贡献、非空 Host 权限、SDK 不兼容、清单与 wheel 身份不符、错误配置类型、缺失资源、危险归档路径及 `.pth`。

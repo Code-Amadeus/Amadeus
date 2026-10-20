@@ -1,4 +1,0 @@
-# Static author checks only. Build tools and runtime/GUI tests are separate.
-jsonschema==4.26.0
-packaging==26.2
-PyYAML==6.0.3

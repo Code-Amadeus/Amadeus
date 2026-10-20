@@ -158,6 +158,23 @@ last verified builtin base, with a reason shown in Appearance. Reinstalling
 never silently enables it. Uninstall defaults to keeping package data, with
 explicit deletion available; cleanup failure remains owned and retryable.
 
+## Backend startup receipt semantics
+
+The paired Electron/Python Host reports a received revision and a separate
+`startup: accepted|rejected` result. A unique valid identity/revision rejected
+by Python validation settles that launch without creating a loaded receipt.
+A missing required configuration also rejects startup. Dynamic Runner health
+and per-contribution availability do not rewrite a successfully accepted
+snapshot. These receipts describe Host snapshot admission, not voice readiness.
+
+HTTP/JSON/status-section failures, an unreadable whole startup snapshot,
+duplicate identities, missing/invalid results and mismatched revisions are
+unconfirmed. They never count as rejection or success, never confer loaded
+state, and retain pending work with a diagnostic. Host preflight failures remain
+known rejections. Revision comparisons still prevent late replies from clearing
+newer edits. No package filesystem or Runner authority is granted by a failure
+receipt, and SDK bytes/wire contracts are unchanged.
+
 ## TTS wire and SDK contract
 
 The public [SDK README](https://github.com/Code-Amadeus/Amadeus-Extensions/blob/49449a0f3572e74ac7269129c02c5b9a9e685bef/sdk/python/README.md) is the authoring entry for the pinned version.
@@ -229,6 +246,17 @@ resume; a changed digest cannot reveal its original set and requires a new sessi
 Native discovery checks exact paths. A missing or shadowed package is reported
 as unavailable for that Agent while ordinary Agent tasks can continue; the Host
 does not silently claim that a same-name native Skill is the selected package.
+
+### DSH qualification limits
+
+The DSH 0.2.0-rc.2 / MCP client 2.0.0 combination can write SDK diagnostics to
+ACP stdout; a successful MCP tool call does not establish a clean protocol wire.
+Windows workspace-write setup also requires both `WRITE_DAC` and `WRITE_OWNER`;
+missing `WRITE_OWNER` can prevent sandbox initialization even in a writable
+directory. These are qualification limits, not permission to filter protocol
+output or relax the sandbox. See [current DSH constraints and diagnostics](acp_provider.md#current-dsh-constraints-and-diagnostics-2026-10-12)
+for the affected versions, probes and ACL requirements. A changed dependency
+combination needs its own qualification.
 
 ## Work artifacts and AUIP
 
@@ -312,7 +340,8 @@ See [the recorded evidence](extension_validation_history_2026-10-13.md#merge-fol
 
 ### Explicit backend startup receipts (2026-10-13 audit follow-up)
 
-See [the recorded evidence](extension_validation_history_2026-10-13.md#explicit-backend-startup-receipts-2026-10-13-audit-follow-up).
+The [current receipt semantics](#backend-startup-receipt-semantics) remain normative
+for this experimental Host. See also [the recorded evidence](extension_validation_history_2026-10-13.md#explicit-backend-startup-receipts-2026-10-13-audit-follow-up).
 
 ### Why the earlier 14/14 result was invalid
 

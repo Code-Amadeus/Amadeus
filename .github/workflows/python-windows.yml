@@ -84,11 +84,21 @@ jobs:
       - name: Check the minimal extension authoring environment
         shell: bash
         run: |
+          uv export --locked --only-group extension-authoring --no-emit-project --no-header --output-file tools/requirements-extension-authoring.txt
+          git diff --exit-code -- tools/requirements-extension-authoring.txt
           python -m venv build/extension-authoring-env
           build/extension-authoring-env/Scripts/python.exe -m pip install --require-hashes -r tools/requirements-extension-authoring.txt
           build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py profile --format text
           for package in examples/extensions/*/src/*/amadeus-extension.json; do
             build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py check-package "$(dirname "$package")" --format text
+          done
+          # Build only the repository reference packages using the locked Host build tools.
+          # The minimal checker environment itself remains free of build/runtime dependencies.
+          for project in examples/extensions/*/pyproject.toml; do
+            uv build --wheel --offline --no-build-isolation --python .venv/Scripts/python.exe --out-dir build/extension-examples "$(dirname "$project")"
+          done
+          for wheel in build/extension-examples/*.whl; do
+            build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py check-wheel "$wheel" --format text
           done
 
       - name: Check source and architecture views

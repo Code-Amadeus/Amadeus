@@ -10,7 +10,6 @@
   "archive_prefix": "amadeus-{version}",
   "required_files": [
     "tools/extension_package.py",
-    "tools/requirements-extension-authoring.in",
     "tools/requirements-extension-authoring.txt",
     "docs/extension_authoring.md",
     "docs/extension_validation_history_2026-10-13.md",

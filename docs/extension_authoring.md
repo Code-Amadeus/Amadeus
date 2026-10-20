@@ -37,10 +37,12 @@ On POSIX use the environment's `bin/python`; a Windows-only manifest will be
 reported incompatible there. Windows qualification runs on Windows with the
 recorded interpreter and Host revision.
 
-Regenerate the hash lock with the project's uv 0.12.8:
+The `extension-authoring` dependency group is resolved in the Host's existing
+`uv.lock`. Regenerate this export after changing that lock with uv 0.12.8; CI
+checks for drift. Do not hand-edit a second set of pins:
 
 ```powershell
-uv pip compile --universal --python-version 3.12.10 --generate-hashes --no-emit-index-url --output-file tools/requirements-extension-authoring.txt tools/requirements-extension-authoring.in
+uv export --locked --only-group extension-authoring --no-emit-project --no-header --output-file tools/requirements-extension-authoring.txt
 ```
 
 Build tools are a separate requirement: the checker environment is not a package
@@ -67,8 +69,12 @@ build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py c
 package resources using the same `validate_installed` owner as the desktop.
 It checks Skill frontmatter without importing package modules, starting a
 Runner or installing dependencies. Temporary extracted resources are removed.
-`check-package` accepts the import-package directory containing the manifest,
-not the outer project directory containing `pyproject.toml`.
+`check-package` checks only the manifest and package resources. It cannot check
+wheel metadata: entry points, manifest/wheel version consistency or declared SDK
+dependencies. A source PASS can therefore accompany a rejected wheel. Always run
+`check-wheel` on the built artifact before installation. Pass the import-package
+directory containing `amadeus-extension.json`, not the outer project directory
+containing `pyproject.toml`.
 
 For automation omit `--format text`; JSON is the default and exit code 1 means
 failure. Existing `inspect-wheel`, `validate-manifest`, `validate-config` and
@@ -117,7 +123,8 @@ cache and data directories. Never copy normal user credentials into a fixture.
 | Result | Scope |
 | --- | --- |
 | Protocol-valid | Matches the pinned schema and semantic rules |
-| Host static check passes | This checkout/interpreter accepts the manifest and checked resources |
+| Source check passes | This checkout/interpreter accepts the manifest and package resources; wheel metadata remains unchecked |
+| Wheel check passes | The built bytes pass static wheel admission and resource checks; runtime and native checks remain separate |
 | Runtime/GUI qualified | Explicitly recorded real calls, native theme validation and lifecycle journeys |
 | Catalog reviewed | A particular wheel digest passed the published catalog review policy |
 

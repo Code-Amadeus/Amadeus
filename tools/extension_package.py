@@ -39,8 +39,11 @@ def check_package(directory: Path) -> dict:
     manifest_path = directory / 'amadeus-extension.json'
     # validate_installed owns path/link/size/content checks. Read only bounded input.
     from server.extensions.manifest import MANIFEST_LIMIT_BYTES
-    with manifest_path.open('rb') as source:
-        raw = source.read(MANIFEST_LIMIT_BYTES + 1)
+    try:
+        with manifest_path.open('rb') as source:
+            raw = source.read(MANIFEST_LIMIT_BYTES + 1)
+    except FileNotFoundError:
+        raise ValueError('amadeus-extension.json was not found in this directory; select the import-package directory') from None
     if len(raw) > MANIFEST_LIMIT_BYTES:
         raise ValueError('manifest exceeds 256 KiB')
     manifest = validate_manifest(json.loads(raw.decode('utf-8')))
@@ -92,8 +95,12 @@ def emit(payload: dict, command: str, output_format: str) -> None:
         print('Wheel SHA-256: ' + payload['digest'])
     if payload.get('missing'):
         print('Missing configuration: ' + ', '.join(payload['missing']))
-    if command in {'check-wheel', 'check-package', 'validate-installed', 'prepare-data-wheel'}:
-        print('Checked: Host admission, package resources and Skill metadata. No package code executed.')
+    if command in {'check-package', 'validate-installed'}:
+        print('Checked: manifest, package resources and Skill metadata. No package code executed.')
+        print('Not checked: wheel metadata (entry points, version consistency and SDK dependencies).')
+        print('Before installation, run check-wheel on the built wheel.')
+    elif command in {'check-wheel', 'prepare-data-wheel'}:
+        print('Checked: static wheel admission, package resources and Skill metadata. No package code executed.')
     elif command == 'inspect-wheel':
         print('Checked: wheel structure and Host admission. Use check-wheel for package resources.')
     else:
@@ -123,8 +130,13 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError('A wheel or import-package directory is required')
             result = check_wheel(Path(args.path)) if args.command == 'check-wheel' else check_package(Path(args.path))
             result.update(host_profile=host_profile(),
-                          checked=['host_admission', 'package_resources', 'skill_metadata'],
+                          checked=['manifest', 'package_resources', 'skill_metadata'],
                           not_checked=['runtime', 'native_theme', 'remote_services', 'catalog_review'])
+            if args.command == 'check-wheel':
+                result['checked'].append('wheel_metadata')
+            else:
+                result['not_checked'].append('wheel_metadata')
+                result['next_step'] = 'Run check-wheel on the built wheel before installation.'
         elif args.command == 'inspect-wheel':
             result = inspect_wheel(Path(args.path or ''))
         elif args.command == 'prepare-data-wheel':
