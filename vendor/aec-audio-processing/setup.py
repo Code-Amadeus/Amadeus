@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import glob
+import json
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext as _build_ext
 
@@ -70,6 +71,17 @@ def build_webrtc():
         build_dir
     ]
     subprocess.check_call(meson_cmd, cwd=webrtc_dir)
+
+    # Verify the actual resolution, not just the requested Meson option.
+    info_dir = os.path.join(build_dir, 'meson-info')
+    with open(os.path.join(info_dir, 'intro-buildoptions.json'), encoding='utf-8') as handle:
+        options = {item['name']: item['value'] for item in json.load(handle)}
+    with open(os.path.join(info_dir, 'intro-projectinfo.json'), encoding='utf-8') as handle:
+        subprojects = {item['name']: item['version'] for item in json.load(handle)['subprojects']}
+    if ('abseil-cpp' not in options['force_fallback_for']
+            or subprojects.get('abseil-cpp') != '20240722.0'):
+        raise RuntimeError('AEC build did not select bundled Abseil 20240722.0')
+    print('AEC build: forced bundled Abseil 20240722.0', flush=True)
 
     print("Building with ninja...")
     subprocess.check_call(['ninja', '-C', build_dir], cwd=webrtc_dir)
@@ -157,15 +169,6 @@ include_dirs = [
     install_include_dir,
 ]
 
-swig_opts = [
-    '-c++',
-    '-Isrc',
-    f'-I{webrtc_dir}',
-    f'-I{os.path.join(webrtc_dir, "webrtc")}',
-    f'-I{abseil_dir}',
-    f'-I{install_include_dir}',
-]
-
 # EDIT 2: Use the correct C++ standard flag for the MSVC compiler
 if sys.platform == 'win32':
     cxx_flags = ['/std:c++20']
@@ -201,9 +204,10 @@ else:
 ext_modules = [
     Extension(
         name='aec_audio_processing._webrtc_audio_processing',
-        sources=['src/audio_processing.i', 'src/audio_processing_module.cpp'],
+        # Keep the committed SWIG 4.3.1 wrapper and Python proxies together.
+        # Regeneration is an explicit source-maintenance task, not installation.
+        sources=['src/audio_processing_wrap.cpp', 'src/audio_processing_module.cpp'],
         include_dirs=include_dirs,
-        swig_opts=swig_opts,
         extra_compile_args=cxx_flags,
         extra_link_args=[],  # Populated by build_ext
         extra_objects=[],    # Populated by build_ext
