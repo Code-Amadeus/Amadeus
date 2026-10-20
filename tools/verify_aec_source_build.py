@@ -79,22 +79,27 @@ print("Installed wheel public AudioProcessor native smoke: PASS")
 
 
 def main() -> None:
+    if sys.version_info[:2] != (3, 12):
+        raise SystemExit("AEC qualification requires Python 3.12; rerun with python3.12.")
     if sys.platform != "linux":
         raise SystemExit("This native source-build qualification requires Linux.")
     before = source_snapshot(SOURCE)
     # The CI job supplies a fresh UV_CACHE_DIR. Require build evidence so a
     # cached wheel cannot turn this qualification into an install-only check.
-    run(["uv", "sync", "--locked", "--extra", "voice", "--extra", "dev", "--verbose"],
+    run(["uv", "sync", "--locked", "--extra", "voice", "--extra", "dev",
+         "--python", sys.executable, "--verbose"],
         cwd=ROOT, require_abseil=True)
     assert_source_unchanged(before, SOURCE)
     with tempfile.TemporaryDirectory(prefix="amadeus-aec-qualification-") as directory:
         output = Path(directory)
-        run(["uv", "build", "--sdist", str(SOURCE), "--out-dir", str(output)], cwd=ROOT)
+        run(["uv", "build", "--sdist", str(SOURCE), "--out-dir", str(output),
+             "--python", sys.executable], cwd=ROOT)
         sdist, = output.glob("*.tar.gz")
         with tarfile.open(sdist) as archive:
             if not any(name.endswith("/build_backend.py") for name in archive.getnames()):
                 raise RuntimeError("Source release is missing the isolated build backend")
-        run(["uv", "build", "--wheel", str(sdist), "--out-dir", str(output), "--verbose"],
+        run(["uv", "build", "--wheel", str(sdist), "--out-dir", str(output),
+             "--python", sys.executable, "--verbose"],
             cwd=output, require_abseil=True)
         wheel, = output.glob("*.whl")
         check_wheel(wheel, SOURCE)

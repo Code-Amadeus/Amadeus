@@ -5,6 +5,19 @@ Baseline: `v0.17.0-alpha.0`. This remains a **source Alpha release**.
 Desktop installers, voice/model weights, character media, reference recordings
 and credentials are not included in the source ZIP.
 
+## Post-release Linux Voice upgrade note (#249)
+
+The AEC build repair in #249 is a follow-up and is **not included in the
+`v0.17.1-alpha.0` tag**. Older Linux builds may have left locally regenerated
+SWIG files and `vendor/aec-audio-processing/webrtc-audio-processing/install/`.
+After updating to the fixed revision, back up intentional vendor source edits,
+restore the committed `vendor/aec-audio-processing/src` bindings, and remove
+that obsolete install directory after checking its contents. Mixed wrapper/proxy
+versions now fail before native build work; no files are restored or deleted
+automatically. See the [Linux upgrade steps](install_profiles.md#upgrading-an-existing-linux-voice-checkout).
+Arch with system Abseil 20260817 still requires the reporter's cold-build
+acceptance in #247.
+
 ## Application and dictionary in one Release
 
 The application Release contains its source ZIP, source manifest, checksums and

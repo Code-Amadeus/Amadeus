@@ -18,6 +18,10 @@ The complete build-only delta is [aec-audio-processing.patch](aec-audio-processi
   no longer regenerates bindings or requires SWIG. Regeneration is an explicit
   source-maintenance task that must update and validate the wrapper and both
   proxies together.
+- Check wrapper and both proxy version headers before native work. Mismatched
+  or unreadable generations (including old-install leftovers preserved by Git)
+  fail with explicit restore/fresh-archive instructions; no user files are
+  repaired automatically.
 - Include the small staging backend in source distributions.
 
 No WebRTC/Abseil source, generated binding, or audio runtime code is changed.
@@ -45,7 +49,7 @@ modern system Abseil, locked Voice installation, verifier and AEC smoke;
 recheck Windows/macOS artifact selection and regenerate `uv.lock`.
 Remove the source archive's `vendor` include root if no other vendored dependency needs it.
 
-Linux qualification uses `python tools/verify_aec_source_build.py` with a fresh
+Linux qualification uses `python3.12 tools/verify_aec_source_build.py` with a fresh
 `UV_CACHE_DIR`. It verifies the locked Voice source build, actual bundled Abseil
 resolution, byte-preserving source cleanliness (including ignored build output),
 sdist-to-wheel packaging, unchanged wrapper/proxy bytes in the wheel, and the
@@ -53,3 +57,7 @@ public native API in a fresh environment outside the checkout. Python bytecode
 caches are excluded from the cleanliness comparison. The temporary Meson tree
 is removed after each hook; CI no longer expects introspection under the vendor
 source. This remains build/binding qualification, not acoustic-quality testing.
+The qualifier requires Python 3.12 and selects that same interpreter for the
+locked install, both distribution builds, and the isolated wheel environment.
+Existing checkouts should follow the
+[Linux upgrade instructions](../docs/install_profiles.md#upgrading-an-existing-linux-voice-checkout).

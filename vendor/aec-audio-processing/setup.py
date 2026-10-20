@@ -10,8 +10,45 @@ import subprocess
 import sys
 import glob
 import json
+import re
+from pathlib import Path
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext as _build_ext
+
+
+def validate_swig_bindings(source_dir):
+    """Reject bindings left at different generations by an earlier install."""
+    source_dir = Path(source_dir)
+    patterns = {
+        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9a-fA-F]{6})\b',
+        'audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
+        'webrtc_audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
+    }
+    versions = {}
+    for name, pattern in patterns.items():
+        try:
+            text = (source_dir / name).read_text(encoding='utf-8')
+        except (OSError, UnicodeError):
+            text = ''
+        match = re.search(pattern, text, re.MULTILINE)
+        if match is None:
+            versions[name] = None
+        elif name.endswith('.cpp'):
+            versions[name] = tuple(int(match[1][index:index + 2], 16) for index in (0, 2, 4))
+        else:
+            versions[name] = tuple(map(int, match.groups()))
+    if None in versions.values() or len(set(versions.values())) != 1:
+        details = ', '.join(
+            f'{name}={".".join(map(str, version)) if version else "unreadable"}'
+            for name, version in versions.items()
+        )
+        raise RuntimeError(
+            f'AEC SWIG binding versions are inconsistent or unreadable: {details}. '
+            'Back up any intentional edits, then from the updated repository root run '
+            '`git restore --source=HEAD -- vendor/aec-audio-processing/src` and rebuild. '
+            'For a source archive, unpack a fresh copy instead.'
+        )
+    return versions['audio_processing_wrap.cpp']
 
 
 def get_webrtc_library_path():
@@ -103,6 +140,7 @@ def build_webrtc():
 
 class build_ext(_build_ext):
     def run(self):
+        validate_swig_bindings(Path(__file__).resolve().parent / 'src')
         # Build WebRTC library if not found
         lib_path = get_webrtc_library_path()
         if not os.path.exists(lib_path):

@@ -89,14 +89,46 @@ unchanged. The advisory exceptions remain temporary, not claims of patched packa
 
 On Ubuntu 24.04, install `build-essential`, `pkg-config` and `portaudio19-dev`,
 then run `uv sync --locked --extra voice` and the `--profile voice` verifier.
-The Linux-only AEC source override uses the official 1.0.1 sdist with one Meson
-argument forcing bundled Abseil 20240722.0. It does not modify system Abseil or
-change the Windows/macOS registry source. See [AEC provenance](../vendor/aec-audio-processing.PROVENANCE.md)
+The Linux-only AEC source override uses the official 1.0.1 sdist, forces and
+verifies bundled Abseil 20240722.0, and stages setuptools/Meson writes in a
+disposable source copy. It compiles the committed SWIG wrapper/proxies after
+checking their version consistency; installation no longer invokes SWIG.
+It does not modify system Abseil or change the Windows/macOS registry source.
+See [AEC provenance](../vendor/aec-audio-processing.PROVENANCE.md)
 for the artifact hash, patch, notices and removal conditions.
 
 The Linux Voice CI uses a fresh uv cache, builds the path dependency and checks
 the actual Meson options/subproject version. It qualifies this source-build
 path on Ubuntu 24.04, not every Linux toolchain or real audio-device behavior.
+
+### Upgrading an existing Linux Voice checkout
+
+An older build may have regenerated only `audio_processing_wrap.cpp` and
+`webrtc_audio_processing.py`, leaving the public `audio_processing.py` at a
+different SWIG version. Updating Git preserves those local edits. The new
+build rejects this mismatch before native library lookup or compilation,
+rather than overwriting the user's files.
+
+Inspect and back up any intentional changes under the vendor `src/` directory.
+From the repository root **after updating to the fixed revision**, restore the
+committed bindings:
+
+```bash
+git restore --source=HEAD -- vendor/aec-audio-processing/src
+```
+
+Remove the old generated
+`vendor/aec-audio-processing/webrtc-audio-processing/install/` directory after
+confirming it contains only the previous build's output. The new backend
+excludes old build/install directories from staging and does not delete them
+from the checkout. Then rerun `uv sync --locked --extra voice` and the Voice
+verifier. For a source archive, unpack a fresh fixed archive instead of using
+`git restore`.
+
+For source-build qualification, run
+`UV_CACHE_DIR="$(mktemp -d)" python3.12 tools/verify_aec_source_build.py`.
+The tool requires Python 3.12 and pins the locked install, both distribution
+builds, and the isolated wheel environment to that interpreter.
 
 ## Optional model interpreters and community configurations
 
