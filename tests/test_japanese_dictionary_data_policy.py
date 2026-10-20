@@ -71,6 +71,30 @@ def test_native_base_lookup_does_not_treat_letter_spelling_as_a_word():
     assert not known("model", "モデル")
 
 
+def test_official_admission_requires_each_exact_checked_reading():
+    rows = [_row("true", "トゥルービュー"), _row("follower", "フォロワー"),
+            _row("follower", "フォロワーズ"), _row("unreviewed", "アンレビュード")]
+    before = [list(row) for row in rows]
+    kept, report = filter_extension_rows(rows, {}, lambda *_: False, {"follower": {"フォロワー"}})
+    assert [(word_key(row[0]), row[12]) for row in kept] == [("follower", "フォロワー")]
+    assert report["reason_counts"] == {"unreviewed_word_or_reading": 3}
+    assert rows == before
+
+
+@pytest.mark.parametrize("review", [None, {"accepted_readings": {"follower": "フォロワー"}},
+                                   {"accepted_readings": {"follower": ["別の読音"]}}])
+def test_official_pack_rejects_retired_or_inconsistent_checked_ledger(tmp_path, review):
+    from test_japanese_dictionary import _prepare
+    from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
+    pack = _prepare(tmp_path)
+    provenance = pack / "provenance.json"
+    data = json.loads(provenance.read_text(encoding="utf-8"))
+    data["release_review"] = review
+    provenance.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(JapaneseDictionaryError, match="ledger|readings|unchecked"):
+        load_dictionary_pack(pack)
+
+
 def test_boundaries_require_a_complete_registered_token_and_preserve_numeric_units():
     words = frozenset({"mode", "con", "ion", "don't"})
     text = "model icon production 100rpm 100L 100人"

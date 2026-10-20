@@ -3146,12 +3146,12 @@ export const catalogGroups: CatalogGroup[] = [
   {
     "id": "tts_japanese_reading",
     "title": {
-      "en-US": "Japanese contextual readings",
-      "zh-CN": "日语语境读音"
+      "en-US": "Experimental Japanese contextual readings",
+      "zh-CN": "实验性日语语境读音"
     },
     "description": {
-      "en-US": "Use an optionally installed model to distinguish Japanese readings from context.",
-      "zh-CN": "使用可选安装的模型，根据上下文区分日语汉字读音。"
+      "en-US": "Optional experiment with known reading regressions. Installing the model does not enable it.",
+      "zh-CN": "存在已知读音回归的可选实验；安装模型不会自动启用。"
     },
     "desktop": true,
     "apply": "backend_restart",
@@ -3163,10 +3163,10 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "使用已安装的语境读音模型"
         },
         "description": {
-          "en-US": "Install japanese-context-reading separately. No automatic download. Restart the backend after changes.",
-          "zh-CN": "需单独安装 japanese-context-reading，不会自动下载；更改后重启后端生效。"
+          "en-US": "Default off; known context errors remain. CPU inference adds hundreds of MiB of process memory (external audit about 650–900 MiB); runtime and workload affect usage. Install japanese-context-reading separately; no automatic download. Restart the backend after changes.",
+          "zh-CN": "默认关闭，仍有已知语境误读。CPU 推理会增加数百 MiB 进程内存（外审约 650–900 MiB），随运行时与负载变化。需单独安装 japanese-context-reading，不会自动下载；更改后重启后端生效。"
         },
-        "default": true,
+        "default": false,
         "accepted_values": [
           "true",
           "false",

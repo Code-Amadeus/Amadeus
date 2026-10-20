@@ -81,6 +81,17 @@ def _validate_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
         count = sum(1 for _ in dictionary_rows(data))
         if raw.get("entry_count") != count:
             raise JapaneseDictionaryError("Dictionary content does not match its provenance entry count")
+        release_review = raw.get("release_review")
+        review = release_review.get("accepted_readings") if isinstance(release_review, dict) else None
+        if not isinstance(review, dict) or not review:
+            raise JapaneseDictionaryError("Official dictionary lacks its checked reading ledger; old full-data candidates are retired")
+        if any(not isinstance(values, list) or not values or
+               any(not isinstance(value, str) or not value for value in values) for values in review.values()):
+            raise JapaneseDictionaryError("Checked readings must be nonempty lists of exact readings")
+        for row in dictionary_rows(data):
+            approved = review.get(latin_word_key(row[0]), ())
+            if row[11] not in approved or row[12] not in approved:
+                raise JapaneseDictionaryError(f"Official dictionary contains an unchecked word or reading: {row[0].strip()}")
         source = raw.get("source")
         if not isinstance(source, dict) or any(not source.get(key) for key in ("repository", "revision", "path", "sha256")):
             raise JapaneseDictionaryError("Dictionary provenance requires a pinned source and source hash")

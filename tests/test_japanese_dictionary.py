@@ -49,8 +49,24 @@ def _prepare(root: Path, *, native: bool = False) -> Path:
     recipe = json.loads((ROOT / "tools/data/japanese_dictionary_source.json").read_text(encoding="utf-8"))
     recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=len(list(dictionary_pack.dictionary_rows(data))))
     recipe_path = root / "recipe.json"
+    reviewed_path = ROOT / "tools/data/japanese_dictionary_reviewed_readings.json"
+    if native:
+        ledger = json.loads(reviewed_path.read_text(encoding="utf-8"))
+        ledger["readings"].update(comp=["コンプ"], ent=["エント"])
+        # These fixtures exercise native compounds and historical repair
+        # contracts independently of the production release subset.
+        ledger["readings"].update({word: [reading] for word, reading in {
+            "dentist": "デンティスト", "balloonist": "バルーニスト", "ninth": "ナインス",
+            "intruder": "イントルーダー", "lawrence": "ローレンス", "ballet's": "バレエズ",
+            "coca-cola": "コカコーラ", "t-shirt": "ティーシャツ", "economists'": "エコノミスツ",
+        }.items()})
+        reviewed_path = root / "reviewed.json"
+        review_data = (json.dumps(ledger, ensure_ascii=False) + "\n").encode()
+        reviewed_path.write_bytes(review_data)
+        recipe["release_review"]["sha256"] = hashlib.sha256(review_data).hexdigest()
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     return prepare_dictionary(source, project_root=root, recipe_path=recipe_path,
+                              reviewed_path=reviewed_path,
                               count_mora=None if native else lambda _: None,
                               base_word=None if native else lambda *_: False)
 
@@ -85,20 +101,21 @@ def test_preparation_records_derivative_and_does_not_edit_source(tmp_path):
     pack_root = _prepare(tmp_path)
     assert (tmp_path / "upstream.csv").read_text(encoding="utf-8") == FOLLOWER + LEARNER
     pack = dictionary_pack.load_dictionary_pack(pack_root)
-    corrections = list(dictionary_pack.dictionary_rows((ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes()))
-    # Conservative final-phone screening also quarantines legitimate loanword
-    # adaptations; condo -> コンド is a documented false positive (CMU OW).
-    accepted = [row for row in corrections if row[0] != "ｃｏｎｄｏ"]
-    assert pack.entry_count == len(accepted)
     readings = {row[0].strip(dictionary_pack.LATIN_WORD_BOUNDARY): row[11]
                 for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())}
-    assert readings == {row[0]: row[11] for row in accepted}
+    from tools.audit_japanese_dictionary import reviewed_readings, word_key
+    reviewed, _ = reviewed_readings()
+    assert pack.entry_count == len(readings)
+    assert all(reading in reviewed[word_key(word)] for word, reading in readings.items())
+    assert "ｗｕｒｔｚｅｌ" not in readings, "historical repairs are not automatic release approval"
     assert readings["ｆｏｌｌｏｗｅｒ"] == "フォロワー"
     assert readings["ｌｅａｒｎｅｒ"] == "ラーナー"
     provenance = json.loads((pack_root / "provenance.json").read_text(encoding="utf-8"))
     assert provenance["normalization"]["rules"]
     assert provenance["normalization"]["results"]["output_entries"] == provenance["extension_filter"]["results"]["input_entries"]
     assert provenance["extension_filter"]["results"]["output_entries"] == pack.entry_count
+    assert "excluded" not in provenance["extension_filter"]["results"], "unreviewed source rows stay in local audit output"
+    assert all(item["after"] in reviewed.get(word_key(item["word"]), ()) for item in provenance["corrections"])
     assert all(path.is_file() for path in pack.files())
     # A maintainer cannot accidentally publish a customized installation as the
     # pinned upstream base, even if it has the expected CSV shape.
@@ -220,8 +237,15 @@ def test_reviewed_bad_reading_repair_preserves_other_readings_of_the_same_surfac
     source.write_bytes(data)
     recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=2)
     recipe_path = tmp_path / "recipe.json"
+    ledger = json.loads((ROOT / "tools/data/japanese_dictionary_reviewed_readings.json").read_text(encoding="utf-8"))
+    ledger["readings"]["corps"] = ["コア", "コアズ"]
+    reviewed_path = tmp_path / "reviewed.json"
+    review_data = (json.dumps(ledger, ensure_ascii=False) + "\n").encode()
+    reviewed_path.write_bytes(review_data)
+    recipe["release_review"]["sha256"] = hashlib.sha256(review_data).hexdigest()
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
     pack_root = prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path,
+                                   reviewed_path=reviewed_path,
                                    count_mora=lambda _: None, base_word=lambda *_: False)
     readings = [row[12] for row in dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())
                 if row[0].strip(dictionary_pack.LATIN_WORD_BOUNDARY) == "ｃｏｒｐｓ"]

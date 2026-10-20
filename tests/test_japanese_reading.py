@@ -65,6 +65,16 @@ def test_ready_model_uses_only_pinned_local_files_and_cpu(tmp_path, monkeypatch)
     assert calls[-1] == ("舞台の上手", {})
 
 
+def test_installed_model_is_not_enabled_by_default(tmp_path, monkeypatch):
+    _prepare(tmp_path, monkeypatch)
+    from config import settings
+    monkeypatch.setattr(settings, "ENABLE_JAPANESE_CONTEXT_READING", False)
+    native, calls = _native()
+    assert runtime.configure_japanese_reading(native, project_root=tmp_path)["state"] == "disabled"
+    runtime.run_frontend(native, "査読を通った")
+    assert calls == [("査読を通った", {})]
+
+
 @pytest.mark.parametrize("problem", ["corrupt", "missing", "native_failure", "unsupported"])
 def test_invalid_optional_model_is_reported_without_breaking_base_frontend(tmp_path, monkeypatch, problem):
     directory = _prepare(tmp_path, monkeypatch)

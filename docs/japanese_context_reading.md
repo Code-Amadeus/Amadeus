@@ -1,4 +1,4 @@
-# Optional Japanese contextual readings / 可选日语语境读音
+# Experimental Japanese contextual readings / 实验性日语语境读音
 
 `japanese-context-reading` adds upstream tsqyomi v5 reading selection to the
 existing Japanese OpenJTalk frontend. It chooses among native reading candidates
@@ -23,15 +23,19 @@ python tools/external_assets.py install output/amadeus-japanese-context-reading-
 ```
 
 The Voice setting **Use installed context-reading model** maps to
-`ENABLE_JAPANESE_CONTEXT_READING`. It defaults to allowing an installed model,
-but never installs/downloads one. Missing optional data is normal and inactive.
+`ENABLE_JAPANESE_CONTEXT_READING`. It **defaults off**, even when the model is installed. It never installs/downloads
+one. Known reading regressions remain, so enabling it is an explicit experiment.
+CPU inference adds hundreds of MiB of process memory; the external corpus audit
+reported roughly 650–900 MiB extra. Runtime and workload change the actual cost.
+Missing optional data is normal and inactive.
 Restart the backend after installing, updating or changing this setting. Turning
 it off uses the existing native reading selection; the English dictionary has
 its own independent switch. Invalid/incomplete data or unsupported native APIs
 are reported and leave the existing frontend usable.
 
-安装资源或更改“语音 → 日语语境读音”后须重启后端。未安装时不会自动下载，
-仍使用原前端。语境读音模型和英文词典可以独立安装、独立关闭。
+默认关闭，安装后也不自动启用；仍有已知误读。CPU 推理会增加数百 MiB 进程内存
+（外部语料审查约 650–900 MiB，实际取决于运行时和负载）。更改设置后须重启
+后端。两个资源独立安装、独立关闭，均不自动下载。
 
 Startup verifies all three source hashes and loads only local files, explicitly
 on CPU. It does not contact Hugging Face or choose a GPU provider. The loaded
@@ -60,13 +64,13 @@ manifest and installs those files. Native activation additionally checks the
 fixed upstream hashes. Preparation refuses a different model or a differing
 existing destination unless `--overwrite` is explicit.
 
-`tools/data/japanese_reading_cases.json` provides 88 synthetic, contrastive reading
-targets, including ordinary readings that must not regress. The production-path
+`tools/data/japanese_reading_cases.json` provides 92 contrastive reading
+targets (the original 88 plus four full external-audit sentences), including ordinary readings that must not regress. The production-path
 gate compares complete native nodes, checks mora counts and symbol compatibility,
 and compares plain/prosody paths. It tests correctness against expected readings,
 not merely equality before/after installation.
 
-## Experiment, 2026-10-20
+## Initial experiment, 2026-10-20
 
 Windows AMD64, Python 3.12.10, pyopenjtalk-plus 0.4.1.post9, ONNX Runtime 1.26.0
 and tokenizers 0.22.1 were used for the local comparison. The same 88 lexical
@@ -79,10 +83,11 @@ independent estimate of general Japanese accuracy.
 | Existing frontend (Sudachi / nani defaults) | 69 / 88 | Retain as the base path |
 | tsqyomi v4 (published native default model) | 82 / 88 | Reject: regresses ordinary 上手 / 下手 / 生 readings |
 | Haqumei 0.12.2 | 69 / 88 | Reject replacement: no net gain on these targets |
-| Pinned tsqyomi v5 | 88 / 88 | Optional installed model |
+| Pinned tsqyomi v5 | 88 / 88 | Initial result; superseded by broader failing gate below |
 
 The v4 snapshot was `680596dd2ad2bad59ee5db3741e197cfce79f9b4`; v5 is pinned
-above. The checked frontend upstream commit was
+above. The checked maintained frontend upstream was
+`tsukumijima/pyopenjtalk-plus`, commit
 `b17704eed5f8a7eef778310f9eb9a7f71fb5321b`; it also selects v5. Haqumei's
 repository was checked at `e70fa6279a225c26f8956ce393730ca58f86db7e`.
 The additional 32 contexts were frozen before the extended v5 measurement.
@@ -109,3 +114,51 @@ names and readings outside the model/candidate vocabulary remain limited.
 Waveform comparisons use the same voice, reference and sampling seed. Their
 generation/integrity does not replace listening acceptance. The optional resource
 ZIP is kept local until separately approved for publication.
+
+## External audit follow-up, 2026-10-20
+
+The original curated 88/88 result did not generalize to independent material.
+Four complete source sentences now extend the strict production gate to 92
+lexical targets. The base passes **72/92**, v5 **89/92**, with **three failing
+targets and two lost base-correct readings**. The command exits nonzero. These
+failures are neither allowlisted nor hidden by the new default-off setting:
+
+| Complete target/context | Expected | Base | v5 |
+| --- | --- | --- | --- |
+| 査読を通った | トオッ | トオッ | カヨッ |
+| 中立派 in the complete neutral-faction sentence | チュウリツハ | チュウリッパ | ナカリッパ |
+| この例での箱は青、玉は5個として続けるわ。 / 玉 | タマ | タマ | タマ |
+| 仕事だけ止めるわ。 / 止める | トメル | トメル | ヤメル |
+
+The compound 中立派 is already missegmented by the base; checking only its 中
+node would falsely certify the compound as correct. The intact number 5 in the
+玉 sentence matters: a masked corpus version removed it and changed native
+selection. ヤメル is a valid Japanese reading generally; this acceptance target
+represents stopping a running Work task, rather than quitting employment.
+The source examples are retained without numeric masking. No four-word runtime
+blacklist, guessed confidence threshold or generated kana rewrite was added.
+The weights remain unchanged. Model quality acceptance is **blocked**.
+
+A separate fresh-process benchmark over the supplied 12,027-sentence local JSON
+corpus measures process RSS and Windows private memory before/after model load
+and corpus execution. In this run, model loading added about **312 MiB RSS /
+314 MiB private**, and the final increment was about **323 / 318 MiB** over the
+warmed base. Absolute final process memory was about **544 MiB RSS / 897 MiB
+private**. These are separate metrics, not interchangeable memory limits. The
+external reviewer observed a larger increase; retain a conservative warning
+rather than treating this one run as a guaranteed maximum. No memory reduction
+is claimed. Warm median base/model time was **0.595 / 1.125 ms**, p95
+**1.23 / 8.91 ms**; loading took **0.82 s**. Corpus/model-candidate coverage
+changes timing substantially. The 203 changed phone sequences are observations,
+not 203 proven improvements, and are a different metric from changed readings.
+
+Reproduce on an explicit local corpus, without exporting its sentences:
+
+```powershell
+$env:ENABLE_JAPANESE_CONTEXT_READING='false'
+python tools/benchmark_japanese_reading.py --corpus path/to/sentences.json --output output/reading_benchmark.json
+```
+
+The resource remains local and unpublished. Human lexical review, listening
+acceptance and independent maintainer approval are outstanding. Keeping the
+integration as a default-off experiment does not establish model release quality.

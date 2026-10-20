@@ -1,5 +1,5 @@
 {
-  "description": "Synthetic contrastive Japanese reading cases. Expected lexical readings are acceptance targets, not a claim of native-speaker listening acceptance. Multiple accepted forms record real ambiguity or orthographic conventions.",
+  "description": "Contrastive Japanese reading cases: original synthetic targets plus full external-audit sentences. Expected lexical readings are acceptance targets, not native-speaker/listening sign-off. Multiple accepted forms record ambiguity or orthographic conventions.",
   "cases": [
     {
       "text": "彼は上手に歌う。",
@@ -743,6 +743,42 @@
       ],
       "sense": "calendar day",
       "partition": "additional_contexts"
+    },
+    {
+      "text": "でも査読を通ったかどうかで価値はまるで違う。",
+      "surface": "通っ",
+      "readings": [
+        "トオッ"
+      ],
+      "sense": "a theorem passed peer review, not commuting; full production-path external audit guard",
+      "partition": "external_audit_full_sentences"
+    },
+    {
+      "text": "中立派は「証明の検証負荷が減るから、人間はより本質的な問いに集中できる」と見ているわ。",
+      "surface": "中立派",
+      "readings": [
+        "チュウリツハ"
+      ],
+      "sense": "neutral faction; whole compound target: the base frontend also missegments 中 + 立派",
+      "partition": "external_audit_full_sentences"
+    },
+    {
+      "text": "この例での箱は青、玉は5個として続けるわ。",
+      "surface": "玉",
+      "readings": [
+        "タマ"
+      ],
+      "sense": "five balls; retain the digit and the production number conversion, unlike the masked corpus",
+      "partition": "external_audit_full_sentences"
+    },
+    {
+      "text": "仕事だけ止めるわ。",
+      "surface": "止める",
+      "readings": [
+        "トメル"
+      ],
+      "sense": "stop the running Work task; context-specific acceptance, not a universal ban on the valid ヤメル reading",
+      "partition": "external_audit_full_sentences"
     }
   ]
 }

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 import hashlib
 import json
 from pathlib import Path
@@ -13,7 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 from config.japanese_dictionary import LATIN_WORD_BOUNDARY, PACK_TREE, dictionary_rows, load_dictionary_pack  # noqa: E402
 from tools.audit_japanese_dictionary import (  # noqa: E402
-    cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup, word_key,
+    cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup,
+    reviewed_readings, word_key,
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts  # noqa: E402
 from tts.japanese_dictionary import configure_japanese_dictionary, with_latin_word_boundaries  # noqa: E402
@@ -36,7 +36,6 @@ BASE_SAMPLES = (
     "花が咲き、鼻がむずむずする。", "新しい本を読む。", "研究結果を発表します。",
     "音声合成の品質を確認する。", "こんにちは、元気ですか。", "猫-犬。",
 )
-CONTRACTIONS = ("don't", "won't", "I'm", "I've", "we're", "they're", "isn't", "can't", "wouldn't")
 UNIT_SAMPLES = tuple("100" + unit + "です" for unit in (
     "g", "mg", "kg", "t", "m", "cm", "mm", "km", "ml", "mL", "L", "kW", "MW", "W", "V", "mV",
     "A", "mA", "Hz", "kHz", "MHz", "GHz", "s", "ms", "ns", "kB", "MB", "GB", "TB", "dB", "rpm", "℃",
@@ -45,6 +44,9 @@ REPORTED_CONTEXTS = {
     "Helpを押して。": "help", "このbugからlearnしましょう。": "learn", "Twoつ目の方法。": "two",
     "Python with Docker。": "with", "Productionに出す。": "production", "モデルのresetをする。": "reset",
     **{f"この{word}を確認して。": word for word in ("model", "welcome", "directly", "reset", "deadline")},
+    **{f"この{word}を確認して。": word for word in (
+        "true", "revision", "during", "behavior", "different", "specific", "later", "earlier",
+        "private", "credentials", "pass", "changing", "raw", "stay", "want")},
 }
 
 
@@ -68,15 +70,15 @@ def validate(project_root: Path) -> dict:
     if hashlib.sha256(cmu_data).hexdigest() != policy["cmudict_sha256"]:
         raise RuntimeError("Release gate requires the recipe's CMU screening data")
     cmu = cmu_pronunciations(cmu_data)
-    correction_data = (ROOT / "tools/data/japanese_dictionary_corrections.csv").read_bytes().replace(b"\r\n", b"\n")
-    if hashlib.sha256(correction_data).hexdigest() != metadata["corrections_sha256"]:
-        raise RuntimeError("Release gate requires the pack's correction recipe")
-    corrected = list(dictionary_rows(correction_data))
-    excluded = policy["results"]["excluded"]
-    _, screening = filter_extension_rows(rows, cmu, base_word)
+    reviewed, review_data = reviewed_readings()
+    if hashlib.sha256(review_data).hexdigest() != metadata["release_review"]["sha256"]:
+        raise RuntimeError("Release gate requires the independently tracked checked-reading ledger")
+    if metadata["release_review"]["accepted_readings"] != {word: sorted(values) for word, values in reviewed.items()}:
+        raise RuntimeError("Pack's checked-reading declaration differs from the source ledger")
+    _, screening = filter_extension_rows(rows, cmu, base_word, reviewed)
     vocabulary_data = json.loads((ROOT / "tools/data/japanese_dictionary_common_words.json").read_text(encoding="utf-8"))
     common = vocabulary_data["words"]
-    base_owned = sorted({item["surface"] for item in excluded if "base_dictionary_word" in item["reasons"]})
+    base_owned = policy["results"]["base_owned_surfaces"]
     jtalk = pyopenjtalk.OpenJTalk(pyopenjtalk.OPEN_JTALK_DICT_DIR)
     surface = jtalk.normalize_for_mecab
 
@@ -89,15 +91,22 @@ def validate(project_root: Path) -> dict:
     def target_readings(text: str, word: str) -> list[str]:
         return [f["read"] for f in pyopenjtalk.run_frontend(native_text(text))
                 if lexical_surface(f["string"]) == surface(word)]
-    expected = defaultdict(set)
-    for row in rows:
-        expected[lexical_surface(row[0])].add(row[11])
+    released = {word_key(row[0]) for row in rows}
+    # Observe nodes selected by clean_text itself: capitalisation, abbreviation
+    # conversion, punctuation and number handling must match production.
+    original_frontend, observed_nodes = japanese.run_frontend, []
+
+    def observe(jtalk, text):
+        features = original_frontend(jtalk, text)
+        observed_nodes.extend(features)
+        return features
     failures, contexts, frontend_words = [], 0, 0
     if screening["excluded_entries"]:
         failures.append({"kind": "unscreened_entries", "entries": screening["excluded"]})
     if screening["latin_word_boundaries_added"]:
         failures.append({"kind": "missing_word_boundaries", "count": screening["latin_word_boundaries_added"]})
     try:
+        japanese.run_frontend = observe
         configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=False)
         baseline = {text: production_phones(text) for text in BASE_SAMPLES}
         unit_baseline = {text: production_phones(text) for text in UNIT_SAMPLES}
@@ -106,7 +115,8 @@ def validate(project_root: Path) -> dict:
         base_controls = {prefix + word + suffix for word in base_owned
                          for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。"))}
         english_controls = base_controls | set(common) | set(REPORTED_CONTEXTS)
-        space_controls = base_controls | set(BASE_SAMPLES) | set(UNIT_SAMPLES) | set(vocabulary_data["base_fallback_words"])
+        fallback_words = {word for word in common if word_key(word) not in released}
+        space_controls = base_controls | set(BASE_SAMPLES) | set(UNIT_SAMPLES) | fallback_words
         english_baseline = {text: production_phones(text) for text in sorted(english_controls)}
         context_baseline = {text: target_readings(text, word) for text, word in REPORTED_CONTEXTS.items()}
         status = configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=True)
@@ -135,20 +145,19 @@ def validate(project_root: Path) -> dict:
                 # accent correction or a per-unit exclusion.
                 unit_prosody_changes.append({"text": text, "before": before, "after": after})
         vocabulary = []
-        quarantined = {item["surface"] for item in excluded} - {word_key(row[0]) for row in rows}
         for text, before in english_baseline.items():
             after = production_phones(text)
-            must_preserve = text in base_controls or text in vocabulary_data["base_fallback_words"]
+            must_preserve = text in base_controls or text in fallback_words
             if must_preserve and after != before:
                 failures.append({"kind": "english_base_regression", "text": text, "before": before, "after": after})
             if text in common:
                 observed = pyopenjtalk.run_frontend(native_text(text))
-                reading = vocabulary_data["reviewed_readings"].get(text)
+                reading = vocabulary_data["base_readings"].get(text)
                 if reading and [f["read"] for f in observed] != [reading]:
                     failures.append({"kind": "reviewed_english_reading", "text": text, "expected": reading,
                                      "observed": observed})
                 vocabulary.append({"word": text, "base_owned": word_key(text) in base_owned,
-                                   "quarantined": word_key(text) in quarantined,
+                                   "released": word_key(text) in released,
                                    "changed": after != before, "readings": [f["read"] for f in observed]})
         sentence_results = []
         for text, word in REPORTED_CONTEXTS.items():
@@ -160,19 +169,16 @@ def validate(project_root: Path) -> dict:
             # with sentence). Keep the full production-path observation visible.
             sentence_results.append({"text": text, "word": word, "before": before, "after": after,
                                      "sentence_phones_changed": production_phones(text) != english_baseline[text]})
-        words = {row[0]: row[0] for row in corrected}
-        words.update({surface(word): word for word in CONTRACTIONS})
-        for key, word in words.items():
-            key = surface(key.lower())
-            if key not in expected:
-                # Corrections are historical evidence, not mandatory overrides
-                # of the base or of conservative release-data exclusions.
-                continue
+        # Every released word has a lexical oracle independent of its CSV. There
+        # is no coverage-only branch for words admitted into the official pack.
+        for word in sorted(released):
+            key = surface(word)
             for prefix, suffix in (("", ""), ("", "を確認する。"), ("これは", "です。")):
-                whole = [f for f in pyopenjtalk.run_frontend(with_latin_word_boundaries(prefix + word.lower() + suffix))
-                         if lexical_surface(f["string"]) == key]
+                observed_nodes.clear()
+                phones = production_phones(prefix + word + suffix)
+                whole = [f for f in observed_nodes if lexical_surface(f["string"]) == key]
                 contexts += 1
-                if len(whole) != 1 or whole[0]["read"] not in expected[key]:
+                if len(whole) != 1 or whole[0]["read"] not in reviewed[word] or not phones:
                     failures.append({"kind": "whole_word", "word": word, "prefix": prefix, "suffix": suffix, "observed": whole})
             # Use the actual production prosody path, not only native row lookup.
             phones = japanese.g2p(word)
@@ -186,12 +192,15 @@ def validate(project_root: Path) -> dict:
                 "additional_unit_phoneme_checks": len(UNIT_SAMPLES),
                 "base_owned_words": len(base_owned), "english_base_contexts": len(base_controls),
                 "common_english_words": len(common), "common_english_results": vocabulary,
+                "released_checked_words": len(released), "unchanged_common_fallbacks": len(fallback_words),
+                "checked_ledger_words": len(reviewed),
                 "external_sentence_contexts": len(REPORTED_CONTEXTS),
                 "external_sentence_results": sentence_results,
                 "unit_prosody_changes_for_review": unit_prosody_changes,
                 "production_frontend_words": frontend_words, "failures": failures,
                 "limitations": "Native phoneme/prosody and token-selection checks; no waveform or listening acceptance."}
     finally:
+        japanese.run_frontend = original_frontend
         configure_japanese_dictionary(pyopenjtalk, project_root=project_root, enabled=False)
 
 

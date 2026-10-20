@@ -138,9 +138,17 @@ def test_native_units_and_contractions_against_base_frontend(tmp_path):
     source.write_bytes(data)
     recipe = json.loads((root / "tools/data/japanese_dictionary_source.json").read_text(encoding="utf-8"))
     recipe["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=len(rows))
+    # Explicit fixture approval tests contraction mechanics without enlarging
+    # the production subset merely to satisfy an integration test.
+    ledger = json.loads((root / "tools/data/japanese_dictionary_reviewed_readings.json").read_text(encoding="utf-8"))
+    ledger["readings"].update({"don't": ["ドント"], "i'm": ["アイム"]})
+    reviewed_path = tmp_path / "reviewed.json"
+    review_data = (json.dumps(ledger, ensure_ascii=False) + "\n").encode()
+    reviewed_path.write_bytes(review_data)
+    recipe["release_review"]["sha256"] = hashlib.sha256(review_data).hexdigest()
     recipe_path = tmp_path / "recipe.json"
     recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
-    prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path)
+    prepare_dictionary(source, project_root=tmp_path, recipe_path=recipe_path, reviewed_path=reviewed_path)
     texts = ("身長は170cmです", "50kgです", "3kmです", "10mmです", "100mlです", "60kWです", "60MWです", "APIsを使う", "OpenAI's API")
     try:
         jtalk.unset_user_dict()

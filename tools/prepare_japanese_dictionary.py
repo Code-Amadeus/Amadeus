@@ -21,6 +21,7 @@ from config.japanese_dictionary import (  # noqa: E402
 from tools.audit_japanese_dictionary import (  # noqa: E402
     cmu_pronunciations, filter_extension_rows, native_base_hashes, native_base_word_lookup,
     native_mora_counter, native_surface_normalizer, normalize_rows,
+    reviewed_readings, REVIEWED_PATH,
 )
 
 RECIPE_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_source.json"
@@ -29,6 +30,7 @@ CORRECTIONS_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_corrections.cs
 
 def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
                        recipe_path: Path = RECIPE_PATH, corrections_path: Path = CORRECTIONS_PATH,
+                       reviewed_path: Path = REVIEWED_PATH,
                        overwrite: bool = False, count_mora: Callable[[str], int | None] | None = None,
                        normalize_surface: Callable[[str], str] | None = None,
                        base_word: Callable[..., bool] | None = None) -> Path:
@@ -45,6 +47,9 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
     corrections = {normalize(row[0]): row for row in dictionary_rows(correction_data)}
     before = {normalize(item["word"]): item["before"] for item in recipe["corrections"]}
     policy = recipe["extension_filter"]
+    reviewed, review_data = reviewed_readings(reviewed_path)
+    if hashlib.sha256(review_data).hexdigest() != recipe["release_review"]["sha256"]:
+        raise JapaneseDictionaryError("Reviewed reading ledger differs from the pinned recipe")
     cmu_data = (PROJECT_ROOT / policy["cmudict_path"]).read_bytes().replace(b"\r\n", b"\n")
     if hashlib.sha256(cmu_data).hexdigest() != policy["cmudict_sha256"]:
         raise JapaneseDictionaryError("CMU screening data differs from the pinned recipe")
@@ -78,12 +83,25 @@ def prepare_dictionary(source: Path, *, project_root: Path = PROJECT_ROOT,
             row = list(correction)
             corrected.append(row)
     corrected, normalization = normalize_rows(corrected, count_mora, normalize_surface)
-    corrected, filtering = filter_extension_rows(corrected, cmu_pronunciations(cmu_data), base_word)
+    corrected, filtering = filter_extension_rows(corrected, cmu_pronunciations(cmu_data), base_word, reviewed)
+    # Rejected readings are local audit evidence, not shipped data. Keep enough
+    # provenance to reproduce the exclusion set from pinned sources and ledger.
+    excluded = filtering.pop("excluded")
+    filtering["base_owned_surfaces"] = sorted({item["surface"] for item in excluded
+                                               if "base_dictionary_word" in item["reasons"]})
+    filtering["excluded_rows_sha256"] = hashlib.sha256(
+        json.dumps(excluded, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     buffer = io.StringIO(newline="")
     csv.writer(buffer, lineterminator="\n").writerows(corrected)
     derivative = buffer.getvalue().encode("utf-8")
-    metadata = {**recipe, "sha256": hashlib.sha256(derivative).hexdigest(), "entry_count": len(corrected),
+    metadata = {**recipe,
+                "corrections": [item for item in recipe["corrections"]
+                                if item["after"] in reviewed.get(normalize(item["word"]), ())],
+                "sha256": hashlib.sha256(derivative).hexdigest(), "entry_count": len(corrected),
                 "corrections_sha256": hashlib.sha256(correction_data).hexdigest(),
+                "release_review": {**recipe["release_review"],
+                                   "review_method": json.loads(review_data)["review_method"],
+                                   "accepted_readings": {word: sorted(values) for word, values in reviewed.items()}},
                 "normalization": {**recipe["normalization"],
                                   "results": {key: value for key, value in normalization.items() if key != "unresolved"}},
                 "extension_filter": {**policy, "results": filtering},

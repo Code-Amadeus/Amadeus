@@ -48,32 +48,38 @@ then removes only identical full rows. Different lexical readings remain.
 The generated `provenance.json` additionally identifies the derivative's
 version, hash, entry count, normalization rules and repair counters.
 
-Version 2026.10.20.2 retains the previous correction history and adds a
-source-backed `let's → レッツ` repair: the existing `lets` entry has the same
-CMU phones. Its accent annotation is reused, not validated by listening.
+Version 2026.10.20.3 admits only exact word/reading pairs in the hash-pinned
+`tools/data/japanese_dictionary_reviewed_readings.json`, after base ownership
+and CMU quarantine. The smaller candidate has 129 rows / 127 distinct words.
+The ledger is an individual model-assisted lexical candidate check, not
+independent human/native-speaker or listening sign-off. Unreviewed source rows
+and historical corrections are research evidence, not release approval.
+
 The historical 317-row review comprises 94 lexical/script/annotation repairs,
-65 representation repairs and 158 unconfirmed readings. The release filter
-yields known whole words and redundant letter readings to the pinned base
-and quarantines every variant of CMU final-phone risk surfaces. CMU/base
-hashes, rules and complete exclusion records are in provenance. The direct
-flags reproduce the external 1,557-row TSV; quarantine of their other variants
-excludes another 112 rows. This screen admits false positives and can miss
-other errors; it does not establish that each excluded row is wrong.
+65 representation repairs and 158 unconfirmed readings. Those unconfirmed
+rows remain in research inputs; release admission now requires the separate
+checked ledger. The source-backed `let's → レッツ` repair reuses the existing
+`lets` annotation and CMU phones. `proposer` has a provisional flat accent.
+Neither native compilation nor these lexical checks establish accent quality.
+
+Base/CMU hashes, ledger identity, accepted readings, exclusion counts and an
+excluded-row-set hash are in provenance; rejected readings are not shipped in
+that metadata. Source, correction and ledger hashes reproduce the selection.
+The CMU screen reproduces the 1,557 direct flags plus 112 variants, including
+false positives. It can miss interior/vowel shifts and is not a correctness
+oracle. Every shipped pair must pass ledger membership independently of it.
 
 The prepared CSV and frontend share full-token boundaries on retained Latin
-entries. Only complete registered official tokens are marked, preventing
-prefix and suffix intrusion while leaving unlisted/base/legacy/personal-only
-inputs unchanged. All original source costs are preserved; historical cost
-calibration and the common floor are retired. This CSV requires the matching
-frontend integration, not only an OpenJTalk user-dictionary registration.
+entries. Only complete registered official tokens are marked. Original costs
+are preserved; there are no runtime per-word reading exceptions. This CSV
+requires the matching frontend integration, not just native registration.
+Old full-data candidates without a checked ledger are retired and rejected.
 
-From 127,808 normalized entries, 2,502 are excluded (849 base-owned rows,
-1,669 CMU-risk rows, 16 overlap), leaving 125,306. Three-context validation
-covers all 814 base-owned surfaces, and 290 common English words extend the
-former 52-control sample. Native selection across 122,978 retained distinct
-surfaces in three contexts loses no previously selected whole-word match.
-These checks do not establish exhaustive lexical accuracy. `proposer` still
-uses a provisional flat accent; waveform/listening acceptance is outstanding.
+The production gate checks every retained word in three contexts (381), all
+129 row memberships, 303 common English controls (190 unlisted fallbacks), 52
+baseline controls, 32 extra units and 814 base-owned words in three contexts.
+These checks do not establish exhaustive lexical accuracy. Independent review
+and human listening acceptance remain outstanding; this candidate is local.
 
 The upstream default branch was rechecked on 2026-10-20 at
 `b4570b876f5c086819ba84e3215472733c6a7b70`: the CSV still has the same Git blob

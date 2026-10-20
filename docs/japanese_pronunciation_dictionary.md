@@ -15,8 +15,8 @@ loader before installation. Older applications reject the unknown pack ID.
 The first compatible application release has not yet been published.
 
 ```powershell
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.2.zip
-python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.20.2.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.3.zip
+python tools/external_assets.py install output/amadeus-japanese-pronunciation-2026.10.20.3.zip
 python tools/external_assets.py status
 ```
 
@@ -91,8 +91,8 @@ is explicit.
 ```powershell
 python tools/prepare_japanese_dictionary.py --source GPT_SoVITS/text/ja_userdic/userdict.csv
 python tools/validate_japanese_dictionary.py --output output/japanese_dictionary_validation.json
-python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.20.2.zip
-python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.2.zip
+python tools/external_assets.py build japanese-pronunciation --output output/amadeus-japanese-pronunciation-2026.10.20.3.zip
+python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.3.zip
 python tools/audit_japanese_dictionary.py --source assets/text/ja/english/userdict.csv --output output/japanese_dictionary_audit.json
 ```
 
@@ -108,95 +108,74 @@ see [Japanese contextual readings](japanese_context_reading.md). Its model and
 switch are independent of this English loanword pack. Disabling this dictionary
 does not disable an installed context-reading model.
 
-Version 2026.10.20.2 retains the historical review of 317 entries: 94
-lexical/script/annotation repairs, 65 separator/format repairs, and 158
-unconfirmed readings. Those decisions are evidence, not mandatory release
-inclusions. The correction CSV has 172 rows after retiring the cost-only
-`components` entry and adding `let's → レッツ`. The latter reuses the existing
-`lets` reading and accent annotation: both have CMU `L EH1 T S`.
+Version **2026.10.20.3** admits only individually checked, exact word/reading
+pairs from `tools/data/japanese_dictionary_reviewed_readings.json`. The user
+explicitly selected smaller coverage over distributing unchecked upstream data.
+The ledger is a model-assisted lexical candidate review against CMU phones and
+Japanese loanword usage, **not independent human or native-speaker sign-off**.
+Independent maintainer review, accent and listening acceptance remain pending.
+
+The candidate contains **129 rows / 127 distinct words**, selected from 129
+ledger words. Base ownership and conservative screening can still exclude a
+checked word. A checked alternative does not authorize other readings of the
+same word. The loader rejects old full-data candidates lacking this ledger;
+update that local pack or disable it. Historical upstream CSVs and the 317-row
+review remain research inputs; they are not automatically admitted into the
+formal pack. Personal/legacy sources remain an explicit, separate user choice.
 
 Preparation applies these rules offline, after representation repairs:
 
-- Yield every surface recognized as one known whole word by an independent
-  base MeCab instance to that base. Also remove redundant letter/initialism
-  readings identical to the base result, such as `rpm`. Other unknown words
-  remain eligible for improved readings. Pin the runtime and base dictionary.
-- Quarantine every variant of a surface if any reading's final Katakana
-  consonant conflicts with every CMU pronunciation variant: ズ requires S/Z,
-  ド requires D/T, and ング requires NG. Removing only one bad variant could
-  promote another shifted reading (`directly → director`).
-- Surround retained Latin surfaces with native fullwidth spaces. The frontend
-  applies both boundaries only to complete tokens present in the successfully
-  registered official CSV, after sentence/punctuation splitting. Thus `mode`
-  cannot intrude into `model`, nor `con` into `icon`. Unlisted words and units
-  keep their input unchanged; base, legacy and personal-only behavior is kept.
-  Both prosody and plain-phoneme paths use this contract. Raw pyopenjtalk callers
-  of this prepared CSV must use the same helper. This requires the matching
-  frontend code, in addition to the installer/catalog entry.
+- Yield words recognized by an independent pinned base MeCab instance, and
+  redundant letter/initialism readings, to the base dictionary.
+- Quarantine every variant of a surface if its final Katakana consonant
+  conflicts with all CMU variants: ズ requires S/Z, ド requires D/T, ング requires
+  NG. This screen can both miss errors and reject valid loanwords. It is a
+  secondary screen, not permission to release all other upstream rows.
+- Admit a remaining row only when **both** reading fields match an exact
+  checked pair in the hash-pinned ledger. No automatic rough transliterator or
+  runtime pronunciation exception decides lexical admission.
+- Bound retained Latin surfaces with native fullwidth spaces; the frontend
+  marks only complete tokens present in the registered official pack. `mode`
+  cannot intrude into `model`, nor `con` into `icon`. Both frontend paths use
+  the same contract. Unlisted words/units retain their input. Original costs
+  are preserved; historical cost calibration and the common floor are retired.
 
-All original source costs are preserved. Whole-token boundaries supersede
-both the historical 109-entry calibration and the rejected common cost floor;
-changing costs traded correct short-word readings against longer-word splits.
-Historical cost evidence is explicitly marked retired. There are no runtime
-per-word reading exceptions; the runtime vocabulary comes from the exact
-successfully loaded official bytes and is cleared on disable/load failure.
-The audio-cache identity includes this frontend contract.
+Provenance contains the ledger identity and accepted pairs, source/CMU/base
+hashes, aggregate exclusions and a reproducible hash of excluded audit rows.
+The rejected source readings are not copied into the resource pack. Detailed
+research evidence can be generated separately by the offline audit command.
+The original correction history remains tracked; only approved corrections
+are described in the pack. The source's 1,557 terminal-phone flags plus 112
+variants remain excluded, but this is not a claim that all 1,669 were errors.
 
-From 127,808 normalized rows, the policy excludes 2,502 rows: 849 base-owned
-rows and 1,669 rows associated with CMU-risk surfaces (16 overlap). The resulting
-pack has 125,306 rows; 125,303 Latin rows receive word boundaries. Provenance
-records every exclusion's normalized input line, surface, reading and reason.
-CMU data and native base hashes are pinned.
+正式候选包仅收录逐条检查过的“词形＋读音”，接受覆盖缩小。同词形的未审核读音
+也不收录。清单目前属于模型辅助检查，仍需独立维护者复核和人工试听；不再把
+“未被自动规则标出”当作质量合格。没有新增运行时逐词特判。
 
-The direct flags exactly reproduce all 1,557 external TSV records (ズ 807,
-ド 523, ング 227); none of those original word/reading pairs remain. Another
-112 same-surface variants are quarantined to avoid promoting shifted rows.
-These are conservative exclusions, not 1,669 proven errors: `with → ウィズ`
-and `condo → コンド` can be legitimate loanword adaptations. The rule can miss
-interior shifts and vowel-ending errors. The older singular/inflection collision
-list remains review-only (`path` and `paths` can both be `パス`).
+The production `clean_text` gate independently loads the checked-in ledger and
+asserts every released word in three contexts (**381 checks**) plus 127
+frontend/prosody comparisons. All 129 stored rows must match approved readings,
+including alternatives that native cost selection does not choose. The gate
+also checks 52 baseline controls, 32 extra units, all 814 base-owned words in
+three contexts, and **303 common English controls**. All **190 unlisted common
+words** must preserve baseline phones and remain unmarked by token boundaries.
+There is no coverage-only correctness claim for released words. The 26 reported
+sentence contexts include the new interior/vowel-shift examples; those omitted
+words fall back to the base, rather than receiving guessed replacements.
 
-构建时优先使用基础词典，隔离词尾音可疑的整个词形；正式包只在完整词边界命中，
-避免短词串入其他单词。原有词条代价全部保留，代价补丁已撤掉。未收录的词、
-单位及仅使用个人或旧词典的路径保持原输入。隔离清单含误报，不等于全部确认有错；
-可确认的 `let's` 错行使用已有 `lets` 的读音修复。
+The candidate passes those lexical/integration gates with no unit-prosody
+changes. `model`, `welcome`, `directly`, `reset`, `deadline` and the newly
+reported unreviewed words may still be spelled as letters. This is a known
+coverage limit. Existing correct help/learn/two/with/production remain owned by
+the base; `let’s` uses the checked レッツ repair. Proper-name ambiguity and the
+provisional `proposer` accent still require review. These checks establish
+these targets only, not universal accuracy or natural emotional delivery.
 
-Whole-token abbreviation preparation handles `MLP` next to Japanese, fullwidth
-Latin text and case variants of existing names, and avoids replacing `API`
-inside `CAPITAL`. Known names/initialisms followed by plural or possessive
-suffixes convert only their stem and preserve the suffix. It applies to Japanese synthesis text; English output,
-subtitles and conversation history retain their original text.
-
-The upstream translation is not exhaustively human-verified. This is an English
-word/name extension, not a general context-sensitive Japanese homograph model
-or a voice/timbre replacement. Native pronunciation/prosody comparisons do not
-replace end-to-end synthesis and human listening acceptance.
-
-The native release gate compares the original 52 controls and 32 additional
-unit samples against the production `japanese.g2p` path. It also compares all
-814 base-owned imported words in three contexts (2,442 controls), exercises
-290 frozen common English words, including all 48 distinct words in the
-external 49-row frequent-document subset, and validates the 11 reported regressions
-with reviewed readings and five unchanged base fallbacks. The broader
-vocabulary is selected from frequent tracked Markdown words and flagged
-surfaces; inclusion alone is not a pronunciation correctness oracle. Changes
-for other unknown words are recorded for review.
-
-Retained corrected rows and contractions pass 516 native contexts and 172
-production frontend/prosody comparisons. There are no failures or unit-prosody
-changes in this candidate. These results apply to these controls and the
-pinned native environment; they do not establish zero regressions across all
-English vocabulary or replace waveform/listening acceptance.
-
-Across all 122,978 retained distinct surfaces in three contexts, the new native
-selection preserves every complete-word match from the previous pack and
-selects a complete word for previously split inputs. This checks selection,
-not the correctness of every imported reading.
-
-The gate runs offline with a prepared full pack. Core tests use synthetic data
-and require no dictionary/model downloads. Pack validation checks hash before
-parsing CSV and memoizes success/failure by member stats. Audio cache keys
-perform no dictionary-file validation.
+The gate runs offline with a prepared candidate. Core tests use synthetic data
+and require no dictionary/model downloads. Pack validation checks content hash
+and exact ledger membership, and memoizes results by member stats. Audio cache
+keys perform no dictionary-file validation. Abbreviation preparation, subtitles,
+conversation history and the character checkpoint contract are unchanged.
 
 ## Publication / 发布
 

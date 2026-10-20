@@ -92,7 +92,7 @@
       "modified": true,
       "release_action": "exclude",
       "gate_status": "ready",
-      "notes": "Data is built as an optional external asset bundle, not included in source archives. Its separate pack carries complete notices and generated source/derivative hashes. Immediate upstream MIT reliance and the unrecorded exact CMUdict input revision are explicit; no exhaustive pronunciation or listening validation is claimed. This record does not publish any bundle."
+      "notes": "Data is built as an optional external asset bundle, not included in source archives. Its separate pack carries complete notices and generated source/derivative hashes. Immediate upstream MIT reliance and the unrecorded exact CMUdict input revision are explicit; no exhaustive pronunciation or listening validation is claimed. The 2026.10.20.3 candidate admits only exact checked lexical pairs; unreviewed upstream rows are research inputs and excluded from the official CSV. Independent lexical/accent/listening review is pending. This record does not publish any bundle."
     },
     {
       "id": "gpt-sovits-uvr5-tools",

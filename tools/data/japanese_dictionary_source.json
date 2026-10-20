@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.20.2",
+  "version": "2026.10.20.3",
   "language": "ja",
   "source": {
     "repository": "https://github.com/RVC-Boss/GPT-SoVITS",
@@ -33,7 +33,7 @@
       "yield all one- or two-letter Latin surfaces to the base Japanese dictionary",
       "canonicalize every surface using native MeCab input spelling, including unchanged contractions and compounds"
     ],
-    "unresolved_policy": "Flag non-kana remnants and out-of-range accent candidates for review; retain them without guessing a replacement. Preserve different legitimate readings of the same word."
+    "unresolved_policy": "Retain uncertain research rows without guessing replacements. Official pack admission subsequently requires both reading fields to match the separate checked ledger."
   },
   "corrections": [
     {
@@ -10229,7 +10229,7 @@
     "baseline_version": "2026.10.16.2",
     "baseline_sha256": "91b3a3c1aa37b7eea96b5815b40e48c0f6a15d02136f956d9deb340df35131f2",
     "baseline_review_entries": 317,
-    "policy": "Exact bad-reading repairs preserve other lexical alternatives. Unconfirmed lexical transcriptions or accent nuclei are retained. Native compilation and labels do not replace human listening.",
+    "policy": "Historical research disposition only: exact bad-reading repairs preserve alternatives and unconfirmed readings in research inputs. Official release admission separately requires an exact checked pair in release_review; no automatic inclusion. Native labels do not replace human listening.",
     "lexical_repairs": 94,
     "representation_repairs": 65,
     "retained_entries": 158,
@@ -10281,5 +10281,10 @@
       "flag_list_sha256": "b8446675edbd1ff0796b76ad6167e8e20266b198a9829d8f60bc0e37e0f73e2a"
     },
     "latin_word_boundary": "U+3000 at both edges"
+  },
+  "release_review": {
+    "path": "tools/data/japanese_dictionary_reviewed_readings.json",
+    "sha256": "ebd8d61559add6efabbbe63cbc758be887982593e15c6e214f1769e78ca68a59",
+    "policy": "Admit only the exact individually checked word/reading pairs, after existing base ownership and CMU quarantine. Unreviewed source/correction rows remain local research data; never promote another unchecked variant."
   }
 }

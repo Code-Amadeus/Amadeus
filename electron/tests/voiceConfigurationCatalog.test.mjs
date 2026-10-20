@@ -109,7 +109,9 @@ test('Japanese dictionaries are optional and can be disabled with a restart', ()
 test('Japanese context reading follows the saved switch and output language', () => {
   const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: false, ttsOutputLanguage: 'ja' }
   const group = (selected, values = {}) => exports.buildVoiceConfigurationCatalog(selected, { values }).find(item => item.id === 'tts_japanese_reading')
-  assert.equal(group(selection).fields[0].value, true)
+  assert.equal(group(selection).fields[0].value, false)
+  assert.equal(group(selection).active, false)
+  assert.equal(group(selection, { ENABLE_JAPANESE_CONTEXT_READING: 'true' }).active, true)
   assert.equal(group(selection, { ENABLE_JAPANESE_CONTEXT_READING: 'false' }).active, false)
   assert.equal(group({ ...selection, ttsOutputLanguage: 'en' }).active, false)
   assert.equal(group({ ...selection, ttsBackend: 'remote' }).active, false)

@@ -28,6 +28,20 @@ _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N",
 _FINAL_CONSONANTS = {
     "ズ": {"Z", "S"}, "ド": {"D", "T"}, "ング": {"NG"},
 }
+REVIEWED_PATH = PROJECT_ROOT / "tools/data/japanese_dictionary_reviewed_readings.json"
+
+
+def reviewed_readings(path: Path = REVIEWED_PATH) -> tuple[dict[str, set[str]], bytes]:
+    data = Path(path).read_bytes().replace(b"\r\n", b"\n")
+    document = json.loads(data)
+    readings = document["readings"]
+    if not isinstance(readings, dict) or not readings or any(
+        not isinstance(word, str) or not word or not isinstance(values, list) or not values or
+        any(not isinstance(value, str) or not _KANA.fullmatch(value) for value in values)
+        for word, values in readings.items()
+    ):
+        raise ValueError("Reviewed ledger requires words with nonempty lists of exact Katakana readings")
+    return {word_key(word): set(values) for word, values in readings.items()}, data
 
 
 def word_key(value: str) -> str:
@@ -91,7 +105,8 @@ def native_base_hashes() -> dict[str, str]:
 
 
 def filter_extension_rows(rows: list[list[str]], phones: dict[str, set[tuple[str, ...]]],
-                          base_word: Callable[..., bool]) -> tuple[list[list[str]], dict]:
+                          base_word: Callable[..., bool],
+                          reviewed: dict[str, set[str]] | None = None) -> tuple[list[list[str]], dict]:
     """Yield known words to the base and quarantine suspect readings offline."""
     kept, excluded = [], []
     counts = Counter()
@@ -108,6 +123,8 @@ def filter_extension_rows(rows: list[list[str]], phones: dict[str, set[tuple[str
         # merely promote the next unverified variant (e.g. directly -> director).
         if word in suspect:
             reasons.append("cmu_final_phone_risk")
+        if reviewed is not None and (row[11] not in reviewed.get(word, ()) or row[12] not in reviewed.get(word, ())):
+            reasons.append("unreviewed_word_or_reading")
         if reasons:
             counts.update(reasons)
             excluded.append({"normalized_line": number, "surface": word, "reading": row[12],
@@ -229,7 +246,8 @@ def normalize_rows(rows: list[list[str]], count_mora: Callable[[str], int | None
 
 def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str], int | None],
                normalize_surface: Callable[[str], str] | None = None,
-               base_word: Callable[..., bool] | None = None) -> dict:
+               base_word: Callable[..., bool] | None = None,
+               reviewed: dict[str, set[str]] | None = None) -> dict:
     words = defaultdict(list)
     for number, row in enumerate(rows, 1):
         key = word_key(row[0])
@@ -256,7 +274,7 @@ def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str],
                                        "disposition": "review_only; Japanese loanword forms may legitimately coincide"})
     _, normalization = normalize_rows(rows, count_mora, normalize_surface)
     duplicates = Counter(tuple(row) for row in rows)
-    _, extension = filter_extension_rows(rows, phones, base_word or (lambda *_: False))
+    _, extension = filter_extension_rows(rows, phones, base_word or (lambda *_: False), reviewed)
     return {"entries": len(rows), "distinct_surfaces": len(words),
             "cmudict_sha256": hashlib.sha256(cmu_data).hexdigest(),
             "exact_duplicate_rows": sum(count - 1 for count in duplicates.values()),
@@ -264,7 +282,7 @@ def audit_rows(rows: list[list[str]], cmudict: Path, count_mora: Callable[[str],
             "inflection_candidate_count": len(candidates), "inflection_candidates": candidates,
             "extension_filter": extension,
             "normalization": normalization,
-            "limitations": "Candidates do not prove lexical errors. Legitimate heteronyms and loanword inflections are retained. No LLM, network, waveform synthesis or semantic classifier is used."}
+            "limitations": "Screening is not a correctness oracle. Official release admission additionally requires an exact checked word/reading pair. Research rows and heteronyms are not rewritten. No network or waveform synthesis is used."}
 
 
 def main() -> int:
@@ -275,8 +293,10 @@ def main() -> int:
     args = parser.parse_args()
     count, version = native_mora_counter()
     source_data = args.source.read_bytes()
+    reviewed, review_data = reviewed_readings()
     report = audit_rows(list(dictionary_rows(source_data)), args.cmudict, count, native_surface_normalizer(),
-                        native_base_word_lookup())
+                        native_base_word_lookup(), reviewed)
+    report["reviewed_ledger_sha256"] = hashlib.sha256(review_data).hexdigest()
     report["base_dictionary_sha256"] = native_base_hashes()
     report["source_sha256"] = hashlib.sha256(source_data).hexdigest()
     report["native_runtime"] = version
