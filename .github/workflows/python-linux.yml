@@ -66,6 +66,7 @@ jobs:
           tests/test_voice_backend_registry.py
           tests/test_extension_examples.py
           tests/test_extension_resources.py
+          tests/test_electron_model_less_smoke.py
 
       - name: Typecheck Pi extensions and build Electron renderer (Linux)
         working-directory: electron
@@ -74,6 +75,22 @@ jobs:
           node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
           npm test
           npm run build
+
+      - name: Prepare sandboxed Electron under Xvfb
+        run: |
+          uv run --locked --no-sync python -m playwright install-deps chromium
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run Electron model-less smoke (Linux)
+        run: >-
+          xvfb-run -a uv run --locked --no-sync python tools/smoke_electron_model_less.py
+          --report-dir build/electron-smoke
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: electron-linux-smoke-${{ github.run_id }}
+          path: build/electron-smoke/**
 
   voice-tier:
     # Linux Voice source-build qualification, not audio runtime coverage.

@@ -154,6 +154,28 @@ async def _press_native_theme_recovery(process_id: int, inspector_port: int) -> 
                 return
 
 
+async def _exercise_startup_settings(page: Any, *, timeout: float) -> dict[str, bool]:
+    from playwright.async_api import expect
+
+    desktop = await page.evaluate("window.amadeus.getDesktopSettings()")
+    platform = desktop.get("platform")
+    startup_mode = page.get_by_role("combobox", name="Startup mode", exact=True)
+    if platform in {"linux", "darwin"}:
+        await expect(startup_mode).to_have_count(0)
+        return {"windows_startup_mode_hidden": True}
+    if platform != "win32":
+        raise RuntimeError(f"Unknown desktop platform: {platform!r}")
+
+    await startup_mode.wait_for(state="visible", timeout=max(1_000, int(timeout * 1_000)))
+    for mode in ("window", "wallpaper"):
+        await startup_mode.select_option(mode)
+        await _wait_desktop_value(page, "AMADEUS_WINDOWS_STARTUP_MODE", mode, timeout=timeout)
+    desktop = await page.evaluate("window.amadeus.getDesktopSettings()")
+    if "AMADEUS_WINDOWS_STARTUP_MODE" in desktop.get("pendingKeys", []):
+        raise RuntimeError("startup preference incorrectly requires a backend restart")
+    return {"startup_mode_saved_in_gui": True}
+
+
 async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, inspector_port: int) -> dict[str, bool]:
     from playwright.async_api import expect
 
@@ -203,15 +225,7 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
         state="visible", timeout=timeout_ms
     )
     await page.get_by_role("button", name="General", exact=True).click()
-    startup_mode = page.get_by_role("combobox", name="Startup mode", exact=True)
-    await startup_mode.wait_for(state="visible", timeout=timeout_ms)
-    for mode in ("window", "wallpaper"):
-        await startup_mode.select_option(mode)
-        await _wait_desktop_value(page, 'AMADEUS_WINDOWS_STARTUP_MODE', mode, timeout=timeout)
-    desktop = await page.evaluate("window.amadeus.getDesktopSettings()")
-    if "AMADEUS_WINDOWS_STARTUP_MODE" in desktop.get("pendingKeys", []):
-        raise RuntimeError("startup preference incorrectly requires a backend restart")
-    checks["startup_mode_saved_in_gui"] = True
+    checks.update(await _exercise_startup_settings(page, timeout=timeout))
 
     await page.get_by_role("button", name="Voice", exact=True).click()
     await page.get_by_text("Speech synthesis", exact=True).wait_for(
