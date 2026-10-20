@@ -2410,7 +2410,7 @@
         allowOnce: "Allow once", deny: "Deny", dismiss: "Dismiss",
         allowWork: "Allow identical calls for this Work", revokeWork: "Revoke", activeGrants: "Active Work permissions",
         exactCall: "Only this connection, tool and exactly the same arguments; expires when this Work ends or is cancelled.",
-        autoApprove: "Automatic approval is on for all Work, including MCP and shell. It stays on until turned off.", autoApproveSettings: "Manage approval in Settings > Providers > Work approval, or turn it off on the Work page.",
+        autoApprove: "Automatic approval is on for Work and Cooperative chats, including MCP and shell. Permission limits still apply. It stays on until turned off.", autoApproveSettings: "Manage approval in Settings > Providers > Work and Chat approval, or turn it off on the Work page.",
       },
       "zh-CN": {
         expand: "展开面板", fold: "收起面板", ready: "就绪",
@@ -2423,7 +2423,7 @@
         allowOnce: "仅允许一次", deny: "拒绝", dismiss: "关闭",
         allowWork: "本次 Work 允许相同调用", revokeWork: "撤销", activeGrants: "本次 Work 的有效授权",
         exactCall: "仅限此连接、工具和完全相同的参数；本次 Work 结束或取消后失效。",
-        autoApprove: "所有 Work 已开启自动审批，包括 MCP 和 Shell；将持续生效直到手动关闭。", autoApproveSettings: "在设置 > Providers > Work 审批中管理，或在 Work 页面关闭。",
+        autoApprove: "Work 与协作聊天已开启自动审批，包括 MCP 和 Shell；权限限制仍然有效，将持续生效直到手动关闭。", autoApproveSettings: "在设置 > Providers > Work 与聊天审批中管理，或在 Work 页面关闭。",
       },
       "ja-JP": {
         expand: "パネルを開く", fold: "パネルを閉じる", ready: "待機",

@@ -1957,8 +1957,6 @@ class ProviderRuntime:
             committed = await committed
         if committed is not True:
             raise RuntimeError("Automatic permission decision was not committed by its Host owner")
-        if not getattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False):
-            return
         await self.resolve_permission(record.run_id, ProviderPermissionResponse(
             request_id, True, automatic=True, reason="work_permission_auto_approve"))
 

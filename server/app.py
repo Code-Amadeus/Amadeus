@@ -539,7 +539,6 @@ async def bootstrap(port: int = 17777) -> None:
     auip_result_entry_callback = auip_launch.on_app_updated
     bus.on(Method.AUIP_UPDATED, auip_result_entry_callback)
     provider_runtime.set_request_preparer(work_ledger.prepare_request)
-    provider_runtime.set_automatic_permission_authorizer(work_ledger.authorize_automatic_permission)
     work_ledger.adopt_runtime_records(provider_runtime.list_runs())
     work_ledger.configure()
     work_activity = WorkActivityCoordinator()

@@ -103,6 +103,39 @@ async def test_hot_enable_cannot_approve_a_request_that_failed_to_commit(tmp_pat
         assert store.list_permission_requests(record.metadata["work"]["work_item_id"]) == []
 
 
+async def test_disabling_policy_after_commit_does_not_abandon_the_committed_response(tmp_path, monkeypatch):
+    async with approval_host(tmp_path, monkeypatch, automatic=True) as host:
+        store, coordinator, runtime, adapter, record = host
+        committed, release = asyncio.Event(), asyncio.Event()
+
+        async def authorize(run_id, request_id):
+            result = coordinator.authorize_automatic_permission(run_id, request_id)
+            committed.set()
+            await release.wait()
+            return result
+
+        runtime.set_automatic_permission_authorizer(authorize)
+        posting = asyncio.create_task(runtime._emit(record, permission_event(record)))
+        try:
+            await asyncio.wait_for(committed.wait(), 2)
+            permission, = store.list_permission_requests(record.metadata["work"]["work_item_id"])
+            assert permission.status == "allowed"
+            monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
+            release.set()
+            await posting
+            response, = adapter.responses
+            assert response.allow is True and response.automatic is True
+            later = permission_event(record)
+            later.payload["permissionRequest"]["request_id"] = "after-policy-disabled"
+            await runtime._emit(record, later)
+            assert len(adapter.responses) == 1
+            permissions = store.list_permission_requests(record.metadata["work"]["work_item_id"])
+            assert [p.status for p in permissions] == ["allowed", "pending"]
+        finally:
+            release.set()
+            await posting
+
+
 async def test_unknown_response_keeps_committed_decision_without_replaying(tmp_path, monkeypatch):
     async with approval_host(tmp_path, monkeypatch, automatic=True) as host:
         store, _coordinator, runtime, adapter, record = host

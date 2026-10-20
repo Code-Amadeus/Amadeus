@@ -378,7 +378,7 @@ function assert(condition, message) {
   surface.setPayload({ activePermissionGrants: [], workContext: { workItemId: "work-preview", attemptId: "attempt-preview" } });
   assert(!surface.__testHtml().includes('data-permission-action="revoke_work"'), "Revoked/expired grant stayed actionable");
   surface.setPayload({ workPermissionAutoApprove: true });
-  assert(surface.__testHtml().includes('Settings &gt; Providers &gt; Work approval'), "Automatic approval has no visible management location");
+  assert(surface.__testHtml().includes('Settings &gt; Providers &gt; Work and Chat approval'), "Automatic approval has no visible management location");
   const oldOwner = { workItemId: "old-work", attemptId: "old-attempt" };
   const oldGrant = { ...workGrant, id: "grant-old", ...oldOwner,
     mcpCall: { connectionId: "old-peer", toolName: "old-tool", arguments: {} } };
@@ -423,7 +423,7 @@ function assert(condition, message) {
   assert((html.match(/class="crt-canvas-permissions"/g) || []).length === 1, "Grant and automatic approval notice have no shared scrolling region");
   const approvalRegion = html.slice(html.indexOf('class="crt-canvas-permissions"'));
   assert(approvalRegion.includes('data-permission-grant-id="grant-foreground-B"')
-    && approvalRegion.includes("Automatic approval is on for all Work"), "Grant and auto notice escaped their shared region");
+    && approvalRegion.includes("Automatic approval is on for Work and Cooperative chats"), "Grant and auto notice escaped their shared region");
   await surface.__testPermission("revoke_work", "", "grant-foreground-B");
   assert(JSON.parse(requests[requests.length - 1].options.body).action === "revoke_work", "Auto notice made revoke unavailable");
   console.log("work preview renderer ok");

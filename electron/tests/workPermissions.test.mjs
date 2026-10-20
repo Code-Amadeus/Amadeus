@@ -53,7 +53,7 @@ test('Work projection retains exact pending approval and all active grants indep
   assert.equal(normalizeWorkProjection({ permissionRequest: null, activePermissionGrants: [] }).permissionRequest, null)
 })
 
-test('normal Work permission panel exposes offered scope decisions and per-grant revocation', async () => {
+test('normal Work permission panel exposes offered decisions, revocation and explicit global confirmation', async t => {
   const vite = await createServer({ appType: 'custom', server: { middlewareMode: true } })
   try {
     const { default: WorkPermissionsPanel } = await vite.ssrLoadModule('/src/renderer/components/work/WorkPermissionsPanel.tsx')
@@ -96,7 +96,7 @@ test('normal Work permission panel exposes offered scope decisions and per-grant
     assert.ok(offButton, 'Enabled automatic approval has no off control')
     offButton.props.onClick()
     assert.equal(disabled, true)
-    assert.match(renderToStaticMarkup(automaticTree), /all Work, including MCP and shell/)
+    assert.match(renderToStaticMarkup(automaticTree), /Work and Cooperative chats, including MCP and shell/)
     const deniedTree = WorkPermissionsPanel({ request: { ...permission, options: ['deny'] }, grants: [],
       busy: false, error: '', onDecision() {}, t: value => value })
     assert.doesNotMatch(renderToStaticMarkup(deniedTree), /Allow once|Allow identical calls/)
@@ -107,12 +107,31 @@ test('normal Work permission panel exposes offered scope decisions and per-grant
     nodes.length = 0
     visit(shellTree)
     const automaticButton = nodes.find(value => value.type === 'button'
-      && value.props.children === 'Always automatically approve all Work')
+      && value.props.children === 'Always automatically approve Work and Chat')
     assert.ok(automaticButton, 'Generic shell approval has no persistent automatic approval option')
+    let confirmed = false
+    const confirmations = []
+    const originalWindow = globalThis.window
+    t.after(() => {
+      if (originalWindow === undefined) delete globalThis.window
+      else globalThis.window = originalWindow
+    })
+    globalThis.window = { confirm: message => {
+      confirmations.push(message)
+      return confirmed
+    } }
+    automaticButton.props.onClick()
+    assert.equal(enabled, undefined, 'Cancelling global confirmation must not persist the setting')
+    confirmed = true
     automaticButton.props.onClick()
     assert.equal(enabled, true)
+    assert.equal(confirmations.length, 2)
+    assert.match(confirmations[0], /Work and Cooperative chats/)
+    assert.match(confirmations[0], /MCP and shell/)
+    assert.match(confirmations[0], /pending requests/)
+    assert.match(confirmations[0], /across restarts/)
     const shellHtml = renderToStaticMarkup(shellTree)
-    assert.match(shellHtml, /every Work, including MCP and shell/)
+    assert.match(shellHtml, /all Work and Cooperative chats, including MCP and shell/)
     assert.match(shellHtml, /Saved across restarts until you turn it off/)
     assert.doesNotMatch(shellHtml, /Allow identical calls/)
   } finally {

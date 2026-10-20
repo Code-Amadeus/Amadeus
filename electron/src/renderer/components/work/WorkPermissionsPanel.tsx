@@ -24,7 +24,7 @@ export default function WorkPermissionsPanel({ request, grants, automatic = fals
   return (
     <section className="crt-side-card permission" aria-label={t('Work permissions')}>
       {automatic && <div>
-        <p>{t('Automatic approval is on for all Work, including MCP and shell. It stays on until turned off.')}</p>
+        <p>{t('Automatic approval is on for Work and Cooperative chats, including MCP and shell. Permission limits still apply. It stays on until turned off.')}</p>
         {onSetAutomatic && <button disabled={busy} onClick={() => onSetAutomatic(false)}>{t('Turn off automatic approval')}</button>}
       </div>}
       {request && <div>
@@ -38,8 +38,12 @@ export default function WorkPermissionsPanel({ request, grants, automatic = fals
           {request.options.includes('deny') && <button disabled={busy} onClick={() => onDecision(request, 'deny')}>{t('Deny')}</button>}
         </div>
         {!automatic && onSetAutomatic && <div>
-          <p>{t('Automatically approve Amadeus execution requests for every Work, including MCP and shell. Saved across restarts until you turn it off; approvals remain recorded.')}</p>
-          <button disabled={busy} onClick={() => onSetAutomatic(true)}>{t('Always automatically approve all Work')}</button>
+          <p>{t('Automatically approve permitted requests in all Work and Cooperative chats, including MCP and shell. Saved across restarts until you turn it off; approvals remain recorded.')}</p>
+          <button disabled={busy} onClick={() => {
+            if (window.confirm(t('Enable automatic approval for all Work and Cooperative chats, including MCP and shell? This also approves eligible pending requests and stays on across restarts until you turn it off. Permission limits still apply.'))) {
+              onSetAutomatic(true)
+            }
+          }}>{t('Always automatically approve Work and Chat')}</button>
         </div>}
       </div>}
       {grants.length > 0 && <strong>{t('Active Work permissions')}</strong>}

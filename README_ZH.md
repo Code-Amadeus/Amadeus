@@ -87,7 +87,7 @@ Amadeus 试图把这些体验连成一个闭环：
 | **角色与桌面呈现** | SpriteForge 图状态、KTX2/PixiJS 运行时、字幕、口型和情绪同步；没有角色包时 Chat、Work 与 headless 仍可启动。 |
 | **Provider Runtime** | [Pi 原生 RPC](docs/pi-rpc-provider.md) 默认负责日常任务，Codex App Server / Direct Codex 负责复杂开发，Browser 保留受管页面操作，OpenClaw 保留为可选 Provider；Claude CLI 是已确定的后续 direct Provider。 |
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
-| **Work 审批选项** | 默认逐次审批；可为当前 Work 授予可撤销的 Pi MCP 相同调用授权，也可显式开启持久的所有 Work 执行自动审批。自动决定须先在 Host 权限记录中提交，再派发响应。[审批说明](docs/mcp_environment.md#pi-tool-approvals)。 |
+| **Work 与聊天审批选项** | 默认逐次审批；可为当前 Work 授予可撤销的 Pi MCP 相同调用授权，也可显式开启持久的 Work 与协作聊天自动审批。仅批准可授权的请求，拒绝策略和只读限制仍然有效；自动决定须先在 Host 权限记录中提交，再派发响应。[审批说明](docs/mcp_environment.md#pi-tool-approvals)。 |
 | **Artifact 与 AUIP** | Work 产物可预览、打开，或在校验后附加为有界 AUIP AppSession，让 Amadeus 与应用交互而不把叙述变成执行权限。 |
 | **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
 

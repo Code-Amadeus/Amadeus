@@ -19,8 +19,10 @@ to the trusted MCP connection/configuration, tool schema and all argument
 values. Work/Cooperative projections expose active grants and revocation;
 reuse, revocation and expiry update grant metadata without rewriting the
 original permission decision. Provider completion/cancellation drops the
-in-memory authority. Neither policy changes workspace capabilities or an
-external tool's action gates. See [approval contracts](docs/mcp_environment.md#pi-tool-approvals).
+in-memory authority. Automatic approval applies to both Work and Cooperative
+chat, using the owner's same permission eligibility as manual approval; deny
+policies and read-only limits still apply. Neither policy changes workspace
+capabilities or an external tool's action gates. See [approval contracts](docs/mcp_environment.md#pi-tool-approvals).
 
 The Host also owns the bounded disclosure boundary when Main Chat delegates to a
 model-driven Provider. The authorized Provider task remains the only execution task;

@@ -1,5 +1,76 @@
 # Work approval choices
 
+## Permission-boundary repair — 2026-10-20
+
+The maintainer follow-up starts from reviewed head
+`9f58b5e5ec5d4213826713e533e1484c570a0d31` and merges main
+`79ef387a7e4848046595ddabba0890c9c74c964b`, including the Pi model-metadata
+change. The original head's hosted results below are historical; they do not
+establish the follow-up's CI status.
+
+Cooperative request options, manual approval and automatic authorization now
+share the owner's permission-eligibility predicate. With automatic approval
+either off or on, `deny` remains denied and read-only contexts reject Shell,
+file-write and generic tool execution. `ask` still permits external MCP calls
+in read-only contexts and Shell in writable contexts. Tests also cover pending
+options created before owner limits change, hot enabling, and eligible
+background chats.
+
+Runtime dispatches an already committed policy decision even if the setting
+changes while an asynchronous owner returns; subsequent requests wait after
+the setting is disabled. The redundant startup authorizer registration is
+removed. UI and documentation explicitly include Work and Cooperative chat;
+enabling the persisted global setting from a permission card asks for
+confirmation, and cancelling leaves the setting unchanged. The configuration
+key and default remain unchanged.
+
+Validation on Windows x64, CPython 3.12.10 and Node 22.21.1:
+
+- **73 passed** in the five permission modules listed below, including the new
+  boundary matrix and real SQLite commit/dispatch regression.
+- The nine integration modules below initially produced **168 passed / 1
+  failed**, with no skips. The failure was a Canvas assertion expecting the old
+  settings-group title. After updating that assertion, the entire Canvas module
+  produced **2 passed**. The eight real pinned Pi scoped-approval subprocess
+  tests passed in the integration run; they use synthetic loopback model/MCP
+  services, not external model calls.
+- Full Electron tests initially produced **530 passed / 1 failed** because
+  newly added translation keys were unsorted. After restoring the catalog's
+  required ordering, **531 passed**. `npm run build` passed, including config,
+  extension SDK and Pi TypeScript checks.
+- Changed Python files passed Ruff; `git diff --check` passed.
+- An initial permission-test invocation had a missing parent for the chosen
+  temporary directory (14 passed / 59 setup errors). Creating the parent
+  resolved this test-runner setup issue; it is not counted as a product failure.
+
+Commands from the repository root (Python uses the installed development
+environment; temporary directories and bytecode/cache options are omitted):
+
+```text
+python -m pytest -q tests/test_cooperative_automatic_permissions.py tests/test_cooperative_scoped_permissions.py tests/test_automatic_permission_owners.py tests/test_automatic_permission_persistence.py tests/test_provider_automatic_permissions.py
+python -m pytest -q tests/test_pi_scoped_approvals.py tests/test_pi_provider.py tests/test_pi_model_metadata.py tests/test_work_scoped_permissions.py tests/test_work_permission_service.py tests/test_work_activity_permissions.py tests/test_canvas_work_preview_renderer.py tests/test_chat_ingress_lifecycle.py tests/test_cooperative_context_recovery.py
+python -m pytest -q tests/test_canvas_work_preview_renderer.py
+npm --prefix electron test
+npm --prefix electron run build
+```
+
+The screenshots render the actual `WorkPermissionsPanel` with production CSS
+and synthetic permission data in an isolated headless browser. The before
+component comes from `9f58b5e5`; the after components use this repair. Both the
+pending card and enabled-policy notice are shown. English and Chinese renders
+were visually checked and have no horizontal overflow. Confirmation behaviour
+is covered by the component test (cancel then accept); the native dialog is not
+depicted in these screenshots.
+
+| Before | After | After, Chinese |
+| --- | --- | --- |
+| ![Original Work-only wording](boundary-before.png) | ![Explicit Work and Chat scope](boundary-after.png) | ![Chinese scope and permission limits](boundary-after-zh.png) |
+
+中文：本轮修复了自动审批绕过 deny／只读限制的问题，保留合法 MCP、可写 Shell 和后台
+聊天自动审批；开关文案明确覆盖 Work 与协作聊天，从审批卡开启时增加确认。权限专项
+73 项通过，真实 Pi 子进程通过，Electron 531 项及生产构建通过。首次测试中的临时目录、
+翻译排序和旧标题断言问题分别记录；下文原提交的 CI 记录不代替本轮 CI。
+
 Related issue: [#224](https://github.com/Code-Amadeus/Amadeus/issues/224).
 
 This change adds two explicit choices while keeping automatic approval off by

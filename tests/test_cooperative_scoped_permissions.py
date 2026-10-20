@@ -72,7 +72,7 @@ async def test_cooperative_grant_uses_revoke_and_expiry_are_durable(host_factory
         await host.close()
 
 
-async def test_global_auto_policy_prevents_cooperative_read_only_deny_then_audits_resolution(
+async def test_global_auto_policy_preserves_cooperative_read_only_deny(
         host_factory, monkeypatch):
     host, manager, record = await _manager(host_factory)
     child = host.loop.children[host.loop.bound_context_id]
@@ -84,13 +84,11 @@ async def test_global_auto_policy_prevents_cooperative_read_only_deny_then_audit
             "action": "execute_command", "options": ["allow_once", "deny"]}}
         await manager._handle_provider_event(Method.PROVIDER_EVENT, _event(record, "permission.requested", request))
         permission, = manager.permission_store.list_cooperative_permission_requests("conversation-A")
-        assert permission.status == "pending" and "allow_once" in permission.options
-        assert manager.runtime.resolve_permission.await_count == 0
-        await manager._handle_provider_event(Method.PROVIDER_EVENT, _event(record, "permission.allowed",
-            {"request_id": "auto-first", "automatic": True, "decision": "allow_once"}))
-        stored = manager.permission_store.get_permission_request(permission.request_id)
-        assert stored.status == "allowed" and stored.metadata["resolution"] == "policy_allowed"
-        assert stored.metadata["resolved_automatically"] is True
+        assert permission.status == "denied" and permission.options == ["deny"]
+        assert permission.metadata["resolution"] == "policy_denied"
+        assert permission.metadata["resolution_policy"] == "automatic_deny"
+        assert manager.runtime.resolve_permission.await_args.args[1].allow is False
+        assert manager.authorize_automatic_permission(record.run_id, "auto-first") is False
         monkeypatch.setattr(settings, "WORK_PERMISSION_AUTO_APPROVE", False)
         request["permissionRequest"]["request_id"] = "manual-second"
         await manager._handle_provider_event(Method.PROVIDER_EVENT, _event(record, "permission.requested", request))

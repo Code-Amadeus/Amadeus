@@ -4517,6 +4517,13 @@ class CooperativeChatManager:
         loop = owners[0]
         return loop.prepare_runtime_run(request, run_id, intake_authority)
 
+    def _can_approve_permission(self, child, capability: str) -> bool:
+        """Automatic and manual decisions share the same Host permission boundary."""
+        # MCP is an external capability, not a workspace write grant.
+        return (self.permission_policy == "ask"
+            and (child.requirements.workspace_access != "read"
+                 or capability == "mcp.tool.call"))
+
     def authorize_automatic_permission(self, run_id: str, native_request_id: str) -> bool:
         """核对真实会话与持久请求，并在派发前提交策略决定。"""
         if (self._closed or self.permission_store is None
@@ -4553,7 +4560,8 @@ class CooperativeChatManager:
         if len(matches) != 1:
             return False
         permission = matches[0]
-        if ("allow_once" not in permission.options
+        if (not self._can_approve_permission(child, permission.capability)
+                or "allow_once" not in permission.options
                 or permission.metadata.get("diagnostic_only") is True
                 or permission.metadata.get("retry_required") is True):
             return False
@@ -4663,12 +4671,9 @@ class CooperativeChatManager:
         if "deny" not in normalized_options:
             normalized_options.append("deny")
         capability = str(source.get("capability") or "tool.execute")[:120]
-        # MCP execution is an external capability, not a workspace write grant.
-        # Unknown/generic tool permissions keep the read-only deny policy.
-        ask_user = (self.permission_policy == "ask"
-            and (child.requirements.workspace_access != "read"
-                 or capability == "mcp.tool.call"))
-        auto_approve = (bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False))
+        ask_user = self._can_approve_permission(child, capability)
+        auto_approve = (ask_user
+            and bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False))
             and "allow_once" in normalized_options
             and not any(source.get(key) is True for key in (
                 "diagnosticOnly", "diagnostic_only", "retryRequired", "retry_required")))
@@ -4679,7 +4684,7 @@ class CooperativeChatManager:
             scope_paths=scope_paths,
             reason=str(source.get("reason") or "Explicit user approval is required.")[:1000],
             reversibility=str(source.get("reversibility") or "unknown")[:240],
-            options=normalized_options if ask_user or auto_approve else ["deny"],
+            options=normalized_options if ask_user else ["deny"],
             idempotency_key=f"provider:{provider}:{run_id}:{request_id}",
             metadata={"kind":"provider_permission", "provider":provider,
                 "provider_request_id":request_id,
@@ -4837,8 +4842,7 @@ class CooperativeChatManager:
                 or metadata.get("session_id") != session_id
                 or metadata.get("cooperative_context_id") != child.child_id):
             return {"ok":False, "error":"cooperative_permission_run_not_current"}
-        if (allow and child.requirements.workspace_access == "read"
-                and permission.capability != "mcp.tool.call"):
+        if allow and not self._can_approve_permission(child, permission.capability):
             return {"ok":False, "error":"cooperative_permission_read_only_context"}
         if allow and ("allow_work" if decision == "allow_work" else "allow_once") not in permission.options:
             return {"ok":False, "error":"cooperative_permission_option_not_allowed"}

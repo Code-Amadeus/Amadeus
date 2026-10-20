@@ -1545,7 +1545,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
             {section === 'providers' ? (
               <div className="flex flex-col gap-5">
-                <SettingsGroup title="Work approval" detail="Choose whether Amadeus asks for execution approval. External tools keep their own action gates.">
+                <SettingsGroup title="Work and Chat approval" detail="Choose whether Amadeus asks for execution approval in Work and Cooperative chats. Permission limits and external tool gates still apply.">
                   {renderRuntimeGroup('work_permissions', 'Work')}
                 </SettingsGroup>
                 <BoundaryNote title="Execution boundary">
