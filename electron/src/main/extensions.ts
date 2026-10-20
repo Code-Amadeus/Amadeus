@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import type { ArtifactIdentity } from './extensionSecurity.js'
+import { securityBlock, type ArtifactIdentity } from './extensionSecurity.js'
 import type { CatalogIndex } from '../shared/extensionCatalog.js'
 import { assertExtensionPath } from './extensionPaths.js'
 export { assertExtensionPath } from './extensionPaths.js'
@@ -579,11 +579,15 @@ export class ExtensionInstaller {
       if (selected === 'classic' || selected === 'wallpaper-slice') { this.store.rememberThemeBase(selected); return { selected, base: selected, reason: '' } }
       const fallback = (reason: string): DesktopThemeState => ({ selected, base: this.store.verifiedThemeBase(), reason })
       const [packageId] = selected.split('/')
+      const policyState = this.store.extensionSecurityState()
+      if (securityBlock(policyState)) return fallback(securityBlock(policyState))
       const desired = this.store.extensionRecords().find(record => record.id === packageId)
       if (!desired) return fallback('The saved theme is unavailable. Its last verified base is shown.')
       if (!desired.enabled || desired.pendingRemoval) return fallback('The saved theme is disabled or being removed. Its base is shown.')
-      if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')
       const applied = this.store.appliedExtensionRecords().find(record => record.id === desired.id && record.enabled)
+      const policyError = securityBlock(policyState, desired) || (applied ? securityBlock(policyState, applied) : '')
+      if (policyError) return fallback(policyError)
+      if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')
       if (!applied) return fallback('This theme is waiting for its package to be applied.')
       const item = (applied.manifest.contributes.theme || []).find(theme => selected === `${applied.id}/${theme.id}`)
       if (!item) {
@@ -627,7 +631,7 @@ export class ExtensionInstaller {
       } catch {
         // Saved enable intent remains visible. Python retains the contribution
         // in its unavailable catalog and never executes a startup-error entry.
-        startupError = 'Extension installation, credentials, configuration, or package data could not be validated'
+        startupError = this.store.extensionSecurityBlock(record) || 'Extension installation, credentials, configuration, or package data could not be validated'
         secrets = {}
         this.store.reportExtensionWarning(startupError)
       }

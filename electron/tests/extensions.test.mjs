@@ -1104,6 +1104,7 @@ for (const blockedVersion of ['desired', 'applied']) test(`security checks ${blo
   const summary = f.store.snapshot({}).extensions[0]
   assert.equal(summary.appliedVersion, '0.1.0')
   assert.equal(summary.version, '0.2.0')
+  assert.equal(summary.applicationError.includes('Stop or restart'), blockedVersion === 'applied')
   assert.ok(summary.frontendSuppressed)
   assert.ok(summary.backendStillRunning)
   assert.match(summary.applicationError, /blocked/)
@@ -1131,4 +1132,19 @@ test('replacement of downloaded bytes is rejected; concurrent remove remains ser
   assert.ok(fs.existsSync(path.join(g.root, g.store.storedExtensionRecords()[0].installId)))
   await g.installer.cleanupStoppedBackend()
   assert.equal(g.store.storedExtensionRecords().length, 0)
+})
+
+test('a blocked active theme falls back immediately with the security reason', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  assert.ok((await f.installer.themeState()).theme)
+  f.store.commitExtensionSecurity(securityFor(f.store.storedExtensionRecords()[0], 1))
+  const state = await f.installer.themeState()
+  assert.equal(state.theme, undefined)
+  assert.match(state.reason, /blocked for security/)
+  assert.equal(f.store.storedExtensionRecords()[0].enabled, true)
+  await f.installer.restoreBuiltinTheme()
+  assert.equal((await f.installer.themeState()).reason, '')
 })

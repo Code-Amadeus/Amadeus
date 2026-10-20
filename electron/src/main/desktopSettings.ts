@@ -564,9 +564,10 @@ export class DesktopSettingsStore {
     const applied = this.appliedExtensions.get(record.id)
     const application = this.extensionChangeNeedsRestart(record) ? 'backend_restart' : 'frontend'
     restartRequired = restartRequired && application === 'backend_restart' && (record.pendingRemoval || applied?.revision !== record.revision)
-    const policyError = securityBlock(security, record) || (applied?.enabled ? securityBlock(security, applied) : '')
+    const appliedPolicyError = applied?.enabled ? securityBlock(security, applied) : ''
+    const policyError = securityBlock(security, record) || appliedPolicyError
     const revisions = { revision: record.revision ?? 1, appliedRevision: applied?.revision, appliedVersion: applied?.version, application,
-      frontendSuppressed: Boolean(policyError) || this.closedFrontends.has(record.id), applicationError: policyError ? policyError + (applied?.enabled && extensionRequiresRestart(applied.manifest) ? ' Stop or restart the running backend.' : '') : this.applicationErrors.get(record.id),
+      frontendSuppressed: Boolean(policyError) || this.closedFrontends.has(record.id), applicationError: policyError ? policyError + (appliedPolicyError && applied && extensionRequiresRestart(applied.manifest) ? ' Stop or restart the running backend.' : '') : this.applicationErrors.get(record.id),
       backendStillRunning: Boolean(applied?.enabled && extensionRequiresRestart(applied.manifest)) } as const
     if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
       ...revisions,
