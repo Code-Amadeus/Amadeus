@@ -10,7 +10,8 @@
     "render/web/vendor",
     "assets/audio/sfx",
     "vendor/aec-audio-processing",
-    "vendor/extension-sdk"
+    "vendor/extension-sdk",
+    "vendor/extension-catalog"
   ],
   "components": [
     {
@@ -84,11 +85,18 @@
       "id": "japanese-pronunciation",
       "name": "Optional Japanese pronunciation dictionary",
       "category": "external-runtime-data",
-      "paths": ["assets/text/ja/english/**"],
+      "paths": [
+        "assets/text/ja/english/**"
+      ],
       "source_url": "https://github.com/RVC-Boss/GPT-SoVITS",
       "source_revision": "1b47ca07ef43a284e0b8bd7f29d3e1e3ff76082a; userdict.csv blob 2be580b461185ce18c9000d9ec6c8032623e17fd; Amadeus corrections recorded in tools/data/japanese_dictionary_source.json",
       "license_expression": "AGPL-3.0 AND MIT AND BSD-2-Clause",
-      "license_evidence": ["LICENSES/JAPANESE-DICTIONARY.md", "LICENSES/GPT-SoVITS-MIT.txt", "LICENSES/CMUdict-BSD-2-Clause.txt", "LICENSE"],
+      "license_evidence": [
+        "LICENSES/JAPANESE-DICTIONARY.md",
+        "LICENSES/GPT-SoVITS-MIT.txt",
+        "LICENSES/CMUdict-BSD-2-Clause.txt",
+        "LICENSE"
+      ],
       "modified": true,
       "release_action": "exclude",
       "gate_status": "ready",
@@ -482,6 +490,24 @@
       "release_action": "exclude",
       "gate_status": "ready",
       "notes": "Unchanged model assets are optional external runtime data. Exact hashes and the upstream MIT notice (Copyright (c) 2026 Aivis Project) are retained; exact training-data provenance is not established. No model publication is authorized by this record."
+    },
+    {
+      "id": "amadeus-extension-catalog",
+      "name": "Amadeus curated catalog policy and reader fixtures",
+      "category": "vendored-source",
+      "paths": [
+        "vendor/extension-catalog/**"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+      "source_revision": "c7f5487a0fb9962b718187eec20428697ce4c244 (local experimental branch; publication pending)",
+      "license_expression": "Apache-2.0",
+      "license_evidence": [
+        "vendor/extension-catalog/LICENSE"
+      ],
+      "modified": false,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Exact byte copies pinned in server/extensions/catalog-source.json. Separate from the unchanged manifest/SDK pin. Merge protocol catalog before publishing a Host release that requires this revision."
     }
   ]
 }

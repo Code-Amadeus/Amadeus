@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from server.extensions.manifest import MANIFEST_LIMIT_BYTES, MANIFEST_NAME, _is_link, manifest_issues, package_issues
 from server.extensions.profile import validate_supported_contributions
-from server.extensions.sdk import validate_sdk_requirements
+from server.extensions.sdk import dependency_mode, validate_sdk_requirements
 
 HOST_API = "0.1"
 MAX_WHEEL_BYTES = 256 * 1024 * 1024
@@ -193,6 +193,7 @@ def inspect_wheel(path: Path) -> dict[str, Any]:
         validate_sdk_requirements(metadata.get_all("Requires-Dist", []))
         return {"manifest": manifest, "digest": digest, "manifest_member": member.filename,
                 "package_root": package_root, "distribution": metadata["Name"],
+                "dependency_mode": dependency_mode(metadata.get_all("Requires-Dist", [])),
                 "requires_dist": metadata.get_all("Requires-Dist", []), "requires_python": metadata.get("Requires-Python", "")}
 
 

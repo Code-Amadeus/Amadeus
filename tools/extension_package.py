@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=[
         'inspect-wheel', 'prepare-data-wheel', 'validate-config', 'validate-manifest',
-        'validate-installed', 'profile', 'check-wheel', 'check-package',
+        'validate-installed', 'profile', 'check-wheel', 'check-package', 'validate-catalog', 'inspect-catalog-wheel',
     ])
     parser.add_argument('path', nargs='?')
     parser.add_argument('--manifest')
@@ -123,7 +123,14 @@ def main(argv: list[str] | None = None) -> int:
                         help='JSON is the existing Electron helper protocol; text is for authors.')
     args = parser.parse_args(argv)
     try:
-        if args.command == 'profile':
+        if args.command == 'validate-catalog':
+            from server.extensions.catalog import read_catalog
+            result = {'catalog': read_catalog(Path(args.path or ''))}
+        elif args.command == 'inspect-catalog-wheel':
+            from server.extensions.catalog import policy
+            result = inspect_wheel(Path(args.path or ''))
+            policy().check_policy(Path(args.path), result)
+        elif args.command == 'profile':
             result = {'host_profile': host_profile()}
         elif args.command in {'check-wheel', 'check-package'}:
             if not args.path:

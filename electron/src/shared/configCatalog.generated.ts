@@ -42,6 +42,39 @@ export const catalogGroups: CatalogGroup[] = [
     }
   },
   {
+    "id": "desktop_extensions",
+    "title": {
+      "en-US": "Extension downloads",
+      "zh-CN": "插件下载"
+    },
+    "description": {
+      "en-US": "Only wheel downloads use this mirror. The index always comes from the official repository.",
+      "zh-CN": "镜像只用于下载 wheel，目录索引始终来自官方仓库。"
+    },
+    "desktop": true,
+    "apply": "frontend",
+    "config": {
+      "AMADEUS_EXTENSION_ARTIFACT_MIRROR": {
+        "type": "url",
+        "title": {
+          "en-US": "Artifact mirror base URL",
+          "zh-CN": "产物镜像根地址"
+        },
+        "description": {
+          "en-US": "Optional HTTPS directory serving <sha256>/<wheel filename>. Empty uses the original artifact URL.",
+          "zh-CN": "可选 HTTPS 目录，按 <sha256>/<wheel 文件名> 提供文件。留空使用原始下载地址。"
+        },
+        "default": "",
+        "scope": "desktop",
+        "schemes": [
+          "https"
+        ],
+        "allow_empty": true,
+        "max_length": 2048
+      }
+    }
+  },
+  {
     "id": "desktop_interface",
     "title": {
       "en-US": "Desktop interface",

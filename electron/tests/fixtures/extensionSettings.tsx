@@ -62,12 +62,14 @@ const desktop = {
   sources: { AMADEUS_UI_LOCALE: 'user', AMADEUS_UI_THEME: 'user', TTS_BACKEND: 'user', TTS_OUTPUT_LANGUAGE: 'user' }, locked: {}, secrets: {}, encryptionAvailable: true,
   mcpConnections: [], mcpConnectionsLocked: false, restartRequired: false, pendingKeys: [] as string[], pendingRevisions: {} as Record<string, number>, retired_settings: [],
   extensions: [voice, tools, skill],
+  extensionSecurity: { status: query.get('security') === 'damaged' ? 'unavailable' : 'unseen', checkedAt: '' },
 }
 let runtime = desktop.extensions.map(extension => ({ id: extension.id, version: extension.version, enabled: extension.enabled,
   state: extension.enabled ? 'active' : 'inactive', detail: extension.enabled ? 'Runner is ready' : 'Package is disabled',
   contributions: Object.entries(extension.manifest.contributes).flatMap(([kind, items]) => items.map(item => ({ kind, id: item.id, qualified_id: `${extension.id}/${item.id}`, health: extension.enabled ? 'ready' : 'disabled' }))),
 }))
 let failSave = false
+let failCatalog = false
 if (palette) {
   desktop.values.AMADEUS_UI_THEME = `${themeManifest.id}/${palette.id}`
   desktop.extensions.push({ id: themeManifest.id, version: themeManifest.version, revision: 2, appliedRevision: 2, appliedVersion: themeManifest.version,
@@ -105,6 +107,13 @@ host.amadeus = {
   getDesktopSettings: async () => snapshot(),
   getCompanionPortraitStatus: async () => ({ installed: false, state: 'not_installed', emotionCount: 0, frameCount: 0, detail: '' }),
   setTitleBarTheme: async () => true,
+  extensionCatalog: async (request: { action: string }) => {
+    calls.push({ method: 'extensions.catalog', params: request })
+    if (request.action === 'get') return { ok: true, settings: snapshot(), catalog: { entries: [], cached: true } }
+    if (failCatalog) return { ok: false, error: 'Synthetic catalog offline', settings: snapshot() }
+    desktop.extensionSecurity = { status: 'ready', checkedAt: '2026-10-21T00:00:00Z' }
+    return { ok: true, settings: snapshot(), catalog: { entries: [], cached: false } }
+  },
   installExtension: async () => ({ ok: false, cancelled: true }),
   updateExtension: async (update: ExtensionUpdate) => {
     calls.push({ method: 'updateExtension', params: structuredClone(update) })
@@ -139,7 +148,7 @@ host.amadeus = {
     desktop.restartRequired = false; desktop.pendingKeys = []; desktop.pendingRevisions = {}; emit(); return true
   },
 }
-host.extensionFixture = { calls, errors, snapshot, setFailSave: (value: boolean) => { failSave = value },
+host.extensionFixture = { calls, errors, snapshot, setFailCatalog: (value: boolean) => { failCatalog = value }, setFailSave: (value: boolean) => { failSave = value },
   refreshRuntime: () => { emit() } }
 document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'

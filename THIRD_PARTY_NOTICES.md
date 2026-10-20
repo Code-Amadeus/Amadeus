@@ -204,3 +204,5 @@ source commits, adaptations and wheel/source SHA-256 values are recorded in
 pending upstream main acceptance. Authored `examples/extensions/` code is MIT-0
 under its LICENSE, as recorded in `LICENSES/provenance.json`. These scoped grants
 do not relicense the Host or external voices, models, artwork or dependencies.
+
+The curated catalog policy under `vendor/extension-catalog/` is an unmodified Apache-2.0 copy from Amadeus-Extensions, pinned independently in `server/extensions/catalog-source.json`. Its source revision is currently on the local experimental branch; publish the protocol revision before releasing this Host integration.

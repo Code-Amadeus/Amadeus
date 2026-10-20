@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { CatalogRequest, CatalogReply } from '../shared/extensionCatalog'
 import type { BackendStartupFailure } from '../shared/characterStartup'
 import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions'
 import type { DesktopThemeState } from '../shared/extensionTheme'
@@ -66,6 +67,7 @@ export declare global {
       clearEnvironment?: boolean
     }) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     removeMcpConnection: (connectionId: string) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
+    extensionCatalog: (request: CatalogRequest) => Promise<CatalogReply>
     installExtension: () => Promise<ExtensionMutationResult>
     updateExtension: (update: ExtensionUpdate) => Promise<ExtensionMutationResult>
     removeExtension: (id: string, options?: ExtensionRemovalOptions) => Promise<ExtensionMutationResult>

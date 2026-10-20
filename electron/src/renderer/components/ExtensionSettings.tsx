@@ -35,6 +35,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [security, setSecurity] = useState<{ status: string; checkedAt?: string }>({ status: 'unseen' })
+  useEffect(() => { void window.amadeus?.extensionCatalog?.({ action: 'get' }).then(result => {
+    if (result.settings?.extensionSecurity) setSecurity(result.settings.extensionSecurity as { status: string; checkedAt?: string })
+  }) }, [])
   const [removeCandidate, setRemoveCandidate] = useState('')
   const [deleteData, setDeleteData] = useState(false)
   const dirty = draft !== null && JSON.stringify(draft) !== initial.current
@@ -81,6 +85,20 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not install extension')) }
     finally { setBusy(false) }
   }
+  const checkSecurity = async () => {
+    if (!window.amadeus || busy) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await window.amadeus.extensionCatalog({ action: security.status === 'unavailable' ? 'recover' : 'refresh' })
+      if (result.settings) {
+        onSettingsChanged(result.settings)
+        setSecurity(result.settings.extensionSecurity as { status: string; checkedAt?: string })
+      }
+      if (!result.ok) throw new Error(result.error || 'Catalog refresh failed')
+      setNotice('Official extension security state checked. Existing backend processes may still need to stop.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Catalog refresh failed') }
+    finally { setBusy(false) }
+  }
   const save = async () => {
     if (!window.amadeus || !selected || !draft) return
     setBusy(true)
@@ -111,6 +129,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       <div className="settings-note-description">{t('Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
       <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
+      <div className="settings-form-actions-end"><SettingsButton disabled={!available || busy} onClick={() => void checkSecurity()}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton></div>
+      <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
     </CardShell>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
     {error ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
