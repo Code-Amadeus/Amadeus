@@ -98,7 +98,7 @@ preserved during upgrades, so updating alone may retain a previous static/off ch
    video use. Missing/incompatible video or decoder support keeps static frames
    with a 2 GiB automatic budget. These limits cover retained frame payloads,
    not total application RAM/VRAM or decoder memory.
-4. **Local NVIDIA voice:** use the **L4 local CUDA** installation profile and
+4. **Local NVIDIA voice:** use the **T4 `local-cu124`** installation profile and
    compatible Qwen/GPT-SoVITS assets. Keep Qwen device on `auto`, Qwen CUDA Graph
    enabled (`QWEN3_ASR_CUDA_GRAPH=true`), and local TTS inference on Automatic
    (`ENABLE_CUDA_GRAPH=auto`, `TTS_T2S_FLASH_ATTN=auto`). Qwen FlashAttention
@@ -138,7 +138,7 @@ conditions remain in the [0.17.0 performance record](alpha-0.17.0-performance.md
    **视频与静态入口帧 · 384 MiB**。选择“自动”不代表已经用视频；缺少匹配素材或
    解码能力时仍走静态帧，自动预算为 2 GiB。预算限制的是保留的帧数据，不等于
    整个应用或解码器的总内存／显存。
-4. **本地 NVIDIA 语音**：安装 **L4 本地 CUDA** 环境及 Qwen/GPT-SoVITS 资源。
+4. **本地 NVIDIA 语音**：安装 **T4 `local-cu124`** 环境及 Qwen/GPT-SoVITS 资源。
    Qwen 设备保持 `auto`，开启 Qwen CUDA Graph（`QWEN3_ASR_CUDA_GRAPH=true`），
    本地 TTS 推理保持**自动**（`ENABLE_CUDA_GRAPH=auto`、`TTS_T2S_FLASH_ATTN=auto`）。
    Qwen FlashAttention 默认开启（`QWEN3_ASR_FLASH_ATTN=true`），但相关路径仍需另装
