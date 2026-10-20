@@ -1,7 +1,8 @@
 # Experimental catalog client and security recovery
 
 S1 supplies the desktop transport, installer integration and durable security boundary.
-S2 discovery, search, version recommendations and the complete store UI remain pending.
+S2 adds discovery, search, version details, download progress and manual updates in the
+existing plugin manager. This remains an experimental client, not a published store.
 The official catalog and its independent reviews must be published before this client
 can provide a public store. The current S0 reference index contains no reviewed packages.
 
@@ -106,12 +107,55 @@ blocks the exact identity through local and store entry points and future activa
 It does not delete package data, credentials or saved enable intent, and cannot recognize
 unknown modified bytes as the same artifact.
 
+## Browsing and manual updates
+
+Use **Installed** to configure, enable, bind, disable or remove packages. **Browse** shows
+the official catalog with name/description/capability search and a type filter. Open
+**View plugin details** to select a version and inspect its artifact identity, declared
+platform/runtime/SDK, review scope, wheel size and activation behavior. Configuration
+and catalog views share the same manager; switching views keeps an unsaved draft.
+
+Version recommendations compare all three X.Y.Z integers without floating-point rounding.
+Only greater, compatible, non-withdrawn, non-blocked candidates are recommended. A newer
+incompatible version does not hide an older compatible update. Local versions outside
+X.Y.Z have no guessed update order; select a specific catalog version and review its
+native installation confirmation instead. Matching an installed ID/version but different
+bytes does not permit replacing the artifact silently.
+
+**Update plugin…** uses the same native confirmation and installer as **Install plugin…**.
+Progress comes from main: checking the index, downloading, verifying, awaiting confirmation,
+and preparing. Download completion is not installation success. **Cancel installation**
+waits for safe cleanup and the operation receipt; a concurrent preparation/persistence
+failure is not relabeled as successful cancellation. Existing saved/applied package state
+continues to be shown after a failed update. Nothing automatically updates or rolls back.
+
+A new install remains disabled. Configure and enable it in Installed, then choose its
+Agents, voice or Appearance. Resource themes can apply immediately; backend contributions
+keep their established restart and session boundaries. A security-blocked package can be
+disabled and removed, but the editor cannot activate it. Safety recovery is still explicit.
+
+Catalog descriptions and access details are plain text. No third-party images or Markdown
+are loaded. Homepage/source buttons send only package ID/version and the requested link
+kind to main, which resolves and validates a credential-free HTTPS URL before opening it
+externally. The optional `display.access` is derived by the catalog generator from the
+wheel: OS disclosures and TTS/MCP service/command templates, excluding configuration
+defaults, environment values and bearer tokens. Older indexes without this field show a
+clear missing-details notice and retain the native verified-wheel disclosure at install.
+
+Unknown kinds/contracts and mixed future packages remain visible with reasons and disabled
+installation. Filtering for a future capability shows the matching version, not an older
+version that lacks it. Closed/future voice roles are not silently presented as TTS. These
+presentation changes do not open a new native execution owner or change the format major.
+
 ## Network coverage and verification
 
 The installed manager offers **Check updates and security status**, the last successful
 check time and a separate damage recovery action. There is no automatic startup network
 check. Users who never check cannot receive new remote bans. Catalog failure and local
-security damage are different states. Full browsing/progress UI belongs to S2.
+security damage are different states. Opening Browse performs an explicit catalog refresh;
+opening Installed alone reads local state and does not initiate a remote check. When
+security storage is unavailable, Browse keeps the display cache; only the explicitly
+labeled recovery button can request recovery. Navigation is not recovery authorization.
 
 Run the unit suites through `npm test` in `electron/` and the catalog Python tests with
 `python -m pytest tests/test_extension_catalog.py`. The explicit Windows probe reuses
@@ -120,6 +164,7 @@ wheels produced by the D2 author journey:
 ```powershell
 python tools/probes/extension_author_journey.py
 python tools/probes/extension_catalog_journey.py --execute --wheels build/extension-author-journey/<run-id>/wheels
+python tools/probes/extension_catalog_journey.py --execute --store-ui --wheels build/extension-author-journey/<run-id>/wheels
 ```
 
 The probe uses real net requests, installers and reference packages. Public HTTPS is
@@ -132,3 +177,5 @@ for exact results, hashes, limits and failed intermediate probes.
 Transport references: [Electron ClientRequest](https://www.electronjs.org/docs/latest/api/client-request),
 [Electron net](https://www.electronjs.org/docs/latest/api/net), and
 [certificate verification caching](https://www.electronjs.org/docs/latest/api/session#sessetcertificateverifyprocproc).
+
+The [S2 construction record](verification/extensions/community-preview-batch4-2026-10-21.md) records the real renderer/IPC/installer journey, screenshots, code revisions and remaining publication gates. The `--store-ui` probe uses loopback HTTPS fixture authority and automated confirmations; it does not launch the complete Chat backend or certify public reviews.

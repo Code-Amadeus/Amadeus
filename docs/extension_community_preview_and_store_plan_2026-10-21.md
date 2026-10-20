@@ -2,7 +2,7 @@
 
 日期：2026-10-21
 
-状态：已批准并开始实验施工；第一批 D0/D1 见[施工记录](verification/extensions/community-preview-batch1-2026-10-21.md)，D2/S0 的实现与本地验收见[第二批施工记录](verification/extensions/community-preview-batch2-2026-10-21.md)。S1 下载、安装与耐久安全准入的实现和本地验收见[第三批施工记录](verification/extensions/community-preview-batch3-2026-10-21.md)。D0 跨仓公开入口、D3 外部作者、S2 完整商店界面和 S3 发布资格仍待完成；未合并、未发布。
+状态：已批准并开始实验施工；第一批 D0/D1 见[施工记录](verification/extensions/community-preview-batch1-2026-10-21.md)，D2/S0 的实现与本地验收见[第二批施工记录](verification/extensions/community-preview-batch2-2026-10-21.md)。S1 下载、安装与耐久安全准入的实现和本地验收见[第三批施工记录](verification/extensions/community-preview-batch3-2026-10-21.md)。S2 浏览、详情、安装进度和手动更新的实现及本地验收见[第四批施工记录](verification/extensions/community-preview-batch4-2026-10-21.md)。D0 跨仓公开入口、D3 外部作者和 S3 发布资格仍待完成；未合并、未发布。
 
 目标是让外部作者独立完成插件，让用户从精选目录发现、安装和更新插件。先完成 **D0 文档收口 → D1 作者校验入口**，再并行推进 **D2 合约与模板 → D3 外部作者验收** 和 **S0 目录规则 → S1 下载与安装 → S2 商店界面**，在 S3 汇合验收。商店开发使用参考包和测试 fixture，不等待作者招募或公开发布。复用已有安装事务、配置存储、运行时和原生能力接口。
 
