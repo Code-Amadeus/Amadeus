@@ -140,6 +140,7 @@ assets/companion/**
 assets/images/*
 !assets/images/amadeus_desktop_wallpaper.png
 assets/previews/**
+assets/text/ja/**
 assets/scenarios/**
 assets/audio/sfx/*.wav
 

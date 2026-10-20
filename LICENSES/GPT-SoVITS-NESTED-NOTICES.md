@@ -73,9 +73,19 @@ in `LICENSES/Bert-VITS2-Cantonese-Yue-AGPL-3.0.txt`.
 
 ### Generated or unverified dictionaries and caches
 
-The public source archive excludes `GPT_SoVITS/text/ja_userdic/**` because no
-source or redistribution record accompanies the 38 MiB custom dictionary.
-The Japanese frontend already treats the user dictionary as optional.
+The public source archive continues to exclude the local
+`GPT_SoVITS/text/ja_userdic/**` directory and compiled dictionaries. On
+2026-10-16 its CSV was matched, after CRLF-to-LF normalization, to the canonical
+GPT-SoVITS CSV at `1b47ca07ef43a284e0b8bd7f29d3e1e3ff76082a`, blob
+`2be580b461185ce18c9000d9ec6c8032623e17fd`. This supersedes the earlier
+unrecorded-source classification for those verified contents; arbitrary local
+copies and edits are not thereby approved for publication.
+
+The optional `japanese-pronunciation` pack is prepared separately from the pinned
+source, with explicit corrections, provenance and MIT/CMUdict/Amadeus notices.
+See `LICENSES/JAPANESE-DICTIONARY.md` for evidence and source-chain limitations.
+`assets/text/ja/**` remains outside source archives. The frontend treats the
+pack as optional and keeps compiled files in a disposable local cache.
 
 It also excludes `GPT_SoVITS/text/**/*.pickle`. These are generated lookup
 caches: English and G2PW rebuild their caches from tracked text dictionaries,

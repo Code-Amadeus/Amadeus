@@ -15,11 +15,10 @@ new Function('require', 'exports', compiled)(name => name === 'electron'
   ? { safeStorage: { isEncryptionAvailable: () => false } }
   : require(name), exports)
 
-test('emotion reference setting persists both values and reaches the next backend', () => {
+for (const key of ['ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING', 'ENABLE_JAPANESE_USER_DICTIONARY', 'ENABLE_JAPANESE_CONTEXT_READING']) test(`${key} persists both values and reaches the next backend`, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-emotion-settings-'))
   const file = path.join(root, 'settings.json')
   const dotenv = path.join(root, '.env')
-  const key = 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING'
   try {
     const store = new exports.DesktopSettingsStore(file, dotenv)
     for (const value of [false, true]) {

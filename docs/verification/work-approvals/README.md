@@ -4,8 +4,8 @@
 
 The maintainer follow-up starts from reviewed head
 `9f58b5e5ec5d4213826713e533e1484c570a0d31` and merges main
-`79ef387a7e4848046595ddabba0890c9c74c964b`, including the Pi model-metadata
-change. The original head's hosted results below are historical; they do not
+`02f485ab7ea4119beac19241831356912d709287`, including the Pi model-metadata
+change and #237. The original head's hosted results below are historical; they do not
 establish the follow-up's CI status.
 
 Cooperative request options, manual approval and automatic authorization now
@@ -42,6 +42,13 @@ Validation on Windows x64, CPython 3.12.10 and Node 22.21.1:
 - An initial permission-test invocation had a missing parent for the chosen
   temporary directory (14 passed / 59 setup errors). Creating the parent
   resolved this test-runner setup issue; it is not counted as a product failure.
+- Main advanced from `79ef387a` to `02f485ab` during the repair. Its added
+  generated `.env.example` groups conflicted with the approval group; all groups
+  were retained and the catalog outputs regenerated. After this integration,
+  **145 passed** across permission, system-settings, environment and Canvas
+  modules; **535 Electron tests passed** and the production build passed again.
+  The previously tested permission implementation and Pi runtime were unchanged
+  by this second merge.
 
 Commands from the repository root (Python uses the installed development
 environment; temporary directories and bytecode/cache options are omitted):
@@ -50,6 +57,7 @@ environment; temporary directories and bytecode/cache options are omitted):
 python -m pytest -q tests/test_cooperative_automatic_permissions.py tests/test_cooperative_scoped_permissions.py tests/test_automatic_permission_owners.py tests/test_automatic_permission_persistence.py tests/test_provider_automatic_permissions.py
 python -m pytest -q tests/test_pi_scoped_approvals.py tests/test_pi_provider.py tests/test_pi_model_metadata.py tests/test_work_scoped_permissions.py tests/test_work_permission_service.py tests/test_work_activity_permissions.py tests/test_canvas_work_preview_renderer.py tests/test_chat_ingress_lifecycle.py tests/test_cooperative_context_recovery.py
 python -m pytest -q tests/test_canvas_work_preview_renderer.py
+python -m pytest -q tests/test_cooperative_automatic_permissions.py tests/test_cooperative_scoped_permissions.py tests/test_automatic_permission_owners.py tests/test_automatic_permission_persistence.py tests/test_provider_automatic_permissions.py tests/test_system_settings.py tests/test_environment_config.py tests/test_canvas_work_preview_renderer.py
 npm --prefix electron test
 npm --prefix electron run build
 ```
@@ -68,7 +76,8 @@ depicted in these screenshots.
 
 中文：本轮修复了自动审批绕过 deny／只读限制的问题，保留合法 MCP、可写 Shell 和后台
 聊天自动审批；开关文案明确覆盖 Work 与协作聊天，从审批卡开启时增加确认。权限专项
-73 项通过，真实 Pi 子进程通过，Electron 531 项及生产构建通过。首次测试中的临时目录、
+73 项通过，真实 Pi 子进程通过；合入后来更新的 main 后，权限与配置等 145 项、Electron
+535 项及生产构建再次通过。首次测试中的临时目录、
 翻译排序和旧标题断言问题分别记录；下文原提交的 CI 记录不代替本轮 CI。
 
 Related issue: [#224](https://github.com/Code-Amadeus/Amadeus/issues/224).
