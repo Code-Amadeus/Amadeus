@@ -142,8 +142,11 @@ corrected Japanese word/name CSV and its provenance/license notices. Build,
 verify and install use the existing commands; compiled and personal dictionaries
 are excluded. This requires an application version with the new catalog entry.
 See [Japanese pronunciation dictionary](japanese_pronunciation_dictionary.md).
-It can be appended to an existing resource Release without rebuilding the other
-archives; keep dictionary versions as distinct immutable filenames.
+Publish it alongside the compatible application source ZIP in the same GitHub
+Release, with checksums and the tested version pair. It remains optional and
+does not require rebuilding other runtime archives. Later format changes ship
+updated resources with the new application; old pack contracts need not be
+retained indefinitely. Keep published filenames and bytes unchanged.
 
 The optional `voice-kurisu-emotions` pack adds paired Japanese semantic references
 to an existing Windows CUDA V3 installation. It uses the same bundle contract

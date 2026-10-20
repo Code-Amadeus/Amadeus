@@ -12,7 +12,9 @@ the base Japanese frontend remains usable without it.
 
 Update the application to a version containing this pack's catalog entry and
 loader before installation. Older applications reject the unknown pack ID.
-The first compatible application release has not yet been published.
+The first compatible application release is **v0.17.1-alpha.0**. Download the
+optional dictionary ZIP from that application Release alongside its source ZIP.
+The resource remains separately installed; the source archive does not contain it.
 
 ```powershell
 python tools/external_assets.py verify output/amadeus-japanese-pronunciation-2026.10.20.3.zip
@@ -187,17 +189,22 @@ conversation history and the character checkpoint contract are unchanged.
 
 ## Publication / 发布
 
-Keep each ZIP version immutable and attach it, with a separately published
-SHA-256, to a GitHub Release in the existing resource repository or resource
-Release, if it still allows new attachments. A published immutable Release
-cannot accept new assets; use a new dictionary-only resource Release in that
-case. An organization resource page can link to that exact asset and explain
-the minimum compatible application release, changes and known limitations.
-Adding this independent ZIP does not require rebuilding earlier model, voice,
-visual or emotion packages. The application code itself needs a compatible
-application release. A later correction gets a new dictionary version/filename;
-do not replace an older same-named asset.
+Publish the checked dictionary ZIP **as an attachment of the compatible
+application Release**, alongside the source archive, checksum list and source
+manifest. The Release records the tested application/dictionary pair and links
+the exact versioned ZIP from the organization resource page. Start with
+`v0.17.1-alpha.0` and dictionary `2026.10.20.3`.
 
-可编辑的原资源 Release 可以追加独立词典 ZIP；不可变 Release 需新建仅含词典的
-资源 Release。旧资源包不必重打包。组织资源页面作为
-介绍与下载入口，并标明所需应用版本。词典升级新增版本文件，保留旧文件。
+Application and dictionary data retain independent version identifiers. A later
+application Release may attach the same byte-identical dictionary when it still
+passes that release's gates, or attach a newer checked dictionary. A resource
+format change requires a new pack-contract version and an updated resource;
+future application code is not obliged to retain retired pack contracts. Keep
+old Release assets unchanged. No runtime dependency on a GitHub tag or a
+specific dictionary data version is introduced. See the
+[publication procedure](../release/README.md#5-publish-the-application-and-optional-resources-together).
+
+词典与应用在同一个 Release 发布，分别提供 ZIP，保持可选安装。每次发布记录
+实际验收的应用与词典组合；格式升级时随新版应用提供新资源，不要求新代码永久
+兼容旧包。数据未变且通过本次验收时可以复用原 ZIP；词典修订使用新版本和新文件名。
+旧应用与旧资源保留供原版本用户核验，语音、角色等既有大包无需重打。

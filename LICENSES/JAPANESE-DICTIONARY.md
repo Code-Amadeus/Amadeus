@@ -79,7 +79,9 @@ The production gate checks every retained word in three contexts (381), all
 129 row memberships, 303 common English controls (190 unlisted fallbacks), 52
 baseline controls, 32 extra units and 814 base-owned words in three contexts.
 These checks do not establish exhaustive lexical accuracy. Independent review
-and human listening acceptance remain outstanding; this candidate is local.
+and human listening acceptance remain outstanding. The checked subset is an
+optional resource attached to the compatible application Release, starting at
+`v0.17.1-alpha.0`; this does not certify accent or perceptual quality.
 
 The upstream default branch was rechecked on 2026-10-20 at
 `b4570b876f5c086819ba84e3215472733c6a7b70`: the CSV still has the same Git blob
