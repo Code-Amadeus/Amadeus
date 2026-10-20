@@ -156,3 +156,61 @@ and [ROADMAP](../ROADMAP.md) for the next stages.
 Host code remains AGPL-3.0, the standalone SDK/protocol is Apache-2.0 and authored
 examples are MIT-0. Code licenses do not grant rights to external art, voices,
 models or other media; document those separately.
+
+
+## Explicit runtime contract checks
+
+Use the full locked Host environment and built Electron/Pi dependencies for this
+step. The minimal static checker environment does not contain runtime dependencies.
+Only execute your trusted package, in an isolated checkout/profile. Local plugin
+code is not OS-sandboxed. The tool does not pip-install, load normal desktop settings,
+or infer credentials from a user's regular installation.
+
+```powershell
+python -I tools/check_extension_contract.py --execute --kind mcp --wheel <notes-wheel> --record <one-isolated-startup-record.json> --scenario examples/extensions/contract-scenarios/notes.json --output <report.json>
+python tools/probes/extension_author_journey.py
+```
+
+The first command requires ONE record from the isolated installer's startup snapshot,
+not an entire registry; its ID/version/digest/manifest must match the wheel. The
+maintainer journey above produces these records under `build/extension-author-journey/`.
+For themes, which deliberately have no backend startup record, that driver exports
+the actual installed resource location and manifest from the same installer/store.
+Do not pass a record from your daily profile. The tool uses the installed interpreter
+and immutable package path, but creates new temporary data, cache and native Agent
+session directories for each check. Its owned child process tree is bounded by a
+wall-clock timeout and terminated on exit. No logs or tool responses are included
+in the shareable report; arbitrary exception messages may contain secrets.
+
+Kinds and scenario inputs:
+
+- `tts`: contribution ID, text, declared language and cancellation text. Checks
+  initialize/ready, a PCM stream, rejection of an undeclared language, stream
+  cancellation and shutdown through the existing Runner/proxy. Remote TTS requires
+  `--allow-remote` and may be billable; a second request tests cancellation, and
+  neither failed request is replayed. This switch only acknowledges declared remote
+  use; it is not a network sandbox for arbitrary package code.
+- `mcp`: contribution ID, an existing Provider binding, and a list of synthetic
+  tool calls/arguments with optional expected text. Checks native MCP discovery,
+  calls and close. This direct transport check does not count as Agent routing;
+  the installer journey separately exercises Notes through real Pi with approvals.
+- `skill`: currently the existing `pi` binding and package-relative read paths.
+  Reads the selected SKILL.md and resources through actual Pi tools, then resumes
+  the unchanged native session. A controlled loopback model drives the requests;
+  real LLM choice quality and other Provider qualifications remain separate.
+- `theme`: empty scenario. Uses the real Electron image/font/palette owner, paints
+  each theme through the production renderer theme application, switches and restores
+  the built-in theme in a disposable hidden window. No Runner is started.
+
+Reports distinguish static, process contract, native Agent, GUI and remote-service
+layers. An unrun layer stays `not_run`. Failures return exit code 1 with a controlled
+stage, exception class, worker exit code when available and Runner readiness state
+for TTS. Timeout is a failure, not a retry. The tool does not certify installation
+solely from a supplied record: use the actual installer-backed journey for that.
+
+Existing adversarial tests cover wrong registration/handshake, illegal PCM,
+late audio after cancellation, timeouts, credential projection, unbound Providers,
+missing/shadowed Skills, changed/removed Skill revisions, unrelated additions,
+invalid theme colors/images/contrast and native recovery. The journey additionally
+runs `test_skill_pi_runtime.py` against its actual installed versions and Notes
+through the native Pi path. Paid Fish/MiMo service checks remain explicitly separate.

@@ -123,6 +123,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: Run offline extension author journeys
+        run: >-
+          uv run --locked --no-sync python -X utf8 tools/probes/extension_author_journey.py
+
       - name: Run Electron model-less smoke
         run: >-
           uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
@@ -150,6 +154,9 @@ jobs:
         with:
           name: electron-model-less-smoke-${{ github.run_id }}
           path: |
+            build/extension-author-journey/**/report.json
+            build/extension-author-journey/**/*-report.json
+            build/extension-author-journey/**/*.log
             build/electron-smoke/**
             build/electron-packaged-smoke/**
           if-no-files-found: ignore

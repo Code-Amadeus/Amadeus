@@ -1,0 +1,38 @@
+{
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.tone-tts",
+  "version": "0.1.0",
+  "display_name": "Offline SDK tone",
+  "description": "Synthetic PCM for author contract checks, not a speech service.",
+  "license": "MIT-0",
+  "author": {
+    "name": "Amadeus contributors"
+  },
+  "engines": {
+    "amadeus_host_api": ">=0.1,<0.2",
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ]
+  },
+  "runtime": {
+    "kind": "python",
+    "entry": "amadeus_example_tone:extension",
+    "requires_python": ">=3.12"
+  },
+  "contributes": {
+    "voice_backend": [
+      {
+        "id": "tone",
+        "role": "tts",
+        "contract": "amadeus.voice.tts/v0",
+        "deployment": "local",
+        "languages": [
+          "en"
+        ],
+        "streaming": true
+      }
+    ]
+  }
+}

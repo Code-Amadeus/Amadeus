@@ -1,0 +1,7 @@
+{
+  "provider": "pi",
+  "reads": [
+    "skills/handoff-brief/SKILL.md",
+    "skills/handoff-brief/references/layout.json"
+  ]
+}

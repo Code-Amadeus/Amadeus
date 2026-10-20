@@ -40,7 +40,7 @@ never downloads or builds an SDK from a third party.
 The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
-All six [examples](../examples/extensions/) are validated against these rules.
+The reference [examples](../examples/extensions/) are validated against these rules.
 New `runtime.kind=none` wheels contain resources only: their inspected package
 directory is extracted without creating a venv, invoking pip or importing code.
 They cannot declare `Requires-Dist`. Existing no-code installations retain their

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "amadeus-example-tone-tts"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["amadeus-extension-sdk==0.1.0"]
+license = "MIT-0"
+[project.entry-points."amadeus.extensions"]
+"com.example.tone-tts" = "amadeus_example_tone"
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.setuptools.package-data]
+amadeus_example_tone = ["amadeus-extension.json"]

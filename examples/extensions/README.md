@@ -84,3 +84,26 @@ a release decision; the checked-in wheel has a recorded source commit and digest
 
 Native discovery, resource use, restoration, addition, update and removal are
 exercised in `tests/test_skill_codex_runtime.py` and `tests/test_skill_pi_runtime.py`.
+
+
+## Four author journeys
+
+Start from `tone-tts` for an offline SDK process, `notes-mcp` for native MCP,
+`handoff-skill` for resources read by Pi, or `desktop-theme` for native rendering.
+The original MiMo/Fish service examples remain available; a tone is not speech
+quality or paid-service qualification. The new offline tone uses the delivered
+SDK wheel and standard library only.
+
+When copying a template change the manifest package ID, distribution name,
+import-package directory, version, entry-point key/value, contribution IDs,
+author/license/assets and configuration together. For TTS also change runtime.entry.
+Build first, run check-wheel on those bytes, then install to an isolated desktop.
+Do not import private Host modules in a plugin or copy an existing author's identity.
+
+[The contract tool](../../docs/extension_authoring.md#explicit-runtime-contract-checks)
+accepts a trusted installed record plus its exact wheel and an explicit scenario.
+Example scenarios under `contract-scenarios/` contain only synthetic inputs.
+The maintainer journey builds/installs two versions of all four references using
+the actual installer/store, runs their checks, and verifies disable, data retention,
+reinstall and explicit deletion. It supplies confirmation decisions through a
+driver; it does not certify manual native dialogs or real-model selection quality.

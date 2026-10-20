@@ -10,6 +10,10 @@
   "archive_prefix": "amadeus-{version}",
   "required_files": [
     "tools/extension_package.py",
+    "tools/check_extension_contract.py",
+    "tools/probes/extension_contract_pi.py",
+    "electron/scripts/check-extension-theme.mjs",
+    "examples/extensions/tone-tts/src/amadeus_example_tone/amadeus-extension.json",
     "tools/requirements-extension-authoring.txt",
     "docs/extension_authoring.md",
     "docs/extension_validation_history_2026-10-13.md",
