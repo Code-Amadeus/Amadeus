@@ -1,8 +1,8 @@
 """Runtime authority for non-conversational presentation choices.
 
 The assistant/voice language remains owned by ``assistant_language``.  This
-module controls Slice process presentation (including Provider reporting copy)
-and how the wallpaper caption surface presents an already-authored role line.
+module controls Slice process presentation (including Provider reporting copy),
+the shared Chat/Wallpaper subtitle target language, and wallpaper caption mode.
 """
 
 from __future__ import annotations
@@ -11,13 +11,15 @@ import os
 from collections.abc import Callable, Mapping
 
 
-from config.catalog import configuration_field, option_values
+from config.catalog import configuration_field, option_values, read_catalog_value
+from config.environment import EnvironmentReader
 
 VALID_PRESENTATION_LOCALES = set(option_values(configuration_field("AMADEUS_PRESENTATION_LOCALE")))
 VALID_CAPTION_MODES = set(option_values(configuration_field("AMADEUS_WALLPAPER_CAPTION_MODE")))
 DEFAULT_PRESENTATION_LOCALE = configuration_field("AMADEUS_PRESENTATION_LOCALE")["default"]
 # The legacy combined subtitle input determines the effective default.
 DEFAULT_CAPTION_MODE = "translated"
+_SUBTITLE_LANGUAGE_FIELD = configuration_field("AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE")
 
 
 def normalize_presentation_locale(value: object) -> str:
@@ -84,6 +86,11 @@ _presentation_locale = normalize_presentation_locale(
 _caption_mode = normalize_caption_mode(
     os.environ.get("AMADEUS_WALLPAPER_CAPTION_MODE") or _legacy_mode
 )
+_subtitle_translation_language = read_catalog_value(
+    EnvironmentReader(os.environ), "AMADEUS_SUBTITLE_TRANSLATION_LANGUAGE"
+)
+if _subtitle_translation_language not in option_values(_SUBTITLE_LANGUAGE_FIELD):
+    _subtitle_translation_language = _SUBTITLE_LANGUAGE_FIELD["default"]
 _renderer: Callable[[dict[str, str]], None] | None = None
 
 
@@ -95,10 +102,15 @@ def get_caption_mode() -> str:
     return _caption_mode
 
 
+def get_subtitle_translation_language() -> str:
+    return _subtitle_translation_language
+
+
 def get_config() -> dict[str, str]:
     return {
         "presentation_locale": _presentation_locale,
         "wallpaper_caption_mode": _caption_mode,
+        "subtitle_translation_language": _subtitle_translation_language,
     }
 
 
@@ -111,8 +123,15 @@ def set_renderer(renderer: Callable[[dict[str, str]], None] | None) -> None:
 def set_config(values: Mapping[str, object], *, render_current: bool = True) -> list[str]:
     """Apply one profile update, accepting the retired combined key at input."""
 
-    global _presentation_locale, _caption_mode
+    global _presentation_locale, _caption_mode, _subtitle_translation_language
     changed: list[str] = []
+    if "subtitle_translation_language" in values:
+        language = str(values["subtitle_translation_language"])
+        if language not in option_values(_SUBTITLE_LANGUAGE_FIELD):
+            raise ValueError(f"unsupported subtitle_translation_language: {language!r}")
+        if language != _subtitle_translation_language:
+            _subtitle_translation_language = language
+            changed.append("subtitle_translation_language")
     has_locale = "presentation_locale" in values
     has_mode = "wallpaper_caption_mode" in values
 

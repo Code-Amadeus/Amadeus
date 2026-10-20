@@ -1,6 +1,7 @@
 """Subtitle client startup must not occupy the shared audio event loop."""
 import asyncio
 import threading
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
@@ -15,6 +16,8 @@ def isolated_clients(monkeypatch):
     monkeypatch.setattr(translator, "_CLIENTS", {})
     monkeypatch.setattr(translator.settings, "DEEPSEEK_API_KEY", "synthetic-key")
     monkeypatch.setattr(translator.settings, "OPENAI_API_KEY", "synthetic-key")
+    monkeypatch.setattr(translator.settings, "GEMINI_API_KEY", "synthetic-key")
+    monkeypatch.setattr(translator.presentation_runtime, "_subtitle_translation_language", "zh-CN")
 
 
 def config(provider):
@@ -111,3 +114,70 @@ async def test_failed_initialization_does_not_poison_client_cache(monkeypatch):
     assert await translator._translate_openai_compatible("二。", config("deepseek")) == "翻译结果"
     assert translator._CLIENTS == {("deepseek", "https://example.invalid/v1"):client}
     assert len(attempts) == 2
+
+
+@pytest.mark.parametrize("provider", ["deepseek", "openai", "gemini"])
+@pytest.mark.parametrize("language,label,raw,expected", [
+    ("zh-CN", "Simplified Chinese", "翻译：准备好了。", "准备好了。"),
+    ("en-US", "English", "English: Ready.", "Ready."),
+])
+async def test_selected_language_reaches_each_provider_and_accepts_its_output(
+        monkeypatch, provider, language, label, raw, expected):
+    requests = []
+    monkeypatch.setenv("AMADEUS_SUBTITLE_TRANSLATE_PROVIDER", provider)
+    monkeypatch.setattr(translator.presentation_runtime, "_subtitle_translation_language", language)
+
+    def create(**kwargs):
+        requests.append(kwargs["messages"][0]["content"])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=raw))])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(translator, "_get_openai_client", lambda *_: client)
+
+    async def response_json():
+        return {"candidates": [{"content": {"parts": [{"text": raw}]}}]}
+
+    @asynccontextmanager
+    async def post(_url, *, json, **_kwargs):
+        requests.append(json["contents"][0]["parts"][0]["text"])
+        yield SimpleNamespace(status=200, json=response_json)
+
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace(post=post)
+
+    monkeypatch.setattr(translator.aiohttp, "ClientSession", session)
+    assert await translator.translate_presentation_subtitle("準備できたわ。") == expected
+    assert len(requests) == 1
+    assert label in requests[0]
+    assert ("English" if language == "zh-CN" else "Simplified Chinese") not in requests[0]
+    assert translator.get_translation_runtime_info()["target_language"] == language
+
+
+@pytest.mark.parametrize("language,valid,invalid", [
+    ("zh-CN", "嗯。", "OK."),
+    ("en-US", "OK.", "準備できたわ。"),
+])
+def test_output_validation_follows_target_script(language, valid, invalid):
+    assert translator._looks_like_valid_translation(valid, language)
+    assert not translator._looks_like_valid_translation(invalid, language)
+    assert not translator._looks_like_valid_translation("...", language)
+    assert not translator._looks_like_valid_translation("", language)
+
+
+async def test_pending_request_keeps_its_language_snapshot(monkeypatch):
+    started, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(translator.presentation_runtime, "_subtitle_translation_language", "en-US")
+
+    async def translate(_text, config):
+        assert config.target_language == "en-US"
+        started.set()
+        await release.wait()
+        return "Ready."
+
+    monkeypatch.setattr(translator, "_translate_with_config", translate)
+    task = asyncio.create_task(translator.translate_presentation_subtitle("準備できたわ。"))
+    await started.wait()
+    monkeypatch.setattr(translator.presentation_runtime, "_subtitle_translation_language", "zh-CN")
+    release.set()
+    assert await task == "Ready."

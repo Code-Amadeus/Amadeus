@@ -47,6 +47,7 @@ RAG_ENABLED: bool = _catalog_values["RAG_ENABLED"]
 RAG_INDEX_DIR: str = _catalog_values["RAG_INDEX_DIR"]
 RAG_TOP_K: int = _catalog_values["RAG_TOP_K"]
 RAG_MAX_DISTANCE: float = _catalog_values["RAG_MAX_DISTANCE"]
+COOPERATIVE_CHAT_TEMPERATURE: float = _catalog_values["COOPERATIVE_CHAT_TEMPERATURE"]
 DEEPSEEK_API_KEY: str = _catalog_values["DEEPSEEK_API_KEY"]
 DEEPSEEK_BASE_URL: str = _catalog_values["DEEPSEEK_BASE_URL"]
 DEEPSEEK_MODEL_NAME: str = _catalog_values["DEEPSEEK_MODEL_NAME"]
@@ -737,6 +738,10 @@ COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
 )
 COOPERATIVE_CHAT_QUERY_TIMEOUT_S = _float("COOPERATIVE_CHAT_QUERY_TIMEOUT_S", 45.0)
 COOPERATIVE_CHAT_QUERY_MAX_TOKENS = _int("COOPERATIVE_CHAT_QUERY_MAX_TOKENS", 900)
+_chat_temperature_field = configuration_field("COOPERATIVE_CHAT_TEMPERATURE")
+if not _chat_temperature_field["min"] <= COOPERATIVE_CHAT_TEMPERATURE <= _chat_temperature_field["max"]:
+    raise ValueError("COOPERATIVE_CHAT_TEMPERATURE must be a finite number between "
+        f"{_chat_temperature_field["min"]} and {_chat_temperature_field["max"]}")
 COOPERATIVE_CHAT_PERMISSION_POLICY = _str(
     "COOPERATIVE_CHAT_PERMISSION_POLICY", "ask",
 ).strip().lower()

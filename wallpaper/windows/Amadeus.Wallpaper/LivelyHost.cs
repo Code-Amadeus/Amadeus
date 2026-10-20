@@ -94,6 +94,18 @@ public sealed class LivelyHost : IWallpaperHost
     public static Process? Running() => Process.GetProcessesByName("Lively")
         .FirstOrDefault(p => p.SessionId == Process.GetCurrentProcess().SessionId);
 
+    public bool IsProcessRunning(ProcessIdentity identity)
+    {
+        Process process;
+        try { process = Process.GetProcessById(identity.Id); }
+        catch (ArgumentException) { return false; }
+        using (process)
+        {
+            try { return !process.HasExited && process.StartTime.ToUniversalTime().Ticks == identity.Started; }
+            catch (InvalidOperationException) when (process.HasExited) { return false; }
+        }
+    }
+
     public static string? FindExecutable()
     {
         using var running = Running();
@@ -250,11 +262,16 @@ public sealed class LivelyHost : IWallpaperHost
         return directory;
     }
 
-    public async Task SetWallpaper(DesktopItem wallpaper)
+    public async Task SetWallpaper(DesktopItem wallpaper, Action? requestSettled = null,
+        Action<ProcessIdentity>? requestDispatching = null)
     {
-        await desktop.SetWallpaperAsync(new SetWallpaperRequest {
+        var request = new SetWallpaperRequest {
             LivelyInfoPath = wallpaper.Path, MonitorId = wallpaper.Monitor
-        }, deadline: Deadline);
+        };
+        if (requestDispatching is null) await desktop.SetWallpaperAsync(request, deadline: Deadline);
+        else await WallpaperRequest.Send("Grpc_LIVELY:DESKTOPWALLPAPERSYSTEM" + Environment.UserName, request, requestDispatching);
+        // 只确认原生请求不再等待；下面的场景读回仍须独立成功。
+        requestSettled?.Invoke();
         var until = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < until)
         {

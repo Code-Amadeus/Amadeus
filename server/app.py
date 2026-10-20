@@ -19,6 +19,7 @@ import mimetypes
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from queue import Queue
 from typing import Any, TYPE_CHECKING
@@ -782,11 +783,13 @@ async def bootstrap(port: int = 17777) -> None:
     # audio player.
     from tts.playback import StreamPlayerWithBuffer as _SPB, PlaybackManager as _PM, SubtitleHooks as _SH
     from server import presentation_runtime, wallpaper_subtitle_runtime
+    from server.wallpaper_subtitle_translator import translate_wallpaper_subtitle
+    from tts.sentence_state import pre_translation_cache
 
     def _update_wallpaper_subtitle(japanese_text: str, chinese_text: str = "") -> None:
         # Wallpaper subtitles are a display layer. Chat bubbles and chat memory
         # keep the original assistant text; only this surface can switch
-        # between Japanese, Chinese, bilingual, or hidden captions.
+        # between source, translated, bilingual, or hidden captions.
         wallpaper_subtitle_runtime.update(japanese_text, chinese_text)
 
     def _update_playback_subtitle(japanese_text: str, chinese_text: str = "") -> None:
@@ -798,9 +801,19 @@ async def bootstrap(port: int = 17777) -> None:
         )
 
     wallpaper_subtitle_runtime.set_renderer(lambda text: wallpaper_h.set_subtitle(text))
-    presentation_runtime.set_renderer(
-        lambda profile: wallpaper_h.set_canvas_presentation(profile)
-    )
+    subtitle_language = ""
+
+    def _apply_presentation(profile: dict[str, str]) -> None:
+        nonlocal subtitle_language
+        language = profile["subtitle_translation_language"]
+        if language != subtitle_language:
+            pre_translation_cache.set_translate_fn(
+                partial(translate_wallpaper_subtitle, target_language=language)
+            )
+            subtitle_language = language
+        wallpaper_h.set_canvas_presentation(profile)
+
+    presentation_runtime.set_renderer(_apply_presentation)
 
     def _is_vn_playback_sentence(sentence_id: str) -> bool:
         try:
@@ -878,6 +891,10 @@ async def bootstrap(port: int = 17777) -> None:
                 return
 
             cached = await pre_translation_cache.get_translation(japanese_text)
+            if cached is None:
+                # A language switch retires pretranslations queued under the
+                # old policy. Resolve the new policy when this sentence plays.
+                await pre_translation_cache.start_translation(sentence_id, japanese_text)
             if cached and cached.get("status") == "completed" and cached.get("chinese"):
                 await _server_display_chinese_subtitle_with_text(
                     sentence_id,
@@ -901,8 +918,6 @@ async def bootstrap(port: int = 17777) -> None:
                 asyncio.create_task(_wait_for_translation())
         except Exception:
             logger.exception("server pre-translation display failed")
-
-    from tts.sentence_state import pre_translation_cache
 
     player = _SPB(
         mouth_signal_router,
@@ -1245,12 +1260,8 @@ async def bootstrap(port: int = 17777) -> None:
     tts_executor = ThreadPoolExecutor(max_workers=MAX_SELECTABLE_TTS_CONCURRENCY)
     translation_executor = ThreadPoolExecutor(max_workers=4)
     try:
-        from server.wallpaper_subtitle_translator import (
-            get_translation_runtime_info,
-            translate_wallpaper_subtitle,
-        )
+        from server.wallpaper_subtitle_translator import get_translation_runtime_info
 
-        pre_translation_cache.set_translate_fn(translate_wallpaper_subtitle)
         subtitle_translation_info = get_translation_runtime_info()
         logger.info(
             "Wallpaper subtitle translation configured; active=%s mode=%s provider=%s model=%s",
@@ -1786,7 +1797,9 @@ async def bootstrap(port: int = 17777) -> None:
                 if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else "",
             json_output=(source_kind not in ("provider", "host_receipt")
                 if json_output is None else json_output),
-            on_text=on_text, visual_context=visual_context, temperature=0.0,
+            on_text=on_text, visual_context=visual_context,
+            temperature=(settings.COOPERATIVE_CHAT_TEMPERATURE
+                if source_kind in ("user", "provider", "host_receipt") else 0.0),
             max_tokens=max(1, int(settings.COOPERATIVE_CHAT_QUERY_MAX_TOKENS)),
             timeout=max(1.0, float(settings.COOPERATIVE_CHAT_QUERY_TIMEOUT_S)))
 

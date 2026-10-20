@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tts import first_sentence_audio_cache as cache_module
 from tts.first_sentence_audio_cache import FirstSentenceAudioCache
@@ -208,6 +209,7 @@ def test_previous_synthesis_revisions_are_not_reused(
         "gsv_static_kv_mask_semantic_guard.v1",
         "gsv_static_kv_mask_semantic_guard.local_only.v2",
         "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.v3",
+        "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.punctuation.v4",
     ):
         old_payload = cache.key_payload(text, params)
         if previous_revision is None:
@@ -219,6 +221,37 @@ def test_previous_synthesis_revisions_are_not_reused(
         assert cache._path_for_payload(old_payload).exists() is True
         assert cache.path_for(text, params).exists() is False
         assert cache.lookup(text, params) is None
+
+
+@pytest.mark.parametrize("legacy_identity", [False, True])
+@pytest.mark.parametrize("metadata", [False, True])
+def test_silence_from_failed_reference_preparation_is_not_reused(
+    tmp_path, monkeypatch, legacy_identity, metadata,
+) -> None:
+    _configure_current_identity(monkeypatch)
+    monkeypatch.setattr(cache_module, "FIRST_SENTENCE_AUDIO_CACHE_ENABLED", True)
+    cache = FirstSentenceAudioCache(tmp_path)
+    params = _current_params()
+    text = "Hello."
+    old_payload = (
+        cache._legacy_key_payloads(text, params)[0]
+        if legacy_identity else cache.key_payload(text, params)
+    )
+    old_payload["synthesis_revision"] = (
+        "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.punctuation.v4"
+    )
+    # The old streaming error path returned this nonempty array as success.
+    _write_entry(cache, old_payload, np.zeros(16000, dtype=np.float32), metadata=metadata)
+
+    assert cache.lookup(text, params) is None
+    assert cache._path_for_payload(old_payload).exists()
+    assert not cache.path_for(text, params).exists()
+
+    regenerated = np.full(1600, 0.1, dtype=np.float32)
+    assert cache.store(text, params, 24000, regenerated)
+    sample_rate, audio = cache.lookup(text, params)
+    assert sample_rate == 24000
+    np.testing.assert_array_equal(audio, regenerated)
 
 
 def test_legacy_cache_with_malformed_metadata_is_rejected(

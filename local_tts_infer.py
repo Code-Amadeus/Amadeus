@@ -360,7 +360,7 @@ class TTSInferencer:
         last_assessment = None
 
         for attempt, repetition_penalty in enumerate(penalties, start=1):
-            prediction, idx = self.t2s_model.model.infer_panel(
+            prediction, _ = self.t2s_model.model.infer_panel(
                 all_phoneme_ids,
                 all_phoneme_len,
                 prompt,
@@ -373,11 +373,12 @@ class TTSInferencer:
                 enable_cuda_graph=self.cuda_graph_enabled if enable_cuda_graph is None else enable_cuda_graph,
                 enable_static_kv=enable_static_kv,
             )
-            generated_count = max(0, int(idx))
-            if generated_count:
-                candidate = prediction[:, -generated_count:]
-            else:
-                candidate = prediction[:, :0]
+            # The decoder returns the prompt prefix followed by generated tokens.
+            # Its second return value is a legacy slice index (zero in reference-free
+            # mode), not a token count. Use the actual sequence boundary in both modes.
+            prefix_length = 0 if prompt is None else prompt.shape[-1]
+            candidate = prediction[:, prefix_length:]
+            generated_count = candidate.shape[-1]
 
             if not guard_enabled:
                 return candidate.unsqueeze(0), generated_count, attempt
@@ -928,90 +929,88 @@ class TTSInferencer:
         if key in self._session_cache:
             return self._session_cache[key]
 
+        # Only publish a complete reference. Warmup may catch failures, but a live
+        # request must retain the original error instead of losing its prompt.
         cache_item = {}
-        try:
-            # 1) Prompt 相关（SSL → prompt）
-            with torch.no_grad():
-                wav16k, _ = librosa.load(ref_audio_path, sr=16000)
-                wav16k = torch.from_numpy(wav16k)
-                if self.is_half:
-                    wav16k = wav16k.half().to(self.device)
-                else:
-                    wav16k = wav16k.float().to(self.device)
-                # 追加极短静音，避免边界截断
-                tail = torch.zeros(int(1600), dtype=wav16k.dtype, device=wav16k.device)
-                wav16k = torch.cat([wav16k, tail])
-                ssl_content = self.ssl_model.model(wav16k.unsqueeze(0))["last_hidden_state"].transpose(1, 2)
-                codes = self.vq_model.extract_latent(ssl_content)
-                prompt_semantic = codes[0, 0]
-                cache_item["prompt"] = prompt_semantic.unsqueeze(0).to(self.device)
-
-            # 2) Prompt 文本 phones/bert
-            phones1, bert1, _ = self.get_phones_and_bert(prompt_text or "", prompt_language_code or _default_lang_code())
-            cache_item["phones1"] = phones1
-            cache_item["bert1"] = bert1
-
-            # 3) 参考频谱（所有版本可用）
-            refer = self.get_spepc(ref_audio_path).to(self.device)
+        # 1) Prompt 相关（SSL → prompt）
+        with torch.no_grad():
+            wav16k, _ = librosa.load(ref_audio_path, sr=16000)
+            wav16k = torch.from_numpy(wav16k)
             if self.is_half:
-                refer = refer.half()
+                wav16k = wav16k.half().to(self.device)
             else:
-                refer = refer.float()
-            cache_item["refer_spec"] = refer
+                wav16k = wav16k.float().to(self.device)
+            # 追加极短静音，避免边界截断
+            tail = torch.zeros(int(1600), dtype=wav16k.dtype, device=wav16k.device)
+            wav16k = torch.cat([wav16k, tail])
+            ssl_content = self.ssl_model.model(wav16k.unsqueeze(0))["last_hidden_state"].transpose(1, 2)
+            codes = self.vq_model.extract_latent(ssl_content)
+            prompt_semantic = codes[0, 0]
+            cache_item["prompt"] = prompt_semantic.unsqueeze(0).to(self.device)
 
-            # v2Pro adds an ERes2Net speaker embedding to the reference style
-            # conditioning.  Cache it alongside the spectrum so the unchanged
-            # session/streaming pipeline does not recompute it per sentence.
-            if self.is_v2pro:
-                cache_item["sv_embedding"] = self._get_sv_embedding(ref_audio_path)
+        # 2) Prompt 文本 phones/bert
+        phones1, bert1, _ = self.get_phones_and_bert(prompt_text or "", prompt_language_code or _default_lang_code())
+        cache_item["phones1"] = phones1
+        cache_item["bert1"] = bert1
 
-            # 4) v3 额外缓存：ref_audio 24k 的 mel2（归一化后）
-            if self.model_version == "v3":
-                import torchaudio
-                ref_audio, ref_sr = torchaudio.load(ref_audio_path)
-                ref_audio = ref_audio.to(self.device)
-                if self.is_half:
-                    ref_audio = ref_audio.half()
-                else:
-                    ref_audio = ref_audio.float()
-                if ref_audio.shape[0] == 2:
-                    ref_audio = ref_audio.mean(0).unsqueeze(0)
-                if ref_sr != 24000:
-                    ref_audio = self._resample(ref_audio, ref_sr)
+        # 3) 参考频谱（所有版本可用）
+        refer = self.get_spepc(ref_audio_path).to(self.device)
+        if self.is_half:
+            refer = refer.half()
+        else:
+            refer = refer.float()
+        cache_item["refer_spec"] = refer
 
-                mel_fn = lambda x: mel_spectrogram_torch(x, **{
-                    "n_fft": 1024,
-                    "win_size": 1024,
-                    "hop_size": 256,
-                    "num_mels": 100,
-                    "sampling_rate": 24000,
-                    "fmin": 0,
-                    "fmax": None,
-                    "center": False
-                })
-                spec_min, spec_max = -12, 2
-                norm_spec = lambda x: (x - spec_min) / (spec_max - spec_min) * 2 - 1
-                mel2 = mel_fn(ref_audio)
-                mel2 = norm_spec(mel2)
-                cache_item["mel2_norm"] = mel2
+        # v2Pro adds an ERes2Net speaker embedding to the reference style
+        # conditioning.  Cache it alongside the spectrum so the unchanged
+        # session/streaming pipeline does not recompute it per sentence.
+        if self.is_v2pro:
+            cache_item["sv_embedding"] = self._get_sv_embedding(ref_audio_path)
 
-                # 5) v3 额外缓存：prompt 侧 decode_encp 结果，避免每句重复做同一份参考编码
-                phoneme_ids0 = torch.LongTensor(phones1).to(self.device).unsqueeze(0)
-                with torch.no_grad():
-                    prompt_fea_ref, prompt_ge = self.vq_model.decode_encp(
-                        cache_item["prompt"].unsqueeze(0),
-                        phoneme_ids0,
-                        refer,
-                    )
-                cache_item["prompt_fea_ref"] = prompt_fea_ref
-                cache_item["prompt_ge"] = prompt_ge
+        # 4) v3 额外缓存：ref_audio 24k 的 mel2（归一化后）
+        if self.model_version == "v3":
+            # Local reference decoding must not depend on the Torch build's codec
+            # backend (TorchAudio 2.9 delegates load() to optional TorchCodec).
+            ref_audio, ref_sr = sf.read(ref_audio_path, dtype="float32", always_2d=True)
+            ref_audio = torch.from_numpy(ref_audio.T.copy()).to(self.device)
+            if self.is_half:
+                ref_audio = ref_audio.half()
+            else:
+                ref_audio = ref_audio.float()
+            if ref_audio.shape[0] == 2:
+                ref_audio = ref_audio.mean(0).unsqueeze(0)
+            if ref_sr != 24000:
+                ref_audio = self._resample(ref_audio, ref_sr)
 
-            self._session_cache[key] = cache_item
-            return cache_item
-        except Exception:
-            logger.warning("Failed to build session cache; falling back to per-sentence computation")
-            logger.warning(traceback.format_exc())
-            return {}
+            mel_fn = lambda x: mel_spectrogram_torch(x, **{
+                "n_fft": 1024,
+                "win_size": 1024,
+                "hop_size": 256,
+                "num_mels": 100,
+                "sampling_rate": 24000,
+                "fmin": 0,
+                "fmax": None,
+                "center": False
+            })
+            spec_min, spec_max = -12, 2
+            norm_spec = lambda x: (x - spec_min) / (spec_max - spec_min) * 2 - 1
+            mel2 = mel_fn(ref_audio)
+            mel2 = norm_spec(mel2)
+            cache_item["mel2_norm"] = mel2
+
+            # 5) v3 额外缓存：prompt 侧 decode_encp 结果，避免每句重复做同一份参考编码
+            phoneme_ids0 = torch.LongTensor(phones1).to(self.device).unsqueeze(0)
+            with torch.no_grad():
+                prompt_fea_ref, prompt_ge = self.vq_model.decode_encp(
+                    cache_item["prompt"].unsqueeze(0),
+                    phoneme_ids0,
+                    refer,
+                )
+            cache_item["prompt_fea_ref"] = prompt_fea_ref
+            cache_item["prompt_ge"] = prompt_ge
+
+        self._session_cache[key] = cache_item
+        return cache_item
 
     def _normalize_reference_prompt(self, prompt_text, prompt_language):
         """Resolve the reference exactly as live inference does, including V3 fallback."""
@@ -1326,14 +1325,11 @@ class TTSInferencer:
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
             sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
-            prompt = sess.get("prompt")
+            prompt = sess["prompt"]
 
             # 获取参考音频的音素和BERT特征
             if not ref_free:
-                if "phones1" in sess and "bert1" in sess:
-                    phones1, bert1 = sess["phones1"], sess["bert1"]
-                else:
-                    phones1, bert1, norm_text1 = self.get_phones_and_bert(prompt_text, prompt_language_code)
+                phones1, bert1 = sess["phones1"], sess["bert1"]
 
             # 初始化缓存
             cache = {}
@@ -1420,16 +1416,9 @@ class TTSInferencer:
 
                     # 如果没有额外参考音频，使用主参考音频
                     if len(refers) == 0:
-                        refer = sess.get("refer_spec")
-                        if refer is None:
-                            refer = self.get_spepc(ref_audio_path).to(self.device)
-                            refer = refer.half() if self.is_half else refer.float()
-                        refers = [refer]
+                        refers = [sess["refer_spec"]]
                         if self.is_v2pro:
-                            speaker_embedding = sess.get("sv_embedding")
-                            if speaker_embedding is None:
-                                speaker_embedding = self._get_sv_embedding(ref_audio_path)
-                            sv_embeddings = [speaker_embedding]
+                            sv_embeddings = [sess["sv_embedding"]]
 
                     # 解码
                     audio = self.vq_model.decode(
@@ -1450,58 +1439,12 @@ class TTSInferencer:
                     audio_outputs.append(zero_wav)  # 句间停顿
 
                 else:
-                    # v3模型解码
-                    import torchaudio
-
-                    # 根据is_half决定是否使用half
-                    # 优先使用会话缓存的参考频谱
-                    refer = sess.get("refer_spec")
-                    if refer is None:
-                        refer = self.get_spepc(ref_audio_path).to(self.device)
-                        refer = refer.half() if self.is_half else refer.float()
-
-                    phoneme_ids0 = torch.LongTensor(phones1).to(self.device).unsqueeze(0)
+                    # v3 reference preparation is owned by the complete session cache.
+                    refer = sess["refer_spec"]
                     phoneme_ids1 = torch.LongTensor(phones2).to(self.device).unsqueeze(0)
-
-                    # 提取参考音频特征（优先使用会话缓存）
-                    fea_ref = self._clone_cached_value(sess.get("prompt_fea_ref"))
-                    ge = self._clone_cached_value(sess.get("prompt_ge"))
-                    if fea_ref is None or ge is None:
-                        fea_ref, ge = self.vq_model.decode_encp(prompt.unsqueeze(0), phoneme_ids0, refer)
-
-                    # 加载并处理参考音频
-                    ref_audio, ref_sr = torchaudio.load(ref_audio_path)
-                    ref_audio = ref_audio.to(self.device)
-                    # 根据is_half决定是否使用half
-                    if self.is_half:
-                        ref_audio = ref_audio.half()
-                    else:
-                        ref_audio = ref_audio.float()
-
-                    if ref_audio.shape[0] == 2:  # 转单声道
-                        ref_audio = ref_audio.mean(0).unsqueeze(0)
-
-                    # 重采样到24kHz
-                    if ref_sr != 24000:
-                        ref_audio = self._resample(ref_audio, ref_sr)
-
-                    # 提取mel特征（优先使用会话缓存）
-                    mel2 = sess.get("mel2_norm")
-                    if mel2 is None:
-                        mel_fn = lambda x: mel_spectrogram_torch(x, **{
-                            "n_fft": 1024,
-                            "win_size": 1024,
-                            "hop_size": 256,
-                            "num_mels": 100,
-                            "sampling_rate": 24000,
-                            "fmin": 0,
-                            "fmax": None,
-                            "center": False
-                        })
-                        spec_min, spec_max = -12, 2
-                        norm_spec = lambda x: (x - spec_min) / (spec_max - spec_min) * 2 - 1
-                        mel2 = mel_fn(ref_audio)
-                        mel2 = norm_spec(mel2)
+                    fea_ref = self._clone_cached_value(sess["prompt_fea_ref"])
+                    ge = self._clone_cached_value(sess["prompt_ge"])
+                    mel2 = sess["mel2_norm"]
 
                     # 调整长度
                     T_min = min(mel2.shape[2], fea_ref.shape[2])
@@ -1750,14 +1693,11 @@ class TTSInferencer:
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
             sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
-            prompt = sess.get("prompt")
+            prompt = sess["prompt"]
 
             # 获取参考音频的音素和BERT特征（会话级缓存优先）
             if not ref_free:
-                if "phones1" in sess and "bert1" in sess:
-                    phones1, bert1 = sess["phones1"], sess["bert1"]
-                else:
-                    phones1, bert1, norm_text1 = self.get_phones_and_bert(prompt_text, prompt_language_code)
+                phones1, bert1 = sess["phones1"], sess["bert1"]
 
             # 初始化缓存
             cache = {}
@@ -1857,16 +1797,9 @@ class TTSInferencer:
 
                     # 如果没有额外参考音频，使用主参考音频
                     if len(refers) == 0:
-                        refer = sess.get("refer_spec")
-                        if refer is None:
-                            refer = self.get_spepc(ref_audio_path).to(self.device)
-                            refer = refer.half() if self.is_half else refer.float()
-                        refers = [refer]
+                        refers = [sess["refer_spec"]]
                         if self.is_v2pro:
-                            speaker_embedding = sess.get("sv_embedding")
-                            if speaker_embedding is None:
-                                speaker_embedding = self._get_sv_embedding(ref_audio_path)
-                            sv_embeddings = [speaker_embedding]
+                            sv_embeddings = [sess["sv_embedding"]]
 
                     # 解码
                     audio = self.vq_model.decode(
@@ -1904,54 +1837,15 @@ class TTSInferencer:
                     yield sr, pause_chunk, ""  # 停顿不需要文本
 
                 else:
-                    # v3模型解码
-                    import torchaudio
-
-                    # audio saved tossplit into graph audio saved tosynthesis failed v3 synthesis failed
-                    # audio saved tossplit into GPTsynthesis faileds SoVITS / BigVGAN synthesis faileds
+                    # v3 reference preparation is owned by the complete session cache.
                     with self._sovits_decode_lock:
-                        # 根据is_half决定是否使用half
-                        refer = sess.get("refer_spec")
-                        if refer is None:
-                            refer = self.get_spepc(ref_audio_path).to(self.device)
-                            refer = refer.half() if self.is_half else refer.float()
-
-                        phoneme_ids0 = torch.LongTensor(phones1).to(self.device).unsqueeze(0)
+                        refer = sess["refer_spec"]
                         phoneme_ids1 = torch.LongTensor(phones2).to(self.device).unsqueeze(0)
-
-                        # 提取参考音频特征（优先使用会话缓存）
-                        fea_ref = self._clone_cached_value(sess.get("prompt_fea_ref"))
-                        ge = self._clone_cached_value(sess.get("prompt_ge"))
-                        if fea_ref is None or ge is None:
-                            fea_ref, ge = self.vq_model.decode_encp(prompt.unsqueeze(0), phoneme_ids0, refer)
-
-                        # 加载并处理参考音频
-                        # 提取mel特征（缓存优先）
-                        mel2 = sess.get("mel2_norm")
-                        # 归一化/反归一化参数与函数（无论是否命中缓存，都需要用于后续 denorm）
+                        fea_ref = self._clone_cached_value(sess["prompt_fea_ref"])
+                        ge = self._clone_cached_value(sess["prompt_ge"])
+                        mel2 = sess["mel2_norm"]
                         spec_min, spec_max = -12, 2
                         denorm_spec = lambda x: (x + 1) / 2 * (spec_max - spec_min) + spec_min
-                        if mel2 is None:
-                            ref_audio, ref_sr = torchaudio.load(ref_audio_path)
-                            ref_audio = ref_audio.to(self.device)
-                            ref_audio = ref_audio.half() if self.is_half else ref_audio.float()
-                            if ref_audio.shape[0] == 2:  # 转单声道
-                                ref_audio = ref_audio.mean(0).unsqueeze(0)
-                            if ref_sr != 24000:
-                                ref_audio = self._resample(ref_audio, ref_sr)
-                            mel_fn = lambda x: mel_spectrogram_torch(x, **{
-                                "n_fft": 1024,
-                                "win_size": 1024,
-                                "hop_size": 256,
-                                "num_mels": 100,
-                                "sampling_rate": 24000,
-                                "fmin": 0,
-                                "fmax": None,
-                                "center": False
-                            })
-                            norm_spec = lambda x: (x - spec_min) / (spec_max - spec_min) * 2 - 1
-                            mel2 = mel_fn(ref_audio)
-                            mel2 = norm_spec(mel2)
 
                         # 调整长度
                         T_min = min(mel2.shape[2], fea_ref.shape[2])
@@ -2158,8 +2052,9 @@ class TTSInferencer:
         except Exception as e:
             logger.error(f"streaming inference failed: {str(e)}")
             logger.error(traceback.format_exc())
-            # 返回一个空音频块，避免生成器中断
-            yield sr if 'sr' in locals() else 24000, np.zeros(16000, dtype=np.float32), ""
+            # Preserve the failure for the backend/host; silence is not a successful
+            # synthesis result (and would hide reference preparation errors).
+            raise
 
     def _trim_generated_lead(self, audio, sr: int):
         """Start one synthesized item at its speech onset.

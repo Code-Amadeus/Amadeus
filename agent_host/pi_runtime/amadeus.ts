@@ -8,6 +8,7 @@ import { Type } from 'typebox'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { fetchAllContent } from 'pi-simple-web-tools/fetch.ts'
 import { registerHostMcp } from './mcp.ts'
+import { registerHostModelMetadata } from './model-metadata.ts'
 
 export function canonicalPath(value: string): string {
   const absolute = path.resolve(value)
@@ -92,6 +93,7 @@ export default function (pi: ExtensionAPI) {
   if (!root || !['none', 'read', 'write'].includes(access || '')) {
     throw new Error('Amadeus Host workspace policy is required')
   }
+  registerHostModelMetadata(pi)
   const readers = new Set(['read', 'grep', 'find', 'ls'])
   const writers = new Set(['write', 'edit'])
   const web = new Set(['web_fetch', 'web_search', 'web_read', 'open_url', 'news_search'])

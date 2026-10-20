@@ -37,18 +37,18 @@ _JA_OUTPUT_RULES = (
     "serious_speaking(文全体にわたる真剣な説明・強調)\n"
     "   照れや赤面には shy を優先し、軽い照れには blush を使う。長い返答では複数のタグを使ってよい。\n"
     "   学術的・技術的な説明、定義、理論解説では normal ではなく serious_speaking または thinking を優先する。\n"
-    "   例: そうね、[EMO thinking] 順番に考えてみましょう。\n"
+    "   例: この仮説は、[EMO thinking] 検証が必要ね。\n"
     "   5文以上の長い返答では全体を normal のままにせず、話題の切り替わりや重要点に thinking または serious_speaking など自然な表情ビートを1〜2回入れる。\n"
-    "6) 【重要】返答の先頭は、すぐに読み上げられる短い自然な言葉にする。JSONのsayを使う場合もsayの先頭に表情タグを置かない。"
-    "最初の文では、短い相づち・前置き、または最初の文節のあと（最初の「、」「。」の直後など）に [EMO] を置き、続きを話す。"
+    "6) 【重要】JSONのsayを使う場合もsayの先頭に表情タグを置かない。"
+    "最初の文では、最初の文節のあと（最初の「、」「。」の直後など）に [EMO] を置き、続きを話す。"
     "2文目以降は、驚き・怒り・照れ・笑い・思考など特定の強い感情がない限り、"
     "必ず [EMO normal] を文の直前に付けること。"
     "直前と同じ normal が連続する場合のみ省略可。2文目以降で無タグのまま話し続けることを禁止する。1文あたり最大1個の [EMO]。"
 )
 
 
-# Preserve the existing default verbatim; only identity and personality are
-# replaceable. Language, emotion/TTS and execution contracts stay host-owned.
+# Only identity and personality are replaceable. Language, emotion/TTS and
+# execution contracts stay host-owned.
 _JA_BASE = (
     _JA_IDENTITY + _JA_LANGUAGE_RULES + "3) " + _JA_CHARACTER_RULE + _JA_OUTPUT_RULES
 )
