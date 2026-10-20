@@ -981,6 +981,7 @@
   "Speech language": "语音语言",
   "Speech mouth movement": "语音嘴型",
   "Speech output": "语音输出",
+  "Speech recognition": "语音识别",
   "Sprite (default)": "Sprite（默认）",
   "Sprite or Live2D, chat avatars and installed visual resources. Reuse the same artwork across personalities.": "管理 Sprite、Live2D、聊天头像及已安装的视觉资源。不同人格可以共用同一套形象。",
   "Standard": "标准",

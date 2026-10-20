@@ -40,7 +40,7 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
           <dt>{t('Author')}</dt><dd>{catalogText(selected.display.author && typeof selected.display.author === 'object' ? (selected.display.author as Record<string, unknown>).name : selected.display.author, locale, t('Not provided'))}</dd>
           <dt>{t('Maintainers')}</dt><dd>{value(selected.publisher.maintainers) || value(selected.publisher.id)}</dd>
           <dt>{t('License')}</dt><dd>{value(selected.display.license) || t('Not provided')}</dd>
-          <dt>{t('Capabilities')}</dt><dd>{catalogContributions(selected).map((c, index) => <div key={`${c.kind}/${c.role}/${c.contract}/${index}`}>{t(contributionLabel(c.kind))} · {c.contract}</div>)}</dd>
+          <dt>{t('Capabilities')}</dt><dd>{catalogContributions(selected).map((c, index) => <div key={`${c.kind}/${c.role}/${c.contract}/${index}`}>{t(contributionLabel(c.kind, c.role))} · {c.contract}</div>)}</dd>
           <dt>{t('Host API')}</dt><dd>{value(selected.compatibility.host_api)}</dd>
           <dt>{t('Platform')}</dt><dd>{value(selected.compatibility.platforms) || t('No platform restriction declared')}</dd>
           <dt>{t('Plugin runtime')}</dt><dd>{selected.compatibility.runtime === 'none' ? t('No plugin process') : selected.compatibility.runtime === 'python' ? t('Private Python environment') : value(selected.compatibility.runtime)}</dd>
@@ -69,7 +69,7 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
       return <CardShell vertical key={group.id}>
         <div className="extension-card-heading"><h4 className="settings-card-title">{catalogText(entry.display.display_name, locale, group.id)}</h4><StatusPill ok={false} tone="neutral">{entry.version}</StatusPill></div>
         <div className="settings-card-description extension-catalog-copy">{catalogText(entry.display.description, locale)}</div>
-        <div className="settings-field-description">{catalogContributions(entry).map(c => t(contributionLabel(c.kind))).join(' · ')} · {catalogBytes(entry.size)}</div>
+        <div className="settings-field-description">{catalogContributions(entry).map(c => t(contributionLabel(c.kind, c.role))).join(' · ')} · {catalogBytes(entry.size)}</div>
         {catalogUnavailable(entry).map(reason => <div className="settings-form-error" key={reason}>{t(reason)}</div>)}
         <div className="settings-form-actions-end"><SettingsButton onClick={() => onSelect({ id: entry.id, version: entry.version })}>{t('View plugin details')}</SettingsButton></div>
       </CardShell>

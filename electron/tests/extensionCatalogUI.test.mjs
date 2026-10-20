@@ -44,3 +44,12 @@ test('filtering a future version of an otherwise compatible package shows that v
   assert.equal(groups[0].versions[0].version, '2.0.0')
   assert.deepEqual(groups[0].versions[0].incompatible, ['unsupported contribution contract'])
 })
+
+test('closed and future voice roles are not presented as TTS', () => {
+  assert.equal(model.contributionLabel('voice_backend','tts'), 'Speech synthesis')
+  assert.equal(model.contributionLabel('voice_backend','asr'), 'Speech recognition')
+  assert.equal(model.contributionLabel('voice_backend','future'), 'voice_backend/future')
+  const asr = entry('2.0.0', {compatibility:{contributions:[{kind:'voice_backend',role:'asr',contract:'amadeus.voice.asr/v0'}]},incompatible:['unsupported contribution contract']})
+  assert.equal(model.catalogApplication(asr), 'Compatibility unavailable')
+  assert.equal(model.recommendedUpdate([asr], installed), undefined)
+})

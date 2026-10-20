@@ -19,7 +19,9 @@ export function catalogContributions(entry: CatalogEntry): Array<{ kind: string;
   const items = Array.isArray(entry.compatibility.contributions) ? entry.compatibility.contributions : []
   return [...new Map(items.map(item => [JSON.stringify([item.kind, item.role, item.contract]), item])).values()]
 }
-export const contributionLabel = (kind: string) => ({ voice_backend: 'Speech synthesis', mcp_server: 'MCP', skill: 'Skill', theme: 'Theme' }[kind] || kind)
+export const contributionLabel = (kind: string, role = '') => kind === 'voice_backend'
+  ? role === 'tts' ? 'Speech synthesis' : role === 'asr' ? 'Speech recognition' : role ? `voice_backend/${role}` : 'Voice backends'
+  : ({ mcp_server: 'MCP', skill: 'Skill', theme: 'Theme' }[kind] || kind)
 export function catalogApplication(entry: CatalogEntry): string {
   const profiles = catalogContributions(entry).map(c => contributionProfile(c.kind, c.role || undefined))
   return !profiles.length || profiles.some(p => !p || p.status !== 'open') ? 'Compatibility unavailable'
@@ -45,7 +47,7 @@ export function catalogGroups(entries: CatalogEntry[], query: string, kind: stri
   const term = query.trim().toLocaleLowerCase(locale)
   const matches = (entry: CatalogEntry) => {
     const contributions = catalogContributions(entry)
-    return (!kind || contributions.some(c => c.kind === kind)) && (!term || [entry.id, catalogText(entry.display.display_name, locale), catalogText(entry.display.description, locale), ...contributions.flatMap(c => [c.kind, c.role, c.contract, translate(contributionLabel(c.kind))])].join(' ').toLocaleLowerCase(locale).includes(term))
+    return (!kind || contributions.some(c => c.kind === kind)) && (!term || [entry.id, catalogText(entry.display.display_name, locale), catalogText(entry.display.description, locale), ...contributions.flatMap(c => [c.kind, c.role, c.contract, translate(contributionLabel(c.kind, c.role))])].join(' ').toLocaleLowerCase(locale).includes(term))
   }
   return [...groups].map(([id, versions]) => ({ id, versions: versions.filter(matches).sort((a, b) => compareCatalogVersions(b.version, a.version) || 0) }))
     .filter(group => group.versions.length > 0)
