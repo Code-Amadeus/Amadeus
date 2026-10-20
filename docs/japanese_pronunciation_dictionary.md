@@ -54,6 +54,11 @@ messages; installation status is not evidence of native activation.
   `GPT_SoVITS/text/ja_userdic/userdict.csv` remains a supported local source.
   An installed pack replaces that legacy source's role; an invalid installed
   pack is reported instead of silently switching back to the legacy copy.
+  The legacy CSV is loaded as supplied: the official pack's checked-reading
+  ledger does not filter it. An old full upstream copy therefore retains its
+  known shifted readings. To use the checked subset, install the official pack;
+  to use only the base dictionary, set `ENABLE_JAPANESE_USER_DICTIONARY=false`
+  and restart the backend. This preserves existing local-source compatibility.
 - Compilation writes only `.cache/japanese_dictionary/`, keyed by source bytes,
   native runtime version and the installed system dictionary identity. The
   application does not rewrite or distribute personal/legacy CSVs or binaries.
@@ -72,6 +77,9 @@ messages; installation status is not evidence of native activation.
   `TTS_PYTHON` environment is not silently adapted or claimed fully supported.
 
 用户 CSV 与正式包分开，安装和升级不会覆盖。旧词典目录也不会被删除或改写。
+没有正式包且本机存在旧 CSV 时，仍会加载整份旧词典，其中的已知错读不会被
+正式包的审核清单过滤。安装正式包可改用审核子集；关闭
+`ENABLE_JAPANESE_USER_DICTIONARY` 并重启后端可仅使用基础词典。
 编译结果是本机缓存，不能作为可维护的词典源。个人重复词条的优先级须通过
 OpenJTalk 词条代价控制；文件排列顺序不保证覆盖。
 

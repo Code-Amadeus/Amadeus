@@ -25,16 +25,16 @@ python tools/external_assets.py install output/amadeus-japanese-context-reading-
 The Voice setting **Use installed context-reading model** maps to
 `ENABLE_JAPANESE_CONTEXT_READING`. It **defaults off**, even when the model is installed. It never installs/downloads
 one. Known reading regressions remain, so enabling it is an explicit experiment.
-CPU inference adds hundreds of MiB of process memory; the external corpus audit
-reported roughly 650–900 MiB extra. Runtime and workload change the actual cost.
+CPU inference adds hundreds of MiB of process memory. Usage varies with runtime,
+workload and the memory metric being measured.
 Missing optional data is normal and inactive.
 Restart the backend after installing, updating or changing this setting. Turning
 it off uses the existing native reading selection; the English dictionary has
 its own independent switch. Invalid/incomplete data or unsupported native APIs
 are reported and leave the existing frontend usable.
 
-默认关闭，安装后也不自动启用；仍有已知误读。CPU 推理会增加数百 MiB 进程内存
-（外部语料审查约 650–900 MiB，实际取决于运行时和负载）。更改设置后须重启
+默认关闭，安装后也不自动启用；仍有已知误读。CPU 推理会增加数百 MiB 进程内存，
+实际取决于运行时、负载与统计口径。更改设置后须重启
 后端。两个资源独立安装、独立关闭，均不自动下载。
 
 Startup verifies all three source hashes and loads only local files, explicitly
@@ -145,9 +145,11 @@ and corpus execution. In this run, model loading added about **312 MiB RSS /
 314 MiB private**, and the final increment was about **323 / 318 MiB** over the
 warmed base. Absolute final process memory was about **544 MiB RSS / 897 MiB
 private**. These are separate metrics, not interchangeable memory limits. The
-external reviewer observed a larger increase; retain a conservative warning
-rather than treating this one run as a guaranteed maximum. No memory reduction
-is claimed. Warm median base/model time was **0.595 / 1.125 ms**, p95
+external reviewer confirmed that their measurement used a different baseline;
+its earlier range is not directly comparable to this increment. Describe the
+cost as hundreds of MiB, varying with runtime/workload, rather than a fixed
+range or guaranteed maximum. No memory reduction is claimed.
+Warm median base/model time was **0.595 / 1.125 ms**, p95
 **1.23 / 8.91 ms**; loading took **0.82 s**. Corpus/model-candidate coverage
 changes timing substantially. The 203 changed phone sequences are observations,
 not 203 proven improvements, and are a different metric from changed readings.

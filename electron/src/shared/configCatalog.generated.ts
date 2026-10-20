@@ -3163,8 +3163,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "使用已安装的语境读音模型"
         },
         "description": {
-          "en-US": "Default off; known context errors remain. CPU inference adds hundreds of MiB of process memory (external audit about 650–900 MiB); runtime and workload affect usage. Install japanese-context-reading separately; no automatic download. Restart the backend after changes.",
-          "zh-CN": "默认关闭，仍有已知语境误读。CPU 推理会增加数百 MiB 进程内存（外审约 650–900 MiB），随运行时与负载变化。需单独安装 japanese-context-reading，不会自动下载；更改后重启后端生效。"
+          "en-US": "Default off; known context errors remain. CPU inference adds hundreds of MiB of process memory; usage varies with runtime and workload. Install japanese-context-reading separately; no automatic download. Restart the backend after changes.",
+          "zh-CN": "默认关闭，仍有已知语境误读。CPU 推理会增加数百 MiB 进程内存，用量随运行时与负载变化。需单独安装 japanese-context-reading，不会自动下载；更改后重启后端生效。"
         },
         "default": false,
         "accepted_values": [
