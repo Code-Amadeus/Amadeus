@@ -9,6 +9,11 @@
   },
   "archive_prefix": "amadeus-{version}",
   "required_files": [
+    "tools/extension_package.py",
+    "tools/requirements-extension-authoring.in",
+    "tools/requirements-extension-authoring.txt",
+    "docs/extension_authoring.md",
+    "docs/extension_validation_history_2026-10-13.md",
     "server/extensions/protocol-source.json",
     "server/extensions/sdk.py",
     "vendor/extension-sdk/amadeus_extension_sdk-0.1.0-py3-none-any.whl",
@@ -145,6 +150,8 @@
     "wallpaper"
   ],
   "include_files": [
+    "docs/extension_authoring.md",
+    "docs/extension_validation_history_2026-10-13.md",
     "docs/japanese_pronunciation_dictionary.md",
     "docs/mcp_environment.md",
     "docs/backend_shutdown.md",

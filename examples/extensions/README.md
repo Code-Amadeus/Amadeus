@@ -1,5 +1,8 @@
 # Experimental extension packages
 
+Start with the [author guide](../../docs/extension_authoring.md) for a minimal
+checker environment and static package checks before installation.
+
 These source packages exercise TTS, MCP, Agent Skill and data-only theme contribution owners. They are not
 published packages or a claim of a stable SDK. Build local wheels, install them
 from **Settings → General → Manage plugins** (also in Settings → Extensions), then configure and select/enable
@@ -55,7 +58,7 @@ python -m pip wheel --no-build-isolation --no-deps --no-index examples/extension
 ```
 
 The canonical SDK source and offline build command live in
-[Amadeus-Extensions](https://github.com/Code-Amadeus/Amadeus-Extensions/tree/codex/extension-protocol-review/sdk/python).
+[Amadeus-Extensions](https://github.com/Code-Amadeus/Amadeus-Extensions/tree/49449a0f3572e74ac7269129c02c5b9a9e685bef/sdk/python).
 A wheel manifest is inspected without importing package code. The notes package
 does not need the Runner protocol: its native runtime is MCP, managed by its
 selected Provider. All share installation identity, configuration, removal and

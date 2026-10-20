@@ -81,6 +81,16 @@ jobs:
       - name: Verify environment
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
 
+      - name: Check the minimal extension authoring environment
+        shell: bash
+        run: |
+          python -m venv build/extension-authoring-env
+          build/extension-authoring-env/Scripts/python.exe -m pip install --require-hashes -r tools/requirements-extension-authoring.txt
+          build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py profile --format text
+          for package in examples/extensions/*/src/*/amadeus-extension.json; do
+            build/extension-authoring-env/Scripts/python.exe -I tools/extension_package.py check-package "$(dirname "$package")" --format text
+          done
+
       - name: Check source and architecture views
         # bash (not pwsh): Actions runs bash with -e, so a ruff failure must
         # fail the step instead of being masked by the next command's exit 0.

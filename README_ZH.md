@@ -886,6 +886,7 @@ Amadeus 第一方源码和修改依据
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
 - [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
 - [实验性扩展 Host profile](docs/extension_host_profile_v0.1.md)：已实现的本地 wheel TTS/MCP/Skill/主题子集、包应用生命周期、Agent 绑定与当前限制；不是稳定 SDK，也不声明完整扩展协议一致性。
+- [插件作者入口](docs/extension_authoring.md)：最小静态检查环境、现有 wheel 示例、Host 支持范围与运行验收边界。
 
 <details>
 <summary>Star History</summary>

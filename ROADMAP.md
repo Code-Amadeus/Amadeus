@@ -36,25 +36,26 @@ change to Amadeus's product identity.
 
 ## Active directions
 
-### A complete horizontal extension entry
+### Community extension authoring and a curated catalog
 
-The Host already has a read-only Capability Catalog that projects Providers,
-MCP servers, Skills, and AUIP apps without replacing their native contracts.
-Settings can manage MCP connections and display shared Provider capabilities.
+The experimental Host already installs local wheels for TTS, MCP, Agent Skills
+and data-only themes through one manager in Settings. Configuration, encrypted
+credentials, package revisions and native-owner activation are implemented.
 
-The next useful product step is a coherent extension entry that can:
+The active next step is a community authoring preview: a small checker
+environment, clear Host support information, reusable examples and independent
+author lifecycle evidence. A curated official catalog can progress alongside
+author recruitment after the shared validation entry is ready. It will reuse the
+same installer, with exact artifact hashes, per-version review, explicit updates
+and durable safety decisions. This catalog is not yet implemented or published.
 
-- show installation identity, compatibility, health, enablement, and the exact
-  Provider or product surface that consumes each contribution;
-- add, configure, disable, and remove supported out-of-tree contributions
-  without requiring users to find several settings files;
-- keep secrets in Host-owned bindings and retain each Provider, MCP, Skill, or
-  AUIP runtime as the authority for its native payload;
-- prove at least two real out-of-tree adapters before allowing trusted Python
-  entry-point discovery.
+Catalog admission policy is separate from runtime contracts. New types retain
+native owners; an older client must disable unsupported packages without losing
+compatible catalog entries or understood safety updates. Installing a package
+never grants Main Chat direct MCP/Skill execution authority.
 
-This direction does not grant plugins action authority and does not attach MCP
-tools or Skill prompts directly to Main Chat.
+See [authoring](docs/extension_authoring.md) and the
+[implemented Host profile](docs/extension_host_profile_v0.1.md).
 
 ### Source Alpha setup and diagnosability
 
@@ -145,8 +146,7 @@ runtime path.
 
 ## Later, after Alpha evidence
 
-- remote extension catalogs, package signatures, automatic updates, rollback,
-  and marketplace-style discovery;
+- package signatures, automatic updates and rollback;
 - broader public SDK surfaces beyond contracts already exercised by external
   adapters;
 - platform-specific wallpaper implementations outside Windows;

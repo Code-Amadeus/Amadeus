@@ -139,3 +139,10 @@ Change the canonical SDK/schema/validator in Amadeus-Extensions first, then
 update the recorded source commit, wheel and checksums together. Do not edit
 pinned copies in place; provenance checks reject drift. These scopes do not
 change the AGPL-3.0 license of Host implementation code.
+
+## Extension authors
+
+Use [the author guide](docs/extension_authoring.md) for the small static-checker
+environment; it does not require the full Host dependencies. Plugins use the
+standalone SDK or their native MCP/Skill/theme contracts, not private Host
+imports. Catalog review and runtime support are separate decisions.
