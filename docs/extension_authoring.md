@@ -214,3 +214,5 @@ missing/shadowed Skills, changed/removed Skill revisions, unrelated additions,
 invalid theme colors/images/contrast and native recovery. The journey additionally
 runs `test_skill_pi_runtime.py` against its actual installed versions and Notes
 through the native Pi path. Paid Fish/MiMo service checks remain explicitly separate.
+
+Catalog distribution has a separate [client, mirror and security recovery contract](extension_catalog.md). Its curated restrictions do not change local-wheel or native runtime contracts. The S1 experiment has no published reviewed package list or complete store browser yet.

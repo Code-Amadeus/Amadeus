@@ -86,6 +86,8 @@ python tools/probes/extension_theme_lifecycle.py --output-dir build/extension-pr
 测试中的 example.test 审核事实只是 fixture，不进入目录。未来客户端兼容矩阵在本批
 确立并验证参考语义；Electron 真正的目录读取、耐久安全事实和安装入口复核属于 S1。
 
+2026-10-21 后续：S1 已在同一实验分支完成实现与本地验收，见[第三批施工记录](community-preview-batch3-2026-10-21.md)。下面的“下一阶段”保留本批结案时点。
+
 ## 阶段状态与下一步
 
 - D2：四类作者入口、独立环境参考旅程和 Windows 本地运行验收已交付。其他 Provider、
