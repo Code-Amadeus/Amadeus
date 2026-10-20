@@ -118,6 +118,27 @@ export interface WorkProjection {
   counts: WorkDockCounts
   projects: WorkProjectSummary[]
   items: WorkDockItem[]
+  permissionRequest: WorkPermissionProjection | null
+  activePermissionGrants: WorkPermissionProjection[]
+  workPermissionAutoApprove: boolean
+}
+
+export interface WorkPermissionProjection {
+  id: string
+  ownerKind: string
+  workItemId: string
+  attemptId: string
+  sessionId: string
+  runId: string
+  providerRequestId: string
+  capability: string
+  action: string
+  scope: string[]
+  reason: string
+  options: string[]
+  mcpCall?: { connectionId: string; toolName: string; arguments: unknown }
+  grantStatus: string
+  useCount: number
 }
 
 export interface AttentionOption {

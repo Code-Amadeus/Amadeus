@@ -95,6 +95,7 @@ from server.work_intake import (
     resolve_intake_reference,
 )
 from server.work_read_model import WorkReadModel
+from server.permission_grants import active_grants, apply_grant_event, permission_projection
 from server.work_destination_service import (
     WORKSPACE_ROUTING_SURFACE,
     WorkDestinationService,
@@ -2833,6 +2834,8 @@ class WorkLedgerCoordinator:
             "permission.denied",
             "permission.rejected",
             "permission.expired",
+            "permission.used",
+            "permission.revoked",
             "input.requested",
             "question",
             "user.input.required",
@@ -3000,11 +3003,16 @@ class WorkLedgerCoordinator:
                 "permission.denied",
                 "permission.rejected",
                 "permission.expired",
+                "permission.used",
+                "permission.revoked",
             }:
                 # Normal user decisions are committed by work.permission.resolve.
                 # Adapter-owned expiry is the only resolution that may arrive
                 # without that Host command, so close that exact durable row.
                 if payload.get("automatic") is True:
+                    apply_grant_event(self.store, self.store.list_permission_requests(
+                        attempt.work_item_id, attempt_id=attempt.attempt_id), event_type, payload)
+                if payload.get("automatic") is True and event_type not in {"permission.used", "permission.revoked"}:
                     provider_request_id = str(
                         payload.get("request_id") or payload.get("requestId") or ""
                     ).strip()
@@ -3027,6 +3035,9 @@ class WorkLedgerCoordinator:
                         attempt_id=attempt.attempt_id,
                         status="pending",
                     ):
+                        if status == "allowed" and ("allow_once" not in permission.options
+                                or permission.metadata.get("diagnostic_only") is True):
+                            continue
                         if (
                             provider_request_id
                             and str(permission.metadata.get("provider_request_id") or "")
@@ -3038,8 +3049,9 @@ class WorkLedgerCoordinator:
                                 permission.request_id,
                                 status,
                                 metadata={
-                                    "resolution": "provider_interaction_expired",
+                                    "resolution": "policy_allowed" if status == "allowed" else "provider_interaction_expired",
                                     "provider_event": event_type,
+                                    "resolved_automatically": True,
                                 },
                             )
                         except WorkLedgerConflict:
@@ -5179,7 +5191,7 @@ class WorkLedgerCoordinator:
                 "dismiss": "deny",
             }
             option = aliases.get(option, option)
-            if option in {"allow_once", "deny"} and option not in normalized_options:
+            if option in {"allow_once", "allow_work", "deny"} and option not in normalized_options:
                 normalized_options.append(option)
         options = ["deny"] if diagnostic_only else normalized_options or ["deny"]
 
@@ -5251,6 +5263,8 @@ class WorkLedgerCoordinator:
                 "provider": clean_provider,
                 "provider_run_id": run_id,
                 "provider_request_id": provider_request_id,
+                "session_id": str(event_metadata.get("session_id") or ""),
+                **({"mcp_call": copy.deepcopy(source["mcpCall"])} if isinstance(source.get("mcpCall"), dict) else {}),
                 "reason_code": reason_code,
                 "retry_required": source.get("retryRequired") is True
                 or source.get("retry_required") is True,
@@ -6412,6 +6426,7 @@ class WorkLedgerCoordinator:
                     item["attemptId"],
                     item.get("pendingPermissionRequestId"),
                     item.get("pendingPermissionCount"),
+                    item.get("activePermissionGrants"),
                     item.get("recoverableExportRequestId"),
                     item.get("liveness"),
                     item.get("livenessStage"),
@@ -6450,6 +6465,9 @@ class WorkLedgerCoordinator:
             },
             "items": items,
             "selected": selected,
+            "permissionRequest": selected.get("permissionRequest") if selected else None,
+            "activePermissionGrants": selected.get("activePermissionGrants", []) if selected else [],
+            "workPermissionAutoApprove": bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False)),
         }
 
     def conversation_work_items(
@@ -7228,11 +7246,42 @@ class WorkLedgerCoordinator:
             touch_activity=False,
         )
 
+    def authorize_automatic_permission(self, run_id: str, native_request_id: str) -> bool:
+        """只对当前已落库请求提交策略决定；返回后才允许派发。"""
+        clean_run_id = str(run_id or "").strip()
+        clean_request_id = str(native_request_id or "").strip()
+        if not clean_run_id or not clean_request_id:
+            return False
+        attempt = self.store.get_attempt_by_provider_run(clean_run_id)
+        if attempt is None or attempt.execution_status not in _ACTIVE_EXECUTION:
+            return False
+        latest = self.store.latest_attempt(attempt.work_item_id)
+        if latest is None or latest.attempt_id != attempt.attempt_id:
+            return False
+        matches = [permission for permission in self.store.list_permission_requests(
+            attempt.work_item_id, attempt_id=attempt.attempt_id, status="pending")
+            if permission.metadata.get("kind") == "provider_permission"
+            and permission.metadata.get("provider") == attempt.provider
+            and permission.metadata.get("provider_run_id") == clean_run_id
+            and permission.metadata.get("provider_request_id") == clean_request_id]
+        if len(matches) != 1:
+            return False
+        permission = matches[0]
+        if ("allow_once" not in permission.options
+                or permission.metadata.get("diagnostic_only") is True
+                or permission.metadata.get("retry_required") is True):
+            return False
+        self.store.resolve_permission_request(permission.request_id, "allowed", metadata={
+            "resolution": "policy_allowed", "resolved_automatically": True,
+            "reason": "work_permission_auto_approve"})
+        return True
+
     async def resolve_permission(
         self,
         request_id: str,
         *,
         allow: bool,
+        scope: str = "once",
         work_item_id: str = "",
         attempt_id: str = "",
     ) -> dict[str, Any]:
@@ -7247,7 +7296,7 @@ class WorkLedgerCoordinator:
         attempt = context.attempt
         desktop_export = context.desktop_export
         try:
-            resolution = self.permission_service.resolve(context, allow=allow)
+            resolution = self.permission_service.resolve(context, allow=allow, scope=scope)
             resolved = resolution.permission
             exported_paths = resolution.exported_paths
         except Exception as exc:
@@ -8101,6 +8150,7 @@ class WorkLedgerCoordinator:
         work_item_id: str,
     ) -> dict[str, Any]:
         output = dict(payload or {})
+        output["workPermissionAutoApprove"] = bool(getattr(app_settings, "WORK_PERMISSION_AUTO_APPROVE", False))
         incoming_permission = (
             output.get("permissionRequest")
             if isinstance(output.get("permissionRequest"), dict)
@@ -8117,6 +8167,9 @@ class WorkLedgerCoordinator:
         item = self.store.get_work_item(work_item_id) if work_item_id else None
         attempts = self.store.list_attempts(work_item_id) if item is not None else []
         attempt = attempts[-1] if attempts else None
+        output["activePermissionGrants"] = active_grants(self.store.list_permission_requests(
+            work_item_id, attempt_id=attempt.attempt_id, status="allowed")) if (
+                attempt is not None and attempt.execution_status in _ACTIVE_EXECUTION) else []
         pending = (
             self.store.list_permission_requests(
                 work_item_id,
@@ -8214,6 +8267,8 @@ class WorkLedgerCoordinator:
                     neutral["lead"] = rationale
                 neutral["blocking"] = False
                 neutral["permissionVisible"] = False
+                neutral["activePermissionGrants"] = output["activePermissionGrants"]
+                neutral["workPermissionAutoApprove"] = output["workPermissionAutoApprove"]
                 if isinstance(work_context, dict):
                     neutral["workContext"] = work_context
                 if isinstance(task_dock, dict):
@@ -8231,6 +8286,7 @@ class WorkLedgerCoordinator:
             and "allow_once" not in request.options
         )
         request_payload = {
+            **permission_projection(request),
             "id": request.request_id,
             "requestId": request.request_id,
             "request_id": request.request_id,

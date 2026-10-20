@@ -49,7 +49,7 @@ and Windows/POSIX tests cover redaction, useful causes and override semantics.
 
 ## Pi tool approvals
 
-Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
+By default, Pi's direct MCP tools and resource operations ask for Host allow-once/deny even
 when a server marks them read-only. This permission is independent of local
 workspace write access, including project-bound read-only cooperative chats.
 Pi and the standard MCP Provider use `mcp.tool.call` / `call_tool` for tool-call
@@ -64,6 +64,62 @@ file writes or shell execution, and cancellation releases pending confirmations.
 Pi closes its native session before terminating the process during normal
 completion/cancellation. See [Pi integration](pi-rpc-provider.md) for connection
 ownership, authentication scope and abnormal-exit limitations.
+
+For a Pi call bound to one known connection, the Work page and Slice permission
+card also offer **Allow identical calls for this Work**. This explicitly grants
+only that connection/configuration, original tool identity/schema and the exact
+argument values. It does not trust `readOnlyHint`, create a wildcard tool grant,
+or authorize a different operation on a mixed query/action tool. Aggregate
+resource listings and unknown connections retain per-call approval. Active
+grants remain visible and can be revoked individually; revocation affects the
+next approval boundary, not an operation already dispatched. Grants expire
+when the current Provider run finishes, fails or is cancelled, including when
+the same native session is later restored for another Work. Every reuse has a
+Host audit event; the original user decision remains immutable.
+
+**Settings → Providers → Work and Chat approval → Automatically approve Work
+and Chat requests** is a separate persistent switch, off by default. Enabling it
+automatically answers permitted Amadeus execution confirmations in every Work
+and Cooperative chat, across Providers, including MCP and shell. It also answers
+eligible confirmations already waiting. The approval-card shortcut asks for
+confirmation before enabling this global setting. Desktop settings retain the switch across restarts; turning it off in
+Settings or the Work page restores approval for subsequent requests. Each
+automatic decision is recorded. This setting does not add workspace access,
+answer arbitrary MCP forms, replay a failed/unknown operation or remove an
+external tool's own confirmation rules.
+
+Automatic approval uses the same Host permission eligibility as manual approval.
+In Cooperative chat, a `deny` policy remains denied, and read-only contexts still
+reject Shell, file-write and generic tool execution. MCP remains an external
+capability that can be approved under `ask` even in a read-only context; this
+does not grant workspace writes. Background chats do not need to be visible for
+an otherwise eligible automatic decision.
+
+Automatic responses require the durable Work or Cooperative permission owner
+to find the exact committed request and commit the policy decision before
+dispatch. A broadcast returning normally is not persistence acknowledgement.
+Missing owners, failed writes and cancelled checkpoints do not approve the
+request; an attempted or unknown response is never resent. The stored decision
+records Host authorization intent, not proof that the Provider executed the
+operation. Turning the setting off after a decision has committed does not
+discard its response; it applies to subsequent approval attempts.
+Embedders must install the trusted Runtime automatic-permission
+authorizer; a standalone Runtime cannot grant itself durable authority.
+
+中文：默认仍逐次审批。Pi 的确切连接调用可以选择“本次 Work 允许相同调用”，
+只复用相同连接配置、工具及完整参数；授权可见、可逐条撤销，当前运行结束或取消即失效。
+“设置 → Providers → Work 与聊天审批 → 自动批准 Work 与聊天请求”是独立的持久开关，默认关闭，
+开启后自动批准所有 Work 与协作聊天中可授权的执行确认（包括 MCP 和 Shell），直到手动关闭。
+审批卡的开启快捷按钮会先确认全局持久范围。开关会处理当前等待且可授权的确认并跨重启保存；
+每次批准与授权复用均留痕，拒绝策略、只读限制和外部工具自身门禁不变。
+自动与手动审批共用 Host 的权限资格判断；协作聊天的 deny 策略不被覆盖，只读上下文中的
+Shell、文件写入和通用工具执行仍被拒绝。MCP 是外部能力，在 ask 策略下仍可单独批准，
+但不增加工作区写入权限。合法的后台聊天自动审批不要求会话当前可见。
+自动响应前，Work 或 Cooperative 的持久权限拥有者必须核验确切请求已提交，并先提交
+策略决定；事件广播正常返回不代表落库成功。拥有者缺失、写入失败或检查被取消均不会
+批准，已尝试或结果未知的响应不会重发。记录表示 Host 的授权意图，不证明 Provider
+已执行操作。决定提交后关闭开关不会丢弃该响应，只影响后续审批尝试；
+独立嵌入的 Runtime 必须安装可信权限拥有者，不能自行取得持久授权。
 
 
 ## Codex MCP confirmation requests

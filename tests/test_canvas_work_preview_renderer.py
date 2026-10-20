@@ -28,8 +28,9 @@ def test_canvas_header_preview_button_sends_only_work_identity() -> None:
         "getAttribute(name) { if (name === 'data-work-preview-item-id') return id; "
         "if (name === 'data-work-preview-attempt-id') return attemptId; return ''; }, "
         "classList: { remove() {}, add() {} } }); },\n"
-        "      __testPermission(action, relativePath = '') { return handlePermissionAction({ "
+        "      __testPermission(action, relativePath = '', grantId = '') { return handlePermissionAction({ "
         "getAttribute(name) { return name === 'data-permission-action' ? action : "
+        "name === 'data-permission-grant-id' ? grantId : "
         "name === 'data-export-relative-path' ? relativePath : ''; } }); },\n"
     )
     assert marker in source
@@ -341,6 +342,90 @@ function assert(condition, message) {
   assert(html.includes("Codex result report"), "Historical result title kept the transport name");
   assert(html.includes("Codex result"), "Historical markdown heading kept the transport name");
   assert(!html.includes("Codex App Server"), "Historical Canvas copy was not normalized at display time");
+  const exactCall = { connectionId: "gui-runtime", toolName: "instant_status", arguments: { target: "window-a", detail: true } };
+  const workGrant = { id: "grant-work", ownerKind: "work_attempt", workItemId: "work-preview",
+    attemptId: "attempt-preview", providerRequestId: "native-grant", runId: "run-work",
+    mcpCall: exactCall, grantStatus: "active", useCount: 3 };
+  surface.setPayload({ open: true, taskDock, permissionVisible: true,
+    workContext: { workItemId: "work-preview", attemptId: "attempt-preview" },
+    permissionRequest: { ...workGrant, id: "permission-repeat", options: ["allow_once", "allow_work", "deny"] } });
+  html = surface.__testHtml();
+  assert(html.includes('data-permission-action="allow_work"'), "Exact MCP call has no Work approval choice");
+  assert(html.includes("gui-runtime") && html.includes("instant_status") && html.includes("window-a"), "Work approval hid its exact connection, tool or arguments");
+  await surface.__testPermission("allow_work");
+  let scopedBody = JSON.parse(requests[requests.length - 1].options.body);
+  assert(scopedBody.action === "allow_work" && scopedBody.permission_request_id === "permission-repeat", "Work approval lost its request identity");
+  assert(scopedBody.work_item_id === "work-preview" && scopedBody.attempt_id === "attempt-preview" && scopedBody.revision === "ledger-preview", "Work approval lost its current projection authority");
+  assert(!("mcpCall" in scopedBody) && !("arguments" in scopedBody), "Renderer supplied authoritative MCP arguments");
+  surface.setPayload({ permissionVisible: false, activePermissionGrants: [workGrant], taskDock });
+  html = surface.__testHtml();
+  assert(html.includes('data-permission-action="revoke_work"'), "Active grant vanished with the pending permission card");
+  await surface.__testPermission("revoke_work", "", "grant-work");
+  scopedBody = JSON.parse(requests[requests.length - 1].options.body);
+  assert(scopedBody.action === "revoke_work" && scopedBody.permission_request_id === "grant-work", "Revoke did not target its original grant");
+  const cooperativeGrant = { ...workGrant, id: "grant-coop", ownerKind: "cooperative_run",
+    workItemId: "", attemptId: "", sessionId: "session-current", runId: "run-coop", providerRequestId: "native-coop" };
+  const cooperativeOwner = { owner_kind: "cooperative_run", session_id: "session-current", provider_run_id: "run-coop" };
+  surface.setPayload({ activePermissionGrants: [workGrant] });
+  surface.setPayload({ metadata: cooperativeOwner, activePermissionGrants: [cooperativeGrant] });
+  assert(!surface.__testHtml().includes('data-permission-grant-id="grant-work"')
+    && surface.__testHtml().includes('data-permission-grant-id="grant-coop"'), "Another owner's grant stayed visible in the current scope");
+  await surface.__testPermission("revoke_work", "", "grant-coop");
+  scopedBody = JSON.parse(requests[requests.length - 1].options.body);
+  assert(scopedBody.owner_kind === "cooperative_run" && scopedBody.session_id === "session-current"
+    && scopedBody.run_id === "run-coop" && scopedBody.provider_request_id === "native-coop", "Cooperative revoke lost its exact run identity");
+  assert(!("work_item_id" in scopedBody) && !("attempt_id" in scopedBody), "Cooperative revoke fabricated Work ownership");
+  surface.setPayload({ activePermissionGrants: [], workContext: { workItemId: "work-preview", attemptId: "attempt-preview" } });
+  assert(!surface.__testHtml().includes('data-permission-action="revoke_work"'), "Revoked/expired grant stayed actionable");
+  surface.setPayload({ workPermissionAutoApprove: true });
+  assert(surface.__testHtml().includes('Settings &gt; Providers &gt; Work and Chat approval'), "Automatic approval has no visible management location");
+  const oldOwner = { workItemId: "old-work", attemptId: "old-attempt" };
+  const oldGrant = { ...workGrant, id: "grant-old", ...oldOwner,
+    mcpCall: { connectionId: "old-peer", toolName: "old-tool", arguments: {} } };
+  const oldSibling = { ...oldGrant, id: "grant-old-sibling" };
+  surface.setPayload({ open: true, workContext: oldOwner, activePermissionGrants: [oldGrant, oldSibling] });
+  html = surface.__testHtml();
+  assert(html.includes('data-permission-grant-id="grant-old"') && html.includes('data-permission-grant-id="grant-old-sibling"'), "Multiple grants in one owner were hidden");
+  surface.setPayload({ open: true, workContext: { workItemId: "new-work", attemptId: "new-attempt" }, activePermissionGrants: [] });
+  assert(!surface.__testHtml().includes("old-peer"), "Switching Work kept an unrelated grant visible");
+  const beforeStaleRevoke = requests.length;
+  await surface.__testPermission("revoke_work", "", "grant-old");
+  assert(requests.length === beforeStaleRevoke, "A hidden owner could still dispatch revocation");
+  surface.setPayload({ open: true, workContext: oldOwner });
+  assert(surface.__testHtml().includes("old-peer"), "Returning to an owner lost its cached active grant");
+  surface.setPayload({ clear: true });
+  surface.setPayload({ open: true, title: "New unrelated session" });
+  assert(!surface.__testHtml().includes("old-peer"), "Canvas clear leaked an old grant into an unrelated session");
+  surface.setPayload({ open: true, taskDock, metadata: cooperativeOwner, activePermissionGrants: [cooperativeGrant] });
+  assert(surface.__testHtml().includes('data-permission-grant-id="grant-coop"'), "Current cooperative grant is not visible");
+  surface.setPayload({ taskDock: { ...taskDock, currentSessionId: "session-other" } });
+  assert(!surface.__testHtml().includes('data-permission-grant-id="grant-coop"'), "Session switch retained the previous cooperative scope");
+  surface.setPayload({ taskDock, metadata: cooperativeOwner, activePermissionGrants: [cooperativeGrant] });
+  surface.setPayload({ metadata: cooperativeOwner, activePermissionGrants: [] });
+  assert(!surface.__testHtml().includes('data-permission-grant-id="grant-coop"'), "Terminal empty collection failed to clear the current owner");
+  surface.setPayload({ clear: true });
+  surface.setPayload({ open: true, metadata: cooperativeOwner, activePermissionGrants: [cooperativeGrant] });
+  surface.setPayload({ metadata: { session_id: "session-other" } });
+  assert(!surface.__testHtml().includes('data-permission-grant-id="grant-coop"'), "Metadata session switch retained the previous cooperative scope");
+  surface.setPayload({ clear: true });
+  const foregroundOwner = { owner_kind: "cooperative_run", session_id: "session-current", provider_run_id: "foreground-B", cooperative_context_id: "context-B" };
+  const foregroundGrant = { ...cooperativeGrant, id: "grant-foreground-B", runId: "foreground-B" };
+  surface.setPayload({ open: true, metadata: foregroundOwner, activePermissionGrants: [foregroundGrant] });
+  surface.setPayload({
+    metadata: { owner_kind: "cooperative_run", session_id: "session-current", provider_run_id: "background-A", cooperative_context_id: "context-A", permission_request_id: "expired-A" },
+    permissionVisible: false,
+    permissionRequest: { ...cooperativeGrant, id: "expired-A", runId: "background-A", status: "expired" },
+    activePermissionGrants: [], workPermissionAutoApprove: false,
+  });
+  assert(surface.__testHtml().includes('data-permission-grant-id="grant-foreground-B"'), "Background expiry stole the foreground cooperative grant owner");
+  surface.setPayload({ open: true, metadata: foregroundOwner, activePermissionGrants: [foregroundGrant], workPermissionAutoApprove: true });
+  html = surface.__testHtml();
+  assert((html.match(/class="crt-canvas-permissions"/g) || []).length === 1, "Grant and automatic approval notice have no shared scrolling region");
+  const approvalRegion = html.slice(html.indexOf('class="crt-canvas-permissions"'));
+  assert(approvalRegion.includes('data-permission-grant-id="grant-foreground-B"')
+    && approvalRegion.includes("Automatic approval is on for Work and Cooperative chats"), "Grant and auto notice escaped their shared region");
+  await surface.__testPermission("revoke_work", "", "grant-foreground-B");
+  assert(JSON.parse(requests[requests.length - 1].options.body).action === "revoke_work", "Auto notice made revoke unavailable");
   console.log("work preview renderer ok");
 })().catch((error) => {
   console.error(error && (error.stack || error));

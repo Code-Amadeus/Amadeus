@@ -73,6 +73,7 @@ class _Run:
     milestones: int = 0
     tools: set[str] = field(default_factory=set)
     permissions: dict[str, dict] = field(default_factory=dict)
+    permission_grants: dict[str, dict] = field(default_factory=dict)
 
 
 class PiAdapter:
@@ -271,6 +272,7 @@ class PiAdapter:
         finally:
             run.ready = False
             try:
+                await self._expire_permission_grants(run_id, run)
                 for key in list(run.permissions):
                     await self._emit(run_id, run, "permission.expired", {"request_id": key})
             finally:
@@ -295,6 +297,41 @@ class PiAdapter:
     async def _emit(self, run_id, run, kind, payload=None, **kwargs):
         await run.emit(ProviderEvent(provider="pi", run_id=run_id,
             type=kind, payload=payload or {}, **kwargs))
+
+    def _mcp_call(self, event):
+        if not str(event.get("title") or "").startswith("MCP tool: "):
+            return None
+        try:
+            message = json.loads(event.get("message") or "")
+        except (TypeError, json.JSONDecodeError):
+            return None
+        call = message.get("mcpCall") if isinstance(message, dict) else None
+        if (not isinstance(message, dict) or message.get("amadeus_mcp_approval") != 1
+                or not isinstance(call, dict) or not isinstance(call.get("arguments"), dict)
+                or not isinstance(call.get("toolName"), str) or not call["toolName"]
+                or not isinstance(call.get("configurationRevision"), str)
+                or len(call["configurationRevision"]) != 64
+                or any(char not in "0123456789abcdef" for char in call["configurationRevision"])
+                or not any(connection.connection_id == call.get("connectionId")
+                    and connection.supports_provider("pi") for connection in self.mcp_connections)):
+            return None
+        return call
+
+    @staticmethod
+    def _permission_grant_key(call):
+        if call is None:
+            return ""
+        # 展示名称和 JSON 属性顺序不改变身份，全部参数值则必须相同。
+        return json.dumps({key: call[key] for key in
+            ("connectionId", "configurationRevision", "toolName", "arguments")},
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+    async def _expire_permission_grants(self, run_id, run):
+        grants = tuple(run.permission_grants.values())
+        run.permission_grants.clear()
+        for grant in grants:
+            await self._emit(run_id, run, "permission.expired", {
+                "request_id": grant["request_id"], "scope": "work", "automatic": True})
 
     async def _event(self, run_id, run, event):
         kind = event.get("type")
@@ -327,7 +364,16 @@ class PiAdapter:
         elif kind == "extension_ui_request":
             key = str(event.get("id") or "")
             if event.get("method") == "confirm":
-                run.permissions[key] = event
+                call = self._mcp_call(event)
+                grant_key = self._permission_grant_key(call)
+                grant = run.permission_grants.get(grant_key)
+                if grant is not None and not run.cancelled and not run.settled.is_set():
+                    await run.client.send({"type": "extension_ui_response", "id": key, "confirmed": True})
+                    await self._emit(run_id, run, "permission.used", {
+                        "request_id": grant["request_id"], "call_request_id": key,
+                        "decision": "allow_work", "scope": "work", "automatic": True})
+                    return
+                run.permissions[key] = {**event, "mcpCall": call}
                 title = str(event.get("title", ""))
                 # This title prefix is emitted by the trusted Host MCP gate,
                 # never inferred from model text or the tool's hashed name.
@@ -335,8 +381,11 @@ class PiAdapter:
                     else ("provider.tool.execute", "execute_tool"))
                 await self._emit(run_id, run, "permission.requested", {"permissionRequest": {
                     "request_id": key, "capability": capability, "action": action,
-                    "reason": title + "\n" + str(event.get("message", "")),
-                    "options": ["allow_once", "deny"], "retryRequired": False, "diagnosticOnly": False}})
+                    "reason": title + "\n" + (json.dumps(call["arguments"], ensure_ascii=False)
+                        if call else str(event.get("message", ""))),
+                    "options": ["allow_once", *(["allow_work"] if call else []), "deny"],
+                    **({"mcpCall": call} if call else {}),
+                    "retryRequired": False, "diagnosticOnly": False}})
             elif event.get("method") in {"select", "input", "editor"}:
                 # No generic form owner exists in Provider permission responses.
                 # Refuse rather than fabricating a choice or leaving Pi blocked.
@@ -381,11 +430,27 @@ class PiAdapter:
 
     async def resolve_permission(self, run_id, response: ProviderPermissionResponse):
         run = self._runs.get(run_id)
-        if run is None or run.cancelled or response.request_id not in run.permissions:
+        if run is None or run.cancelled or run.settled.is_set():
             return {"accepted": False, "reason": "permission_request_not_pending"}
+        if response.scope == "work" and not response.allow:
+            match = next((key for key, grant in run.permission_grants.items()
+                if grant["request_id"] == response.request_id), None)
+            if match is None:
+                return {"accepted": False, "reason": "permission_grant_not_active"}
+            del run.permission_grants[match]
+            return {"accepted": True}
+        pending = run.permissions.get(response.request_id)
+        if pending is None:
+            return {"accepted": False, "reason": "permission_request_not_pending"}
+        call = pending.get("mcpCall")
+        if response.scope == "work" and call is None:
+            return {"accepted": False, "reason": "permission_scope_not_supported"}
         await run.client.send({"type": "extension_ui_response", "id": response.request_id,
             "confirmed": response.allow})
         run.permissions.pop(response.request_id, None)
+        if response.scope == "work":
+            run.permission_grants[self._permission_grant_key(call)] = {
+                "request_id": response.request_id, "mcpCall": call}
         return {"accepted": True}
 
     async def cancel(self, run_id):
@@ -396,6 +461,7 @@ class PiAdapter:
             if run.settled.is_set():
                 return {"confirmed": True, "cancelled": False, "reason": "already_finished"}
             run.cancelled = True
+            await self._expire_permission_grants(run_id, run)
             if not run.submitted:
                 run.cancel_confirmed = True
                 return {"confirmed": True, "cancelled": True}

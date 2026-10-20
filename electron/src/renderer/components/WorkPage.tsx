@@ -5,8 +5,12 @@ import FluentIcon from './FluentIcon'
 import { preserveOrChooseProvider } from './providerPresentation'
 import ProjectStateMapView from './work/ProjectStateMapView'
 import WorkDetailDrawer from './work/WorkDetailDrawer'
+import WorkPermissionsPanel from './work/WorkPermissionsPanel'
+import { permissionActionPayload } from './work/permissionProjection'
+import type { PermissionAction } from './work/permissionProjection'
+import { persistDesktopRuntimeSettings, markRuntimeSettingsApplied } from './desktopRuntimeSettings'
 import AuipExperienceCard from './work/AuipExperienceCard'
-import type { AttentionRequest, AuipExperienceProjection, ProviderInspectionDetails, OverlayMode, ProviderEvent, ProviderRun, WorkDockItem, WorkPageProps, WorkProjection } from './work/types'
+import type { AttentionRequest, AuipExperienceProjection, ProviderInspectionDetails, OverlayMode, ProviderEvent, ProviderRun, WorkDockItem, WorkPageProps, WorkProjection, WorkPermissionProjection } from './work/types'
 import { attentionRequestsFromEnvelope } from './work/attentionProjection'
 import { getMockWorkboardFrame, MOCK_STAGE_INDEX } from './work/mockWorkboardPlayback'
 import { mockWorkTurnFixture } from './work/mockWorkTurn.fixture'
@@ -179,6 +183,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
   const [attentionError, setAttentionError] = useState('')
   const [workAction, setWorkAction] = useState<'focus' | 'retry' | 'resume' | 'reopen' | 'promote' | 'project' | 'accept' | 'archive' | ''>('')
   const [workActionError, setWorkActionError] = useState('')
+  const [permissionBusy, setPermissionBusy] = useState(false)
+  const [permissionError, setPermissionError] = useState('')
   const [auipLaunchArtifactId, setAuipLaunchArtifactId] = useState('')
   const [auipLaunchFeedback, setAuipLaunchFeedback] = useState<{ status: 'success' | 'error'; message: string }>()
   const [auipExperience, setAuipExperience] = useState<AuipExperienceProjection>()
@@ -502,6 +508,40 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     const response = await send('work.list', { surface: ELECTRON_WORK_SURFACE })
     return applyWorkEnvelope(response)
   }, [applyWorkEnvelope, send])
+
+  const decidePermission = useCallback(async (permission: WorkPermissionProjection, action: PermissionAction) => {
+    if (!connected || !workProjection || permissionBusy) return
+    setPermissionBusy(true)
+    setPermissionError('')
+    try {
+      const response = await send('work.permission.resolve', permissionActionPayload(permission, action, workProjection.revision))
+      applyWorkResponse(response)
+      if (response.ok !== true) throw new Error(String(response.error || 'Permission decision failed'))
+    } catch (error) {
+      setPermissionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPermissionBusy(false)
+    }
+  }, [applyWorkResponse, connected, permissionBusy, send, workProjection])
+
+  const setAutomaticApproval = useCallback(async (enabled: boolean) => {
+    if (!connected || permissionBusy) return
+    setPermissionBusy(true)
+    setPermissionError('')
+    try {
+      const values = { work_permission_auto_approve: enabled }
+      const saved = await persistDesktopRuntimeSettings(values)
+      if (!saved.persisted) throw new Error('Desktop settings are unavailable; automatic approval was not changed.')
+      const response = await send('system.set_config', { values })
+      if (objectValue(response.values).work_permission_auto_approve !== enabled) throw new Error('Automatic approval could not be changed in the current runtime.')
+      await markRuntimeSettingsApplied(values, saved.pendingRevisions)
+      await refreshWorkProjection()
+    } catch (error) {
+      setPermissionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPermissionBusy(false)
+    }
+  }, [connected, permissionBusy, refreshWorkProjection, send])
 
   const launchAuipApp = useCallback(async (artifactId: string, mode = 'observe') => {
     if (!artifactId || auipLaunchArtifactId) return
@@ -1353,6 +1393,17 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
               <FluentIcon name="Pin" size={15} />
             </button>
           </div>
+
+          <WorkPermissionsPanel
+            request={workProjection?.permissionRequest || null}
+            grants={workProjection?.activePermissionGrants || []}
+            automatic={workProjection?.workPermissionAutoApprove || false}
+            busy={!connected || permissionBusy}
+            error={permissionError}
+            onDecision={(permission, action) => { void decidePermission(permission, action) }}
+            onSetAutomatic={enabled => { void setAutomaticApproval(enabled) }}
+            t={t}
+          />
 
           <div className="crt-turn-title-ribbon plan">
             <span>{t(workProjection ? 'Work Items' : 'Project Map')}</span>

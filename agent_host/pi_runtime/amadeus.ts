@@ -124,12 +124,15 @@ export default function (pi: ExtensionAPI) {
       return
     }
     // Host-bound external tools require their own approval, not local file writes.
-    const mcpLabel = mcpTools.get(name)
-    if (!mcpLabel && access !== 'write') {
+    const mcpApproval = mcpTools.get(name)
+    if (!mcpApproval && access !== 'write') {
       return { block: true, reason: 'This conversation cannot execute shell or mutating extension tools' }
     }
-    const title = mcpLabel ? `MCP tool: ${mcpLabel(event.input)}` : `Pi tool: ${name}`
-    if (!ctx.hasUI || !await ctx.ui.confirm(title, JSON.stringify(event.input))) {
+    const title = mcpApproval ? `MCP tool: ${mcpApproval.label(event.input)}` : `Pi tool: ${name}`
+    const mcpCall = mcpApproval?.call(event.input)
+    // 可信扩展传递完整调用身份；Host 决定是否允许当前运行复用。
+    const message = JSON.stringify(mcpCall ? { amadeus_mcp_approval: 1, mcpCall } : event.input)
+    if (!ctx.hasUI || !await ctx.ui.confirm(title, message)) {
       return { block: true, reason: 'The Host did not approve this operation' }
     }
   })

@@ -746,11 +746,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       if (key === 'main_chat_character_prompt_ja') setNotice('Kurisu Japanese persona saved. Later Japanese Main Chat and AUIP/browser requests use it when Kurisu is active.')
       return true
     } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `Could not update ${key}`)
       if (persisted) {
-        setNotice('Saved for the next backend start; the current runtime did not change.')
+        setNotice('Saved locally; the current runtime could not fully confirm this change.')
         return true
       } else {
-        setError(reason instanceof Error ? reason.message : `Could not update ${key}`)
         return false
       }
     } finally {
@@ -787,8 +787,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           setConfig((response.values as Record<string, unknown>) ?? response)
           const applied = await markRuntimeSettingsApplied(values, snapshot.pendingRevisions || {})
           if (applied) setDesktop(applied as unknown as DesktopSettingsSnapshot)
-        } catch {
-          setNotice('Saved for the next backend start; the current runtime did not change.')
+        } catch (reason) {
+          setNotice('Saved locally; the current runtime could not fully confirm this change.')
+          setError(reason instanceof Error ? reason.message : `Could not update ${field.key}`)
         }
       }
     } catch (reason) {
@@ -1552,6 +1553,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
             {section === 'providers' ? (
               <div className="flex flex-col gap-5">
+                <SettingsGroup title="Work and Chat approval" detail="Choose whether Amadeus asks for execution approval in Work and Cooperative chats. Permission limits and external tool gates still apply.">
+                  {renderRuntimeGroup('work_permissions', 'Work')}
+                </SettingsGroup>
                 <BoundaryNote title="Execution boundary">
                   Main Chat may delegate work to a Provider. Skills and MCP connections are shared only among compatible Work Providers; their prompts and tool schemas are never attached directly to Main Chat.
                 </BoundaryNote>

@@ -609,7 +609,8 @@ class CooperativeProviderLoop:
         if self._state is not None or self.children or self._inputs or self.history or self._closed:
             raise LoopConflict("context state requires a fresh cooperative loop")
         if install_runtime_hooks and (self.runtime._request_preparer is not None
-                or self.runtime._native_session_checkpoint is not None or self.runtime.list_runs()):
+                or self.runtime._native_session_checkpoint is not None
+                or self.runtime._automatic_permission_authorizer is not None or self.runtime.list_runs()):
             raise LoopConflict("cooperative state requires a Runtime without another intake owner or runs")
         binding, rows = state.load_catalog()
         self._binding = ContextBinding(binding["context_id"] or "", binding["token"])

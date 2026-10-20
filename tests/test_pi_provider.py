@@ -168,6 +168,23 @@ async def test_pi_permission_uses_host_response(pi_host, monkeypatch, allow):
     assert not (await adapter.resolve_permission("one", ProviderPermissionResponse("approval-1", True)))["accepted"]
 
 
+async def test_pi_cannot_create_a_reusable_grant_for_shell_confirmation(pi_host, monkeypatch):
+    adapter, request, events, emit = pi_host
+    monkeypatch.setattr(FakePi, "mode", "permission")
+
+    async def authorize(event):
+        await emit(event)
+        if event.type == "permission.requested":
+            permission = event.payload["permissionRequest"]
+            assert permission["options"] == ["allow_once", "deny"]
+            assert not (await adapter.resolve_permission("one", ProviderPermissionResponse(
+                "approval-1", True, scope="work")))["accepted"]
+            assert (await adapter.resolve_permission("one", ProviderPermissionResponse(
+                "approval-1", False)))["accepted"]
+
+    assert (await adapter.run(request, "one", authorize)).result == "denied"
+
+
 @pytest.mark.parametrize("state", ["queued_after_settlement", "query_rejected"])
 async def test_pi_append_ack_cannot_be_downgraded_to_safe_rejection(pi_host, monkeypatch, state):
     adapter, request, events, emit = pi_host

@@ -91,10 +91,21 @@ class WorkPermissionService:
             desktop_export=self.is_desktop_export_permission(request),
         )
 
-    def resolve(self, context: PermissionContext, *, allow: bool) -> PermissionResolution:
+    def resolve(self, context: PermissionContext, *, allow: bool, scope: str = "once") -> PermissionResolution:
         request = context.request
-        if allow and "allow_once" not in request.options:
+        option = "allow_work" if scope == "work" else "allow_once"
+        if scope not in {"once", "work"}:
+            raise WorkLedgerConflict("unsupported permission scope")
+        if allow and option not in request.options:
             raise WorkLedgerConflict("permission request does not allow approval")
+        if scope == "work":
+            if context.desktop_export or request.metadata.get("kind") != "provider_permission":
+                raise WorkLedgerConflict("Work-scoped approval requires a Provider permission")
+            if context.attempt.execution_status not in {"queued", "running"}:
+                raise WorkLedgerConflict("Work-scoped approval requires an active attempt")
+            if not allow:
+                resolved = self.store.update_permission_grant(request.request_id, status="revoked")
+                return PermissionResolution(context=context, permission=resolved)
         if context.desktop_export:
             resolution: ExportResolution = self.export_service.resolve(
                 request.request_id,
@@ -109,8 +120,9 @@ class WorkPermissionService:
             request.request_id,
             "allowed" if allow else "denied",
             metadata={
-                "resolution": "user_allowed" if allow else "user_denied",
+                "resolution": "user_allowed_work" if allow and scope == "work" else "user_allowed" if allow else "user_denied",
                 "retry_required": bool(request.metadata.get("retry_required")),
+                **({"grant_status": "active", "use_count": 0, "grant_uses": []} if scope == "work" else {}),
             },
         )
         return PermissionResolution(context=context, permission=resolved)
@@ -131,6 +143,14 @@ class WorkPermissionService:
         if attempt.execution_status not in {"succeeded", "failed", "cancelled"}:
             return 0
         expired = 0
+        for permission in self.store.list_permission_requests(attempt.work_item_id,
+                attempt_id=attempt.attempt_id, status="allowed"):
+            if permission.metadata.get("grant_status") == "active":
+                try:
+                    self.store.update_permission_grant(permission.request_id, status="expired")
+                    expired += 1
+                except WorkLedgerConflict:
+                    continue
         for permission in self.store.list_permission_requests(
             attempt.work_item_id,
             attempt_id=attempt.attempt_id,

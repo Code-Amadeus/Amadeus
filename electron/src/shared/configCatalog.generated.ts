@@ -1606,6 +1606,36 @@ export const catalogGroups: CatalogGroup[] = [
     "apply": "backend_restart"
   },
   {
+    "id": "work_permissions",
+    "title": {
+      "en-US": "Work and Chat approval",
+      "zh-CN": "Work 与聊天审批"
+    },
+    "description": {
+      "en-US": "Choose whether Amadeus asks for execution approval in Work and Cooperative chats. Permission limits and external tool gates still apply.",
+      "zh-CN": "选择 Amadeus 是否在 Work 与协作聊天中请求执行审批；权限限制和外部工具自身门禁仍然有效。"
+    },
+    "desktop": true,
+    "section": "routing",
+    "order": 9,
+    "apply": "host",
+    "config": {
+      "WORK_PERMISSION_AUTO_APPROVE": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Automatically approve Work and Chat requests",
+          "zh-CN": "自动批准 Work 与聊天请求"
+        },
+        "description": {
+          "en-US": "Automatically approve permitted requests in all Work and Cooperative chats, including MCP and shell. Deny policies and read-only limits still apply. Saved across restarts until you turn it off; approvals remain recorded.",
+          "zh-CN": "自动批准所有 Work 与协作聊天中可授权的请求，包括 MCP 和 Shell。拒绝策略与只读限制仍然有效。跨重启保存，直到手动关闭；审批仍会留痕。"
+        },
+        "default": false,
+        "runtime_key": "work_permission_auto_approve"
+      }
+    }
+  },
+  {
     "id": "work_routing",
     "title": {
       "en-US": "Work role assignments",

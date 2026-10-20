@@ -719,6 +719,7 @@ class SystemHandler(RequestHandler):
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
+            "work_permission_auto_approve": settings.WORK_PERMISSION_AUTO_APPROVE,
             "graphics": {
                 "profile": settings.GRAPHICS_PROFILE,
                 "custom_max_fps": settings.RENDER_MAX_FPS,
@@ -849,6 +850,9 @@ class SystemHandler(RequestHandler):
                     raise RuntimeError("wait for TTS playback to become idle before changing TTS settings")
 
         updated: list[str] = []
+        if "work_permission_auto_approve" in values:
+            settings.WORK_PERMISSION_AUTO_APPROVE = values["work_permission_auto_approve"]
+            updated.append("work_permission_auto_approve")
         if CHARACTER_PROMPT_SETTING in values:
             updated.extend(set_character_prompt(values[CHARACTER_PROMPT_SETTING]))
         if "asr_backend" in values:
@@ -901,6 +905,13 @@ class SystemHandler(RequestHandler):
         ]))
         current = await self._get_config({})
         await bus.emit(Method.SYSTEM_CONFIG, {"values": current, "updated": updated})
+        if "work_permission_auto_approve" in updated:
+            await bus.emit(Method.WALLPAPER_CANVAS, {
+                "workPermissionAutoApprove": settings.WORK_PERMISSION_AUTO_APPROVE})
+            if settings.WORK_PERMISSION_AUTO_APPROVE:
+                from agent_host.provider_runtime import runtime
+                # 设置事实先可见；个别请求的未知回执另行报告，不撤销用户策略。
+                await runtime.apply_permission_policy()
         return {"updated": updated, "values": current}
 
     async def _list_windows(self, params: dict[str, Any]) -> dict[str, Any]:
