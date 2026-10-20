@@ -67,7 +67,7 @@ def read(tmp_path, value):
 
 def test_catalog_source_hashes_are_independently_pinned():
     source = json.loads((ROOT / "server/extensions/catalog-source.json").read_text())
-    assert source["commit"] == "c7f5487a0fb9962b718187eec20428697ce4c244"
+    assert source["commit"] == "58d3892d55c6a7ec6f8626153f503291bb10ab9a"
     for name, digest in source["files"].items():
         assert (
             hashlib.sha256((ROOT / "vendor/extension-catalog" / name).read_bytes()).hexdigest()

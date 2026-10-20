@@ -400,6 +400,46 @@ def build_entry(source, artifacts, host, python, profile):
         return inspect_entry(source, snapshot, host, python, profile)
 
 
+def artifact_display(manifest):
+    """Public artifact facts only; never copy configuration defaults or environment values."""
+    return {
+        **{
+            k: manifest[k]
+            for k in (
+                "display_name",
+                "description",
+                "author",
+                "license",
+                "homepage",
+                "repository",
+            )
+            if k in manifest
+        },
+        "access": {
+            "os": manifest.get("permissions", {}).get("os", {}),
+            "services": [
+                {
+                    "kind": kind,
+                    **{
+                        key: item[key]
+                        for key in (
+                            "id",
+                            "deployment",
+                            "transport",
+                            "command",
+                            "args",
+                            "url",
+                        )
+                        if key in item
+                    },
+                }
+                for kind in ("voice_backend", "mcp_server")
+                for item in manifest["contributes"].get(kind, [])
+            ],
+        },
+    }
+
+
 def inspect_entry(source, wheel, host, python, profile):
     digest = source["wheel"]["sha256"]
     with wheel.open("rb") as stream:
@@ -440,18 +480,7 @@ def inspect_entry(source, wheel, host, python, profile):
         "sha256": digest,
         "url": source["wheel"]["url"],
         "size": wheel.stat().st_size,
-        "display": {
-            k: manifest[k]
-            for k in (
-                "display_name",
-                "description",
-                "author",
-                "license",
-                "homepage",
-                "repository",
-            )
-            if k in manifest
-        },
+        "display": artifact_display(manifest),
         "compatibility": {
             "host_api": manifest["engines"]["amadeus_host_api"],
             "python": str(

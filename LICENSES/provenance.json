@@ -499,7 +499,7 @@
         "vendor/extension-catalog/**"
       ],
       "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-      "source_revision": "c7f5487a0fb9962b718187eec20428697ce4c244 (local experimental branch; publication pending)",
+      "source_revision": "58d3892d55c6a7ec6f8626153f503291bb10ab9a (local experimental branch; publication pending)",
       "license_expression": "Apache-2.0",
       "license_evidence": [
         "vendor/extension-catalog/LICENSE"

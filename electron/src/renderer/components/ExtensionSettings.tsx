@@ -1,3 +1,6 @@
+import type { CatalogEntry, CatalogReply, CatalogView, CatalogProgress } from '../../shared/extensionCatalog.js'
+import ExtensionCatalog from './ExtensionCatalog'
+import { catalogBytes, recommendedUpdate } from './extensionCatalogModel'
 import { useEffect, useRef, useState } from 'react'
 import type { ExtensionSummary, ExtensionMutationResult } from '../../shared/extensions.js'
 import { extensionDisclosure } from '../../shared/extensions.js'
@@ -36,22 +39,58 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [security, setSecurity] = useState<{ status: string; checkedAt?: string }>({ status: 'unseen' })
-  useEffect(() => { void window.amadeus?.extensionCatalog?.({ action: 'get' }).then(result => {
-    if (result.settings?.extensionSecurity) setSecurity(result.settings.extensionSecurity as { status: string; checkedAt?: string })
-  }) }, [])
+  const [tab, setTab] = useState<'installed' | 'browse'>('installed')
+  const [catalog, setCatalog] = useState<CatalogView>({ entries: [], cached: true })
+  const [catalogSelection, setCatalogSelection] = useState<{ id: string; version: string } | null>(null)
+  const [progress, setProgress] = useState<CatalogProgress | undefined>()
+  const catalogBusy = useRef(false)
+  const metadataRequest = useRef(0)
+  const receiveCatalog = (result: CatalogReply) => {
+    if (result.catalog) setCatalog(result.catalog)
+    if (result.settings) {
+      onSettingsChanged(result.settings)
+      if (result.settings.extensionSecurity) setSecurity(result.settings.extensionSecurity as { status: string; checkedAt?: string })
+    }
+  }
+  useEffect(() => {
+    let closed = false
+    const request = ++metadataRequest.current
+    void window.amadeus?.extensionCatalog?.({ action: 'get' }).then(result => {
+      if (!closed && request === metadataRequest.current) { receiveCatalog(result); setProgress(result.catalog?.downloading) }
+    }).catch(() => { if (!closed) setError('Catalog state could not be loaded.') })
+    return () => { closed = true }
+  }, [])
+  useEffect(() => {
+    const api = window.amadeus
+    if (!api || !busy && !progress) return
+    let closed = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      try {
+        const result = await api.extensionCatalog({ action: 'status' })
+        if (!closed) {
+          setProgress(result.progress)
+          if (!result.progress && !catalogBusy.current && progress) { const snapshot = await api.extensionCatalog({ action: 'get' }); if (!closed) receiveCatalog(snapshot) }
+        }
+      } catch { /* The operation receipt owns errors; polling cannot declare success. */ }
+      if (!closed) timer = setTimeout(poll, 350)
+    }
+    void poll()
+    return () => { closed = true; clearTimeout(timer) }
+  }, [busy, Boolean(progress)])
   const [removeCandidate, setRemoveCandidate] = useState('')
   const [deleteData, setDeleteData] = useState(false)
   const dirty = draft !== null && JSON.stringify(draft) !== initial.current
   useEffect(() => {
-    onEditorStateChange?.({ dirty, busy })
+    onEditorStateChange?.({ dirty, busy: busy || Boolean(progress) })
     return () => onEditorStateChange?.({ dirty: false, busy: false })
-  }, [dirty, busy, onEditorStateChange])
+  }, [dirty, busy, Boolean(progress), onEditorStateChange])
   useEffect(() => {
     if (!selected) return
     editor.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     editor.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
   }, [selected])
-  const canLeave = () => canLeaveSettingsEditors([{ dirty, busy }], () => window.confirm(t(DISCARD_CONNECTION_CHANGES)))
+  const canLeave = () => canLeaveSettingsEditors([{ dirty, busy: busy || Boolean(progress) }], () => window.confirm(t(DISCARD_CONNECTION_CHANGES)))
   const close = () => { setSelected(null); setDraft(null); setRemoveCandidate(''); setDeleteData(false) }
   const edit = (extension: ExtensionSummary) => {
     if (!extension.manifest || !canLeave()) return
@@ -86,18 +125,51 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     finally { setBusy(false) }
   }
   const checkSecurity = async () => {
-    if (!window.amadeus || busy) return
+    if (!window.amadeus || busy || catalogBusy.current) return
+    catalogBusy.current = true
+    ++metadataRequest.current
     setBusy(true); setError(''); setNotice('')
     try {
       const result = await window.amadeus.extensionCatalog({ action: security.status === 'unavailable' ? 'recover' : 'refresh' })
-      if (result.settings) {
-        onSettingsChanged(result.settings)
-        setSecurity(result.settings.extensionSecurity as { status: string; checkedAt?: string })
-      }
+      receiveCatalog(result)
       if (!result.ok) throw new Error(result.error || 'Catalog refresh failed')
       setNotice('Official extension security state checked. Existing backend processes may still need to stop.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Catalog refresh failed') }
-    finally { setBusy(false) }
+    finally { catalogBusy.current = false; setBusy(false) }
+  }
+  const installCatalog = async (entry: CatalogEntry) => {
+    if (!window.amadeus || catalogBusy.current || !canLeave()) return
+    catalogBusy.current = true
+    ++metadataRequest.current
+    setBusy(true); setError(''); setNotice('')
+    setProgress({ id: entry.id, version: entry.version, received: 0, total: 0, stage: 'checking' })
+    try {
+      const result = await window.amadeus.extensionCatalog({ action: 'install', id: entry.id, version: entry.version })
+      receiveCatalog(result)
+      if (result.cancelled) { setNotice('Catalog installation cancelled. No new package was saved.'); return }
+      if (!result.ok) throw new Error(result.error || 'Could not install extension')
+      close(); setTab('installed')
+      setNotice('Package saved. Configure and enable it in Installed, then choose its Agents, voice or appearance. Saved updates may require a backend restart.')
+      if (result.settings?.restartRequired) onRestartRequired()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not install extension') }
+    finally { catalogBusy.current = false; setProgress(undefined); setBusy(false) }
+  }
+  const cancelCatalog = async () => {
+    if (!window.amadeus) return
+    setProgress(current => current ? { ...current, cancelRequested: true } : current)
+    try { const result = await window.amadeus.extensionCatalog({ action: 'cancel' }); if (!result.ok) throw new Error(result.error) }
+    catch { setError('Cancellation could not be requested. The operation is still running.') }
+  }
+  const openCatalogLink = async (entry: CatalogEntry, action: 'homepage' | 'repository') => {
+    if (!window.amadeus) return
+    setError(''); setNotice('')
+    try { const result = await window.amadeus.extensionCatalog({ action, id: entry.id, version: entry.version }); if (!result.ok) throw new Error(result.error) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not open package link') }
+  }
+  const showCatalog = (id: string, version: string) => { setCatalogSelection({ id, version }); setTab('browse') }
+  const switchTab = (next: 'installed' | 'browse') => {
+    setTab(next)
+    if (next === 'browse' && tab !== next) void checkSecurity()
   }
   const save = async () => {
     if (!window.amadeus || !selected || !draft) return
@@ -121,20 +193,37 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   }
   const compatibleProviders = compatibleExtensionProviders(providers, selected)
   const selectedMetadataAvailable = selected && extensions.some(extension => extension.id === selected.id && extension.manifest)
+  const selectedPolicyBlocked = security.status === 'unavailable' || Boolean(catalog.installed?.find(item => item.id === selected?.id && item.version === selected?.version && item.digest === selected?.digest)?.blocked)
   const missingProviders = draft?.providers.filter(id => !compatibleProviders.some(provider => provider.provider_id === id)) || []
 
   return <div className="settings-embedded-stack extension-settings">
+    <div role="tablist" aria-label={t('Plugin manager views')} className="extension-manager-tabs">
+      {(['installed', 'browse'] as const).map(value => <button type="button" key={value} role="tab" id={`extension-tab-${value}`} aria-controls={`extension-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
+        onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'installed' : event.key === 'End' ? 'browse' : tab === 'installed' ? 'browse' : 'installed'; switchTab(next); document.getElementById(`extension-tab-${next}`)?.focus() } }}
+        onClick={() => switchTab(value)}>{t(value === 'installed' ? 'Installed' : 'Browse')}</button>)}
+    </div>
+    <div className="extension-catalog-toolbar">
+      <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity()}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
+      <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
+    </div>
+    {error || catalog.error ? <div role="alert" className="settings-form-error">{t(error || catalog.error!)}</div> : null}
+    {notice ? <div role="status" className="settings-form-save-hint">{t(notice)}</div> : null}
+    {progress ? <div className="extension-download-progress" role="status" aria-live="polite">
+      <strong>{progress.id} · {progress.version}</strong>
+      <div>{t(progress.cancelRequested ? 'Cancellation requested; waiting for safe cleanup.' : { checking: 'Checking the official catalog…', downloading: 'Downloading wheel…', verifying: 'Downloaded. Verifying the artifact…', confirming: 'Review the native installation confirmation.', preparing: 'Preparing the package. It has not been saved yet.' }[progress.stage])}</div>
+      {progress.stage === 'downloading' ? <><progress aria-label={t('Wheel download progress')} max={progress.total || 1} value={progress.received} /><span>{catalogBytes(progress.received)} / {catalogBytes(progress.total)}</span></> : null}
+      <SettingsButton disabled={progress.cancelRequested} onClick={() => void cancelCatalog()}>{t('Cancel installation')}</SettingsButton>
+    </div> : null}
+    <section id="extension-panel-installed" role="tabpanel" aria-labelledby="extension-tab-installed" hidden={tab !== 'installed'} className="settings-embedded-stack">
     <CardShell vertical>
       <div className="settings-note-title">{t('Local community packages')}</div>
       <div className="settings-note-description">{t('Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
-      <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
-      <div className="settings-form-actions-end"><SettingsButton disabled={!available || busy} onClick={() => void checkSecurity()}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton></div>
-      <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
+      <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy || security.status === 'unavailable'} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
     </CardShell>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
-    {error ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
-    {notice ? <div role="status" className="settings-form-save-hint">{t(notice)}</div> : null}
+
+
     {available && !extensions.length ? <div className="settings-field-description">{t('No community extensions installed.')}</div> : null}
     {extensions.map(extension => {
       if (!extension.manifest) return <CardShell vertical key={extension.id}>
@@ -147,6 +236,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           }}>{t('Remove')}</SettingsButton>
         </div>}
       </CardShell>
+      const listing = catalog.installed?.find(item => item.id === extension.id && item.version === extension.version && item.digest === extension.digest)
+      const update = recommendedUpdate(catalog.entries, extension)
       const observed = connected ? runtime.find(item => item.id === extension.id) : undefined
       const voices = extension.manifest.contributes.voice_backend || []
       const themes = extension.manifest.contributes.theme || []
@@ -164,6 +255,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           <StatusPill ok={false} tone={extension.restartRequired || extension.pendingRemoval ? 'warning' : 'neutral'}>{t(extension.restartRequired ? 'Restart required' : savedState)}</StatusPill>
         </div>
         <div className="settings-card-description">{extensionText(extension.manifest.description, locale)}</div>
+        <div className="settings-field-description">{t(listing?.catalogState === 'matched' ? catalog.cached ? 'Reviewed artifact in the cached catalog' : 'Reviewed artifact in the checked catalog' : listing?.catalogState === 'unlisted' ? 'Not listed in the checked catalog' : 'Catalog review status is unknown')}{listing?.withdrawal ? ` · ${t(listing.withdrawal.reason === 'copyright' ? 'Withdrawn for copyright reasons' : 'Withdrawn by the maintainer')}` : ''}{listing?.blocked ? ` · ${t('Blocked by security policy')}` : ''}</div>
+        {update ? <div className="extension-catalog-update"><span>{t('Compatible update available')}: {extension.version} → {update.version}</span><SettingsButton disabled={busy || Boolean(progress)} onClick={() => void installCatalog(update)}>{t('Update plugin…')}</SettingsButton><SettingsButton tone="quiet" onClick={() => showCatalog(update.id, update.version)}>{t('Review update details')}</SettingsButton></div> : null}
         <details className="settings-field-description"><summary>{t('Declared access and commands')}</summary>
           <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{extensionDisclosure(extension.manifest)}</pre>
         </details>
@@ -175,7 +268,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           {observed && observed.version !== extension.version ? <span>{t('Running version')}: {observed.version}</span> : null}
         </div>
         {extension.frontendSuppressed && extension.backendStillRunning ? <div role="status" className="settings-field-description">{t('Frontend access is closed; the previous backend still runs until restart.')}</div> : null}
-        {extension.applicationError ? <div role="alert" className="settings-form-error">{extension.applicationError}</div> : null}
+        {extension.applicationError ? <div role="alert" className="settings-form-error">{t(extension.applicationError)}</div> : null}
         {observed?.detail ? <div className="settings-field-description extension-detail">{t(observed.detail)}</div> : null}
         <ul className="extension-contributions" aria-label={t('Contributions')}>
           {themes.map(theme => <li key={`theme-${theme.id}`}>
@@ -218,9 +311,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     {selected?.manifest && draft && selectedMetadataAvailable ? <form ref={editor} className="settings-connection-editor settings-form" onSubmit={event => { event.preventDefault(); void save() }} aria-label={t('Configure extension')}>
       <div className="settings-connection-editor-heading"><h4 className="settings-card-title">{extensionText(selected.manifest.display_name, locale, selected.id)}</h4>
         <div className="settings-card-description">{selected.id} · {selected.version}</div></div>
+      {selectedPolicyBlocked ? <div role="alert" className="settings-form-error">{t('Security policy prevents activation. Disable this package to save configuration changes.')}</div> : null}
       <fieldset className="settings-form-body" disabled={busy}>
         <SettingsField id="extension-enabled" label="Enable extension" description={selected.application === 'frontend' ? 'Applies immediately after saving.' : 'Applies after saving and restarting the backend.'}>
-          <label className="settings-form-switch"><input id="extension-enabled" type="checkbox" checked={draft.enabled} onChange={event => change({ enabled: event.target.checked })} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></label>
+          <label className="settings-form-switch"><input id="extension-enabled" type="checkbox" checked={draft.enabled} disabled={selectedPolicyBlocked && !draft.enabled} onChange={event => change({ enabled: event.target.checked })} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></label>
         </SettingsField>
         {!draft.enabled && (selected.manifest.contributes.voice_backend || []).some(voice => `${selected.id}/${voice.id}` === selectedVoiceBackend) ? <div className="settings-field-description">{t('This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</div> : null}
         {Object.entries(selected.manifest.config || {}).map(([key, field]) => {
@@ -262,8 +356,12 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       </fieldset>
       <div className="settings-form-footer"><div className="settings-form-save-hint">{t(selected.application === 'frontend' ? 'Save to apply immediately without restarting the backend.' : 'Save, then restart the backend to apply. The current runtime keeps its existing extension state.')}</div>
         <div className="settings-form-actions-end"><SettingsButton tone="quiet" disabled={busy} onClick={() => { if (canLeave()) close() }}>{t('Cancel')}</SettingsButton>
-          <button type="submit" className="settings-button" data-tone="primary" disabled={busy || !dirty}>{t(busy ? 'Saving…' : 'Save extension')}</button></div>
+          <button type="submit" className="settings-button" data-tone="primary" disabled={busy || !dirty || selectedPolicyBlocked && draft.enabled}>{t(busy ? 'Saving…' : 'Save extension')}</button></div>
       </div>
     </form> : null}
+    </section>
+    <section id="extension-panel-browse" role="tabpanel" aria-labelledby="extension-tab-browse" hidden={tab !== 'browse'}>
+      <ExtensionCatalog catalog={catalog} installed={extensions} busy={busy || Boolean(progress)} selection={catalogSelection} onSelect={setCatalogSelection} onInstall={entry => void installCatalog(entry)} onLink={(entry, field) => void openCatalogLink(entry, field)} />
+    </section>
   </div>
 }

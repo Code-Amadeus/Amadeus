@@ -239,7 +239,7 @@ export class ExtensionInstaller {
     return result
   }
 
-  install(wheel: string, delivery?: { identity: ArtifactIdentity; assertCurrent: () => void }): Promise<Record<string, unknown>> {
+  install(wheel: string, delivery?: { identity: ArtifactIdentity; assertCurrent: () => void; onStage?: (stage: 'verifying' | 'confirming' | 'preparing') => void }): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
       this.store.assertExtensionAllowed()
       delivery?.assertCurrent()
@@ -259,6 +259,7 @@ export class ExtensionInstaller {
         // inspected by the trusted helper even if the selected source changes.
         const copied = path.join(directory, path.basename(wheel))
         fs.copyFileSync(wheel, copied, fs.constants.COPYFILE_EXCL)
+        delivery?.onStage?.('verifying')
         const inspection = await this.helper.call(delivery ? 'inspect-catalog-wheel' : 'inspect-wheel', [copied])
         const manifest = inspection.manifest!
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
@@ -284,11 +285,13 @@ export class ExtensionInstaller {
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
         }
+        delivery?.onStage?.('confirming')
         if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version, previousManifest: existing?.manifest,
           digest: inspection.digest, sourceFile: path.basename(wheel) })) {
           throw new ExtensionChangeCancelled()
         }
         assertAllowed()
+        delivery?.onStage?.('preparing')
         const env = extensionInstallerEnvironment(this.environment)
         const venv = path.join(directory, 'venv')
         let purelib: string

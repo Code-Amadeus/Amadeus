@@ -96,6 +96,7 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
   throw new Error('Unexpected synthetic RPC: ' + method)
 }
 host.amadeus = {
+  getBackendStartupFailure: async () => null,
   getDesktopTheme: async () => {
     if (!palette) return { selected: theme, base: theme, reason: '' }
     const normalized = validateThemePalette(palette)
@@ -109,6 +110,7 @@ host.amadeus = {
   setTitleBarTheme: async () => true,
   extensionCatalog: async (request: { action: string }) => {
     calls.push({ method: 'extensions.catalog', params: request })
+    if (request.action === 'status') return { ok: true }
     if (request.action === 'get') return { ok: true, settings: snapshot(), catalog: { entries: [], cached: true } }
     if (failCatalog) return { ok: false, error: 'Synthetic catalog offline', settings: snapshot() }
     desktop.extensionSecurity = { status: 'ready', checkedAt: '2026-10-21T00:00:00Z' }
@@ -148,6 +150,7 @@ host.amadeus = {
     desktop.restartRequired = false; desktop.pendingKeys = []; desktop.pendingRevisions = {}; emit(); return true
   },
 }
+if (query.has('real')) Object.assign(host.amadeus, host.extensionStoreFixture)
 host.extensionFixture = { calls, errors, snapshot, setFailCatalog: (value: boolean) => { failCatalog = value }, setFailSave: (value: boolean) => { failSave = value },
   refreshRuntime: () => { emit() } }
 document.documentElement.style.height = '100%'
@@ -157,7 +160,7 @@ function FixtureApp() {
   const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'plugins' ? 'plugins' : 'settings')
   const openSettings = (section: string) => { localStorage.setItem('amadeus.settings.section', section); setPage('settings') }
   return <ThemeProvider><I18nProvider>
-    <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
+    <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected={!query.has('real')} reconnectBackend={async () => {}} /></div>
   </I18nProvider></ThemeProvider>
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(<FixtureApp />)

@@ -1163,3 +1163,12 @@ test('lost durable inventory still reports an actually running blocked backend',
   await f.installer.cleanupStoppedBackend()
   assert.ok(!f.store.snapshot({}).extensionErrors.some(message => message.includes('Stop or restart the backend')))
 })
+
+test('catalog progress reports inspection, native confirmation and preparation without claiming commit early', async t => {
+  const phases = []
+  const f = fixture(t, { confirm: () => { assert.equal(phases.at(-1), 'confirming'); assert.equal(f.store.storedExtensionRecords().length, 0); return true } })
+  const identity = { id: f.metadata.id, version: f.metadata.version, digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex') }
+  await f.installer.install(f.selectedWheel, { identity, assertCurrent() {}, onStage: phase => phases.push(phase) })
+  assert.deepEqual(phases, ['verifying', 'confirming', 'preparing'])
+  assert.equal(f.store.storedExtensionRecords()[0].digest, identity.digest)
+})

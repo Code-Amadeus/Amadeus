@@ -166,7 +166,7 @@ try {
   await until("document.body.textContent.includes('Installation and activation are blocked until recovery')", 'Damaged security state is not visible')
   await click('Recover official extension security state')
   await until("document.body.textContent.includes('Last successful security check')", 'Recovery success not shown')
-  assert.equal(await ui("window.extensionFixture.calls.filter(c=>c.method==='extensions.catalog').at(-1).params.action"), 'recover')
+  assert.equal(await ui("window.extensionFixture.calls.filter(c=>c.method==='extensions.catalog'&&c.params.action!=='status').at(-1).params.action"), 'recover')
   assert.ok(await ui("document.body.textContent.includes('Artifact mirror base URL')"))
   await capture('security-recovery-and-mirror.png'); report.screenshots.push('security-recovery-and-mirror.png')
   assert.deepEqual(await ui('window.extensionFixture.errors'), [])

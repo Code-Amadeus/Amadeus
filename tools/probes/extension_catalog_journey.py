@@ -28,6 +28,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", required=True)
     parser.add_argument("--wheels", type=Path, required=True)
+    parser.add_argument(
+        "--store-ui",
+        action="store_true",
+        help="Run the real store UI journey with both reference versions",
+    )
     args = parser.parse_args()
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -65,8 +70,12 @@ def main():
     (base / "cert.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     entries = []
     wheels = {}
-    for name in ["tone_tts", "notes_mcp", "handoff_skill", "theme"]:
-        wheel = args.wheels.resolve() / f"amadeus_example_{name}-0.1.0-py3-none-any.whl"
+    for name, version in [
+        (name, version)
+        for name in ["tone_tts", "notes_mcp", "handoff_skill", "theme"]
+        for version in (["0.1.0", "0.2.0"] if args.store_ui else ["0.1.0"])
+    ]:
+        wheel = args.wheels.resolve() / f"amadeus_example_{name}-{version}-py3-none-any.whl"
         digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
         source = dict(
             wheel=dict(url="https://artifact.test/" + wheel.name, sha256=digest),
@@ -118,7 +127,14 @@ def main():
                 name="catalog-qualification",
                 version="0.0.0",
                 type="module",
-                main=str(ROOT / "electron/tests/extensionCatalog.smoke.mjs"),
+                main=str(
+                    ROOT
+                    / (
+                        "electron/tests/extensionStore.smoke.mjs"
+                        if args.store_ui
+                        else "electron/tests/extensionCatalog.smoke.mjs"
+                    )
+                ),
             )
         )
     )
@@ -150,8 +166,16 @@ def main():
             finally:
                 tree.terminate()
 
+    if args.store_ui:
+        subprocess.run(
+            ["node", "--check", str(ROOT / "electron/tests/extensionStore.smoke.mjs")],
+            cwd=ROOT,
+            env=env,
+            check=True,
+            timeout=30,
+        )
     code = run("driver", command, 600)
-    if code == 0:
+    if code == 0 and not args.store_ui:
         code = run("recovery", command + ["--recover"], 240)
     print(json.dumps(dict(ok=code == 0, report=str(base / "report.json"), returncode=code)))
     return code

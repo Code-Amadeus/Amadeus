@@ -93,3 +93,29 @@ test('cancel while confirmation is open prevents commit and removes staging', as
   assert.equal(f.state.installed.length, 0)
   assert.deepEqual(fs.readdirSync(path.join(f.root, 'catalog/staging')), [])
 })
+
+test('production dispatch rejects forged links, exposes compact progress and reports native cancellation truthfully', async t => {
+  const f = fixture(t); const opened = []
+  assert.equal((await f.catalog.dispatch({ action: 'install', id: entry().id, version: entry().version, url: 'https://forged.test/' }, {}, async url => opened.push(url))).ok, false)
+  await f.catalog.refresh()
+  f.state.index.entries[0].display.repository = 'https://user:pass@example.org/'
+  f.state.index.sequence++
+  await f.catalog.refresh()
+  assert.equal((await f.catalog.dispatch({ action: 'repository', id: entry().id, version: entry().version }, {}, async url => opened.push(url))).ok, false)
+  assert.deepEqual(opened, [])
+  f.state.confirm = async () => { assert.equal(f.catalog.status().stage, 'downloading'); f.catalog.cancel() }
+  const result = await f.catalog.dispatch({ action: 'install', id: entry().id, version: entry().version }, {}, async () => {})
+  assert.equal(result.cancelled, true)
+  const status = await f.catalog.dispatch({ action: 'status' }, {}, async () => {})
+  assert.deepEqual(Object.keys(status).sort(), ['ok', 'progress'])
+  assert.equal(status.progress, undefined)
+})
+
+test('a preparation or persistence error is not misreported as cancellation', async t => {
+  const f = fixture(t)
+  f.state.confirm = async () => { f.catalog.cancel(); throw new Error('simulated persistence failure') }
+  const result = await f.catalog.dispatch({action:'install',id:entry().id,version:entry().version},{},async()=>{})
+  assert.equal(result.ok, false)
+  assert.equal(result.cancelled, undefined)
+  assert.match(result.error, /persistence failure/)
+})

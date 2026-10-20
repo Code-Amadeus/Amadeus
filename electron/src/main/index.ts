@@ -40,7 +40,7 @@ import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } 
 import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 import { extensionDisclosure } from '../shared/extensions.js'
-import { ExtensionCatalog, catalogRequest } from './extensionCatalog.js'
+import { ExtensionCatalog } from './extensionCatalog.js'
 import { ExtensionThemeResources } from './extensionThemes.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
@@ -2224,15 +2224,7 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
 })
 ipcMain.handle('extensions.catalog', async (event, raw: unknown) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
-  try {
-    const request = catalogRequest(raw)
-    if (request.action === 'install') return { ok: true, settings: await extensionCatalog.install(request.id, request.version), catalog: await extensionCatalog.view() }
-    if (request.action === 'homepage') { await shell.openExternal(extensionCatalog.homepage(request.id, request.version)); return { ok: true } }
-    if (request.action === 'cancel') extensionCatalog.cancel()
-    const catalog = request.action === 'refresh' || request.action === 'recover'
-      ? await extensionCatalog.refresh(request.action === 'recover') : await extensionCatalog.view()
-    return { ok: true, catalog, settings: desktopSettings.snapshot(process.env) }
-  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Catalog operation failed', catalog: await extensionCatalog.view(), settings: desktopSettings.snapshot(process.env) } }
+  return extensionCatalog.dispatch(raw, process.env, url => shell.openExternal(url))
 })
 ipcMain.handle('extensions.install', async (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }

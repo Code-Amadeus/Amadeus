@@ -127,6 +127,15 @@ jobs:
         run: >-
           uv run --locked --no-sync python -X utf8 tools/probes/extension_author_journey.py
 
+      - name: Run plugin store UI journey with real reference wheels
+        shell: pwsh
+        run: |
+          $authorRun = Get-ChildItem -LiteralPath build/extension-author-journey -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (!$authorRun) { throw 'Author journey wheel directory is missing' }
+          $wheelDirectory = Join-Path $authorRun.FullName 'wheels'
+          uv run --locked --no-sync python -X utf8 tools/probes/extension_catalog_journey.py --execute --store-ui --wheels $wheelDirectory
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run Electron model-less smoke
         run: >-
           uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
@@ -157,6 +166,10 @@ jobs:
             build/extension-author-journey/**/report.json
             build/extension-author-journey/**/*-report.json
             build/extension-author-journey/**/*.log
+            build/extension-catalog-journey/**/report.json
+            build/extension-catalog-journey/**/*-runtime.json
+            build/extension-catalog-journey/**/*.png
+            build/extension-catalog-journey/**/*.log
             build/electron-smoke/**
             build/electron-packaged-smoke/**
           if-no-files-found: ignore

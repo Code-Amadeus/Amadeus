@@ -131,7 +131,10 @@
     "vendor/extension-catalog/LICENSE",
     "electron/src/main/extensionCatalog.ts",
     "electron/src/main/extensionDownloads.ts",
-    "electron/src/main/extensionSecurity.ts"
+    "electron/src/main/extensionSecurity.ts",
+    "electron/src/renderer/components/ExtensionCatalog.tsx",
+    "electron/src/renderer/components/extensionCatalogModel.ts",
+    "electron/src/shared/extensionCatalog.ts"
   ],
   "include_roots": [
     "characters",
