@@ -124,13 +124,13 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not install extension')) }
     finally { setBusy(false) }
   }
-  const checkSecurity = async () => {
+  const checkSecurity = async (recovery = false) => {
     if (!window.amadeus || busy || catalogBusy.current) return
     catalogBusy.current = true
     ++metadataRequest.current
     setBusy(true); setError(''); setNotice('')
     try {
-      const result = await window.amadeus.extensionCatalog({ action: security.status === 'unavailable' ? 'recover' : 'refresh' })
+      const result = await window.amadeus.extensionCatalog({ action: recovery ? 'recover' : 'refresh' })
       receiveCatalog(result)
       if (!result.ok) throw new Error(result.error || 'Catalog refresh failed')
       setNotice('Official extension security state checked. Existing backend processes may still need to stop.')
@@ -169,7 +169,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   const showCatalog = (id: string, version: string) => { setCatalogSelection({ id, version }); setTab('browse') }
   const switchTab = (next: 'installed' | 'browse') => {
     setTab(next)
-    if (next === 'browse' && tab !== next) void checkSecurity()
+    if (next === 'browse' && tab !== next && security.status !== 'unavailable') void checkSecurity()
   }
   const save = async () => {
     if (!window.amadeus || !selected || !draft) return
@@ -203,7 +203,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         onClick={() => switchTab(value)}>{t(value === 'installed' ? 'Installed' : 'Browse')}</button>)}
     </div>
     <div className="extension-catalog-toolbar">
-      <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity()}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
+      <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity(security.status === 'unavailable')}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
       <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
     </div>
     {error || catalog.error ? <div role="alert" className="settings-form-error">{t(error || catalog.error!)}</div> : null}

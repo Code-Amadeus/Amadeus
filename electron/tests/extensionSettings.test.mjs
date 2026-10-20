@@ -280,3 +280,14 @@ test('catalog view switching retains a draft and policy-blocked packages can be 
   assert.equal(field().props.checked,false)
   assert.ok(page.find(n=>n.props?.role==='alert'&&n.props.children.includes('Security policy')))
 })
+
+test('opening Browse cannot implicitly recover damaged safety state', async t => {
+  const requests=[]
+  const page=harness({extensionCatalog:async request=>{requests.push(request);return {ok:true,catalog:{entries:[],cached:true},settings:{extensionSecurity:{status:'unavailable'}}}}})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  page.button('Browse').props.onClick();await flush();page.render()
+  assert.equal(requests.filter(r=>r.action==='recover'||r.action==='refresh').length,0)
+  page.button('Recover official extension security state').props.onClick();await flush();page.render()
+  assert.equal(requests.filter(r=>r.action==='recover').length,1)
+})
