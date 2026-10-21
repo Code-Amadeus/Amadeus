@@ -85,6 +85,21 @@ including blocked remote requests and successful loading of a tiny local model.
 Explicit asset acquisition runs separately; remote Chat/ASR/TTS API clients are
 unchanged. The advisory exceptions remain temporary, not claims of patched packages.
 
+## Security-patched image decoding and optional demo dependencies
+
+The locked core uses Pillow 13.0.0 and certifi 2026.10.19. Gradio's current
+Pillow `<13` constraint is not overridden. Local-model profiles use the original
+Qwen-ASR 0.0.6 inference sources with one documented packaging change: Gradio is
+an optional `demo` dependency instead of an inference requirement. The locked
+source, upstream hashes and removal condition are in
+[Qwen-ASR provenance](../vendor/qwen-asr.PROVENANCE.md).
+
+`load_audio` retains the same FFmpeg decoding path; importing it no longer loads
+legacy Gradio/pandas UI helpers. The inherited Gradio demo/WebUI scripts are not
+installed by the Host local-model presets. Do not downgrade the Host's image
+decoder to run them. This source packaging change does not change ASR/TTS model
+code, weights, configured interpreter selection, or GPU qualification.
+
 ## Experimental Linux Voice source build
 
 On Ubuntu 24.04, install `build-essential`, `pkg-config` and `portaudio19-dev`,
