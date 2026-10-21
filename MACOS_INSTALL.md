@@ -357,6 +357,7 @@ uv run --locked --no-sync python tools/external_assets.py status
 | 检查项 | 适用于 | 命令或判定 |
 |---|---|---|
 | 依赖与目标梯级一致 | 所有启动 | 重跑目标梯级的完整 `uv sync --locked …`，再运行对应的 `verify_python_environment.py --profile …`，必须输出 `environment ok` |
+| 原生 VN 立绘的 Tk/ImageTk | macOS + 启用原生 VN 立绘（不适用于 headless） | 在图形桌面会话中运行 `uv run --locked --no-sync python tools/verify_vn_portrait_environment.py`，必须退出码为 0 且输出 `VN portrait environment ok`；失败时按 [Tk 检查与迁移](#vn-portrait-tk) 处理 |
 | 前端已构建 | 桌面 | `cd electron && npm ci && npm run build && cd ..`（每次拉取新源码后都要重跑） |
 | `.env` 存在 | 所有启动 | 不存在时 `cp .env.example .env`；已存在则**不要覆盖** |
 | 非密钥配置与已装梯级一致 | 所有启动 | 只跑文字：设 `TTS_BACKEND=disabled`、`WAKE_ENABLED=false`；本地 ASR 显式设 `QWEN3_ASR_DEVICE=cpu` |
