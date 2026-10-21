@@ -17,9 +17,9 @@
 qwen_asr: Qwen3-ASR package.
 """
 
-from .inference.qwen3_asr import Qwen3ASRModel as Qwen3ASRModel
-from .inference.qwen3_forced_aligner import Qwen3ForcedAligner as Qwen3ForcedAligner
+from .inference.qwen3_asr import Qwen3ASRModel
+from .inference.qwen3_forced_aligner import Qwen3ForcedAligner
 
-from .inference.utils import parse_asr_output as parse_asr_output
+from .inference.utils import parse_asr_output
 
 __all__ = ["__version__"]

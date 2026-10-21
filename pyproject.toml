@@ -276,6 +276,7 @@ target-version = "py312"
 extend-exclude = [
     # Preserve upstream sources; the build-only delta is reviewed separately.
     "vendor/aec-audio-processing",
+    "vendor/qwen-asr",
     "GPT_SoVITS",
     "assets",
     ".venv",

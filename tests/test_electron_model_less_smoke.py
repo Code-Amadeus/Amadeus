@@ -86,3 +86,153 @@ def test_recovery_wait_bounds_an_ipc_call_that_never_returns():
             return await asyncio.Future()
     with pytest.raises(TimeoutError):
         asyncio.run(_wait_desktop_value(Page(), 'AMADEUS_UI_THEME', 'classic', timeout=.02))
+
+
+@pytest.mark.parametrize("executable", [
+    "electron.exe", "electron", "Electron.app/Contents/MacOS/Electron",
+])
+async def test_launcher_owns_the_installed_native_process(tmp_path, monkeypatch, executable):
+    from tools import e2e_live_product_journey as journey
+
+    package = tmp_path / "node_modules" / "electron"
+    native = package / "dist" / executable
+    native.parent.mkdir(parents=True)
+    native.touch()
+    (package / "path.txt").write_text(executable, encoding="utf-8")
+    monkeypatch.setattr(journey, "ELECTRON_ROOT", tmp_path)
+    monkeypatch.setattr(journey, "_port_is_open", lambda port: False)
+    monkeypatch.setattr(journey, "_windows_launch_identity", lambda: None)
+    monkeypatch.setattr(journey, "_require_windows_electron_profile", lambda identity: None)
+    command = []
+
+    class LaunchObserved(Exception):
+        pass
+
+    def popen(args, **kwargs):
+        command.extend(args)
+        raise LaunchObserved
+
+    monkeypatch.setattr(journey.subprocess, "Popen", popen)
+    product = journey.ElectronProduct(
+        run_root=tmp_path, debug_port=9223, main_debug_port=9224,
+        no_tts=True, identity={},
+    )
+    try:
+        with pytest.raises(LaunchObserved):
+            await product.start(startup_timeout=1)
+    finally:
+        if product.log_handle:
+            product.log_handle.close()
+    assert command[0] == str(native)
+    assert "--inspect=127.0.0.1:9224" in command
+    assert "." in command
+
+
+async def test_packaged_launcher_does_not_require_an_npm_install(tmp_path, monkeypatch):
+    from tools import e2e_live_product_journey as journey
+
+    executable = tmp_path / "Amadeus"
+    executable.touch()
+    monkeypatch.setattr(journey, "ELECTRON_ROOT", tmp_path)
+    monkeypatch.setattr(journey, "_port_is_open", lambda port: False)
+    monkeypatch.setattr(journey, "_windows_launch_identity", lambda: None)
+    monkeypatch.setattr(journey, "_require_windows_electron_profile", lambda identity: None)
+    command = []
+
+    class LaunchObserved(Exception):
+        pass
+
+    def popen(args, **kwargs):
+        command.extend(args)
+        raise LaunchObserved
+
+    monkeypatch.setattr(journey.subprocess, "Popen", popen)
+    product = journey.ElectronProduct(
+        run_root=tmp_path, debug_port=9223, no_tts=True, identity={},
+        packaged_executable=executable,
+    )
+    try:
+        with pytest.raises(LaunchObserved):
+            await product.start(startup_timeout=1)
+    finally:
+        if product.log_handle:
+            product.log_handle.close()
+    assert command[0] == str(executable)
+    assert "." not in command
+
+
+class StartupPage:
+    """Small IPC/UI substitute; mismatched UI and persistence fail separately."""
+
+    def __init__(self, platform, *, visible=False, pending=False, persist=True):
+        self.platform = platform
+        self.visible = visible
+        self.pending = pending
+        self.persist = persist
+        self.selected = []
+        self.value = None
+        self.waited = False
+
+    async def evaluate(self, expression):
+        assert expression == "window.amadeus.getDesktopSettings()"
+        return {
+            "platform": self.platform,
+            "values": {"AMADEUS_WINDOWS_STARTUP_MODE": self.value},
+            "pendingKeys": ["AMADEUS_WINDOWS_STARTUP_MODE"] if self.pending else [],
+        }
+
+    def get_by_role(self, role, **kwargs):
+        assert (role, kwargs) == ("combobox", {"name": "Startup mode", "exact": True})
+        return self
+
+    async def wait_for(self, **kwargs):
+        assert self.visible
+        self.waited = True
+
+    async def select_option(self, value):
+        assert self.visible
+        self.selected.append(value)
+        if self.persist:
+            self.value = value
+
+    async def to_have_count(self, count):
+        assert int(self.visible) == count
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+@pytest.mark.parametrize("visible", [False, True])
+async def test_non_windows_checks_absence_instead_of_skipping_settings(monkeypatch, platform, visible):
+    import playwright.async_api
+    from tools.smoke_electron_model_less import _exercise_startup_settings
+
+    monkeypatch.setattr(playwright.async_api, "expect", lambda locator: locator)
+    page = StartupPage(platform, visible=visible)
+    if visible:
+        with pytest.raises(AssertionError):
+            await _exercise_startup_settings(page, timeout=0)
+    else:
+        assert await _exercise_startup_settings(page, timeout=0) == {
+            "windows_startup_mode_hidden": True,
+        }
+    assert not page.waited
+    assert page.selected == []
+
+
+@pytest.mark.parametrize("platform", [None, "", "unknown"])
+async def test_startup_settings_rejects_unknown_platform(platform):
+    from tools.smoke_electron_model_less import _exercise_startup_settings
+
+    with pytest.raises(RuntimeError, match="Unknown desktop platform"):
+        await _exercise_startup_settings(StartupPage(platform), timeout=0)
+
+
+async def test_windows_still_saves_both_modes_and_checks_restart_semantics():
+    from tools.smoke_electron_model_less import _exercise_startup_settings
+
+    page = StartupPage("win32", visible=True)
+    assert await _exercise_startup_settings(page, timeout=0) == {"startup_mode_saved_in_gui": True}
+    assert page.selected == ["window", "wallpaper"]
+    with pytest.raises(RuntimeError, match="backend restart"):
+        await _exercise_startup_settings(StartupPage("win32", visible=True, pending=True), timeout=0)
+    with pytest.raises(TimeoutError, match="did not persist"):
+        await _exercise_startup_settings(StartupPage("win32", visible=True, persist=False), timeout=0)

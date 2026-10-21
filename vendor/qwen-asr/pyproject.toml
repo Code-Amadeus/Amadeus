@@ -1,5 +1,7 @@
+# Amadeus packaging changes: pin this package's isolated build tools, use SPDX
+# license metadata with its original notice, and separate the optional demo UI.
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools==83.0.0", "wheel==0.47.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,7 +18,8 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
 ]
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Alibaba Qwen Team" }]
 
 dependencies = [
