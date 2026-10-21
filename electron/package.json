@@ -14,13 +14,17 @@
     "check:pi": "npm --prefix ../agent_host/pi_runtime run typecheck",
     "build": "npm run check:config && npm run check:extension-sdk && npm run check:pi && tsc && vite build",
     "electron:dev": "npm run check:extension-sdk && node --experimental-strip-types scripts/dev.mjs --electron",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:code-only": "npm run build && electron-builder --config electron-builder-code-only.cjs"
   },
   "build": {
     "directories": { "output": "build" },
     "files": ["dist/main/**/*", "dist/shared/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
-    "extraResources": [{ "from": "../vendor/extension-sdk", "to": "extension-sdk", "filter": ["*.whl"] }],
-    "beforePack": "scripts/build-windows-wallpaper.cjs",
+    "extraResources": [
+      { "from": "../vendor/extension-sdk", "to": "extension-sdk", "filter": ["*.whl"] },
+      { "from": "../build/bundled-assets/assets/bundled/japanese-pronunciation", "to": "assets/bundled/japanese-pronunciation", "filter": ["**/*"] }
+    ],
+    "beforePack": "scripts/build-runtime-resources.cjs",
     "win": {
       "icon": "../assets/icons/app/app_icon.ico",
       "extraResources": [

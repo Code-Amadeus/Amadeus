@@ -13,7 +13,7 @@ from functools import lru_cache
 
 from config.asset_paths import PROJECT_ROOT
 from config.japanese_dictionary import (
-    KANJI_COMPOUND, LATIN_WORD_BOUNDARY, PACK_TREE, dictionary_rows, latin_word_key, load_dictionary_pack,
+    KANJI_COMPOUND, LATIN_WORD_BOUNDARY, PACK_TREE, dictionary_rows, latin_word_key, load_dictionary_pack, dictionary_pack_root,
 )
 
 logger = logging.getLogger(__name__)
@@ -198,6 +198,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
     _official_compound_paths = {}
     _official_base_owner = None
     state, version, identity = "invalid", "", None
+    source_kind = "base"
     detail = "Optional Japanese dictionary unavailable."
     reset = None
     try:
@@ -219,7 +220,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         compiled, digests, issues = [], [], []
         data_review = None
         cache = project_root / ".cache/japanese_dictionary"
-        official = project_root / "assets" / PACK_TREE / "userdict.csv"
+        official = dictionary_pack_root(project_root / "assets") / "userdict.csv"
         legacy = project_root / "GPT_SoVITS/text/ja_userdic/userdict.csv"
         personal = project_root / "assets/text/ja/user.csv"
         sources = []
@@ -231,7 +232,8 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
             if personal.is_file():
                 sources.append(personal)
         for source in sources:
-            label = source.relative_to(project_root).as_posix()
+            label = (source.relative_to(project_root).as_posix() if source.is_relative_to(project_root)
+                     else f"bundled/{source.name}")
             pending_aliases = {}
             pending_review = None
             key = None
@@ -265,6 +267,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                             _official_katakana_aliases = pending_aliases
                             digests.append(pack.identity)
                             version, data_review = pack.version, pending_review
+                            source_kind = "installed" if official.parent == project_root / "assets" / PACK_TREE else "bundled"
                             continue
                     else:
                         official_words = frozenset(latin_word_key(row[0]) for row in dictionary_rows(data)
@@ -321,12 +324,16 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
             digests.append(pack.identity if pack is not None else digest)
             if pack is not None:
                 version = pack.version
+                source_kind = "installed" if official.parent == project_root / "assets" / PACK_TREE else "bundled"
                 data_review = pending_review
                 _official_latin_words = official_words
                 _official_katakana_aliases = pending_aliases
             elif source == legacy:
                 version = "legacy-local"
+                source_kind = "legacy"
             if source == personal:
+                if source_kind == "base":
+                    source_kind = "personal"
                 # Explicit personal spellings retain ownership of their input.
                 personal_keys = {latin_word_key(row[0]) for row in dictionary_rows(data)}
                 _official_latin_words = _official_latin_words - personal_keys
@@ -380,7 +387,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                 logger.warning("[JapaneseDictionary] Native reset failed: %s", cleanup)
         logger.warning("[JapaneseDictionary] Optional dictionary unavailable: %s", exc)
     _runtime_status = {"state": state, "ready": state == "ready", "version": version,
-                       "identity": identity, "detail": detail}
+                       "identity": identity, "detail": detail, "source": source_kind}
     from tts.japanese_reading import configure_japanese_reading
     configure_japanese_reading(jtalk, project_root=project_root)
     return dictionary_runtime_status()

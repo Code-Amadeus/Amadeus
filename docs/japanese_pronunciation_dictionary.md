@@ -1,7 +1,8 @@
 # Independently versioned Japanese pronunciation resources
 
-The optional dictionary is versioned independently of the application. Mainline
-owns loading, validation, matching, cache identity and build/test tools. Full
+Application distributions include a pinned default dictionary. Its data version
+remains independent of the application version. Mainline owns loading, validation,
+matching, cache identity and build/test tools. Full
 source, corrections and research history belong in a separate data Git repository.
 Generated CSVs, ZIPs, compiled dictionaries and recordings are not application code.
 
@@ -100,9 +101,23 @@ check results for platform qualification.
 
 ## Install, update and rollback
 
-Use an application with the format-2 loader. Published format-1 packs remain
-supported for rollback. One official pack takes precedence over legacy data;
-personal entries remain separate.
+A full application archive installs the default under
+`assets/bundled/japanese-pronunciation`; Electron packages carry the same directory
+in their resources and pass its location to the Python backend. No separate
+consumer installation step is required. The existing dictionary switch defaults
+to enabled; a saved disabled setting remains respected.
+
+Selection is explicit: an independently installed `assets/text/ja/english` pack
+wins, otherwise use the bundled default, otherwise the legacy CSV/base path.
+Application upgrades replace only the bundled default. Existing independent
+installs (including older format-1 packs) retain the user's chosen version, so
+updates/rollbacks are not undone at the next startup or application update. An
+invalid explicit install is reported without silently selecting the default.
+Personal `assets/text/ja/user.csv` is never part of a distribution or replaced by
+application/resource upgrades. To resume following the bundled default, move the
+independent `assets/text/ja/english` directory aside; keep `user.csv` in place.
+
+Published format-1 packs remain supported for independent rollback:
 
 ```powershell
 python tools/external_assets.py verify <dictionary-version.zip>
@@ -187,3 +202,46 @@ linguistic checks, not newly approved mappings; ambiguous names must not receive
 one forced reading. The unverified-but-enabled admission policy (#244) still
 requires explicit maintainer acceptance. Keep the PR draft and resource unpublished
 until that decision and listening acceptance are complete.
+
+### Default delivery and release gate
+
+`release/japanese_dictionary.json` fixes the data version, archive SHA-256,
+resource identity and all nine member hashes for the application release. Updating
+this pin changes the default data version without embedding CSV data in Git.
+The independent ZIP and data history retain their versions and immutable bytes.
+
+Build a full application source archive with:
+
+```powershell
+python tools/build_source_release.py --dictionary-bundle <pinned-dictionary.zip> --output <application-source.zip> --manifest-output <source-manifest.json>
+```
+
+The builder validates the independent archive and injects only its nine resource
+files into the source archive. Missing, wrong-version or corrupt data blocks the
+build; personal CSVs and compiled caches cannot be included. For Electron builds
+from a Git checkout, first stage that same ZIP:
+
+```powershell
+python tools/stage_japanese_dictionary.py --archive <pinned-dictionary.zip>
+cd electron
+npm run electron:build -- --publish never
+```
+
+Building Electron from a full extracted source archive uses its already included
+default. The packaging hook verifies every member against the same pin. Independent
+updates continue to use `tools/external_assets.py install ... --overwrite`.
+
+Developer/PR archives may explicitly use `--code-only` and a filename containing
+`code-only`. Their Electron equivalent uses `electron-builder-code-only.cjs`.
+These artifacts are not application distributions. Tag/full dispatch builds must
+supply an HTTPS URL of the exact pinned ZIP (workflow input or the pin's approved
+`download_url`); no missing-data fallback is allowed. The URL is intentionally
+unset while the resource remains unpublished. Local full builds use the existing
+validated ZIP and require no remote publication.
+
+Run `tools/probes/verify_bundled_dictionary.py` from extracted sources with native
+voice dependencies installed. It verifies the actually selected version/source,
+resource identity and menu/game/Disney/中立派 through the production text frontend.
+This is loading/regression evidence, not a new acoustic or full-vocabulary accuracy
+claim. CI also exercises synthetic fresh-install, default-upgrade, independent
+update/rollback, personal preservation and packaging rejection contracts.

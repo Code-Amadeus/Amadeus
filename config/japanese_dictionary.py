@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import io
 import json
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -14,6 +15,8 @@ import unicodedata
 
 PACK_ID = "japanese-pronunciation"
 PACK_TREE = "text/ja/english"
+BUNDLED_TREE = "bundled/japanese-pronunciation"
+BUNDLED_ENV = "AMADEUS_BUNDLED_JAPANESE_DICTIONARY"
 LATIN_WORD_BOUNDARY = "\u3000"
 KANJI_COMPOUND = re.compile(r"[\u3400-\u9fff々]{2,}")
 KATAKANA_READING = re.compile(r"[\u30a1-\u30fa\u30fc]+")
@@ -22,6 +25,20 @@ PACK_FILES = (
     "GPT-SoVITS-MIT.txt", "CMUdict-BSD-2-Clause.txt", "Amadeus-AGPL-3.0.txt",
 )
 FULL_SOURCE_FILES = ("source.csv", "overlay.csv", "OpenJTalk-COPYING.txt")
+
+
+def dictionary_pack_root(asset_root: Path) -> Path:
+    """Explicit independent installs own selection; app updates replace only the default.
+
+    An incomplete explicit installation remains visible as an error instead of
+    silently reverting a user's update or rollback to the bundled version.
+    """
+    installed = asset_root / PACK_TREE
+    if installed.exists():
+        return installed
+    supplied = os.environ.get(BUNDLED_ENV, "")
+    bundled = Path(supplied) if supplied else asset_root / BUNDLED_TREE
+    return bundled if bundled.exists() else installed
 
 
 def latin_word_key(value: str) -> str:

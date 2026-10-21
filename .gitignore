@@ -146,3 +146,6 @@ assets/audio/sfx/*.wav
 
 # 口型调试用参考图（本地生成）
 tools/debug_mouth/*.png
+
+# Generated, independently versioned defaults are injected only into distributions.
+/assets/bundled/

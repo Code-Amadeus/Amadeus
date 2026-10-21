@@ -1,9 +1,10 @@
 """Check and assemble a deterministic Amadeus public source archive.
 
-Only files tracked by Git are candidates.  The command applies an explicit
-allowlist, excludes model/creative/proprietary material, scans filenames and
-text without printing secret values, validates third-party provenance, and
-writes a SHA-256 manifest.  With no ``--output`` it is a non-mutating check.
+Source files are selected from Git with an explicit allowlist and provenance
+checks. Application archives also require the independently pinned dictionary;
+its verified nine files are injected without admitting arbitrary untracked data.
+Developer archives must explicitly opt into a code-only name. With no --output,
+the command checks source/provenance and any explicitly supplied resource.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -381,6 +383,18 @@ def _zip_timestamp(source_date_epoch: int) -> tuple[int, int, int, int, int, int
     return (value.year, value.month, value.day, value.hour, value.minute, value.second)
 
 
+def include_bundled_dictionary(report: dict, directory: Path, *, pin_path: Path) -> dict:
+    from tools.stage_japanese_dictionary import load_pin, validate_directory
+    pin = load_pin(pin_path)
+    bundled = validate_directory(directory, pin)
+    if {r["path"] for r in report["selected_files"]} & {r["path"] for r in bundled}:
+        raise ValueError("Generated dictionary data must not also be tracked application source")
+    return {**report, "distribution_kind": "application_with_dictionary",
+            "selected_files": sorted([*report["selected_files"], *bundled], key=lambda r: r["path"]),
+            "selected_file_count": report["selected_file_count"] + len(bundled),
+            "bundled_dictionary": {key: pin[key] for key in ("version", "sha256", "resource_identity")}}
+
+
 def create_archive(
     *,
     root: Path,
@@ -388,6 +402,7 @@ def create_archive(
     report: dict[str, Any],
     policy: dict[str, Any],
     modes: dict[str, str],
+    bundled_directory: Path | None = None,
 ) -> None:
     if not report.get("release_ready"):
         raise ValueError("refusing to build an archive that did not pass the release gate")
@@ -412,7 +427,15 @@ def create_archive(
                 info.compress_type = zipfile.ZIP_DEFLATED
                 permissions = 0o755 if modes.get(relative) == "100755" else 0o644
                 info.external_attr = (permissions & 0xFFFF) << 16
-                archive.writestr(info, (root / relative).read_bytes(), compresslevel=9)
+                if record.get("origin") == "bundled_dictionary":
+                    if bundled_directory is None:
+                        raise ValueError("Bundled dictionary input is required")
+                    data = (bundled_directory / Path(relative).name).read_bytes()
+                    if hashlib.sha256(data).hexdigest() != record["sha256"]:
+                        raise ValueError("Bundled dictionary changed during archive creation")
+                else:
+                    data = (root / relative).read_bytes()
+                archive.writestr(info, data, compresslevel=9)
             manifest_bytes = (json.dumps(report, ensure_ascii=False, indent=2) + "\n").encode(
                 TEXT_DECODING
             )
@@ -445,6 +468,8 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="inspect a dirty tree without making it release-ready; never permits archive creation",
     )
+    parser.add_argument("--dictionary-bundle", type=Path, help="pinned independent dictionary ZIP for application archives")
+    parser.add_argument("--code-only", action="store_true", help="explicit developer/CI archive; not an application distribution")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--max-issues", type=int, default=40)
     return parser
@@ -462,41 +487,60 @@ def main() -> int:
         policy=policy,
         allow_dirty_check=bool(args.allow_dirty_check),
     )
-    if args.manifest_output:
-        _write_json(Path(args.manifest_output).resolve(), report, overwrite=bool(args.overwrite))
+    bundled_directory = None
+    staging = tempfile.TemporaryDirectory(prefix="amadeus-source-bundle-")
+    try:
+        if not args.code_only and (args.output or args.dictionary_bundle):
+            from tools.stage_japanese_dictionary import stage_bundle
+            if args.dictionary_bundle is None:
+                raise SystemExit("Application archives require --dictionary-bundle <pinned.zip>; use --code-only for developer archives")
+            bundled_directory = stage_bundle(args.dictionary_bundle, Path(staging.name))
+            report = include_bundled_dictionary(
+                report, bundled_directory, pin_path=ROOT / "release/japanese_dictionary.json")
+        elif args.code_only:
+            if args.dictionary_bundle:
+                raise SystemExit("--code-only cannot be combined with --dictionary-bundle")
+            if args.output and "code-only" not in Path(args.output).name:
+                raise SystemExit("Developer archive filename must contain code-only")
+            report["distribution_kind"] = "code_only_not_application_release"
+        if args.manifest_output:
+            _write_json(Path(args.manifest_output).resolve(), report, overwrite=bool(args.overwrite))
 
-    errors = [item for item in report["issues"] if item["severity"] == "error"]
-    warnings = [item for item in report["issues"] if item["severity"] == "warning"]
-    print(
-        "source release check: "
-        f"{'passed' if report['release_ready'] else 'blocked'}; "
-        f"{report['selected_file_count']} selected, {report['excluded_file_count']} excluded, "
-        f"{len(errors)} errors, {len(warnings)} warnings"
-    )
-    for item in report["issues"][: max(args.max_issues, 0)]:
-        location = item.get("path", "")
-        if item.get("line") is not None:
-            location += f":{item['line']}"
-        component = f" [{item['component']}]" if item.get("component") else ""
-        suffix = f" ({location})" if location else ""
-        print(f"- {item['severity'].upper()} {item['rule']}{component}{suffix}: {item['message']}")
-    remaining = len(report["issues"]) - max(args.max_issues, 0)
-    if remaining > 0:
-        print(f"- ... {remaining} more issues; use --manifest-output for the full report")
-
-    if args.output:
-        output = Path(args.output).resolve()
-        if output.exists() and not args.overwrite:
-            raise FileExistsError(f"output already exists (pass --overwrite): {output}")
-        create_archive(
-            root=ROOT,
-            output=output,
-            report=report,
-            policy=policy,
-            modes=tracked_file_modes(ROOT),
+        errors = [item for item in report["issues"] if item["severity"] == "error"]
+        warnings = [item for item in report["issues"] if item["severity"] == "warning"]
+        print(
+            "source release check: "
+            f"{'passed' if report['release_ready'] else 'blocked'}; "
+            f"{report['selected_file_count']} selected, {report['excluded_file_count']} excluded, "
+            f"{len(errors)} errors, {len(warnings)} warnings"
         )
-        print(f"archive: {output}")
-    return 0 if report["release_ready"] else 1
+        for item in report["issues"][: max(args.max_issues, 0)]:
+            location = item.get("path", "")
+            if item.get("line") is not None:
+                location += f":{item['line']}"
+            component = f" [{item['component']}]" if item.get("component") else ""
+            suffix = f" ({location})" if location else ""
+            print(f"- {item['severity'].upper()} {item['rule']}{component}{suffix}: {item['message']}")
+        remaining = len(report["issues"]) - max(args.max_issues, 0)
+        if remaining > 0:
+            print(f"- ... {remaining} more issues; use --manifest-output for the full report")
+
+        if args.output:
+            output = Path(args.output).resolve()
+            if output.exists() and not args.overwrite:
+                raise FileExistsError(f"output already exists (pass --overwrite): {output}")
+            create_archive(
+                root=ROOT,
+                output=output,
+                report=report,
+                policy=policy,
+                modes=tracked_file_modes(ROOT),
+                bundled_directory=bundled_directory,
+            )
+            print(f"archive: {output}")
+        return 0 if report["release_ready"] else 1
+    finally:
+        staging.cleanup()
 
 
 if __name__ == "__main__":

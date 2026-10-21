@@ -1,0 +1,56 @@
+{
+  "format": "amadeus.bundled-japanese-dictionary.v1",
+  "pack_id": "japanese-pronunciation",
+  "version": "2026.10.22.1-rc2",
+  "archive": "amadeus-japanese-pronunciation-2026.10.22.1-rc2.zip",
+  "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+  "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
+  "download_url": null,
+  "files": [
+    {
+      "path": "assets/text/ja/english/Amadeus-AGPL-3.0.txt",
+      "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+      "size": 34523
+    },
+    {
+      "path": "assets/text/ja/english/CMUdict-BSD-2-Clause.txt",
+      "sha256": "6fec176463ab1aa60e17ab42d174f3720415ffc72f9d92b66790432082490e81",
+      "size": 1928
+    },
+    {
+      "path": "assets/text/ja/english/GPT-SoVITS-MIT.txt",
+      "sha256": "8a064eada186601fc602e45feef61c6abb62246d5ae9c3764dd1fc92d946c3c6",
+      "size": 1065
+    },
+    {
+      "path": "assets/text/ja/english/NOTICE.md",
+      "sha256": "957c57833853bee2d23aab5c777aae9d2a52bda6b752a1629913af3150b98730",
+      "size": 33560
+    },
+    {
+      "path": "assets/text/ja/english/OpenJTalk-COPYING.txt",
+      "sha256": "59099a8c7c2acb68ef9945e9e80f352b1583c62b2023ac47d8f33bd371f5b1b6",
+      "size": 5965
+    },
+    {
+      "path": "assets/text/ja/english/overlay.csv",
+      "sha256": "44cba01b1a0d0f3f114724827fa4084c66dbb27de7a66ff5ea249540c0a69e55",
+      "size": 527580
+    },
+    {
+      "path": "assets/text/ja/english/provenance.json",
+      "sha256": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
+      "size": 2287937
+    },
+    {
+      "path": "assets/text/ja/english/source.csv",
+      "sha256": "cf3ae9063ee6b171f5553900fcaa813238a8d20bb0917a6a3a0f8d0c35c27962",
+      "size": 17315171
+    },
+    {
+      "path": "assets/text/ja/english/userdict.csv",
+      "sha256": "195daed9bd3aa3d9ed14008c3f927143fe7c1dea7890803d83638cef43608fea",
+      "size": 17174885
+    }
+  ]
+}
