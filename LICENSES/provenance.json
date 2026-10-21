@@ -11,7 +11,8 @@
     "assets/audio/sfx",
     "vendor/aec-audio-processing",
     "vendor/extension-sdk",
-    "vendor/extension-catalog"
+    "vendor/extension-catalog",
+    "vendor/qwen-asr"
   ],
   "components": [
     {
@@ -508,6 +509,25 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Exact byte copies pinned in server/extensions/catalog-source.json. Separate from the unchanged manifest/SDK pin. Merge protocol catalog before publishing a Host release that requires this revision."
+    },
+    {
+      "id": "qwen-asr",
+      "name": "Qwen-ASR 0.0.6 (demo dependency separated)",
+      "category": "vendored-source",
+      "paths": [
+        "vendor/qwen-asr/**"
+      ],
+      "source_url": "https://github.com/Qwen/Qwen3-ASR",
+      "source_revision": "PyPI 0.0.6 sdist sha256:294893f2340dc2d58d1f1d1cb8ce26ac0a79f254805ab432dda2892bd5c8d13c",
+      "license_expression": "Apache-2.0",
+      "license_evidence": [
+        "vendor/qwen-asr/LICENSE",
+        "vendor/qwen-asr.PROVENANCE.md"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Inference/CLI Python sources are byte-identical to the pinned upstream sdist. Only pyproject.toml moves gradio from mandatory dependencies to demo extra; source inventory and removal condition are documented adjacent to the package."
     }
   ]
 }
