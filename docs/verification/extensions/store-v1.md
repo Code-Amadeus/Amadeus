@@ -15,6 +15,9 @@ No public index, release, repository permission or main branch was changed.
   copyright withdrawal and lifecycle/data retention. These use fixture authority.
 - [S3 construction record](community-preview-batch5-2026-10-21.md): packaged checker
   closure, actual shipping-shell journeys, fixed old readers and source archive checks.
+- [Premerge review and isolated qualification](community-preview-batch6-2026-10-21.md):
+  fresh Python/Node dependencies, source ZIP, Windows package, Docker protocol/SDK,
+  shipping failure recovery and separately labelled native UI operator evidence.
 - Four reference families (Tone TTS, Notes MCP, Handoff Skill, desktop theme), each
   at 0.1.0 and 0.2.0, have static checker/policy evidence and full wheel-content
   inventories in the protocol experiment's `catalog/review-candidates/`.
@@ -34,14 +37,15 @@ not restoration of arbitrary old user credentials or profiles.
 
 | Gate | Current state | Concrete completion evidence |
 | --- | --- | --- |
+| Host regression and dependency audit | Failed local qualification gates | Resolve the two observed Pi/MCP integration failures without weakening authority assertions; fix or explicitly assess current certifi/Pillow advisories and re-run required checks. See batch 6; store-flow passes do not override these failures. |
 | Independent artifact approval | Pending | Non-author maintainer reviews each exact wheel against curated-v1, confirms ownership and asset rights, records digest and evidence in an approved input PR. At least one useful process package and one resource package. Tone is only a synthetic PCM reference; Notes MCP is a candidate useful process package. |
 | Public immutable artifacts | Pending | Approved versioned wheel URLs with matching SHA-256 and retained review inventory; never replace bytes at an existing ID/version. |
 | Public checker/generator pins | Pending | Reviewed commits reachable from the intended public repositories; fixed Windows/CPython 3.12.10 catalog CI passes using the recorded Host checker and minimal lock. |
 | Main protection | Failed configuration gate on 2026-10-21 | Branch protection or active ruleset requires non-author approval and necessary checks; direct and force pushes are restricted. GitHub returned “Branch not protected” and no applicable branch rules. |
 | Maintainer two-factor authentication | Unverified | Organization requires 2FA or maintainers provide appropriate administrative verification. The API reports organization enforcement false; that does not prove individual maintainers lack 2FA. |
 | Workflow privilege | Partially verified | Repository default token permission is read, Actions cannot approve PRs. Recheck final workflows and environment/release access before publication; submitted code gets no publishing credentials. |
-| Clean source and packaged Windows journeys | Pending clean-machine/manual qualification | Fresh supported Windows environment, documented supplied Python dependencies, no old profile/install/cache; useful process + resource package through full lifecycle, manual native confirmations separately recorded. Local automated shell evidence alone is insufficient. |
-| Full release failure matrix | Partial, prior S1/S2 evidence | Re-run cancellation, digest mismatch, withdrawal, ban, double corruption, startup failure, data retention/delete on final fixed release build and reviewed catalog. Record screenshots, traces, skips and hashes. |
+| Clean source and packaged Windows journeys | Local isolated qualification available; clean-machine/independent human acceptance pending | Fresh supported Windows environment, documented supplied Python dependencies, no old profile/install/cache; useful process + resource package through full lifecycle, manual native confirmations separately recorded. Local automated shell evidence alone is insufficient. |
+| Full release failure matrix | Local final-build fixture matrix recorded in batch 6; reviewed public catalog still pending | Re-run cancellation, digest mismatch, withdrawal, ban, double corruption, startup failure, data retention/delete on final fixed release build and reviewed catalog. Record screenshots, traces, skips and hashes. |
 | Remote CI and release resources | Local checks only | Required remote Actions green on final target commit; archive/desktop hashes, SDK/catalog pins, exact catalog revision and plugin identities recorded. |
 | First catalog publication/withdrawal | Pending | Reviewed input PR, separate publication PR with sequence +1, exact reproducible generation; withdrawal and security decision PR exercise, offline known bans retained. Content rollback must still increase sequence. |
 | D0 public author path | Pending Host integration | After reviewed Host integration, protocol README points to the immutable integrated author guide. Do not point a public completion claim at a local-only commit. |

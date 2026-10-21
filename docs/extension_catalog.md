@@ -201,9 +201,9 @@ OS trust change or copied developer profile. These results do not establish inde
 review or manual native-dialog acceptance. See the [release checklist](verification/extensions/store-v1.md).
 
 ```powershell
-python tools/probes/extension_catalog_journey.py --execute --store-ui --prepare-only --wheels <reference-wheel-directory>
-python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --report-dir build/source-store-smoke
-python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe --report-dir build/packaged-store-smoke
+python tools/probes/extension_catalog_journey.py --execute --store-ui --prepare-only --failure-fixture --wheels <reference-wheel-directory>
+python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --extension-failures --report-dir build/source-store-smoke
+python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe --extension-failures --report-dir build/packaged-store-smoke
 python tools/probes/extension_reader_matrix.py --fixture <returned-fixture-directory>/fixture.json --ref <previous-reader-commit> --ref <current-reader-commit> --output build/reader-matrix
 ```
 
@@ -211,3 +211,24 @@ The fixed reader matrix exports unmodified Git blobs into isolated directories,
 checks compatible neighbors and understood safety decisions beside future kinds,
 roles, contracts and delivery modes, and rejects unknown global formats or malformed
 safety data. Its report includes exact reader commits and exported file hashes.
+
+
+`--extension-failures` adds cancellation, bad digest, copyright withdrawal,
+retained/deleted data, real backend restarts, deliberate plugin startup rejection,
+and three fresh application processes covering NUL-damaged settings. Both damaged
+copies keep safety unavailable until explicit official recovery; ordinary refresh
+or settings writes cannot clear it. Damage is injected while the owned test app is
+stopped. This is not physical power-loss or clean-OS certification. The deliberately
+failing wheel is a disposable test artifact, never a publication candidate.
+
+To exercise the actual native Cancel, Install and activation buttons, run a separate
+fresh profile with `--native-confirmations` instead of `--extension-failures`. Keep
+`--extension-fixture` and optionally `--packaged-executable`. Each dialog waits up to
+five minutes for an external UI operator; the fixture does not return a fabricated
+confirmation response. Record whether the operator was a human or an agent.
+Agent-operated dialogs do not close the independent human acceptance gate.
+
+A source ZIP may run the same smoke without Git. The launcher verifies every listed
+release input against `SOURCE_MANIFEST.json` before launch and records the archived
+commit. This is an input-integrity check, not a signature or an assertion about extra
+files. Dependency locks and actual frontend/executable hashes are recorded separately.
