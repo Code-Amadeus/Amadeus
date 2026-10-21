@@ -277,6 +277,12 @@ Keep the environment named `.venv`. Electron discovers its interpreter
 automatically (`Scripts/python.exe` on Windows, `bin/python3` on macOS), without
 requiring an `AMADEUS_PYTHON` override.
 
+For the native VN portrait on macOS, use uv-managed **CPython 3.12.14** and run
+`uv run --locked --no-sync python tools/verify_vn_portrait_environment.py` in a
+graphical desktop session. Older standalone Python builds can pass the package
+verifier but fail Tk/ImageTk. See the [macOS interpreter setup and migration
+instructions](MACOS_INSTALL.md#vn-portrait-tk) before reusing an existing `.venv`.
+
 Build the Electron frontend on either platform:
 
 ```bash

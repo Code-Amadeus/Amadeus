@@ -45,7 +45,7 @@
 
 | 依赖 | 要求 | 出处 |
 |---|---|---|
-| Python | 3.12（`requires-python = ">=3.12,<3.13"`） | `pyproject.toml` |
+| Python | 3.12（`requires-python = ">=3.12,<3.13"`）；原生 VN 立绘使用 uv-managed 3.12.14 | `pyproject.toml`、[Tk 检查与迁移](#vn-portrait-tk) |
 | uv | **>= 0.12.8**（`required-version`） | `pyproject.toml`，CI 安装 `0.12.8` |
 | Node.js | 22（参考值 `22.21.1`） | `README.md`、`python-macos.yml` |
 | PortAudio | `T2` 必需（PyAudio 需源码编译） | `README.md`、`python-macos.yml` |
@@ -202,7 +202,8 @@ brew install portaudio
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
-uv venv .venv --python 3.12
+uv python install 3.12.14
+uv venv .venv --python 3.12.14 --managed-python
 uv sync --locked                              # T1 core
 uv sync --locked --extra voice                # T2 voice（需要上面的 PortAudio）
 ```
@@ -251,6 +252,58 @@ Build 命名说明：`torch-cpu` 是**裸 build**，`local-<build>` 是 **build 
 Torch 构建选择。
 
 校验器只检查包与导入，**不能**证明模型推理、音频设备或桌面验收可用。
+
+<a id="vn-portrait-tk"></a>
+### 原生 VN 立绘：Tk/ImageTk 检查与旧环境迁移
+
+原生立绘需要 Python 的 Tcl/Tk 与 Pillow ImageTk 实际互通。macOS 上推荐上述
+**uv-managed CPython 3.12.14**；macOS voice/desktop CI 也使用这一解释器和当前 `uv.lock`。
+这不代表所有 Python 3.12.10 分发均不可用，问题与解释器的具体构建有关。
+
+[#223 的报告者对照](https://github.com/Code-Amadeus/Amadeus/issues/223#issuecomment-6185806632)
+显示：旧 uv-managed 3.12.10 构建先找不到 `init.tcl`，指定 Tcl 路径后仍在 ImageTk 报
+`bad argument type for built-in operation`；3.12.11 对照构建仍需路径提示；3.12.14 对照构建
+无需提示即可运行原版立绘（当时 Pillow 为 12.3.0）。上游
+[python-build-standalone 20250808](https://github.com/astral-sh/python-build-standalone/releases/tag/20250808)
+已将 Tcl/Tk 与 `_tkinter` 改为共享库以修复 ImageTk 兼容性。仅降级 Pillow 或设置
+`TCL_LIBRARY` / `TK_LIBRARY` 不能修复报告中的完整故障。
+
+在登录后的 macOS 图形桌面终端，从仓库根目录运行：
+
+```bash
+uv run --locked --no-sync python tools/verify_vn_portrait_environment.py
+```
+
+检查会创建并立即隐藏一个 Tk 窗口，传入生成的 2×2 RGBA 图片，核对像素与透明度后销毁窗口。
+成功输出 `VN portrait environment ok`；失败返回非零退出码，并区分导入、Tk 初始化与
+ImageTk 传输阶段。输出包括实际 Python 构建、Pillow、Tcl/Tk 和 `_tkinter` 来源。
+它不需要角色资源、游戏、API key 或本地模型，也不替代 OCR、音频或完整 VN Start 的实机验收。
+普通 `--profile cpu` / `--profile voice` 校验通过，以及只测试文字来源成功，都不能替代此检查。
+
+已有 `.venv` 时，更新 uv 或执行 `uv sync` 不会自动迁移它的基础解释器。先关闭 Amadeus
+及其后端，并退出已激活的虚拟环境；在仓库根目录执行下面的迁移。备份目录存在时先为本次
+备份选择另一个名称，勿覆盖旧备份：
+
+```bash
+uv python install 3.12.14
+test ! -e .venv-before-tk-upgrade && mv .venv .venv-before-tk-upgrade
+```
+
+确认备份成功、仓库根目录已没有 `.venv` 后，再创建新环境：
+
+```bash
+uv venv .venv --python 3.12.14 --managed-python
+uv sync --locked --extra voice  # 示例为 T2；按原环境选择完整 extras
+uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+uv run --locked --no-sync python tools/verify_vn_portrait_environment.py
+```
+
+T1 改用 `uv sync --locked` 和 `--profile cpu`；T3/T4 使用上文的完整 Tier/Build 命令，
+保留原有 `--extra dev` / `--extra rag` 等选择。保留 `.env` 与已下载的资源，无需重新配置。
+如曾为旧解释器设置 Tcl/Tk 路径覆盖，检查其指向，迁移后的验证不要继续沿用旧路径。
+若设置过 `AMADEUS_PYTHON`，也应移除旧覆盖或让它指向新 `.venv/bin/python3`。
+需要回退时，先关闭应用，将新 `.venv` 移到另一个备份名称，再把旧环境恢复到原来的 `.venv`
+路径；备份环境不要在改名后的路径直接运行。
 
 ## 配置
 
