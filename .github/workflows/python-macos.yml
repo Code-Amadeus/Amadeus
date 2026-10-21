@@ -49,9 +49,9 @@ jobs:
           uv run --locked --no-sync python tools/architecture/generate_views.py --check
 
       - name: Run platform-safe contract suites
-        # Whitelist: pure contract tests with no Windows-specific behavior or
-        # browser/Electron spawning. Grown deliberately from the platform-safe
-        # set; mac-wide full-suite qualification is a separate effort.
+        # Whitelist: platform-safe contracts with no browser/Electron spawning
+        # or screen capture. OCR covers native helper builds and rejects invalid
+        # crops before screen access; mac-wide qualification is separate.
         run: >-
           uv run --locked --no-sync python -m pytest -q
           tests/test_profile_contract.py
@@ -70,6 +70,7 @@ jobs:
           tests/test_tts_contract.py
           tests/test_tts_fish_audio_backend.py
           tests/test_tts_cache_backend_boundary.py
+          tests/test_macos_ocr.py
 
       - name: Build Electron renderer (macOS)
         working-directory: electron

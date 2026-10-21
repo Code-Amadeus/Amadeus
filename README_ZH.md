@@ -568,6 +568,9 @@ Settings 会明确显示缺少的能力。
 以下是 Windows 上的实验性 VN Player 流程。选择 **0xDC00 Agent** 或 **LunaTranslator**
 其中一种取文方式，按对应步骤配置后再测试。
 
+macOS 14 及以上也可使用实验性的 **macOS Vision OCR**，直接识别已打开的游戏窗口，
+无需 Hook。窗口绑定、裁剪与稳定扫描规则见 [macOS OCR 使用说明](docs/macos-vn-ocr.md)。
+
 #### 0xDC00 Agent
 
 Agent 需要另外安装，并使用适配当前游戏的脚本。

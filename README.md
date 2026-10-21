@@ -648,6 +648,9 @@ actions remain blocked, and Settings displays the missing capability.
 VN Player needs a separately installed text extractor and a compatible game.
 Choose either **0xDC00 Agent** or **LunaTranslator** and follow its setup below.
 
+For macOS 14 or later, the experimental **macOS Vision OCR** source captures an
+open game window without a hook. See [macOS OCR setup and limitations](docs/macos-vn-ocr.md).
+
 #### 0xDC00 Agent
 
 For this route, **the hook script is the game's extraction `.js` file**;
