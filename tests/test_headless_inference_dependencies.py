@@ -4,13 +4,18 @@ import builtins
 import hashlib
 import importlib.util
 import json
-import re
 from pathlib import Path
 import subprocess
 import sys
 import tomllib
 import types
 import zipfile
+import configparser
+from copy import deepcopy
+from email.parser import BytesParser
+import os
+import shutil
+import tarfile
 
 import numpy as np
 from packaging.requirements import Requirement
@@ -52,38 +57,69 @@ def test_audio_decoder_does_not_import_legacy_ui_dependencies(tmp_path, monkeypa
     assert calls[1][1]['cmd'] == ['ffmpeg', '-nostdin']
 
 
-def test_qwen_inference_sources_match_upstream_and_demo_is_optional(tmp_path):
+def test_qwen_sources_and_only_declared_packaging_changes_match_upstream():
     source = ROOT / 'vendor/qwen-asr'
-    expected = json.loads((source / 'upstream-files.json').read_text())
+    expected = json.loads((source / 'upstream-files.json').read_bytes())
     for name, digest in expected.items():
-        if name == 'pyproject.toml':
-            continue  # Its distribution dependency boundary is asserted below.
-        payload = (source / name).read_bytes()
-        if name in {'qwen_asr/__init__.py', 'qwen_asr/core/transformers_backend/__init__.py',
-                    'qwen_asr/core/vllm_backend/__init__.py'}:
-            original, count = re.subn(rb'(?m)^(from [\w.]+ import ([A-Za-z_]\w*)) as \2$', rb'\1', payload)
-            assert count == (1 if '/vllm_backend/' in name else 3)
-            before, after = compile(original, name, 'exec'), compile(payload, name, 'exec')
-            assert (before.co_code, before.co_names, before.co_consts) == (after.co_code, after.co_names, after.co_consts)
-            payload = original
-        assert hashlib.sha256(payload).hexdigest() == digest, name
-    project = tomllib.loads((source / 'pyproject.toml').read_text())['project']
-    assert 'gradio' not in {Requirement(item).name for item in project['dependencies']}
-    assert {Requirement(item).name for item in project['optional-dependencies']['demo']} == {'gradio'}
-    # Build in a disposable directory; inspecting distribution metadata imports no model code.
-    import shutil
+        path = ROOT / 'vendor/qwen-asr.upstream-pyproject.toml' if name == 'pyproject.toml' else source / name
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
+    original = tomllib.loads((ROOT / 'vendor/qwen-asr.upstream-pyproject.toml').read_text(encoding='utf-8'))
+    patched = tomllib.loads((source / 'pyproject.toml').read_text(encoding='utf-8'))
+    allowed = deepcopy(original)
+    allowed['build-system']['requires'] = ['setuptools==83.0.0', 'wheel==0.47.0']
+    allowed['project']['dependencies'].remove('gradio')
+    allowed['project']['optional-dependencies']['demo'] = ['gradio>=6.16.0,<7']
+    allowed['project']['license'] = 'Apache-2.0'
+    allowed['project']['license-files'] = ['LICENSE']
+    assert patched == allowed
+
+
+def test_isolated_qwen_distributions_preserve_code_resources_and_metadata(tmp_path):
+    source = ROOT / 'vendor/qwen-asr'
+    expected = json.loads((source / 'upstream-files.json').read_bytes())
+    project = tomllib.loads((source / 'pyproject.toml').read_text(encoding='utf-8'))['project']
     work = tmp_path / 'source'
     shutil.copytree(source, work, ignore=shutil.ignore_patterns('build', '*.egg-info', '__pycache__'))
-    output = tmp_path / 'wheels'
-    output.mkdir()
-    result = subprocess.run([sys.executable, '-I', '-c',
-        'from setuptools.build_meta import build_wheel; import sys; build_wheel(sys.argv[1])', str(output)],
-        cwd=work, capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    output = tmp_path / 'distributions'
+    uv = shutil.which('uv')
+    assert uv, 'The supported development/CI environment requires the pinned uv frontend'
+    # uv's default builds an sdist, then builds the wheel from that sdist in an
+    # isolated PEP 517 environment. Do not import a development-env backend.
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith('UV_') and key not in {'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV'}}
+    result = subprocess.run([uv, 'build', '--no-config', '--no-sources',
+                             '--python', sys.executable, '--out-dir', str(output)],
+                            cwd=work, env=env, capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+    implementations = {name: digest for name, digest in expected.items() if name.startswith('qwen_asr/')}
+    with tarfile.open(next(output.glob('*.tar.gz'))) as sdist:
+        prefix = 'qwen_asr-0.0.6/'
+        shipped = {member.name.removeprefix(prefix) for member in sdist.getmembers()
+                   if member.isfile() and member.name.startswith(prefix + 'qwen_asr/')}
+        assert shipped == set(implementations)
+        for name, digest in implementations.items():
+            assert hashlib.sha256(sdist.extractfile(prefix + name).read()).hexdigest() == digest, name
+        for name in ('LICENSE', 'pyproject.toml'):
+            assert sdist.extractfile(prefix + name).read() == (source / name).read_bytes()
     with zipfile.ZipFile(next(output.glob('*.whl'))) as wheel:
-        from email.parser import BytesParser
-        metadata = BytesParser().parsebytes(wheel.read('qwen_asr-0.0.6.dist-info/METADATA'))
-    dependencies = [Requirement(item) for item in metadata.get_all('Requires-Dist')]
-    gradio, = [item for item in dependencies if item.name == 'gradio']
-    assert not gradio.marker.evaluate({'extra': ''})
-    assert gradio.marker.evaluate({'extra': 'demo'})
+        assert {name for name in wheel.namelist() if name.startswith('qwen_asr/')} == set(implementations)
+        for name, digest in implementations.items():
+            assert hashlib.sha256(wheel.read(name)).hexdigest() == digest, name
+        info = 'qwen_asr-0.0.6.dist-info/'
+        metadata = BytesParser().parsebytes(wheel.read(info + 'METADATA'))
+        wheel_metadata = BytesParser().parsebytes(wheel.read(info + 'WHEEL'))
+        assert wheel_metadata['Generator'] == 'setuptools (83.0.0)'
+        assert metadata['Name'] == project['name'] and metadata['Version'] == project['version']
+        assert metadata['Requires-Python'] == project['requires-python']
+        assert metadata['License-Expression'] == 'Apache-2.0'
+        assert metadata['License'] is None
+        assert metadata.get_all('License-File') == ['LICENSE']
+        assert wheel.read(info + 'licenses/LICENSE') == (source / 'LICENSE').read_bytes()
+        entry_points = configparser.ConfigParser(interpolation=None)
+        entry_points.read_string(wheel.read(info + 'entry_points.txt').decode())
+        assert dict(entry_points['console_scripts']) == project['scripts']
+    requirements = {str(Requirement(item)) for item in project['dependencies']}
+    for extra, values in project['optional-dependencies'].items():
+        requirements.update(str(Requirement(item + f'; extra == "{extra}"')) for item in values)
+    assert {str(Requirement(item)) for item in metadata.get_all('Requires-Dist')} == requirements
+    assert set(metadata.get_all('Provides-Extra')) == set(project['optional-dependencies'])
