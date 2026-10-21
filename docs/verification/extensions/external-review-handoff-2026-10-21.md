@@ -13,6 +13,12 @@
 
 外审 ZIP 里的两个增量 Git bundle 需要上述公共基线提交。它们包含当前未推送提交以及固定历史 checker，供在已有仓库副本中 `git bundle verify`、`git fetch <bundle> refs/heads/codex/extension-community-preview:refs/heads/review-extension-store` 后审查。不要覆盖自己的工作分支。无 Git 阅读可用源码 ZIP；固定 checker CI 的 `verify_host` 必须用真实、无修改的历史 checkout，不能用解压目录冒充。
 
+## 独立依赖 PR（2026-10-22 核查）
+
+[草稿 PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252) 已从 `main` 独立建立，head `80be1ebfc1dc03cdd466f7650baedbe6774de43a`，承接依赖补丁 `0c8150c9` + `59c379a6`。已核对 vendor/导入边界/来源测试相同及锁中的修复版本；它不包含商店或词典功能。核查时 CI 仍在运行，不能据此关闭商店远端 CI 门槛。
+
+r2 包不改写，随附 `external-review-2026-10-22-pr252-addendum.zip` 提供本次 PR 快照与更新文档。独立 PR 的测试区分父审自行执行与协作提供的 CPU 模型证据，均没有被描述成 GPU 实机验收。
+
 ## 建议优先核查
 
 1. **修复是否充分**：独立依赖提交 `0c8150c9`、显式导出收尾 `59c379a6` 与 Pi 夹具提交 `51c8363e`。复核标准库 MCP peer 是否保持原工具/权限/UTF-8/资源/关闭语义，以及旧时限和断言确实未放宽；检查真实 Notes/Pi 旅程仍执行。复核 Qwen-ASR 原始 sdist 哈希、推理/模型/CLI 实现字节一致、三个 initializer 可逆且字节码等价的重导出、demo 依赖 metadata patch、Pillow/certifi 锁与真实 223 包 local-cpu 导入资格。无 resolver override、Gradio 降级或新增审计忽略项。r2 的 `evidence/history/batch6/` 保留原失败，当前结果在 `evidence/remediation/`。

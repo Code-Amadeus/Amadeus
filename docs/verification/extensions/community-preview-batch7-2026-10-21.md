@@ -75,3 +75,14 @@ Qwen 上游原始文件保留既有行尾空白，完整 `git diff --check` 会�
 桌面两轮使用干净 `51c8363e` 源归档和 T1 环境；最后的 `59c379a6` 仅修改不被这两轮 T1 加载的 Qwen 包显式导出与来源测试，已单独验证字节码等价、实际刷新安装后的 GSV/Qwen 导入和全仓 lint，没有冒称桌面报告的 commit 已自动变成最终提交。r2 同时保留实际桌面受测归档及最终源归档，哈希在清单中。
 
 外审 r2 包更新为当前源归档、两个仓库 bundle、三份可单独提取的修复 patch（两份依赖、一份 Pi）、当前结果及原失败历史；原批次 native 代理操作回执和 Docker 证据作为历史保留，没有冒充本轮重新运行。全部参考 wheel 仍未独立审核。主分支保护、公开 pin/目录/产物、远端 CI、D0 公开链接、D3 作者资格等 [S3 门槛](store-v1.md) 没有因此关闭。
+
+
+## 2026-10-22：独立依赖 PR 交接
+
+协作会话已创建 [草稿 PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252)，目标 `main`，分支 `codex/headless-inference-security`，核查时 head 为 `80be1ebfc1dc03cdd466f7650baedbe6774de43a`，状态 OPEN / draft。它承接本实验分支的 `0c8150c9` 与 `59c379a6`，不包含词典或商店功能，不重复创建依赖 PR。
+
+本会话只读核查 GitHub PR 元数据及对应本地 Git 对象：Qwen vendor 树、来源说明、`tools/my_utils.py`、headless 依赖测试与实验分支补丁完全相同；Pillow 13.0.0、certifi 2026.10.19、Qwen-ASR 0.0.6 目录 source 和移除 Host Gradio 依赖的声明一致。协议 provenance 的实验目录上下文未带入该 main-based PR。
+
+核查快照中 dependency-review 已通过，其余列出的 CI 作业仍在运行；不宣称该 PR 全绿，也不将依赖 PR 的 CI 当作商店实验分支的 CI。协作会话报告的 198 项独立回归等详见 PR；本会话没有把这些结果重复记作亲自重跑。主线未合并，资源未发布。
+
+r2 外审 ZIP 保持原字节与 SHA-256；新增 `external-review-2026-10-22-pr252-addendum.zip` 保存本次交接快照和更新记录，应与 r2 一同提供给外审。这是文档补充，没有新的代码或测试结论。
