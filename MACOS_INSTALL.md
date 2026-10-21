@@ -254,6 +254,7 @@ Torch 构建选择。
 校验器只检查包与导入，**不能**证明模型推理、音频设备或桌面验收可用。
 
 <a id="vn-portrait-tk"></a>
+
 ### 原生 VN 立绘：Tk/ImageTk 检查与旧环境迁移
 
 原生立绘需要 Python 的 Tcl/Tk 与 Pillow ImageTk 实际互通。macOS 上推荐上述
