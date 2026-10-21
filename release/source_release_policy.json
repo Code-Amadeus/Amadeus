@@ -312,7 +312,11 @@
     "docs/verification/extensions/community-preview-batch3-2026-10-21.md",
     "docs/verification/extensions/community-preview-batch4-2026-10-21.md",
     "docs/verification/extensions/community-preview-batch5-2026-10-21.md",
-    "docs/extension_store_demo.md"
+    "docs/extension_store_demo.md",
+    "docs/verification/extensions/community-preview-batch6-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch7-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch8-2026-10-22.md",
+    "docs/verification/extensions/external-review-handoff-2026-10-21.md"
   ],
   "exclude_globs": [
     "docs/reports/**",

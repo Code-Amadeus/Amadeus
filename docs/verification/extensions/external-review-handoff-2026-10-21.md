@@ -1,13 +1,22 @@
 # 插件基础设施外审交接：2026-10-21
 
-当前 r2 可交付审查。第六批 Pi/依赖阻断项已在第七批本地修复验证；远端 CI、独立审核和公开 S3 发布门槛仍未关闭，**不是合并或发布批准**。没有推送、合并主线或发布索引；用户自行决定将本地材料交给谁。
+当前 r3 可交付审查，新增完整本地维护端到客户端闭环；r2 的依赖/Pi 修复及历史失败作为明确历史保留。远端 CI、独立真实产物审核和公开 S3 门槛仍未关闭，**不是合并或发布批准**。没有推送、合并主线或发布索引；用户自行决定将本地材料交给谁。
+
+## r3 最新入口
+
+先读 [第八批施工记录](community-preview-batch8-2026-10-22.md) 与 [可重复演示入口](../../extension_store_demo.md)。新代码为 c44799eaa12c983245c1551cfd6f901007997b05，新增验收/演示工具，没有改变生产下载、安装、安全或权限实现。
+
+正式目录工具在隔离 Git 历史中完成六次输入与发布检查，生成结果通过本地 HTTPS 原字节进入实际客户端。源码与打包版各 15 项桌面 + 25 项闭环检查通过；每轮 4 次应用重启、5 次安装后的 Notes 原生 MCP 合约检查、10 次客户端目录摘要比对。打包版从干净 c44799e 完整执行最终断言；源码探索轮的 dirty 身份与其后的断言补强在施工记录中单列，没有改写原报告。
+
+优先核对 r3 的 evidence/publication/source、packaged：每阶段 index.json 与 publication.json、正式 CLI 命令/退出码、HTTP 请求摘要、原生合约与截图，以及自包含 demo-history.bundle 中的输入/发布提交。模拟身份、模拟 approved ref 和临时证书不能被误认成实际人工审核、GitHub 权限或公开信任根。r3 也保留本轮四个桌面探索失败和一次归档白名单失败。没有放宽原有测试、添加重试/skip/忽略项。
+
 
 ## 范围和入口
 
-请先读 [第七批修复记录](community-preview-batch7-2026-10-21.md)、[第六批历史记录](community-preview-batch6-2026-10-21.md) 与 [发布门槛](store-v1.md)，再看 [获认可的计划](../../extension_community_preview_and_store_plan_2026-10-21.md)。第一至第六批记录是历史证据，不应替代最新的结果/限制。
+前批修复背景见 [第七批修复记录](community-preview-batch7-2026-10-21.md)、[第六批历史记录](community-preview-batch6-2026-10-21.md) 与 [发布门槛](store-v1.md)，再看 [获认可的计划](../../extension_community_preview_and_store_plan_2026-10-21.md)。第一至第六批记录是历史证据，不应替代最新的结果/限制。
 
 - Host 审查范围：`fd17e707d8793480003f929bc8c78a8d134e41b5..codex/extension-community-preview`。
-- Host 应用/验收工具代码端点：`59c379a6e9615b1cc17ba90cbfc9a8f55508ea39`；桌面报告受测提交为 `51c8363e`，最后的显式导出补丁另有字节码等价/真实导入检查。后续提交仅更新记录；bundle 的精确末端由包内 `review-manifest.json` 指明。
+- Host 生产应用代码仍为第七批范围；新增闭环工具端点为 c44799eaa12c983245c1551cfd6f901007997b05。两轮实际受测身份见第八批记录和原始报告。bundle 的精确记录末端由 review-manifest.json 指明。
 - 协议仓范围：`bf1a848448a19ed20eca029e8cc3991563e42e95..153153598a9f94e3b44a477e99c3017f978d13e5`。
 - 固定目录 checker：Host `1840c8e4f646992ddaebea3139c8895f29743a8f`；Host 内目录副本 pin `58d3892d55c6a7ec6f8626153f503291bb10ab9a`。SDK/protocol pins 未变。
 
@@ -27,7 +36,7 @@ r2 包不改写，随附 `external-review-2026-10-22-pr252-addendum.zip` 提供�
 4. **公开目录与未来能力**：协议 `catalog/REVIEW_CHECKLIST.md`、`policy.json`、`tools/catalog.py` / `check_catalog_ci.py`。审核针对 exact-wheel；v1 收录限制与运行契约分离；未知未来能力逐包禁用、不可丢弃已理解的安全信息；发布序号只增不减；Windows + 固定 Python/checker/最小锁；受保护 base 工具验证提案。
 5. **发行/验收工具**：Host `electron/package.json` 的 checker 资源闭包、`tools/smoke_electron_model_less.py`、`tools/probes/extension_release_shell.py` / `extension_release_failures.py` / `extension_native_confirmation.py`、test-only fixture 和 CI。生产包没有测试 URL 或确认绕过开关；manifest 身份检查不应被误称签名或完整机器证明。
 
-## 本轮可复核证据
+## 前批可复核证据（r2）
 
 - 当前修复：Host 197 pass / 7 原有 skip；Pi 三个重点用例五轮独立批次 15/15；Pillow/相关路径 204 pass，另在真实 CPU 模型环境补验 61 pass；core 与 local-cpu 包一致性及 10 组 profile/platform 预演通过。
 - 四类真实参考 wheel 作者旅程本轮 12 阶段通过。未改 Electron/协议实现，前批 Electron 576 项、Windows 固定 catalog 29 项、Docker 113 项（11 skip）作为明确历史证据保留。
@@ -46,7 +55,7 @@ Docker 只补协议/SDK 隔离：把 `protocol-source.zip` 解压后将包内 `d
 
 ## 包内容与禁止误读
 
-当前包名带 `-r2`，旧包原样保留。三份 patch（两份依赖、一份 Pi）可独立提取；依赖补丁交另一个会话独立审查并保持与词典 PR 分离。
+当前包名带 -r3，旧 r1/r2 ZIP 原样保留。r3 的 evidence/history/r2 保留前批结果，evidence/history/batch8 保留本轮探索失败。三份 patch（两份依赖、一份 Pi）可独立提取；依赖补丁交另一个会话独立审查并保持与词典 PR 分离。
 
 `review-manifest.json` 和 `SHA256SUMS.txt` 标识精确提交、源归档及每份交付文件。应用二进制不放入轻量审查 ZIP，实际 exe/asar 摘要保留在结果和施工记录中。参考 wheel 是本轮测试字节，均未被独立审核；故意启动失败的 0.3.0 不混入参考目录。
 

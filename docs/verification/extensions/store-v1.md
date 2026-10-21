@@ -1,11 +1,22 @@
 # Plugin store technical preview: release checklist
 
-Status: local S3 preparation, **not released and not approved for publication**.
+Status: **complete local functional-prototype roundtrip**, with public S3 gates still open.
+**Not released and not approved for publication**.
 The experimental branch implements D1/D2 and S0–S2. D0's cross-repository author link,
 D3 external-author qualification and the remaining S3 gates below are still open.
 No public index, release, repository permission or main branch was changed.
 
 ## Locally available evidence
+
+- [Complete publisher-to-desktop roundtrip](community-preview-batch8-2026-10-22.md):
+  six real CLI-generated/rechecked publications consumed byte-for-byte over loopback
+  HTTPS by source and packaged Windows desktops; real Notes/theme install/update,
+  copyright withdrawal, durable block/unblock, separate restoration, old-snapshot
+  rejection and offline single/double NUL recovery. Each run has 15 desktop plus
+  25 roundtrip checks, four fresh-process restarts and five native Notes contracts.
+  [Repeatable demonstration](../../extension_store_demo.md). Review/approval refs
+  are explicitly simulated; this closes local functional integration, not public
+  human approval, repository governance or release authorization.
 
 - [S1 transport and durable safety](community-preview-batch3-2026-10-21.md):
   system proxy/certificates, mirrors, download failures, cancellation, wrong digest,
@@ -52,7 +63,7 @@ Dependency maintenance is now tracked separately in [draft PR #252](https://gith
 | Clean source and packaged Windows journeys | Local isolated qualification available; clean-machine/independent human acceptance pending | Fresh supported Windows environment, documented supplied Python dependencies, no old profile/install/cache; useful process + resource package through full lifecycle, manual native confirmations separately recorded. Local automated shell evidence alone is insufficient. |
 | Full release failure matrix | Local final-build fixture matrix recorded in batch 6; reviewed public catalog still pending | Re-run cancellation, digest mismatch, withdrawal, ban, double corruption, startup failure, data retention/delete on final fixed release build and reviewed catalog. Record screenshots, traces, skips and hashes. |
 | Remote CI and release resources | Local checks only | Required remote Actions green on final target commit; archive/desktop hashes, SDK/catalog pins, exact catalog revision and plugin identities recorded. |
-| First catalog publication/withdrawal | Pending | Reviewed input PR, separate publication PR with sequence +1, exact reproducible generation; withdrawal and security decision PR exercise, offline known bans retained. Content rollback must still increase sequence. |
+| First catalog publication/withdrawal | Local full simulated roundtrip passed; reviewed public publication pending | Reviewed input PR, separate publication PR with sequence +1, exact reproducible generation; withdrawal and security decision PR exercise, offline known bans retained. Content rollback must still increase sequence. |
 | D0 public author path | Pending Host integration | After reviewed Host integration, protocol README points to the immutable integrated author guide. Do not point a public completion claim at a local-only commit. |
 | Release decision | Pending | Maintainer explicitly authorizes publication after evaluating the above evidence. Passing tests never publishes automatically. |
 
