@@ -507,7 +507,7 @@
     "scope": "Single Windows host observations at different times; not a controlled performance benchmark. Full validation remains seconds rather than format-1 milliseconds."
   },
   "validation": {
-    "local_related_tests": "135 passed, 1 audioop deprecation warning",
+    "local_related_tests": "136 passed after dependency integration, 1 audioop deprecation warning; personal dictionary override exercised with real pyopenjtalk under both formats",
     "ruff": "passed",
     "architecture_views": "7 passed",
     "platform_matrix": "Windows native hashes and actual pyopenjtalk tests passed locally. Windows/Linux/macOS native hash and regression tests added to CI; consult final PR head checks, not this pre-push receipt, for remote results."

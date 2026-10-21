@@ -164,8 +164,15 @@ def test_personal_dictionary_keeps_ownership_of_explicit_spellings(tmp_path, nat
     assert native.run_frontend(runtime.prepare_japanese_text("model"))[0]["read"] == "テスト"
 
 
-def test_personal_dictionary_also_owns_official_native_word(tmp_path, native):
-    make_pack(tmp_path, [("during", "ダーリング")], mode="mecab")
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_personal_dictionary_also_owns_official_native_word(tmp_path, native, format_version):
+    pack = make_pack(tmp_path, [("during", "ダーリング")],
+                     mode="mecab" if format_version == 1 else "katakana_alias")
+    if format_version == 2:
+        path = pack / "provenance.json"
+        metadata = json.loads(path.read_bytes())
+        metadata["overlay"]["native_words"] = ["during"]
+        path.write_text(json.dumps(metadata), encoding="utf-8")
     row = fixture_row(native.OpenJTalk(native.OPEN_JTALK_DICT_DIR), "during", "テスト")
     row[0] = row[0].strip()
     (tmp_path / "assets/text/ja/user.csv").write_text(",".join(row) + "\n", encoding="utf-8")
