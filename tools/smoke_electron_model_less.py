@@ -350,6 +350,8 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             environment = model_less_backend_environment(
                 super()._environment(), python_executable=sys.executable
             )
+            if args.extension_fixture:
+                environment["PI_PROVIDER_ENABLED"] = "true"
             if self.packaged_executable:
                 # The current distribution packages the Electron frontend;
                 # supply the separate Python runtime explicitly for this smoke.
