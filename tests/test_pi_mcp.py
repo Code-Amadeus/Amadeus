@@ -114,13 +114,15 @@ async def test_only_host_bound_servers_load_despite_ambient_configuration(native
                          encoding="utf-8")
     monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", json.dumps([str(extension)]))
 
-    async def emit(_event):
-        pass
+    events = []
+
+    async def emit(event):
+        events.append(event)
 
     result = await adapter.run(req, "bindings", emit)
     assert result.status == "done", result
     names = {tool["function"]["name"] for tool in requests[0]["tools"]}
-    assert "mcp__fixture__inspect_fixture" in names
+    assert "mcp__fixture__inspect_fixture" in names, [event for event in events if event.type == "runtime.notice"]
     assert "codemode" not in names and "tool_search" not in names
     assert not any(name.startswith(("mcp__extra__", "mcp__disabled__", "mcp__other__")) for name in names)
     assert (bound / "started.json").exists()

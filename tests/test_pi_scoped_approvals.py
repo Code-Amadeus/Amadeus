@@ -83,7 +83,8 @@ async def test_revocation_requires_fresh_approval_on_next_identical_call(native_
                 approvals[0]["request_id"], False, scope="work"))
             assert outcome["accepted"]
 
-    assert (await adapter.run(request(tmp_path), "revoke", emit)).status == "done"
+    result = await adapter.run(request(tmp_path), "revoke", emit)
+    assert result.status == "done", result
     assert len(approvals) == 2 and len(uses) == 1
     assert calls(root) == ["inspect", "inspect"]
     assert not (await adapter.resolve_permission("revoke", ProviderPermissionResponse(
