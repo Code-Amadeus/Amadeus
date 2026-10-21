@@ -12,7 +12,7 @@ Preservation and automated screening do not establish pronunciation accuracy.
 
 Release 0.17.1 was withdrawn. Candidate **2026.10.22.1-rc2** remains unpublished
 pending independent review and maintainer acceptance. See the
-[current evidence](evidence/japanese_resource_review_followup_2026-10-22.json).
+[current evidence](evidence/japanese_resource_post_249_2026-10-22.json).
 The [2026-10-21 receipt](evidence/japanese_resource_acceptance_2026-10-21.json)
 is historical and superseded.
 
@@ -116,8 +116,16 @@ costs seconds, substantially more than the small format-1 pack.
 
 ## Acceptance and later maintenance
 
+After #252 and #249 merged, seven inherited Qwen/provenance conflicts were
+resolved to the exact main versions. The Japanese frontend and loader code did
+not change. All seven fresh profiles (26,552 records each) reproduce the prior
+observations, and all nine resource members and the ZIP remain byte-identical.
+The earlier [review receipt](evidence/japanese_resource_review_followup_2026-10-22.json)
+remains available as history. Fresh final-head CI and independent review are
+still separate acceptance steps; this integration does not authorize release.
+
 The new production-path comparison covers 26,552 records against fixed **main
-fd17e707**, under no-pack, published format-1, legacy CSV and candidate states.
+8de4c958**, under no-pack, published format-1, legacy CSV and candidate states.
 The 12,027 repository fragments and 672 stored synthetic replies are regression
 material, not random daily conversation. Another 5,000 JSUT sentences and targeted
 case/reading controls are separate groups. Phone changes are observations, not

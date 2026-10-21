@@ -65,7 +65,7 @@ independent data repository. The runtime provenance omits `alkana_reading`
 values; it does not need those comparisons to load or select any entry.
 
 Current candidate validation and publication limitations are recorded in
-`docs/evidence/japanese_resource_acceptance_2026-10-21.json`. A checked hash or
+`docs/evidence/japanese_resource_post_249_2026-10-22.json`. A checked hash or
 successful build establishes data identity and structure, not complete lexical,
 accent, perceptual, or redistribution acceptance.
 
