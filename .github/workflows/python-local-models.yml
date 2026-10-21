@@ -74,6 +74,9 @@ jobs:
           tests/test_qwen3_asr_sidecar_bootstrap.py
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
+          tests/test_japanese_base_portability.py
+          tests/test_japanese_aliases.py
+          tests/test_japanese_full_resource.py
       - name: Switch the same environment to T3 vad
         run: |
           uv sync --locked --extra voice --extra vad --extra torch-cpu

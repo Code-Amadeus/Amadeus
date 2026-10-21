@@ -16,6 +16,7 @@ PACK_ID = "japanese-pronunciation"
 PACK_TREE = "text/ja/english"
 LATIN_WORD_BOUNDARY = "\u3000"
 KANJI_COMPOUND = re.compile(r"[\u3400-\u9fff々]{2,}")
+KATAKANA_READING = re.compile(r"[\u30a1-\u30fa\u30fc]+")
 PACK_FILES = (
     "userdict.csv", "provenance.json", "NOTICE.md",
     "GPT-SoVITS-MIT.txt", "CMUdict-BSD-2-Clause.txt", "Amadeus-AGPL-3.0.txt",
@@ -109,7 +110,7 @@ def _checked_rows(raw: dict, rows: list[list[str]]) -> tuple[str, tuple[str, ...
         latin = (re.fullmatch(r"[a-z]{3,}(?:-[a-z]{3,})*", word)
                  and row[0].startswith(LATIN_WORD_BOUNDARY) and row[0].endswith(LATIN_WORD_BOUNDARY))
         if (not (latin or KANJI_COMPOUND.fullmatch(row[0])) or row[11] != row[12]
-                or not re.fullmatch(r"[\u30a1-\u30fa\u30fc]+", row[12])):
+                or not KATAKANA_READING.fullmatch(row[12])):
             raise JapaneseDictionaryError("Lexical aliases require whole Latin words or complete Kanji compounds and one explicit reading")
         if word in aliases and aliases[word] != row[12]:
             raise JapaneseDictionaryError(f"Ambiguous Katakana alias: {word}")
@@ -148,7 +149,9 @@ def _full_source_review(root: Path, raw: dict, rows: list[list[str]]) -> dict:
                 or record.get("accent_evidence") not in {"native_lexeme_features", "unidic_lexical_accent", "source_accent_retained_pending_review"}):
             raise JapaneseDictionaryError("Correction requires reading and separate accent evidence")
         indexed[number] = record
-    allowed_reasons = {"base_owned", "short_token_native_owner", "context_sensitive", "pending_accent"}
+    allowed_reasons = {"base_owned", "short_token_native_owner", "context_sensitive", "pending_accent",
+                       "cmu_final_phone_risk", "unreviewed_alternative", "known_bad_reading",
+                       "native_reading_requires_review"}
     for record in exclusions:
         number = record.get("source_row")
         if (type(number) is not int or not 1 <= number <= len(rows) or number in excluded
@@ -175,12 +178,24 @@ def _full_source_review(root: Path, raw: dict, rows: list[list[str]]) -> dict:
     if mode != "katakana_alias":
         raise JapaneseDictionaryError("Full-source overlay requires explicit native/alias partition")
     aliases = {latin_word_key(r[0]): r[12] for r in overlay_rows if latin_word_key(r[0]) not in native_words}
-    master_readings = {}
-    for row in rows:
-        master_readings.setdefault(latin_word_key(row[0]), set()).add(row[12])
-    for word in aliases:
-        if len(master_readings.get(word, ())) > 1:
-            raise JapaneseDictionaryError(f"Alias would collapse alternate source readings: {word}")
+    reviewed_readings = {}
+    for row in overlay_rows:
+        reviewed_readings.setdefault(latin_word_key(row[0]), set()).add(row[12])
+    for change in changes:
+        row = change["after_columns"]
+        reviewed_readings.setdefault(latin_word_key(row[0]), set()).add(row[12])
+    active_readings = {}
+    replaced_words = {latin_word_key(row[0]) for row in overlay_rows}
+    for number, row in enumerate(rows, 1):
+        word = latin_word_key(row[0])
+        if number not in excluded and word not in replaced_words:
+            if not KATAKANA_READING.fullmatch(row[12]):
+                raise JapaneseDictionaryError(f"Native pronunciation requires normalization/review: {word}")
+            active_readings.setdefault(word, set()).add(row[12])
+    for word, active in active_readings.items():
+        approved = reviewed_readings.get(word)
+        if approved is None and len(active) != 1 or approved is not None and not active <= approved:
+            raise JapaneseDictionaryError(f"Unresolved alternate runtime readings: {word}")
     context_words = {r["word"] for r in exclusions if r["reason"] == "context_sensitive"}
     if context_words & {latin_word_key(r[0]) for r in overlay_rows}:
         raise JapaneseDictionaryError("Overlay would bypass a context-sensitive deferral")
@@ -228,6 +243,8 @@ def _validate_dictionary_pack(root: Path) -> JapaneseDictionaryPack:
         if format_version == 2:
             fields = _full_source_review(root, raw, rows)
         else:
+            if raw.get("entry_mode", "mecab") != "mecab":
+                raise JapaneseDictionaryError("Katakana aliases require format 2 and its reviewed overlay")
             mode, words = _checked_rows(raw, rows)
             fields = dict(entry_mode=mode, native_words=words)
         return JapaneseDictionaryPack(root, raw["version"], digest, len(rows),

@@ -301,6 +301,8 @@ def _fake_jtalk(root: Path):
         Path(target).write_bytes(b"compiled " + Path(source).read_bytes())
     return SimpleNamespace(
         OPEN_JTALK_DICT_DIR=str(base).encode(), __version__="test-1",
+        OpenJTalk=lambda _: SimpleNamespace(normalize_for_mecab=lambda value: value,
+                                            run_mecab_detailed=lambda value: (None, [])),
         mecab_dict_index=compile_csv, unset_user_dict=lambda: registered.append([]),
         update_global_jtalk_with_user_dict=lambda paths: registered.append(paths),
         compiled=compiled, registered=registered,

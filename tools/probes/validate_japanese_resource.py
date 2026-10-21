@@ -62,10 +62,10 @@ def run(args):
     def signature(reading):
         return pyopenjtalk.g2p(reading, jtalk=independent_base).lower()
     previous = load_dictionary_pack(args.previous_root / "assets" / PACK_TREE)
-    if candidate.format_version != 2 or previous.format_version != 2:
-        raise ValueError("Lifecycle comparison requires two complete format-2 resources")
-    if candidate.entry_count != previous.entry_count or candidate.version == previous.version:
-        raise ValueError("Lifecycle comparison needs different versions with the same source denominator")
+    if candidate.format_version != 2 or candidate.version == previous.version:
+        raise ValueError("Lifecycle comparison requires a full-source candidate and a different previous version")
+    if previous.format_version == 2 and candidate.entry_count != previous.entry_count:
+        raise ValueError("Full-source updates must preserve the source denominator")
     archives = {}
     for name, root, pack in [("previous", args.previous_root, previous), ("candidate", args.candidate_root, candidate)]:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", pack.version):
@@ -91,7 +91,7 @@ def run(args):
     ]:
         installed = install_bundle(archive, project_root=recipient, index_path=ROOT / "assets/index.json", overwrite=label != "install")
         loaded = load_dictionary_pack(recipient / "assets" / PACK_TREE)
-        assert loaded.identity == expected.identity and loaded.entry_count == candidate.entry_count
+        assert loaded.identity == expected.identity and loaded.entry_count == expected.entry_count
         status = configure_japanese_dictionary(pyopenjtalk, project_root=recipient, enabled=True)
         assert status["ready"] and status["version"] == expected.version, status
         configure_japanese_reading(pyopenjtalk, enabled=False)

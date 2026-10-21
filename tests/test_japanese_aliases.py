@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from config.japanese_dictionary import PACK_FILES, PACK_TREE, JapaneseDictionaryError, load_dictionary_pack
+from config.japanese_dictionary import FULL_SOURCE_FILES, PACK_FILES, PACK_TREE, JapaneseDictionaryError, load_dictionary_pack
 from tts import japanese_dictionary as runtime
 from test_japanese_dictionary import _row
 
@@ -46,6 +46,16 @@ def make_pack(root, pairs, mode="katakana_alias"):
         "release_review": {"accepted_readings": review},
         "source": dict(repository="fixture", revision="test", path="fixture", sha256="fixture"),
     }
+    if mode == "katakana_alias":
+        from tools.audit_japanese_dictionary import native_base_hashes
+        overlay = {key: metadata[key] for key in ("entry_mode", "entry_count", "sha256", "release_review")}
+        overlay["native_words"] = []
+        metadata.update(format_version=2, overlay=overlay,
+                        source_review={"unchanged_status": "original_unverified", "changes": [], "runtime_exclusions": []},
+                        base_dictionary_sha256=native_base_hashes())
+        metadata["source"].update(sha256=hashlib.sha256(data).hexdigest(), entry_count=len(rows))
+        for name in FULL_SOURCE_FILES:
+            (pack / name).write_bytes(data if name.endswith(".csv") else b"Synthetic native notice")
     (pack / "provenance.json").write_text(json.dumps(metadata), encoding="utf-8")
     return pack
 
@@ -73,11 +83,12 @@ def test_native_alias_resolves_competing_splits_and_contextual_accent(tmp_path, 
     from text import japanese
     controls = ["中立派の話です。", "170cmと50kgです。", "nonstopのmodelingです。",
                 "model2とxmodelとmodel-xとmodel'sです。",
-                "model-2と2-modelとmodel’2です。"]
+                "model’2です。"]
     before = [japanese.g2p(text, with_prosody) for text in controls]
     assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
     for text, expected in [("nonの話です。", "ノンの話です。"),
                            ("leanを確認します。", "リーンを確認します。"),
+                           ("model-2と2-modelです。", "モデル-2と2-モデルです。"),
                            ("このMODELを選びます。", "このモデルを選びます。")]:
         assert japanese.g2p(text, with_prosody) == japanese.g2p(expected, with_prosody)
     assert [japanese.g2p(text, with_prosody) for text in controls] == before
@@ -107,16 +118,27 @@ def test_registered_native_entries_keep_case_insensitive_lookup_without_folding_
     assert runtime.with_latin_word_boundaries("Disney MODEL model-x") == "Disney \u3000model\u3000 model-x"
 
 
+def test_reviewed_alias_can_reinforce_the_same_base_reading_in_context(tmp_path, native):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "GPT_SoVITS"))
+    from text import japanese
+    make_pack(tmp_path, [("china", "チャイナ"), ("disney", "ディズニー")])
+    assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
+    for word, reading in [("china", "チャイナ"), ("China", "チャイナ"), ("Disney", "ディズニー")]:
+        assert japanese.g2p(f"この{word}を確認します。") == japanese.g2p(f"この{reading}を確認します。")
+
+
 @pytest.mark.parametrize("with_prosody", [False, True])
-def test_punctuation_split_does_not_expose_native_word_fragments(tmp_path, native, with_prosody):
+def test_numeric_hyphens_are_boundaries_but_alphabetic_compounds_remain_whole(tmp_path, native, with_prosody):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "GPT_SoVITS"))
     from text import japanese
     runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=False)
-    controls = ["game-2", "2-game", "game2-3", "game-x", "game’2", "1-2", "170cmと50kg"]
+    controls = ["game2-3", "game-x", "game’2", "1-2", "170cmと50kg"]
     before = [japanese.g2p(text, with_prosody) for text in controls]
     make_pack(tmp_path, [("game", "ゲーム")], mode="mecab")
     assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
     assert [japanese.g2p(text, with_prosody) for text in controls] == before
+    assert japanese.g2p("game-2", with_prosody) == japanese.g2p("ゲーム-2", with_prosody)
+    assert japanese.g2p("2-game", with_prosody) == japanese.g2p("2-ゲーム", with_prosody)
     assert "ゲ" in "".join(node["read"] for node in native.run_frontend(runtime.prepare_japanese_text("game")))
 
 
@@ -139,6 +161,31 @@ def test_personal_dictionary_keeps_ownership_of_explicit_spellings(tmp_path, nat
     (tmp_path / "assets/text/ja/user.csv").write_text(",".join(row) + "\n", encoding="utf-8")
     assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
     assert runtime.prepare_japanese_text("modelとlean") == "modelとリーン"
+    assert native.run_frontend(runtime.prepare_japanese_text("model"))[0]["read"] == "テスト"
+
+
+def test_personal_dictionary_also_owns_official_native_word(tmp_path, native):
+    make_pack(tmp_path, [("during", "ダーリング")], mode="mecab")
+    row = fixture_row(native.OpenJTalk(native.OPEN_JTALK_DICT_DIR), "during", "テスト")
+    row[0] = row[0].strip()
+    (tmp_path / "assets/text/ja/user.csv").write_text(",".join(row) + "\n", encoding="utf-8")
+    assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
+    assert "during" not in runtime._official_latin_words
+    assert native.run_frontend(runtime.prepare_japanese_text("during"))[0]["read"] == "テスト"
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_base_casing_and_number_readings_with_and_without_optional_pack(tmp_path, native, installed):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "GPT_SoVITS"))
+    from text import japanese
+    if installed:
+        make_pack(tmp_path, [("model", "モデル")], mode="mecab")
+    runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=installed)
+    for word in ["Sorry", "About", "Because", "Again", "Audio", "Doctor", "Future"]:
+        assert japanese.g2p(word) == japanese.g2p(word.lower()), word
+    for text, expected in [("Disney", "ディズニー"), ("F-15", "エフ-15"),
+                           ("B-29", "ビー-29"), ("R-18", "アール-18")]:
+        assert japanese.g2p(text, False) == japanese.g2p(expected, False), text
 
 
 def test_alias_conflicts_fail_closed(tmp_path):
@@ -152,7 +199,7 @@ def test_reading_mode_changes_inference_cache_identity(tmp_path, native):
     first = runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)
     metadata_path = pack / "provenance.json"
     metadata = json.loads(metadata_path.read_text())
-    metadata["entry_mode"] = "mecab"
+    metadata["overlay"]["native_words"] = ["model"]
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     second = runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)
     assert first["ready"] and second["ready"] and first["identity"] != second["identity"]
@@ -166,7 +213,7 @@ def test_extension_preserves_retained_native_words_and_their_reading_mode(tmp_pa
     pack = make_pack(extension, [("model", "モデル"), ("lean", "リーン")])
     metadata_path = pack / "provenance.json"
     metadata = json.loads(metadata_path.read_text())
-    metadata["native_words"] = ["model"]
+    metadata["overlay"]["native_words"] = ["model"]
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     runtime.configure_japanese_dictionary(native, project_root=original, enabled=True)
     before = native.run_frontend(runtime.prepare_japanese_text("このmodelを確認する"))
@@ -174,7 +221,7 @@ def test_extension_preserves_retained_native_words_and_their_reading_mode(tmp_pa
     assert native.run_frontend(runtime.prepare_japanese_text("このmodelを確認する")) == before
     assert runtime.prepare_japanese_text("modelとlean") == "\u3000model\u3000とリーン"
     identity = runtime.dictionary_runtime_status()["identity"]
-    metadata["native_words"] = []
+    metadata["overlay"]["native_words"] = []
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     assert runtime.configure_japanese_dictionary(native, project_root=extension, enabled=True)["identity"] != identity
 
@@ -183,7 +230,7 @@ def test_retained_native_partition_cannot_name_absent_rows(tmp_path):
     pack = make_pack(tmp_path, [("model", "モデル")])
     path = pack / "provenance.json"
     metadata = json.loads(path.read_text())
-    metadata["native_words"] = ["missing"]
+    metadata["overlay"]["native_words"] = ["missing"]
     path.write_text(json.dumps(metadata), encoding="utf-8")
     with pytest.raises(JapaneseDictionaryError, match="must exist"):
         load_dictionary_pack(pack)
@@ -227,8 +274,9 @@ def test_attested_hyphenated_alias_requires_the_complete_token(tmp_path, native)
     make_pack(tmp_path, [("navier-stokes", "ナビエストークス"), ("deepmind", "ディープマインド")])
     assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
     assert runtime.with_latin_readings("Navier-StokesとDeepMind") == "ナビエストークスとディープマインド"
-    for text in ["xNavier-Stokes", "Navier-Stokes2", "Navier-Stokes-2", "2-DeepMind", "DeepMind's"]:
+    for text in ["xNavier-Stokes", "Navier-Stokes2", "DeepMind's"]:
         assert runtime.with_latin_readings(text) == text
+    assert runtime.with_latin_readings("Navier-Stokes-2と2-DeepMind") == "ナビエストークス-2と2-ディープマインド"
 
 
 def test_correct_longer_compound_protects_its_internal_shorter_word(native, monkeypatch):

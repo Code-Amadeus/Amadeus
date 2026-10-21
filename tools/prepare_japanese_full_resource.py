@@ -21,8 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config.japanese_dictionary import PACK_FILES, PACK_TREE, dictionary_rows, latin_word_key, load_dictionary_pack
-from tools.audit_japanese_dictionary import native_base_hashes, native_base_word_lookup
+from config.japanese_dictionary import KATAKANA_READING, PACK_FILES, PACK_TREE, dictionary_rows, latin_word_key, load_dictionary_pack
+from tools.audit_japanese_dictionary import (
+    cmu_pronunciations, final_phone_risk, native_base_hashes, native_base_word_lookup,
+)
 
 
 def sha(data: bytes) -> str:
@@ -43,6 +45,11 @@ def prepare(data_dir: Path, output_root: Path, version: str) -> dict:
         raise ValueError("Use a fresh output root; a resource version must not be overwritten")
     review_data = (data_dir / "review.json").read_bytes()
     review = json.loads(review_data)
+    screening = review["screening"]
+    cmu_data = (data_dir / "cmudict.rep").read_bytes().replace(b"\r\n", b"\n")
+    if sha(cmu_data) != screening["cmudict_sha256"]:
+        raise ValueError("CMU screening input differs from its pinned source")
+    phones = cmu_pronunciations(cmu_data)
     source_data = (data_dir / "source.csv").read_bytes()
     if sha(source_data) != review["source"]["sha256"]:
         raise ValueError("Source differs from the data workspace's pinned source")
@@ -68,22 +75,41 @@ def prepare(data_dir: Path, output_root: Path, version: str) -> dict:
     readings = defaultdict(set)
     for row in master:
         readings[latin_word_key(row[0])].add(row[12])
-    # Existing reviewed variants remain available as native rows; an alias
-    # must not collapse them merely to make a synthetic target score improve.
-    withheld_aliases = {latin_word_key(r[0]) for r in supplement
-                       if latin_word_key(r[0]) not in native_words
-                       and len(readings[latin_word_key(r[0])]) > 1}
+    # Unreviewed source variants are not evidence of genuine heteronyms.
+    # A reviewed winner can replace them; unresolved spellings stay deferred.
+    checked = defaultdict(set)
+    for row in supplement:
+        checked[latin_word_key(row[0])].add(row[12])
+    withheld_aliases = {word for word, values in checked.items() if len(values) != 1 and word not in native_words}
     held = review["hold_words"]
     supplement = [r for r in supplement if latin_word_key(r[0]) not in withheld_aliases and latin_word_key(r[0]) not in held]
+    checked = defaultdict(set)
+    for row in supplement:
+        checked[latin_word_key(row[0])].add(row[12])
+    for change in changes:
+        row = change["after_columns"]
+        checked[latin_word_key(row[0])].add(row[12])
+    # Published native rows may contain two individually reviewed, acceptable
+    # variants (when/without). Neither licenses an unreviewed third reading.
+    winners = {word: values for word, values in checked.items() if word not in held}
     alias_words = {latin_word_key(r[0]) for r in supplement if latin_word_key(r[0]) not in native_words}
     pending = {r["source_row"] for r in changes if r["accent_evidence"] == "source_accent_retained_pending_review"}
     known = native_base_word_lookup()
     owned = {latin_word_key(r[0]) for r in originals if known(latin_word_key(r[0]), r[11])}
+    suspect = {latin_word_key(row[0]) for row in master
+               if final_phone_risk(row[12], phones.get(latin_word_key(row[0]), set()))}
+    rejected = {latin_word_key(row[0]) for row in master
+                if row[12] in review.get("rejected_readings", {}).get(latin_word_key(row[0]), ())}
     exclusions = []
-    for number, row in enumerate(originals, 1):
+    for number, row in enumerate(master, 1):
         word = latin_word_key(row[0])
         reason = ("context_sensitive" if word in held else "base_owned" if word in owned else
                   "short_token_native_owner" if word.isascii() and word.isalpha() and len(word) <= 2 else
+                  "unreviewed_alternative" if (word in winners and row[12] not in winners[word]) or
+                      (len(readings[word]) > 1 and word not in winners) else
+                  "known_bad_reading" if word in rejected and word not in winners else
+                  "cmu_final_phone_risk" if word in suspect and word not in winners else
+                  "native_reading_requires_review" if not KATAKANA_READING.fullmatch(row[12]) else
                   "pending_accent" if number in pending and word not in alias_words else None)
         if reason:
             exclusions.append({"source_row": number, "word": word, "reason": reason})
@@ -103,7 +129,8 @@ def prepare(data_dir: Path, output_root: Path, version: str) -> dict:
         "base_dictionary_sha256": native_base_hashes(),
         "source_review": {"unchanged_status": "original_unverified", "changes": records,
                           "runtime_exclusions": exclusions, "review_input_sha256": sha(review_data)},
-        "overlay": overlay,
+        "overlay": runtime_provenance(overlay),
+        "screening": screening,
         "acceptance": {"status": "candidate_not_published", "independent_review": "pending",
                        "listening": "pending", "complete_source_review": False},
         "compatibility": "Requires a loader supporting Japanese dictionary format 2; backend restart after update or rollback.",
@@ -133,6 +160,15 @@ def prepare(data_dir: Path, output_root: Path, version: str) -> dict:
               "status": "prepared_not_installed_not_published"}
     (output_root / "preparation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     return report
+
+
+def runtime_provenance(value):
+    """Keep supporting Alkana comparisons in the data repository, not the pack."""
+    if isinstance(value, dict):
+        return {key: runtime_provenance(item) for key, item in value.items() if key != "alkana_reading"}
+    if isinstance(value, list):
+        return [runtime_provenance(item) for item in value]
+    return value
 
 
 if __name__ == "__main__":

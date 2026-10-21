@@ -4,7 +4,7 @@ import pyopenjtalk
 
 from tts.japanese_dictionary import (
     configure_japanese_dictionary, prepare_japanese_text,
-    with_latin_readings, with_latin_word_boundaries, latin_token_spans,
+    with_latin_readings, with_latin_word_boundaries, latin_token_spans, normalize_latin_case,
 )
 from tts.japanese_reading import run_frontend
 
@@ -88,15 +88,11 @@ def symbols_to_japanese(text):
 
 def preprocess_jap(text, with_prosody=False):
     """Reference https://r9y9.github.io/ttslearn/latest/notebooks/ch10_Recipe-Tacotron.html"""
-    # Resolve complete original tokens before punctuation segmentation can
-    # split identifiers such as model-2 into independently matchable fragments.
-    text = with_latin_readings(symbols_to_japanese(text))
-    # Native Latin entries are case-sensitive (Disney is known, disney is not).
-    # Alias lookup owns case folding for its registered tokens; other spellings
-    # must reach the native lexicon unchanged.
+    text = symbols_to_japanese(text)
     text = _numeric_latin_suffix.sub(lambda match: match.group().lower(), text)
-    # Use the same complete-token boundary as dictionary matching. Splitting
-    # game-2 here would otherwise admit the registered fragment game later.
+    text = with_latin_readings(normalize_latin_case(text))
+    # Preserve alphabetic compounds such as follow-up; model-2 has a numeric
+    # boundary and follows the established punctuation/number frontend path.
     spans = iter(latin_token_spans(text))
     span = next(spans, None)
     sentences, marks, start = [], [], 0

@@ -18,9 +18,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.tts_text_processor import convert_english_abbreviations_to_katakana  # noqa: E402
-from config.japanese_dictionary import LATIN_WORD_BOUNDARY, dictionary_rows, latin_word_key  # noqa: E402
+from config.japanese_dictionary import KATAKANA_READING, LATIN_WORD_BOUNDARY, dictionary_rows, latin_word_key  # noqa: E402
 
-_KANA = re.compile(r"[\u30a1-\u30fa\u30fc]+")
+_KANA = KATAKANA_READING
 _MORA_PHONES = frozenset({"a", "i", "u", "e", "o", "A", "I", "U", "E", "O", "N", "cl"})
 # A screening rule, not an English-to-Japanese translator. Loanword adaptation
 # can violate these correspondences. Exclude a flagged imported row rather than

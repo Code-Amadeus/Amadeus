@@ -1,6 +1,6 @@
 {
   "date": "2026-10-21",
-  "status": "local_candidate_ready_for_independent_review_not_published",
+  "status": "superseded_after_external_review_not_for_release",
   "resource": {
     "file": "amadeus-japanese-pronunciation-2026.10.21.1-rc2.zip",
     "sha256": "f721f43e29eb24ae2a1e3fbac2c523621b3cf4689483caee1f1271767ade0fa7",
@@ -434,5 +434,6 @@
       }
     ],
     "unscored_explanation": "Three accompaniments spans: native postprocessing rewrites kana ニ to 二. Observed nodes ア/カンパ/二/メンツ have readings ア/カンパ/ニ/メンツ; observed phones include n i. Whole-node matcher leaves these unscored."
-  }
+  },
+  "superseded_by": "japanese_resource_review_followup_2026-10-22.json"
 }

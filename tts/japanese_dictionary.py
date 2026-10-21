@@ -25,14 +25,27 @@ _official_compound_paths: dict[str, tuple[str, tuple[str, ...]]] = {}
 _official_base_owner = None
 
 _LATIN_TOKEN = re.compile(
-    r"(?:[0-9０-９]+['’＇−－-])*[0-9０-９]*[A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ0-9０-９]*"
-    r"(?:['’＇−－-][A-Za-zＡ-Ｚａ-ｚ0-9０-９]+)*['’＇]?"
+    r"[0-9０-９]*[A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ0-9０-９]*"
+    r"(?:['’＇][A-Za-zＡ-Ｚａ-ｚ0-9０-９]+|(?<=[A-Za-zＡ-Ｚａ-ｚ])[−－-][A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ0-9０-９]*)*['’＇]?"
 )
 
 
 def latin_token_spans(text: str) -> list[tuple[int, int]]:
-    """Share token identity with punctuation segmentation, including digits."""
+    """Hyphens join letters; a digit on either side makes a word boundary."""
     return [match.span() for match in _LATIN_TOKEN.finditer(text)]
+
+
+def normalize_latin_case(text: str) -> str:
+    """Keep exact base lexemes, otherwise use the established lowercase path."""
+    def normalize(match):
+        # Numeric suffix casing is owned by the frontend's unit rule, not the
+        # word lexicon: compound units such as kHz are not one native lexeme.
+        prefix = re.match(r"[0-9０-９]*", match.group()).group()
+        if prefix:
+            return match.group()
+        spelling = match.group()[len(prefix):]
+        return prefix + (spelling if _official_base_owner and _official_base_owner(spelling) else spelling.lower())
+    return _LATIN_TOKEN.sub(normalize, text)
 
 
 def with_latin_word_boundaries(text: str, words: frozenset[str] | None = None) -> str:
@@ -58,12 +71,13 @@ def with_latin_readings(text: str, aliases: dict[str, str] | None = None) -> str
         return text
     return _LATIN_TOKEN.sub(lambda m: (aliases[latin_word_key(m.group())]
                                       if latin_word_key(m.group()) in aliases
-                                      and not (_official_base_owner and _official_base_owner(m.group()))
+                                      and (not _official_base_owner or _official_base_owner(m.group())
+                                           in (None, aliases[latin_word_key(m.group())]))
                                       else m.group()), text)
 
 
 def prepare_japanese_text(text: str) -> str:
-    return with_latin_word_boundaries(with_latin_readings(text))
+    return with_latin_word_boundaries(with_latin_readings(normalize_latin_case(text)))
 
 
 def native_compound_path(jtalk, word: str, reading: str) -> tuple[str, ...] | None:
@@ -161,7 +175,7 @@ def full_source_runtime_rows(pack, data: bytes, normalize_surface=lambda value: 
 
 
 def native_spelling_owner(base):
-    """The base lexicon owns its exact case before optional case folding.
+    """Return the exact base lexeme's reading, or None for an unknown spelling.
 
     API is a known initialism even when api is an unrelated imported word.
     Query only matching optional tokens and cache native evidence, not guesses.
@@ -170,8 +184,10 @@ def native_spelling_owner(base):
     def owns(word):
         _, morphs = base.run_mecab_detailed(word)
         tokens = [m for m in morphs if not m["is_ignored"]]
-        return (len(tokens) == 1 and not tokens[0]["is_unknown"]
-                and tokens[0]["surface"] == base.normalize_for_mecab(word))
+        if (len(tokens) == 1 and not tokens[0]["is_unknown"]
+                and tokens[0]["surface"] == base.normalize_for_mecab(word)):
+            return tokens[0]["features"][8]
+        return None
     return owns
 
 
@@ -194,9 +210,13 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         reset()
         project_root = Path(project_root).resolve()
         base = Path(os.fsdecode(jtalk.OPEN_JTALK_DICT_DIR))
+        # Base spelling ownership applies with no pack, format 1, format 2 and
+        # legacy CSV alike. Optional resource validity must not decide casing.
+        normalizer = jtalk.OpenJTalk(jtalk.OPEN_JTALK_DICT_DIR)
+        _official_base_owner = native_spelling_owner(normalizer)
         system = (base / "sys.dic").stat()
         native_key = (jtalk.__version__, str(base), system.st_size, system.st_mtime_ns,
-                      "lexical-morph-boundaries.v6-full-source")
+                      "lexical-morph-boundaries.v9-reviewed-source-selection")
         compiled, digests, issues = [], [], []
         data_review = None
         cache = project_root / ".cache/japanese_dictionary"
@@ -215,7 +235,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
             label = source.relative_to(project_root).as_posix()
             pending_aliases = {}
             pending_review = None
-            pending_owner = None
+            key = None
             try:
                 pack = load_dictionary_pack(source.parent) if source == official else None
                 data = source.read_bytes()
@@ -227,42 +247,37 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                         for name, expected in pack.base_dictionary_hashes:
                             if hashlib.sha256((base / name).read_bytes()).hexdigest() != expected:
                                 raise ValueError("Japanese base dictionary differs from this resource's ownership checks")
-                        normalizer = jtalk.OpenJTalk(jtalk.OPEN_JTALK_DICT_DIR)
-                        pending_owner = native_spelling_owner(normalizer)
-                        native_rows, pending_aliases = full_source_runtime_rows(pack, data, normalizer.normalize_for_mecab)
-                        buffer = io.StringIO(newline="")
-                        csv.writer(buffer, lineterminator="\n").writerows(native_rows)
-                        data = buffer.getvalue().encode("utf-8")
+                        # The validated metadata includes master/overlay hashes
+                        # and selection rules. Reuse the existing native cache
+                        # before costly surface normalization/CSV serialization.
+                        key = hashlib.sha256(repr((native_key, pack.identity)).encode()).hexdigest()
+                        cached = (cache / f"{key}.dict").is_file()
+                        normalize = (lambda value: value) if cached else normalizer.normalize_for_mecab
+                        native_rows, pending_aliases = full_source_runtime_rows(pack, data, normalize)
+                        official_words = frozenset(latin_word_key(row[0]) for row in native_rows)
+                        if not cached:
+                            buffer = io.StringIO(newline="")
+                            csv.writer(buffer, lineterminator="\n").writerows(native_rows)
+                            data = buffer.getvalue().encode("utf-8")
                         pending_review = {"source_rows": pack.entry_count, "reviewed_corrections": pack.reviewed_rows,
                                        "original_unverified": pack.entry_count - pack.reviewed_rows,
                                        "native_runtime_rows": len(native_rows), "aliases": len(pending_aliases)}
-                    official_words = frozenset(latin_word_key(row[0]) for row in dictionary_rows(data)
-                                               if row[0].startswith(LATIN_WORD_BOUNDARY)
-                                               and row[0].endswith(LATIN_WORD_BOUNDARY))
+                        if not native_rows:
+                            _official_katakana_aliases = pending_aliases
+                            digests.append(pack.identity)
+                            version, data_review = pack.version, pending_review
+                            continue
+                    else:
+                        official_words = frozenset(latin_word_key(row[0]) for row in dictionary_rows(data)
+                                                   if row[0].startswith(LATIN_WORD_BOUNDARY)
+                                                   and row[0].endswith(LATIN_WORD_BOUNDARY))
                 else:
                     for _ in dictionary_rows(data):
                         pass
-                if pack is not None and pack.entry_mode == "katakana_alias":
-                    # Re-enter the native Katakana lexicon in context. Copying
-                    # one isolated entry's cost/accent can lose to a Latin split
-                    # or select the wrong contextual accent (e.g. non, lean).
-                    rows = list(dictionary_rows(data))
-                    retained = frozenset(pack.native_words)
-                    pending_aliases = {latin_word_key(row[0]): row[12] for row in rows
-                                       if latin_word_key(row[0]) not in retained}
-                    native_rows = [row for row in rows if latin_word_key(row[0]) in retained]
-                    if not native_rows:
-                        _official_katakana_aliases = pending_aliases
-                        digests.append(pack.identity)
-                        version = pack.version
-                        continue
-                    official_words &= retained
-                    buffer = io.StringIO(newline="")
-                    csv.writer(buffer, lineterminator="\n").writerows(native_rows)
-                    data = buffer.getvalue().encode("utf-8")
                 # Partition changes also change the compiled native content.
-                native_digest = hashlib.sha256(data).hexdigest()
-                key = hashlib.sha256(repr((native_key, native_digest)).encode()).hexdigest()
+                if key is None:
+                    native_digest = hashlib.sha256(data).hexdigest()
+                    key = hashlib.sha256(repr((native_key, native_digest)).encode()).hexdigest()
                 target = cache / f"{key}.dict"
                 if not target.is_file():
                     cache.mkdir(parents=True, exist_ok=True)
@@ -301,13 +316,13 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                 data_review = pending_review
                 _official_latin_words = official_words
                 _official_katakana_aliases = pending_aliases
-                _official_base_owner = pending_owner
             elif source == legacy:
                 version = "legacy-local"
             if source == personal:
                 # Explicit personal spellings retain ownership of their input.
                 for row in dictionary_rows(data):
                     _official_katakana_aliases.pop(latin_word_key(row[0]), None)
+                    _official_latin_words = _official_latin_words - {latin_word_key(row[0])}
         for word, reading in _official_katakana_aliases.items():
             if KANJI_COMPOUND.fullmatch(word):
                 path = native_compound_path(jtalk, word, reading)

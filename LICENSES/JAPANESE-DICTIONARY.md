@@ -54,6 +54,16 @@ separate required member. These sources are not relabelled as solely Amadeus
 work. Resource/data-source archives are prepared separately from application
 source; neither archive is published by the build tools.
 
+The Kanji compound readings also use JMdict, copyright Electronic Dictionary
+Research and Development Group, under CC BY-SA 4.0. The resource NOTICE retains
+attribution, source and license links, and the description of selected/modified
+readings. Source: https://www.edrdg.org/jmdict/j_jmdict.html ; license:
+https://creativecommons.org/licenses/by-sa/4.0/ .
+
+Alkana comparison readings are research corroboration only and remain in the
+independent data repository. The runtime provenance omits `alkana_reading`
+values; it does not need those comparisons to load or select any entry.
+
 Current candidate validation and publication limitations are recorded in
 `docs/evidence/japanese_resource_acceptance_2026-10-21.json`. A checked hash or
 successful build establishes data identity and structure, not complete lexical,

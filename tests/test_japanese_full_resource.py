@@ -156,7 +156,7 @@ def test_invalid_overlay_cannot_bypass_review_or_context_deferral(tmp_path):
         load_dictionary_pack(root)
 
 
-def test_overlay_cannot_collapse_retained_source_reading_alternatives(tmp_path):
+def test_source_alternatives_require_a_reviewed_winner_or_complete_deferral(tmp_path):
     root = _write_pack(tmp_path)
     meta = _metadata(root)
     extra = csv_bytes([_row("follower", "フォローワー")])
@@ -164,12 +164,22 @@ def test_overlay_cannot_collapse_retained_source_reading_alternatives(tmp_path):
         (root / name).write_bytes((root / name).read_bytes() + extra)
     meta["source"].update(sha256=_sha((root / "source.csv").read_bytes()), entry_count=4)
     meta.update(sha256=_sha((root / "userdict.csv").read_bytes()), entry_count=4)
+    _metadata(root, meta)
+    with pytest.raises(JapaneseDictionaryError, match="alternate runtime readings"):
+        load_dictionary_pack(root)
+    meta["source_review"]["runtime_exclusions"].append({"source_row": 4, "word": "follower", "reason": "unreviewed_alternative"})
+    _metadata(root, meta)
+    assert load_dictionary_pack(root).entry_count == 4
     data = csv_bytes([_row("\u3000follower\u3000", "フォロワー")])
     (root / "overlay.csv").write_bytes(data)
     meta["overlay"].update(sha256=_sha(data), release_review={"accepted_readings": {"follower": ["フォロワー"]}})
     _metadata(root, meta)
-    with pytest.raises(JapaneseDictionaryError, match="alternate source readings"):
-        load_dictionary_pack(root)
+    # The exact reviewed overlay can own a spelling while all original
+    # alternatives remain stored; historical typos are not lexical authority.
+    pack = load_dictionary_pack(root)
+    rows, aliases = runtime.full_source_runtime_rows(pack, (root / "userdict.csv").read_bytes())
+    assert aliases == {"follower": "フォロワー"}
+    assert all(row[0].strip() != "follower" for row in rows)
 
 
 def test_base_dictionary_drift_invalidates_resource_without_loading_legacy(tmp_path):
@@ -183,6 +193,48 @@ def test_base_dictionary_drift_invalidates_resource_without_loading_legacy(tmp_p
     status = runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)
     assert status["state"] == "invalid" and "ownership" in status["detail"]
     assert runtime.with_latin_readings("glide") == "glide" and jtalk.registered[-1] == []
+
+
+def test_builder_quarantines_suspect_originals_without_losing_source_or_reviewed_winners(tmp_path, monkeypatch):
+    import sys
+    from tools import prepare_japanese_full_resource as builder
+    jtalk = _native(tmp_path)
+    (tmp_path / "system/COPYING").write_text("fixture native notice", encoding="utf-8")
+    monkeypatch.setitem(sys.modules, "pyopenjtalk", jtalk)
+    monkeypatch.setattr(builder, "native_base_word_lookup", lambda: lambda *_: False)
+    source = csv_bytes([_row("municipal", "マニシパリティーズ"), _row("during", "ダーリング"),
+                        _row("eric", "エクスブローカーズ"), _row("eric", "エリック"),
+                        _row("remains", "レメインズ"), _row("remains", "リメインズ"),
+                        _row("plain", "プレイン"), _row("invalid", "テスt")])
+    overlay = csv_bytes([_row("\u3000remains\u3000", "リメインズ")])
+    cmu = b"MUNICIPAL M Y UW1 N IH0 S AH0 P AH0 L\nERIC EH1 R IH0 K\n"
+    data = tmp_path / "data"
+    data.mkdir()
+    review = {"source": {"repository": "fixture", "revision": "fixture", "path": "source.csv",
+                         "sha256": _sha(source), "entry_count": 8},
+              "changes": [], "hold_words": {}, "rejected_readings": {"during": ["ダーリング"]},
+              "screening": {"cmudict_sha256": _sha(cmu)},
+              "overlay": {"entry_mode": "katakana_alias", "sha256": _sha(overlay), "entry_count": 1,
+                          "native_words": [], "release_review": {"accepted_readings": {"remains": ["リメインズ"]}},
+                          "research": {"alkana_reading": "supporting evidence only", "source": "fixture"}}}
+    for name in PACK_FILES:
+        (data / name).write_text("fixture notice", encoding="utf-8")
+    for name, content in [("source.csv", source), ("overlay.csv", overlay), ("cmudict.rep", cmu)]:
+        (data / name).write_bytes(content)
+    (data / "review.json").write_text(json.dumps(review), encoding="utf-8")
+    builder.prepare(data, tmp_path / "output", "fixture")
+    root = tmp_path / "output/assets" / PACK_TREE
+    pack = load_dictionary_pack(root)
+    assert pack.entry_count == 8 and (root / "source.csv").read_bytes() == source
+    assert (root / "userdict.csv").read_bytes() == source
+    active, aliases = runtime.full_source_runtime_rows(pack, source)
+    assert [row[0].strip() for row in active] == ["plain"]
+    assert aliases == {"remains": "リメインズ"}
+    meta = _metadata(root)
+    assert {r["reason"] for r in meta["source_review"]["runtime_exclusions"]} == {
+        "cmu_final_phone_risk", "known_bad_reading", "unreviewed_alternative", "native_reading_requires_review"}
+    assert meta["overlay"]["research"] == {"source": "fixture"}
+    assert review["overlay"]["research"]["alkana_reading"]
 
 
 def test_reference_alignment_does_not_hide_changed_inputs():
@@ -207,7 +259,7 @@ def test_native_case_ownership_precedes_optional_case_folding(monkeypatch):
     monkeypatch.setattr(runtime, "_official_base_owner", owner)
     monkeypatch.setattr(runtime, "_official_latin_words", frozenset({"api", "disney", "model"}))
     monkeypatch.setattr(runtime, "_official_katakana_aliases", {"api": "アピ", "disney": "ディズニー"})
-    assert runtime.prepare_japanese_text("API api Disney disney") == "API アピ Disney ディズニー"
+    assert runtime.prepare_japanese_text("API api Disney disney") == "API アピ ディズニー ディズニー"
     assert runtime.prepare_japanese_text("MODEL") == "\u3000model\u3000"
 
 
@@ -229,6 +281,26 @@ def test_full_runtime_is_versioned_and_preserves_unknown_and_personal_inputs(tmp
     (tmp_path / "assets/text/ja/user.csv").write_bytes(csv_bytes([_row("glide", "テスト")]))
     assert runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)["ready"]
     assert runtime.with_latin_readings("glide") == "glide"
+
+
+def test_compiled_full_resource_reuses_normalized_native_view_but_still_validates_sources(tmp_path):
+    root = _write_pack(tmp_path)
+    jtalk = _native(tmp_path)
+    normalized = []
+    def normalize(value):
+        normalized.append(value)
+        return value
+    jtalk.OpenJTalk = lambda _: SimpleNamespace(normalize_for_mecab=normalize,
+                                               run_mecab_detailed=lambda value: (None, []))
+    first = runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)
+    assert first["ready"] and normalized
+    normalized.clear()
+    second = runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)
+    assert second["identity"] == first["identity"] and not normalized
+    assert runtime.with_latin_word_boundaries("follower") == "\u3000follower\u3000"
+    (root / "source.csv").write_bytes((root / "source.csv").read_bytes() + b"changed")
+    failed = runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)
+    assert failed["state"] == "invalid" and not failed["ready"]
 
 
 def test_resource_lifecycle_update_rollback_and_failed_update(tmp_path, monkeypatch):
