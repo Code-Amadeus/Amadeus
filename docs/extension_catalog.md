@@ -195,7 +195,8 @@ built renderer, preload and IPC handlers. An explicit `--extension-fixture` inst
 real reference wheels in a fresh synthetic legacy settings profile. Its private main
 inspector rewrites only fixture catalog/artifact requests to a loopback HTTPS server
 and automatically confirms extension access dialogs. The certificate exception stays
-inside that process's download session. There is no production test URL/IPC switch,
+inside that process's download session. Pi registers against a synthetic loopback-only
+model configuration for binding tests; the probe sends no model request. There is no production test URL/IPC switch,
 OS trust change or copied developer profile. These results do not establish independent
 review or manual native-dialog acceptance. See the [release checklist](verification/extensions/store-v1.md).
 

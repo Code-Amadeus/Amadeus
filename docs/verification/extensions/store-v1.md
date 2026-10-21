@@ -23,7 +23,8 @@ No public index, release, repository permission or main branch was changed.
 
 The shipping-shell journey uses normal backend authentication and production
 renderer/preload/IPC. It exercises resource install, Appearance selection, mirror
-update, offline management, process install and real Runner calls. The desktop
+update, offline management, process install, real Runner calls and Notes save/read/list through the native MCP client.
+The Pi binding is selected in the UI; no model-driven Agent turn is claimed. The desktop
 package remains a frontend with an explicitly supplied Python backend/runtime;
 this does not claim a self-contained installer or a clean-machine certification.
 A synthetic pre-catalog settings file demonstrates additive settings compatibility,
