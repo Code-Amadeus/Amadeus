@@ -34,6 +34,7 @@ def main():
         help="Run the real store UI journey with both reference versions",
     )
     parser.add_argument("--prepare-only", action="store_true", help="Prepare an isolated TLS/catalog fixture without starting Electron")
+    parser.add_argument("--failure-fixture", action="store_true", help="Add a deliberately failing runtime version for shipping-shell qualification")
     args = parser.parse_args()
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -117,9 +118,13 @@ def main():
         security=[],
     )
     policy().validate_index(index)
-    (base / "fixture.json").write_text(
-        json.dumps(dict(index=index, wheels=wheels)), encoding="utf-8"
-    )
+    fixture = dict(index=index, wheels=wheels)
+    if args.failure_fixture:
+        from tools.probes.extension_release_failures import prepare_startup_failure
+        failure, wheel = prepare_startup_failure(base, entries[0])
+        fixture["startup_failure"] = failure
+        wheels[wheel.name] = str(wheel)
+    (base / "fixture.json").write_text(json.dumps(fixture), encoding="utf-8")
     if args.prepare_only:
         print(json.dumps({"fixture": str(base)}))
         return 0

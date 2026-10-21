@@ -141,7 +141,7 @@ jobs:
         run: |
           $authorRun = Get-ChildItem -LiteralPath build/extension-author-journey -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (!$authorRun) { throw 'Author journey wheel directory is missing' }
-          $prepared = uv run --locked --no-sync python -X utf8 tools/probes/extension_catalog_journey.py --execute --store-ui --prepare-only --wheels (Join-Path $authorRun.FullName 'wheels')
+          $prepared = uv run --locked --no-sync python -X utf8 tools/probes/extension_catalog_journey.py --execute --store-ui --prepare-only --failure-fixture --wheels (Join-Path $authorRun.FullName 'wheels')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $fixture = ($prepared | ConvertFrom-Json).fixture
           if (!$fixture) { throw 'Release fixture was not prepared' }
@@ -151,7 +151,7 @@ jobs:
         run: >-
           uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
           --report-dir build\electron-smoke
-          --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}"
+          --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}" --extension-failures
 
       - uses: actions/setup-dotnet@v5
         with:
@@ -168,7 +168,7 @@ jobs:
           uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
           --packaged-executable electron\build\win-unpacked\amadeus-desktop.exe
           --report-dir build\electron-packaged-smoke
-          --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}"
+          --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}" --extension-failures
 
       - name: Upload Electron smoke diagnostics
         if: failure()

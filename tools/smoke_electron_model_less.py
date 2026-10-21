@@ -113,6 +113,49 @@ def _frontend_build_identity(directory: Path) -> dict[str, Any]:
     return {"kind": "packaged-asar" if directory.is_file() else "source-dist", "sha256": digest.hexdigest(), "file_count": len(files)}
 
 
+def launcher_code_identity(root: Path) -> dict[str, Any]:
+    """Identify a Git checkout or verify the shipped source-manifest file set.
+
+    A ZIP nested inside another checkout must not inherit that parent's Git HEAD.
+    Manifest identity describes the release inputs; installed dependencies and built
+    frontend bytes have their own lock/build evidence. It is not a signature.
+    """
+    from tools.semantic_journey_evidence import code_identity
+
+    manifest_path = root / "SOURCE_MANIFEST.json"
+    if (root / ".git").exists() or not manifest_path.is_file():
+        return code_identity(root)
+    raw = manifest_path.read_bytes()
+    manifest = json.loads(raw)
+    records = manifest.get("selected_files")
+    commit = manifest.get("commit", "")
+    if (manifest.get("schema") != "amadeus.source-release-manifest.v1"
+            or manifest.get("release_ready") is not True
+            or not re.fullmatch(r"[a-f0-9]{40}", commit)
+            or not isinstance(records, list) or not records
+            or manifest.get("selected_file_count") != len(records)):
+        raise ValueError("Invalid source release identity")
+    seen: set[str] = set()
+    for record in records:
+        name = record.get("path", "")
+        if (not isinstance(name, str) or not name or "\\" in name
+                or ":" in name or name.startswith("/")
+                or any(part in {"", ".", ".."} for part in name.split("/"))
+                or name in seen):
+            raise ValueError("Invalid source release file path")
+        seen.add(name)
+        file = root / name
+        if not file.resolve().is_relative_to(root.resolve()) or not file.is_file():
+            raise ValueError("Source release input is missing or outside the archive")
+        data = file.read_bytes()
+        if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
+            raise ValueError("Source release input differs from its manifest: " + name)
+    digest = hashlib.sha256(raw).hexdigest()
+    return {"commit_sha": commit, "workspace_dirty": False,
+            "workspace_fingerprint": digest, "identity_kind": "source-release-manifest",
+            "verified_source_files": len(records)}
+
+
 async def _press_native_theme_recovery(process_id: int, inspector_port: int) -> None:
     """Exercise the actual Electron input hook in this isolated owned process."""
     import websockets
@@ -334,13 +377,14 @@ async def _wait_clean_exit(
 
 
 async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
+    if args.extension_failures and not args.extension_fixture:
+        raise ValueError("--extension-failures requires --extension-fixture")
     from tools.e2e_live_product_journey import (
         BACKEND_PORT,
         ElectronProduct,
         WsProbe,
         _free_port,
         _port_is_open,
-        code_identity,
     )
 
     class ModelLessElectronProduct(ElectronProduct):
@@ -373,7 +417,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         debug_port=int(args.debug_port or _free_port()),
         main_debug_port=_free_port(),
         no_tts=True,
-        identity=code_identity(ROOT),
+        identity=launcher_code_identity(ROOT),
         packaged_executable=args.packaged_executable.resolve() if args.packaged_executable else None,
     )
     report: dict[str, Any] = {
@@ -447,6 +491,9 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         if args.extension_fixture:
             from tools.probes.extension_release_shell import exercise
             report["extensions"] = await exercise(product, args.extension_fixture.resolve())
+            if args.extension_failures:
+                from tools.probes.extension_release_failures import exercise_failures
+                report["extension_failures"] = await exercise_failures(product, args.extension_fixture.resolve())
         if product.app_page_errors or product.app_console_errors:
             raise RuntimeError(
                 "Electron renderer reported errors: "
@@ -488,6 +535,7 @@ def _parser() -> argparse.ArgumentParser:
         default=str(RUNTIME / "electron_model_less_smoke"),
     )
     parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
+    parser.add_argument("--extension-failures", action="store_true", help="Run shipping IPC failure and cross-process corruption recovery cases; requires --extension-fixture")
     parser.add_argument("--extension-fixture", type=Path, help="Explicitly execute reference wheels from a prepared isolated catalog fixture")
     parser.add_argument("--debug-port", type=int, default=0)
     parser.add_argument("--startup-timeout", type=float, default=120.0)

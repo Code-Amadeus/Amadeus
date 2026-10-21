@@ -86,3 +86,33 @@ def test_recovery_wait_bounds_an_ipc_call_that_never_returns():
             return await asyncio.Future()
     with pytest.raises(TimeoutError):
         asyncio.run(_wait_desktop_value(Page(), 'AMADEUS_UI_THEME', 'classic', timeout=.02))
+
+
+
+def test_source_archive_identity_checks_actual_files_without_parent_git(tmp_path):
+    import hashlib
+    import json
+    from tools.smoke_electron_model_less import launcher_code_identity
+
+    source = tmp_path / "unpacked"
+    source.mkdir()
+    (source / "main.py").write_bytes(b"print('release')")
+    manifest = {"schema":"amadeus.source-release-manifest.v1", "release_ready":True,
+        "commit":"a"*40, "selected_file_count":1, "selected_files":[{
+            "path":"main.py", "size":len(b"print('release')"),
+            "sha256":hashlib.sha256(b"print('release')").hexdigest()}]}
+    (source / "SOURCE_MANIFEST.json").write_text(json.dumps(manifest))
+    identity = launcher_code_identity(source)
+    assert identity["commit_sha"] == "a"*40
+    assert identity["identity_kind"] == "source-release-manifest"
+    assert not identity["workspace_dirty"]
+    (source / "main.py").write_bytes(b"print('changed')")
+    with pytest.raises(ValueError, match="differs"):
+        launcher_code_identity(source)
+    (source / "main.py").unlink()
+    with pytest.raises(ValueError, match="missing"):
+        launcher_code_identity(source)
+    manifest["selected_files"][0]["path"] = "../outside.py"
+    (source / "SOURCE_MANIFEST.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="file path"):
+        launcher_code_identity(source)
