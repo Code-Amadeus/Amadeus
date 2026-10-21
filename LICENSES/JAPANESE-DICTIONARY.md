@@ -36,7 +36,30 @@ AGPL-3.0 license. The pack includes that complete text as
 `Amadeus-AGPL-3.0.txt`, in addition to the upstream notices. Do not remove
 upstream attribution or relabel the upstream work as solely Amadeus-authored.
 
-## Local derivative and distribution boundary
+## Full-source format 2
+
+The independently versioned format-2 candidate keeps the complete original
+134,201-row source and a complete reconstructed master. Exact before/after
+records identify reviewed reading corrections; unchanged original rows remain
+explicitly unverified. Runtime deferrals do not delete their source records.
+The older admission discussion below applies to historical format-1 subsets,
+which remain supported for existing installations and rollback.
+
+The accumulated reviewed supplement and later corrections also use source
+material from UniDic 2025.12 and Alkana, and native lexical features from the
+pinned OpenJTalk dictionary. The independent data workspace records the source
+identities and evidence. Its resource NOTICE includes the UniDic BSD and Alkana
+GPL-2.0 notices and original attribution; OpenJTalk's complete COPYING is a
+separate required member. These sources are not relabelled as solely Amadeus
+work. Resource/data-source archives are prepared separately from application
+source; neither archive is published by the build tools.
+
+Current candidate validation and publication limitations are recorded in
+`docs/evidence/japanese_resource_acceptance_2026-10-21.json`. A checked hash or
+successful build establishes data identity and structure, not complete lexical,
+accent, perceptual, or redistribution acceptance.
+
+## Historical format-1 derivative and distribution boundary
 
 `tools/prepare_japanese_dictionary.py` accepts only the pinned source contents
 (after newline normalization), then applies the separately tracked
@@ -79,9 +102,7 @@ The production gate checks every retained word in three contexts (381), all
 129 row memberships, 303 common English controls (190 unlisted fallbacks), 52
 baseline controls, 32 extra units and 814 base-owned words in three contexts.
 These checks do not establish exhaustive lexical accuracy. Independent review
-and human listening acceptance remain outstanding. The checked subset is an
-optional resource attached to the compatible application Release, starting at
-`v0.17.1-alpha.0`; this does not certify accent or perceptual quality.
+and human listening acceptance remain outstanding; this candidate is local.
 
 The upstream default branch was rechecked on 2026-10-20 at
 `b4570b876f5c086819ba84e3215472733c6a7b70`: the CSV still has the same Git blob

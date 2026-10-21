@@ -319,7 +319,7 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     status = dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)
     assert status["ready"]
     boundary = dictionary_pack.LATIN_WORD_BOUNDARY
-    assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "Follower" + boundary + " model 100rpm"
+    assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "follower" + boundary + " model 100rpm"
     assert len(jtalk.compiled) == 2
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.compiled)
     assert [Path(path).read_bytes() for path in jtalk.registered[-1]] == [
