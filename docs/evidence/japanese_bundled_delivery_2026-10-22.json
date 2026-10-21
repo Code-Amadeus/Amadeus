@@ -1,0 +1,102 @@
+{
+  "implementation_commit": "92d45b8a676689dbda6d01eb8a4575a6b7158ab4",
+  "resource": {
+    "version": "2026.10.22.1-rc2",
+    "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+    "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46"
+  },
+  "application_archive": {
+    "sha256": "c1761b41baa005cc96c8556c1fe1511ffa845a70cc24bd944ee35418fbcd971c",
+    "bytes": 27620745
+  },
+  "cases": {
+    "fresh-native": {
+      "source": "bundled",
+      "version": "2026.10.22.1-rc2",
+      "source_rows": 134201,
+      "case_matches": 4
+    },
+    "before-app-upgrade": {
+      "source": "bundled",
+      "version": "2026.10.20.3",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "after-app-upgrade": {
+      "source": "bundled",
+      "version": "2026.10.22.1-rc2",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "independent-install": {
+      "source": "installed",
+      "version": "2026.10.20.3",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "independent-update": {
+      "source": "installed",
+      "version": "2026.10.22.1-rc2",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "independent-rollback": {
+      "source": "installed",
+      "version": "2026.10.20.3",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "rollback-after-app-upgrade": {
+      "source": "installed",
+      "version": "2026.10.20.3",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "return-to-bundled": {
+      "source": "bundled",
+      "version": "2026.10.22.1-rc2",
+      "personal_reading": "メヌー",
+      "personal_reading_match": true
+    },
+    "electron-native": {
+      "source": "bundled",
+      "version": "2026.10.22.1-rc2",
+      "source_rows": 134201,
+      "case_matches": 4
+    }
+  },
+  "bundled_member_count": 9,
+  "personal_and_settings_preserved": true,
+  "live_install_unchanged": true,
+  "electron_resource_members_verified": 9,
+  "audio_rendered": false,
+  "merged": false,
+  "published": false,
+  "scope": "Bundled application delivery; resource bytes and pronunciation rules are unchanged from the accepted rc2.",
+  "tests": {
+    "python_combined": {
+      "passed": 166
+    },
+    "final_archive_targeted": {
+      "passed": 19
+    },
+    "electron_unit": {
+      "passed": 537,
+      "failed": 1,
+      "limitation": "Existing localhost:5173 listener caused EADDRINUSE in the Vite development-server integration test; it was left running."
+    },
+    "electron_build": "passed",
+    "electron_full_unpacked_package": "passed",
+    "electron_code_only_unpacked_package": "passed",
+    "core_plus_pinned_japanese_frontend": "passed",
+    "extracted_source_electron_staging": "passed"
+  },
+  "limitations": [
+    "Windows artifact lifecycle qualification; native contract CI is configured on Windows, Linux and macOS.",
+    "Actual native Japanese frontend output was checked, not newly synthesized audio; dictionary bytes are unchanged from prior listening acceptance.",
+    "Source extraction and Electron resource handoff were verified. This is not a claim that the Electron installer independently installs the Python environment.",
+    "Existing independent dictionary installs remain selected across application upgrades, including older format-1 versions.",
+    "The resource download URL remains unset; full cloud release packaging requires an approved HTTPS input matching the committed hash.",
+    "No application version bump, release tag, merge or publication is authorized by this receipt. Wait for the console UI/UX work and combined acceptance."
+  ]
+}

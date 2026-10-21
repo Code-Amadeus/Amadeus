@@ -12,7 +12,7 @@ supplement contains 4,539 rows / 4,537 words; it supplements the full table.
 Preservation and automated screening do not establish pronunciation accuracy.
 
 Release 0.17.1 was withdrawn. Candidate **2026.10.22.1-rc2** remains unpublished
-pending independent review and maintainer acceptance. See the
+pending combined application-release acceptance. See the
 [current follow-up](evidence/japanese_resource_personal_case_2026-10-22.json).
 The [2026-10-21 receipt](evidence/japanese_resource_acceptance_2026-10-21.json)
 is historical and superseded.
@@ -245,3 +245,9 @@ resource identity and menu/game/Disney/中立派 through the production text fro
 This is loading/regression evidence, not a new acoustic or full-vocabulary accuracy
 claim. CI also exercises synthetic fresh-install, default-upgrade, independent
 update/rollback, personal preservation and packaging rejection contracts.
+
+The [bundled-delivery receipt](evidence/japanese_bundled_delivery_2026-10-22.json)
+records actual full-resource extraction, upgrade, independent update/rollback,
+personal-data preservation and Electron resource loading. It binds the tested
+implementation commit and archive hash; later documentation-only commits do not
+change the qualified resource bytes. No new application release is approved.
