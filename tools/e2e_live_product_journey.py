@@ -1173,11 +1173,14 @@ class ElectronProduct:
         state = self.run_root / "state"
         for name in ("sessions", "desktop", "scratch", "worktrees"):
             (state / name).mkdir(parents=True, exist_ok=True)
-        electron = self.packaged_executable or (
-            ELECTRON_ROOT / "node_modules" / "electron" / "dist" / "electron.exe"
-            if os.name == "nt"
-            else ELECTRON_ROOT / "node_modules" / ".bin" / "electron"
-        )
+        electron = self.packaged_executable
+        if electron is None:
+            # Electron's installer records the native executable for this OS,
+            # including the macOS app bundle. The .bin CLI spawns a child, so
+            # its PID cannot identify the main inspector or its owned process.
+            package = ELECTRON_ROOT / "node_modules" / "electron"
+            executable = (package / "path.txt").read_text(encoding="utf-8").strip()
+            electron = package / "dist" / executable
         if not electron.is_file():
             raise FileNotFoundError(f"Electron executable is missing: {electron}")
         self.log_handle = self.log_path.open("w", encoding="utf-8", newline="\n")
