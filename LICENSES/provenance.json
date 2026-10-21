@@ -501,7 +501,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "Inference/CLI Python sources are byte-identical to the pinned upstream sdist. Only pyproject.toml moves gradio from mandatory dependencies to demo extra; source inventory and removal condition are documented adjacent to the package."
+      "notes": "Inference/model/CLI implementation files are byte-identical to the pinned upstream sdist. pyproject.toml moves gradio to a demo extra; three package initializers add explicit re-export aliases with identical compiled bytecode. Reversible patch/hash checks and removal conditions are documented adjacent to the package."
     }
   ]
 }

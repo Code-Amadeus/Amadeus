@@ -4,6 +4,7 @@ import builtins
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -55,8 +56,17 @@ def test_qwen_inference_sources_match_upstream_and_demo_is_optional(tmp_path):
     source = ROOT / 'vendor/qwen-asr'
     expected = json.loads((source / 'upstream-files.json').read_text())
     for name, digest in expected.items():
-        if name != 'pyproject.toml':
-            assert hashlib.sha256((source / name).read_bytes()).hexdigest() == digest, name
+        if name == 'pyproject.toml':
+            continue  # Its distribution dependency boundary is asserted below.
+        payload = (source / name).read_bytes()
+        if name in {'qwen_asr/__init__.py', 'qwen_asr/core/transformers_backend/__init__.py',
+                    'qwen_asr/core/vllm_backend/__init__.py'}:
+            original, count = re.subn(rb'(?m)^(from [\w.]+ import ([A-Za-z_]\w*)) as \2$', rb'\1', payload)
+            assert count == (1 if '/vllm_backend/' in name else 3)
+            before, after = compile(original, name, 'exec'), compile(payload, name, 'exec')
+            assert (before.co_code, before.co_names, before.co_consts) == (after.co_code, after.co_names, after.co_consts)
+            payload = original
+        assert hashlib.sha256(payload).hexdigest() == digest, name
     project = tomllib.loads((source / 'pyproject.toml').read_text())['project']
     assert 'gradio' not in {Requirement(item).name for item in project['dependencies']}
     assert {Requirement(item).name for item in project['optional-dependencies']['demo']} == {'gradio'}
