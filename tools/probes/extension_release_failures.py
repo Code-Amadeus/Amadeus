@@ -150,7 +150,7 @@ async def exercise_failures(product, fixture):
         pending = asyncio.create_task(install(theme, "0.1.0"))
         for _ in range(150):
             status = await catalog({"action": "status"})
-            if status.get("progress", {}).get("received", 0) > 0:
+            if (status.get("progress") or {}).get("received", 0) > 0:
                 break
             await asyncio.sleep(0.1)
         else:
