@@ -50,6 +50,5 @@ def configure_japanese_reading(jtalk, *, project_root: Path = PROJECT_ROOT, enab
 
 
 def run_frontend(jtalk, text: str) -> list[dict]:
-    if _runtime_status["ready"]:
-        return jtalk.run_frontend(text, use_tsqyomi=True)
-    return jtalk.run_frontend(text)
+    from tts.japanese_dictionary import run_lexical_frontend
+    return run_lexical_frontend(jtalk, text, use_tsqyomi=_runtime_status["ready"])

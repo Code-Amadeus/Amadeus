@@ -100,7 +100,7 @@ def test_boundaries_require_a_complete_registered_token_and_preserve_numeric_uni
     text = "model icon production 100rpm 100L 100人"
     assert with_latin_word_boundaries(text, words) == text
     boundary = LATIN_WORD_BOUNDARY
-    assert with_latin_word_boundaries("MODEとdon't", words) == boundary + "MODE" + boundary + "と" + boundary + "don't" + boundary
+    assert with_latin_word_boundaries("MODEとdon't", words) == boundary + "mode" + boundary + "と" + boundary + "don't" + boundary
 
 
 def test_native_boundaries_prevent_prefix_and_suffix_intrusion_without_repricing(tmp_path: Path):

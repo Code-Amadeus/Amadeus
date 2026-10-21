@@ -301,6 +301,8 @@ def _fake_jtalk(root: Path):
         Path(target).write_bytes(b"compiled " + Path(source).read_bytes())
     return SimpleNamespace(
         OPEN_JTALK_DICT_DIR=str(base).encode(), __version__="test-1",
+        OpenJTalk=lambda _: SimpleNamespace(normalize_for_mecab=lambda value: value,
+                                            run_mecab_detailed=lambda value: (None, [])),
         mecab_dict_index=compile_csv, unset_user_dict=lambda: registered.append([]),
         update_global_jtalk_with_user_dict=lambda paths: registered.append(paths),
         compiled=compiled, registered=registered,
@@ -319,11 +321,13 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     status = dictionary.configure_japanese_dictionary(jtalk, project_root=root, enabled=True)
     assert status["ready"]
     boundary = dictionary_pack.LATIN_WORD_BOUNDARY
-    assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "Follower" + boundary + " model 100rpm"
+    assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "follower" + boundary + " model 100rpm"
     assert len(jtalk.compiled) == 2
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.compiled)
-    assert [Path(path).read_bytes() for path in jtalk.registered[-1]] == [
-        b"compiled " + (pack_root / "userdict.csv").read_bytes(), b"compiled " + personal.read_bytes(),
+    assert [list(dictionary_pack.dictionary_rows(Path(path).read_bytes().removeprefix(b"compiled ")))
+            for path in jtalk.registered[-1]] == [
+        list(dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())),
+        list(dictionary_pack.dictionary_rows(personal.read_bytes())),
     ]
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.registered[-1])
     assert legacy.read_text(encoding="utf-8") == FOLLOWER
