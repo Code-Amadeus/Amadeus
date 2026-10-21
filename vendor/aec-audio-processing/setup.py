@@ -20,7 +20,7 @@ def validate_swig_bindings(source_dir):
     """Reject bindings left at different generations by an earlier install."""
     source_dir = Path(source_dir)
     patterns = {
-        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9a-fA-F]{6})\b',
+        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9]{6})\b',
         'audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
         'webrtc_audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
     }
@@ -34,7 +34,8 @@ def validate_swig_bindings(source_dir):
         if match is None:
             versions[name] = None
         elif name.endswith('.cpp'):
-            versions[name] = tuple(int(match[1][index:index + 2], 16) for index in (0, 2, 4))
+            # SWIG uses decimal digit pairs: 0x010311 represents 1.3.11.
+            versions[name] = tuple(int(match[1][index:index + 2], 10) for index in (0, 2, 4))
         else:
             versions[name] = tuple(map(int, match.groups()))
     if None in versions.values() or len(set(versions.values())) != 1:

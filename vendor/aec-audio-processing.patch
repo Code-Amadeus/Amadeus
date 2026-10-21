@@ -4,14 +4,14 @@
 +import json
 +import re
 +from pathlib import Path
-@@ -13,0 +17,35 @@
+@@ -13,0 +17,36 @@
 +
 +
 +def validate_swig_bindings(source_dir):
 +    """Reject bindings left at different generations by an earlier install."""
 +    source_dir = Path(source_dir)
 +    patterns = {
-+        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9a-fA-F]{6})\b',
++        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9]{6})\b',
 +        'audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
 +        'webrtc_audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
 +    }
@@ -25,7 +25,8 @@
 +        if match is None:
 +            versions[name] = None
 +        elif name.endswith('.cpp'):
-+            versions[name] = tuple(int(match[1][index:index + 2], 16) for index in (0, 2, 4))
++            # SWIG uses decimal digit pairs: 0x010311 represents 1.3.11.
++            versions[name] = tuple(int(match[1][index:index + 2], 10) for index in (0, 2, 4))
 +        else:
 +            versions[name] = tuple(map(int, match.groups()))
 +    if None in versions.values() or len(set(versions.values())) != 1:
@@ -40,9 +41,9 @@
 +            'For a source archive, unpack a fresh copy instead.'
 +        )
 +    return versions['audio_processing_wrap.cpp']
-@@ -67,0 +106 @@
+@@ -67,0 +107 @@
 +        '--force-fallback-for=abseil-cpp',
-@@ -71,0 +111,11 @@
+@@ -71,0 +112,11 @@
 +
 +    # Verify the actual resolution, not just the requested Meson option.
 +    info_dir = os.path.join(build_dir, 'meson-info')
@@ -54,9 +55,9 @@
 +            or subprojects.get('abseil-cpp') != '20240722.0'):
 +        raise RuntimeError('AEC build did not select bundled Abseil 20240722.0')
 +    print('AEC build: forced bundled Abseil 20240722.0', flush=True)
-@@ -92,0 +143 @@
+@@ -92,0 +144 @@
 +        validate_swig_bindings(Path(__file__).resolve().parent / 'src')
-@@ -157,9 +207,0 @@
+@@ -157,9 +208,0 @@
 -]
 -
 -swig_opts = [
@@ -66,14 +67,14 @@
 -    f'-I{os.path.join(webrtc_dir, "webrtc")}',
 -    f'-I{abseil_dir}',
 -    f'-I{install_include_dir}',
-@@ -203 +245,3 @@
+@@ -203 +246,3 @@
 -        sources=['src/audio_processing.i', 'src/audio_processing_module.cpp'],
 +        # Keep the committed SWIG 4.3.1 wrapper and Python proxies together.
 +        # Regeneration is an explicit source-maintenance task, not installation.
 +        sources=['src/audio_processing_wrap.cpp', 'src/audio_processing_module.cpp'],
-@@ -205 +248,0 @@
+@@ -205 +249,0 @@
 -        swig_opts=swig_opts,
-@@ -218 +261 @@
+@@ -218 +262 @@
 -)
 \ No newline at end of file
 +)

@@ -15,8 +15,11 @@ restore the committed `vendor/aec-audio-processing/src` bindings, and remove
 that obsolete install directory after checking its contents. Mixed wrapper/proxy
 versions now fail before native build work; no files are restored or deleted
 automatically. See the [Linux upgrade steps](install_profiles.md#upgrading-an-existing-linux-voice-checkout).
-Arch with system Abseil 20260817 still requires the reporter's cold-build
-acceptance in #247.
+The reporter completed the original Arch/system-Abseil-20260817 acceptance on
+`94b584c`, including a separate clean-source/cache/environment retest. See the
+[Arch acceptance report](https://github.com/Code-Amadeus/Amadeus/issues/247#issuecomment-6310492090)
+for the tested environment and scope; this does not establish all-distribution
+or audio-device qualification.
 
 ## Application and dictionary in one Release
 

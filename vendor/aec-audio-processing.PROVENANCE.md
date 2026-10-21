@@ -59,5 +59,7 @@ is removed after each hook; CI no longer expects introspection under the vendor
 source. This remains build/binding qualification, not acoustic-quality testing.
 The qualifier requires Python 3.12 and selects that same interpreter for the
 locked install, both distribution builds, and the isolated wheel environment.
+It removes inherited `RUST_LOG` from its child-process environment so uv's
+verbose build evidence remains visible; the caller's environment is unchanged.
 Existing checkouts should follow the
 [Linux upgrade instructions](../docs/install_profiles.md#upgrading-an-existing-linux-voice-checkout).

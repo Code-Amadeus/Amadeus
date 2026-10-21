@@ -134,6 +134,9 @@ jobs:
       - name: Qualify cold locked Voice install and standalone AEC wheel
         # Builds an sdist/wheel as well as the locked install, verifies actual
         # Meson resolution, and detects ignored build/install source pollution.
+        env:
+          # Regression: the qualifier must prevent an inherited uv log filter.
+          RUST_LOG: warn
         run: python tools/verify_aec_source_build.py
 
       - name: Verify environment (voice profile)

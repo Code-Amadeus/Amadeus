@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import runpy
 import shutil
+import sys
 import tarfile
 from types import SimpleNamespace
 import zipfile
@@ -133,7 +135,11 @@ def test_compiler_uses_the_committed_wrapper_and_matching_public_proxies(monkeyp
     assert public == generated
 
 
-@pytest.mark.parametrize("versions", [(0x040301, "4.3.1", "4.3.1"), (0x040501, "4.5.1", "4.5.1")])
+@pytest.mark.parametrize("versions", [
+    (0x040301, "4.3.1", "4.3.1"), (0x040501, "4.5.1", "4.5.1"),
+    (0x040310, "4.3.10", "4.3.10"), (0x010311, "1.3.11", "1.3.11"),
+    (0x041001, "4.10.1", "4.10.1"),
+])
 def test_binding_guard_accepts_matching_generations_with_either_line_ending(tmp_path, monkeypatch, versions):
     namespace, _ = load_setup(monkeypatch)
     (tmp_path / "audio_processing_wrap.cpp").write_bytes(
@@ -174,6 +180,30 @@ def test_qualification_rejects_wrong_python_before_any_work(monkeypatch, version
     monkeypatch.setattr(verifier, "source_snapshot", lambda path: pytest.fail("work started"))
     with pytest.raises(SystemExit, match="requires Python 3.12"):
         verifier.main()
+
+
+def test_qualification_removes_inherited_rust_log_only_from_child_environment(tmp_path, monkeypatch):
+    from tools import verify_aec_source_build as verifier
+
+    monkeypatch.setenv("RUST_LOG", "warn")
+    monkeypatch.setenv("UV_CACHE_DIR", "synthetic-cache")
+    script = (
+        "import os; assert 'RUST_LOG' not in os.environ; "
+        "assert os.environ['UV_CACHE_DIR'] == 'synthetic-cache'; "
+        f"print({verifier.ABSEIL_EVIDENCE!r})"
+    )
+    verifier.run([sys.executable, "-c", script], cwd=tmp_path, require_abseil=True)
+    assert os.environ["RUST_LOG"] == "warn"
+    assert os.environ["UV_CACHE_DIR"] == "synthetic-cache"
+
+
+def test_qualification_still_rejects_missing_build_evidence(tmp_path, monkeypatch):
+    from tools import verify_aec_source_build as verifier
+
+    monkeypatch.setenv("RUST_LOG", "warn")
+    with pytest.raises(RuntimeError, match="Missing actual Meson resolution evidence"):
+        verifier.run([sys.executable, "-c", "print('no build occurred')"],
+                     cwd=tmp_path, require_abseil=True)
 
 
 def test_qualification_pins_both_builds_and_environments_to_the_running_python(tmp_path, monkeypatch):

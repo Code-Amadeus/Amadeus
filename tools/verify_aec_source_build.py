@@ -36,8 +36,12 @@ def assert_source_unchanged(before: dict[str, str], source: Path) -> None:
 
 
 def run(command: list[str], *, cwd: Path, require_abseil: bool = False) -> None:
+    environment = os.environ.copy()
+    # An inherited Rust filter can suppress uv's verbose build evidence.
+    environment.pop("RUST_LOG", None)
     completed = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+                               stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
+                               env=environment)
     if completed.returncode:
         print(completed.stdout)
         raise RuntimeError(f"{command[0]} {command[1]} failed ({completed.returncode})")
