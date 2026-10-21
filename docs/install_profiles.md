@@ -1,8 +1,17 @@
 # Installation profiles and environment migration
 
 The project uses `pyproject.toml` for direct dependencies and `uv.lock` for
-resolved packages and builds. CI uses uv 0.12.8 and Python 3.12.10. The default
+resolved packages and builds. CI uses uv 0.12.8; the macOS voice/desktop job uses
+uv-managed Python 3.12.14, while other installation jobs use Python 3.12.10. The default
 desktop interpreter is the checkout's `.venv`; launchers do not install packages.
+
+The native VN portrait additionally needs a working Tk/ImageTk bridge. Run
+`uv run --locked --no-sync python tools/verify_vn_portrait_environment.py` in a
+graphical desktop session to check it with a generated RGBA image. This check is
+separate from the headless package/profile verifier and needs no character pack.
+For older macOS uv environments, follow the [interpreter migration
+instructions](../MACOS_INSTALL.md#vn-portrait-tk); upgrading Pillow or uv alone does
+not replace the interpreter underneath an existing `.venv`.
 
 ## Tier and build selection
 

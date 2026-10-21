@@ -237,24 +237,45 @@ context 和 GPU offload 另行评估内存。
 ### 基础环境（T1/T2，Windows / macOS）
 
 安装 uv（Windows：`winget install astral-sh.uv`；macOS：`brew install uv`），
-然后克隆并按梯级安装——两个平台的命令完全一致：
+macOS 安装 T2 前还需 `brew install portaudio`，供 PyAudio 从源码编译。先克隆仓库：
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
+```
 
+按平台创建环境。**Windows**：
+
+```bash
 uv venv .venv --python 3.12
+```
+
+**macOS** 使用已通过原生 VN 立绘检查的 uv-managed 构建。若已有 `.venv`，先按
+[解释器迁移说明](MACOS_INSTALL.md#vn-portrait-tk) 处理旧环境：
+
+```bash
+uv python install 3.12.14
+uv venv .venv --python 3.12.14 --managed-python
+```
+
+随后在任一平台选择梯级：
+
+```bash
 uv sync --locked                              # T1 core
 uv sync --locked --extra voice                # T2 voice（可选）
 ```
 
-macOS 上 PyAudio（T2 语音采集）从源码编译，需要先 `brew install portaudio`。
 覆盖全部功能及其外部准备（如 Windows 的 Lively Wallpaper）的分步指南见
 [Windows 安装指南](WINDOWS_INSTALL.md)、[macOS 安装指南](MACOS_INSTALL.md)（含国内镜像配置）与
 [Linux 安装指南](LINUX_INSTALL.md)。
 
 venv 固定命名为 `.venv`：Electron 启动器会自动发现它（Windows
 `Scripts\python.exe`，macOS `bin/python3`），无需手动设置 `AMADEUS_PYTHON`。
+
+macOS 启用原生 VN 立绘时，在图形桌面会话中额外运行
+`uv run --locked --no-sync python tools/verify_vn_portrait_environment.py`。
+旧版 standalone Python 构建可能通过包检查，却无法完成 Tk/ImageTk 图像传输。
+headless 使用无需执行此额外检查。
 
 Electron 前端（全平台）：
 
