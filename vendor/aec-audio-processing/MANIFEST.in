@@ -3,6 +3,7 @@ include LICENSE
 include setup.py
 include setup.cfg
 include pyproject.toml
+include build_backend.py
 
 # Include all source files
 recursive-include src *.py *.cpp *.h *.i

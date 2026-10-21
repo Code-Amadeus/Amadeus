@@ -385,7 +385,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "Linux-only path source. The sole upstream source patch forces bundled Abseil in Meson setup. Original nested notices are retained and copied into wheel package data. See the adjacent provenance and patch files for verification and removal conditions."
+      "notes": "Linux-only path source. The build-only patch forces and verifies bundled Abseil, isolates setuptools/Meson writes in a disposable source copy, checks wrapper/proxy version consistency before native work, and compiles the committed SWIG bindings. Original generated bindings, runtime sources and nested notices are retained. See the adjacent provenance and complete patch for verification and removal conditions."
     },
     {
       "id": "bokuweb-zstd-wasm",

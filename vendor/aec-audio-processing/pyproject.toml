@@ -2,12 +2,12 @@
 requires = [
     "setuptools>=42",
     "wheel",
-    "swig>=4.0.0",
     "meson>=0.63.0",
     "ninja",
     "build",
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "build_backend"
+backend-path = ["."]
 
 [project]
 name = "aec-audio-processing"
