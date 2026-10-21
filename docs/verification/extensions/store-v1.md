@@ -47,7 +47,7 @@ this does not claim a self-contained installer or a clean-machine certification.
 A synthetic pre-catalog settings file demonstrates additive settings compatibility,
 not restoration of arbitrary old user credentials or profiles.
 
-Dependency maintenance is now tracked separately in [draft PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252), checked at `80be1ebf` on 2026-10-22. Its CI was still running at that snapshot; it contains no store features and does not close the experimental store branch CI or publication gates.
+Dependency maintenance is now tracked separately in [draft PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252), checked at `80be1ebf` on 2026-10-22. A fresh read-only check on 2026-10-22 confirmed all 18 checks COMPLETED / SUCCESS at the same head. It remains OPEN / draft, contains no store features, and does not close the experimental store branch CI or publication gates.
 
 ## Required before a public technical preview
 

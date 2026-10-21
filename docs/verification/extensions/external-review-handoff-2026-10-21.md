@@ -24,9 +24,11 @@
 
 ## 独立依赖 PR（2026-10-22 核查）
 
-[草稿 PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252) 已从 `main` 独立建立，head `80be1ebfc1dc03cdd466f7650baedbe6774de43a`，承接依赖补丁 `0c8150c9` + `59c379a6`。已核对 vendor/导入边界/来源测试相同及锁中的修复版本；它不包含商店或词典功能。核查时 CI 仍在运行，不能据此关闭商店远端 CI 门槛。
+[草稿 PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252) 已从 `main` 独立建立，head `80be1ebfc1dc03cdd466f7650baedbe6774de43a`，承接依赖补丁 `0c8150c9` + `59c379a6`。已核对 vendor/导入边界/来源测试相同及锁中的修复版本；它不包含商店或词典功能。较早快照中 CI 尚在运行；2026-10-22 再次只读核查同一 head，18 个检查均已 COMPLETED / SUCCESS。这是依赖 PR 的远端结果，不能据此关闭商店实验分支的远端 CI 门槛。
 
 r2 包不改写，随附 `external-review-2026-10-22-pr252-addendum.zip` 提供本次 PR 快照与更新文档。独立 PR 的测试区分父审自行执行与协作提供的 CPU 模型证据，均没有被描述成 GPU 实机验收。
+
+r3 ZIP 保持原字节与 SHA-256；新增 external-review-2026-10-22-r3-ci-addendum.zip 保存上述 GitHub 快照和更新记录，与 r3 一起交外审。本次只更新文档，不创建重复依赖 PR，也未合并或发布。
 
 ## 建议优先核查
 

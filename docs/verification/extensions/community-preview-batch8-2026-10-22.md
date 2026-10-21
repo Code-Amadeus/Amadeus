@@ -74,3 +74,10 @@
 r3 外审包以当前源码和两个实验仓 Git bundle 为入口；另包含两轮六份原始目录、模拟输入 Git 历史 bundle、生成/校验命令与退出码、wheel 内容清单和差异、HTTP 请求摘要、MCP 合约 JSON、截图、脱敏结果及本轮失败历史。r2 的修复与更早证据作为历史保留，r1/r2 原 ZIP 不改写。排除 TLS 私钥、用户/演示设置、provider 文件、原始后台日志、venv/node_modules、临时工作树和应用二进制。
 
 按本轮定义，完整本地功能原型已经贯通。独立真实产物审核、素材权利、公开 URL/pin、远端 Actions、真实仓库治理、干净 OS/独立人工资格和公开发布决定仍是另外的发布门槛；D0 公开链接与 D3 外部作者资格未因此关闭。公开 bootstrap 仍为空，未发布任何插件。
+
+
+## 独立依赖 CI 补充（2026-10-22）
+
+收到协作会话更新后，本会话通过 GitHub 只读复核 [草稿 PR #252](https://github.com/Code-Amadeus/Amadeus/pull/252)：head 仍为 80be1ebfc1dc03cdd466f7650baedbe6774de43a，目标 main，OPEN / draft，18 项检查全部 COMPLETED / SUCCESS。没有创建重复 PR、改动该 PR 或合并主线。这个结果属于独立依赖变更，不替代商店实验分支远端 CI，也不扩大为 GPU 实机验收。
+
+已交付 r3 ZIP 原字节保持不变，SHA-256 仍为 4d07af6de478a446b5d9fcf6e8eaf5f4fa1f357c030ec1cf8251826b1b4e20ba。另附 external-review-2026-10-22-r3-ci-addendum.zip，包含实际核查快照、当前记录和文档补丁；这是证据补充，没有新的商店实现或本地测试结论。
