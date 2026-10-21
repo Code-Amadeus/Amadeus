@@ -5,10 +5,14 @@ Original sdist: `https://files.pythonhosted.org/packages/7f/5b/56c5175d1a4d6ed86
 SHA-256: `294893f2340dc2d58d1f1d1cb8ce26ac0a79f254805ab432dda2892bd5c8d13c`.
 License: Apache-2.0; original LICENSE, copyright headers, README and manifest retained.
 
-Amadeus modification (2026-10-21): `pyproject.toml` moves `gradio` from mandatory
-requirements to the `demo` extra (`gradio>=6.16.0,<7`). All `qwen_asr/**/*.py` files
-and other shipped upstream inputs are byte-identical to the sdist, recorded in
-`qwen-asr/upstream-files.json`. Generated upstream egg-info/PKG-INFO are omitted so
+Amadeus modifications (2026-10-21–22): `pyproject.toml` moves `gradio` from mandatory
+requirements to the `demo` extra (`gradio>=6.16.0,<7`). All inference/model/CLI implementation files and other shipped upstream inputs
+are byte-identical to the sdist, recorded in `qwen-asr/upstream-files.json`. Three
+package `__init__.py` files additionally make seven existing public re-exports
+explicit (`from module import Name as Name`) to satisfy the repository lint rules
+without adding an exclusion. Reversing only these aliases restores the upstream
+file hashes; tests also require identical compiled bytecode, names and constants.
+No public names or `__all__` values are changed. Generated upstream egg-info/PKG-INFO are omitted so
 build metadata comes from the patched pyproject. The upstream release version
 remains 0.0.6 for advisory lookup; `uv.lock` records the local directory source.
 The Host uses its locked uv source selection, not a metadata override or `--no-deps`
