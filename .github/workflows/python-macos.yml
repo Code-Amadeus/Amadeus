@@ -63,6 +63,7 @@ jobs:
           tests/test_voice_backend_registry.py
           tests/test_extension_examples.py
           tests/test_extension_resources.py
+          tests/test_electron_model_less_smoke.py
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
           tests/test_playback_device_recovery.py
@@ -77,3 +78,14 @@ jobs:
           node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
           npm test
           npm run build
+
+      - name: Run Electron model-less smoke (macOS)
+        run: >-
+          uv run --locked --no-sync python tools/smoke_electron_model_less.py
+          --report-dir build/electron-smoke
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: electron-macos-smoke-${{ github.run_id }}
+          path: build/electron-smoke/**
