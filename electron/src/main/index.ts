@@ -55,14 +55,16 @@ const CACHE_DIR = process.env.AMADEUS_ELECTRON_CACHE_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_CACHE_DIR)
   : path.join(PROJECT_ROOT, '.electron-cache')
 const APP_ICON_PATH = path.join(PROJECT_ROOT, 'assets', 'icons', 'app', 'app_icon.ico')
-const extensionPackageHelper = new ExtensionPackageHelper(PROJECT_ROOT, getPythonCommand, process.env)
+// Keep the static checker separate from the externally supplied backend runtime.
+const EXTENSION_HOST_ROOT = app.isPackaged ? path.join(process.resourcesPath, 'extension-host') : PROJECT_ROOT
+const extensionPackageHelper = new ExtensionPackageHelper(EXTENSION_HOST_ROOT, getPythonCommand, process.env)
 const desktopSettings = new DesktopSettingsStore(
   path.join(USER_DATA_DIR, 'settings.json'),
   path.join(PROJECT_ROOT, '.env'),
   process.platform,
   extensionPackageHelper.validateRecord,
 )
-const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), PROJECT_ROOT,
+const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), EXTENSION_HOST_ROOT,
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
       message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,

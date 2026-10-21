@@ -134,7 +134,9 @@
     "electron/src/main/extensionSecurity.ts",
     "electron/src/renderer/components/ExtensionCatalog.tsx",
     "electron/src/renderer/components/extensionCatalogModel.ts",
-    "electron/src/shared/extensionCatalog.ts"
+    "electron/src/shared/extensionCatalog.ts",
+    "docs/extension_catalog.md",
+    "docs/verification/extensions/store-v1.md"
   ],
   "include_roots": [
     "characters",
@@ -298,7 +300,14 @@
     "docs/images/extensions/theme-native-mixed-pending.jpg",
     "docs/images/extensions/theme-native-mixed-chat.jpg",
     "docs/images/extensions/theme-native-removed-identity.jpg",
-    "docs/japanese_context_reading.md"
+    "docs/japanese_context_reading.md",
+    "docs/extension_catalog.md",
+    "docs/verification/extensions/store-v1.md",
+    "docs/verification/extensions/community-preview-batch1-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch2-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch3-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch4-2026-10-21.md",
+    "docs/verification/extensions/community-preview-batch5-2026-10-21.md"
   ],
   "exclude_globs": [
     "docs/reports/**",

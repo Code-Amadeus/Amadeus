@@ -390,3 +390,40 @@ def test_first_party_brand_assets_are_release_ready() -> None:
         assert component["gate_status"] == "ready"
         assert component["license_expression"] == "AGPL-3.0"
         assert "LICENSES/FIRST-PARTY-BRAND-ASSETS.md" in component["license_evidence"]
+
+
+def test_packaged_extension_checker_runs_without_source_checkout(tmp_path: Path):
+    """Copy exactly the configured shipping resources; isolated Python cannot fall back to source."""
+    import shutil
+    import sys
+    package = json.loads((ROOT / "electron/package.json").read_text(encoding="utf-8"))
+    resource = next(item for item in package["build"]["extraResources"] if item["to"] == "extension-host")
+    destination = tmp_path / "resources" / resource["to"]
+    for pattern in resource["filter"]:
+        for source in ROOT.glob(pattern):
+            if source.is_file():
+                target = destination / source.relative_to(ROOT)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+    checker = destination / "tools/extension_package.py"
+    for command, arguments in (("profile", []), ("validate-catalog", [])):
+        if command == "validate-catalog":
+            # Build a compatible empty index, independent of public availability.
+            fixture = tmp_path / "index.json"
+            fixture.write_text(json.dumps({"format":"amadeus.catalog/v1", "sequence":0,
+                "source_commit":"a"*40, "source_time":"2026-10-21T00:00:00Z",
+                "generator_commit":"b"*40, "host_commit":"c"*40,
+                "entries":[], "security":[]}), encoding="utf-8")
+            arguments = [str(fixture)]
+        result = subprocess.run([sys.executable, "-I", str(checker), command, *arguments],
+            cwd=tmp_path, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert json.loads(result.stdout)["ok"]
+    # Validate installed Skill metadata as well as manifests: this imports the
+    # existing native metadata owner, which must also be shipped.
+    manifest = next((ROOT / "examples/extensions/handoff-skill/src").glob("*/amadeus-extension.json"))
+    result = subprocess.run([sys.executable, "-I", str(checker), "check-package", str(manifest.parent)],
+        cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout)["ok"]
+    assert not (destination.parent / "server").exists(), "Static resources must not shadow the separately supplied backend"

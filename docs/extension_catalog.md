@@ -179,3 +179,34 @@ Transport references: [Electron ClientRequest](https://www.electronjs.org/docs/l
 [certificate verification caching](https://www.electronjs.org/docs/latest/api/session#sessetcertificateverifyprocproc).
 
 The [S2 construction record](verification/extensions/community-preview-batch4-2026-10-21.md) records the real renderer/IPC/installer journey, screenshots, code revisions and remaining publication gates. The `--store-ui` probe uses loopback HTTPS fixture authority and automated confirmations; it does not launch the complete Chat backend or certify public reviews.
+
+
+## Source and packaged desktop qualification
+
+The packaged frontend ships the static Python checker, its native Skill metadata
+reader, protocol/profile files and pinned catalog policy under `resources/extension-host`.
+The SDK remains under `resources/extension-sdk`. This subtree is separate from the
+externally supplied Python backend: it must not create a `resources/server` package
+that shadows that backend. The selected Python interpreter still needs the documented
+checker dependencies; bundling these sources does not bundle a Python runtime.
+
+The shipping-shell smoke starts the normal authenticated backend and uses the actual
+built renderer, preload and IPC handlers. An explicit `--extension-fixture` installs
+real reference wheels in a fresh synthetic legacy settings profile. Its private main
+inspector rewrites only fixture catalog/artifact requests to a loopback HTTPS server
+and automatically confirms extension access dialogs. The certificate exception stays
+inside that process's download session. There is no production test URL/IPC switch,
+OS trust change or copied developer profile. These results do not establish independent
+review or manual native-dialog acceptance. See the [release checklist](verification/extensions/store-v1.md).
+
+```powershell
+python tools/probes/extension_catalog_journey.py --execute --store-ui --prepare-only --wheels <reference-wheel-directory>
+python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --report-dir build/source-store-smoke
+python tools/smoke_electron_model_less.py --extension-fixture <returned-fixture-directory> --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe --report-dir build/packaged-store-smoke
+python tools/probes/extension_reader_matrix.py --fixture <returned-fixture-directory>/fixture.json --ref <previous-reader-commit> --ref <current-reader-commit> --output build/reader-matrix
+```
+
+The fixed reader matrix exports unmodified Git blobs into isolated directories,
+checks compatible neighbors and understood safety decisions beside future kinds,
+roles, contracts and delivery modes, and rejects unknown global formats or malformed
+safety data. Its report includes exact reader commits and exported file hashes.

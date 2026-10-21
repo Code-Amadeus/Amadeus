@@ -33,6 +33,7 @@ def main():
         action="store_true",
         help="Run the real store UI journey with both reference versions",
     )
+    parser.add_argument("--prepare-only", action="store_true", help="Prepare an isolated TLS/catalog fixture without starting Electron")
     args = parser.parse_args()
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -119,6 +120,9 @@ def main():
     (base / "fixture.json").write_text(
         json.dumps(dict(index=index, wheels=wheels)), encoding="utf-8"
     )
+    if args.prepare_only:
+        print(json.dumps({"fixture": str(base)}))
+        return 0
     app = base / "app"
     app.mkdir()
     (app / "package.json").write_text(

@@ -387,6 +387,13 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "checks": {},
     }
 
+    if args.extension_fixture:
+        # A synthetic pre-catalog v2 settings file, never a copied user profile.
+        settings = run_root / "state/electron-user-data/settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"version":2, "values":{"AMADEUS_UI_LOCALE":"en-US"},
+            "encryptedSecrets":{}, "mcpConnections":{}, "extensions":{},
+            "pendingRevisions":{}, "nextRevision":1}), encoding="utf-8")
     try:
         await product.start(startup_timeout=float(args.startup_timeout))
         report["checks"]["electron_started_backend"] = True
@@ -426,6 +433,9 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         report["checks"].update(
             await _exercise_renderer(product.page, timeout=float(args.ui_timeout), process_id=product.process.pid, inspector_port=product.main_debug_port)
         )
+        if args.extension_fixture:
+            from tools.probes.extension_release_shell import exercise
+            report["extensions"] = await exercise(product, args.extension_fixture.resolve())
         if product.app_page_errors or product.app_console_errors:
             raise RuntimeError(
                 "Electron renderer reported errors: "
@@ -467,6 +477,7 @@ def _parser() -> argparse.ArgumentParser:
         default=str(RUNTIME / "electron_model_less_smoke"),
     )
     parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
+    parser.add_argument("--extension-fixture", type=Path, help="Explicitly execute reference wheels from a prepared isolated catalog fixture")
     parser.add_argument("--debug-port", type=int, default=0)
     parser.add_argument("--startup-timeout", type=float, default=120.0)
     parser.add_argument("--ui-timeout", type=float, default=30.0)

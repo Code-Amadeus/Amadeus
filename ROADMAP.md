@@ -42,12 +42,13 @@ The experimental Host already installs local wheels for TTS, MCP, Agent Skills
 and data-only themes through one manager in Settings. Configuration, encrypted
 credentials, package revisions and native-owner activation are implemented.
 
-The active next step is a community authoring preview: a small checker
-environment, clear Host support information, reusable examples and independent
-author lifecycle evidence. A curated official catalog can progress alongside
-author recruitment after the shared validation entry is ready. It will reuse the
-same installer, with exact artifact hashes, per-version review, explicit updates
-and durable safety decisions. This catalog is not yet implemented or published.
+The experimental branch implements the author checker, four reference journeys,
+curated catalog rules, trusted downloads, durable safety decisions, browsing and
+manual updates. The same installer serves local and catalog wheels. Source and
+packaged-shell qualification is recorded in the [store release checklist](docs/verification/extensions/store-v1.md).
+A public catalog still requires independent artifact review, repository governance
+and a separate release decision. External-author evidence remains pending; reference
+packages do not complete that qualification.
 
 Catalog admission policy is separate from runtime contracts. New types retain
 native owners; an older client must disable unsupported packages without losing
