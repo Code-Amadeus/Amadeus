@@ -15,6 +15,9 @@ No public index, release, repository permission or main branch was changed.
   copyright withdrawal and lifecycle/data retention. These use fixture authority.
 - [S3 construction record](community-preview-batch5-2026-10-21.md): packaged checker
   closure, actual shipping-shell journeys, fixed old readers and source archive checks.
+- [Pi/dependency remediation](community-preview-batch7-2026-10-21.md): original
+  Pi assertions/deadlines retained, headless Qwen packaging, patched image/TLS
+  dependencies, full local-model import checks and updated review package.
 - [Premerge review and isolated qualification](community-preview-batch6-2026-10-21.md):
   fresh Python/Node dependencies, source ZIP, Windows package, Docker protocol/SDK,
   shipping failure recovery and separately labelled native UI operator evidence.
@@ -37,7 +40,7 @@ not restoration of arbitrary old user credentials or profiles.
 
 | Gate | Current state | Concrete completion evidence |
 | --- | --- | --- |
-| Host regression and dependency audit | Failed local qualification gates | Resolve the two observed Pi/MCP integration failures without weakening authority assertions; fix or explicitly assess current certifi/Pillow advisories and re-run required checks. See batch 6; store-flow passes do not override these failures. |
+| Host regression and dependency audit | Batch 6 blockers locally remediated; remote CI pending | Batch 7: 197 pass / 7 existing conditional skips; original Pi assertions and 3s/7s startup bounds retained; five independent focused batches all pass. certifi/Pillow findings cleared under the unchanged CI audit policy. Core and local-cpu dependency checks pass; the existing pytest exceptions and separate model/GPU qualification limits remain explicit. |
 | Independent artifact approval | Pending | Non-author maintainer reviews each exact wheel against curated-v1, confirms ownership and asset rights, records digest and evidence in an approved input PR. At least one useful process package and one resource package. Tone is only a synthetic PCM reference; Notes MCP is a candidate useful process package. |
 | Public immutable artifacts | Pending | Approved versioned wheel URLs with matching SHA-256 and retained review inventory; never replace bytes at an existing ID/version. |
 | Public checker/generator pins | Pending | Reviewed commits reachable from the intended public repositories; fixed Windows/CPython 3.12.10 catalog CI passes using the recorded Host checker and minimal lock. |
