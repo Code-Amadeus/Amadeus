@@ -12,7 +12,7 @@ Preservation and automated screening do not establish pronunciation accuracy.
 
 Release 0.17.1 was withdrawn. Candidate **2026.10.22.1-rc2** remains unpublished
 pending independent review and maintainer acceptance. See the
-[current follow-up](evidence/japanese_resource_personal_followup_2026-10-22.json).
+[current follow-up](evidence/japanese_resource_personal_case_2026-10-22.json).
 The [2026-10-21 receipt](evidence/japanese_resource_acceptance_2026-10-21.json)
 is historical and superseded.
 
@@ -64,9 +64,12 @@ official aliases and native-word boundary insertion, allowing actual native outp
 to honor user corrections. Personal keys are collected before one official-set
 subtraction, so adding personal entries does not copy the full official vocabulary
 once per row. Personal surfaces are normalized with the native frontend in the
-compiled snapshot (including halfwidth Latin to fullwidth); source CSV bytes are
-never rewritten. The runtime identity changes so old compiled/audio caches cannot
-mask the new behavior.
+compiled snapshot, using the same case folding as text input before MeCab width
+normalization. `Menu` therefore matches `menu`, while base-owned `Disney` keeps
+its uppercase spelling. Source CSV bytes are never rewritten. Previously ineffective
+halfwidth or title-case personal entries can start taking effect after upgrading;
+this is an intentional compatibility change. The runtime identity changes so old
+compiled/audio caches cannot mask the new behavior.
 
 Uncovered words follow native GSV. Context-dependent Kanji are not forced into
 one mapping. Context-reading model weights remain a separate default-off experiment.
@@ -164,8 +167,12 @@ follow-up removes repeated full-set copying for personal overrides, normalizes
 personal surfaces only in the compiled snapshot, and simplifies dead prefix
 handling without changing the casing policy. The rc2 resource bytes and all
 134,201 source rows remain unchanged. The current follow-up receipt records
-fresh tests, corpus comparisons and Windows configuration measurements; CI must
-be checked on its new head, separately from the prior 17 green checks.
+fresh tests, corpus comparisons and Windows configuration measurements.
+The subsequent review of `69368c19` confirmed those fixes. The current follow-up
+also applies input case normalization to personal surfaces before compilation,
+with regressions for official aliases, format-1/format-2 native words and a
+case-owned base name. Fresh CI must qualify the new head separately from prior
+17-green runs. Resource data and admission policy remain unchanged.
 
 `Hand` remains a known contextual base-segmentation exception (`これはHandです`
 can split into H + and). Blanket folding of equal-reading base spellings was

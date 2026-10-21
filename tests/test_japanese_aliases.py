@@ -314,3 +314,40 @@ def test_correct_longer_compound_protects_its_internal_shorter_word(native, monk
     actual = runtime.run_lexical_frontend(frontend, "中立派")
     assert "".join(n["read"] for n in actual) == "チュウリツハ"
     assert actual == expected
+
+
+@pytest.mark.parametrize("mode", ["alias", "format1-native", "format2-native"])
+@pytest.mark.parametrize("fullwidth", [False, True])
+def test_personal_title_case_uses_the_same_normalization_as_input(tmp_path, native, mode, fullwidth):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "GPT_SoVITS"))
+    from text import japanese
+    pairs = [("menu", "メニュー"), ("existing", "エグジスティング"), ("okabe", "オカベ")]
+    pack = make_pack(tmp_path, pairs, mode="mecab" if mode == "format1-native" else "katakana_alias")
+    if mode == "format2-native":
+        metadata_path = pack / "provenance.json"
+        metadata = json.loads(metadata_path.read_bytes())
+        metadata["overlay"]["native_words"] = [word for word, _ in pairs]
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    base = native.OpenJTalk(native.OPEN_JTALK_DICT_DIR)
+    personal_readings = {"Menu": "メヌー", "Existing": "イグジスティング", "Okabe": "オカベ", "Disney": "テスト"}
+    rows = []
+    for word, reading in personal_readings.items():
+        row = fixture_row(base, word, reading)
+        row[0] = base.normalize_for_mecab(word) if fullwidth else word
+        row[3] = "-10000"  # An explicit personal override, including the known base name Disney.
+        rows.append(row)
+    personal = tmp_path / "assets/text/ja/user.csv"
+    original = ("\n".join(",".join(row) for row in rows) + "\n").encode()
+    personal.write_bytes(original)
+    for _ in range(2):  # Initial compilation and cached reload.
+        assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
+        for word, reading in personal_readings.items():
+            spellings = (word, base.normalize_for_mecab(word))
+            if word != "Disney":
+                spellings += (word.lower(), word.upper())
+            for spelling in spellings:
+                prepared = runtime.prepare_japanese_text(spelling)
+                assert "".join(n["read"] for n in native.run_frontend(prepared)) == reading, spelling
+                assert japanese.g2p(f"これは{spelling}です。", False) == japanese.g2p(f"これは{reading}です。", False)
+        assert runtime.normalize_latin_case("Disney API") == "Disney API"
+        assert personal.read_bytes() == original

@@ -215,7 +215,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         _official_base_owner = native_spelling_owner(normalizer)
         system = (base / "sys.dic").stat()
         native_key = (jtalk.__version__, str(base), system.st_size, system.st_mtime_ns,
-                      "lexical-morph-boundaries.v10-personal-surface-normalization")
+                      "lexical-morph-boundaries.v11-personal-input-case-normalization")
         compiled, digests, issues = [], [], []
         data_review = None
         cache = project_root / ".cache/japanese_dictionary"
@@ -275,7 +275,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                     # while preserving the user's source CSV byte-for-byte.
                     rows = list(dictionary_rows(data))
                     for row in rows:
-                        row[0] = normalizer.normalize_for_mecab(row[0])
+                        row[0] = normalizer.normalize_for_mecab(normalize_latin_case(row[0]))
                     buffer = io.StringIO(newline="")
                     csv.writer(buffer, lineterminator="\n").writerows(rows)
                     data = buffer.getvalue().encode("utf-8")
