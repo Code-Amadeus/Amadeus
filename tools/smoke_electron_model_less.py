@@ -377,6 +377,8 @@ async def _wait_clean_exit(
 
 
 async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
+    if args.native_confirmations and (not args.extension_fixture or args.extension_failures):
+        raise ValueError("--native-confirmations requires --extension-fixture and excludes --extension-failures")
     if args.extension_failures and not args.extension_fixture:
         raise ValueError("--extension-failures requires --extension-fixture")
     from tools.e2e_live_product_journey import (
@@ -488,7 +490,10 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         report["checks"].update(
             await _exercise_renderer(product.page, timeout=float(args.ui_timeout), process_id=product.process.pid, inspector_port=product.main_debug_port)
         )
-        if args.extension_fixture:
+        if args.native_confirmations:
+            from tools.probes.extension_native_confirmation import exercise_native
+            report["native_confirmations"] = await exercise_native(product, args.extension_fixture.resolve())
+        elif args.extension_fixture:
             from tools.probes.extension_release_shell import exercise
             report["extensions"] = await exercise(product, args.extension_fixture.resolve())
             if args.extension_failures:
@@ -535,6 +540,7 @@ def _parser() -> argparse.ArgumentParser:
         default=str(RUNTIME / "electron_model_less_smoke"),
     )
     parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
+    parser.add_argument("--native-confirmations", action="store_true", help="Wait for an external UI operator to cancel/install/enable through real native dialogs")
     parser.add_argument("--extension-failures", action="store_true", help="Run shipping IPC failure and cross-process corruption recovery cases; requires --extension-fixture")
     parser.add_argument("--extension-fixture", type=Path, help="Explicitly execute reference wheels from a prepared isolated catalog fixture")
     parser.add_argument("--debug-port", type=int, default=0)
