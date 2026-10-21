@@ -1,9 +1,7 @@
 ﻿import platform,os,traceback
 import ffmpeg
 import numpy as np
-import gradio as gr
 from tools.i18n.i18n import I18nAuto
-import pandas as pd
 i18n = I18nAuto(language=os.environ.get('language','Auto'))
 
 def load_audio(file, sr):
@@ -36,6 +34,8 @@ def clean_path(path_str:str):
 
 
 def check_for_existance(file_list:list=None,is_train=False,is_dataset_processing=False):
+    # Legacy WebUI helper; inference/audio decoding does not require its UI stack.
+    import gradio as gr
     files_status=[]
     if is_train == True and file_list:
         file_list.append(os.path.join(file_list[0],'2-name2text.txt'))
@@ -72,6 +72,7 @@ def check_for_existance(file_list:list=None,is_train=False,is_dataset_processing
     return True
 
 def check_details(path_list=None,is_train=False,is_dataset_processing=False):
+    import gradio as gr
     if is_dataset_processing:
         list_path, audio_path = path_list
         if (not list_path.endswith('.list')):
@@ -108,6 +109,7 @@ def check_details(path_list=None,is_train=False,is_dataset_processing=False):
         else:gr.Warning(i18n('缺少Hubert数据集'))
         if os.listdir(wav_path):...
         else:gr.Warning(i18n('缺少音频数据集'))
+        import pandas as pd
         df = pd.read_csv(
             semantic_path, delimiter="\t", encoding="utf-8"
         )
