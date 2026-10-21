@@ -10,7 +10,8 @@
     "render/web/vendor",
     "assets/audio/sfx",
     "vendor/aec-audio-processing",
-    "vendor/extension-sdk"
+    "vendor/extension-sdk",
+    "vendor/qwen-asr"
   ],
   "components": [
     {
@@ -482,6 +483,25 @@
       "release_action": "exclude",
       "gate_status": "ready",
       "notes": "Unchanged model assets are optional external runtime data. Exact hashes and the upstream MIT notice (Copyright (c) 2026 Aivis Project) are retained; exact training-data provenance is not established. No model publication is authorized by this record."
+    },
+    {
+      "id": "qwen-asr",
+      "name": "Qwen-ASR 0.0.6 (demo dependency separated)",
+      "category": "vendored-source",
+      "paths": [
+        "vendor/qwen-asr/**"
+      ],
+      "source_url": "https://github.com/Qwen/Qwen3-ASR",
+      "source_revision": "PyPI 0.0.6 sdist sha256:294893f2340dc2d58d1f1d1cb8ce26ac0a79f254805ab432dda2892bd5c8d13c",
+      "license_expression": "Apache-2.0",
+      "license_evidence": [
+        "vendor/qwen-asr/LICENSE",
+        "vendor/qwen-asr.PROVENANCE.md"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Inference/model/CLI implementation files are byte-identical to the pinned upstream sdist. pyproject.toml moves gradio to a demo extra; three package initializers add explicit re-export aliases with identical compiled bytecode. Reversible patch/hash checks and removal conditions are documented adjacent to the package."
     }
   ]
 }
