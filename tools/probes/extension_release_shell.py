@@ -54,7 +54,7 @@ async def exercise(product, fixture: Path):
     async def catalog(request):
         return await page.evaluate("request=>window.amadeus.extensionCatalog(request)",request)
     async def button(name):
-        await page.get_by_role("button",name=name,exact=True).click(timeout=30000)
+        await page.get_by_role("button",name=name,exact=True).and_(page.locator("button:enabled")).click(timeout=30000)
     async def configure(enabled):
         await button("Configure extension")
         await page.locator("#extension-enabled").set_checked(enabled)
@@ -118,31 +118,40 @@ async def exercise(product, fixture: Path):
         await configure(False)
         await button("Remove");await button("Confirm remove")
         await expect(page.get_by_text("No community extensions installed.",exact=True)).to_be_visible(timeout=30000)
-        tone="com.example.tone-tts"
-        await install(tone,"0.1.0");await configure(True)
-        saved=json.loads(settings_path.read_text())["extensions"][tone]
-        directory=settings_path.parent/"extensions"/saved["installId"]
-        record={key:saved[key] for key in ("id","version","revision","digest","manifest","enabled","providers")}
-        record.update(package_path=str(directory/"venv"/saved["sitePackages"]/saved["packageRoot"]),
-            python_path=str(directory/"venv/Scripts/python.exe"),
-            data_path=str(settings_path.parent/"extension-data"/hashlib.sha256(tone.encode()).hexdigest()),
-            config=saved["values"],secrets={})
-        record_path=product.run_root/"tone-record.json";record_path.write_text(json.dumps(record),encoding="utf-8")
         fixture_data=json.loads((fixture/"fixture.json").read_text())
-        wheel=next(value for name,value in fixture_data["wheels"].items() if name=="amadeus_example_tone_tts-0.1.0-py3-none-any.whl")
         report["fixture_artifacts"]=[{key:e[key] for key in ("id","version","sha256")} for e in fixture_data["index"]["entries"]]
-        report["used_artifacts"]=[entry for entry in report["fixture_artifacts"] if (entry["id"],entry["version"]) in {(theme,"0.1.0"),(theme,"0.2.0"),(tone,"0.1.0")}]
-        runtime=product.run_root/"tone-runtime.json"
-        def run_contract():
-            with (product.run_root/"tone-contract.log").open("w") as log:
-                process=subprocess.Popen([sys.executable,"-I",str(ROOT/"tools/check_extension_contract.py"),"--execute","--kind","tts","--wheel",wheel,"--record",str(record_path),"--scenario",str(ROOT/"examples/extensions/contract-scenarios/tone.json"),"--output",str(runtime)],cwd=ROOT,env=product._environment(),stdout=log,stderr=subprocess.STDOUT)
-                tree=ProcessTree(process)
-                try:
-                    return process.wait(timeout=90)
-                finally:
-                    tree.terminate()
-        check("shipping-installed Python package runs through real Runner",await asyncio.to_thread(run_contract)==0 and json.loads(runtime.read_text())["ok"])
-        await configure(False);await button("Remove");await button("Confirm remove")
+        used={(theme,"0.1.0"),(theme,"0.2.0")}
+        for package_id,kind,name,wheel_name in (
+            ("com.example.tone-tts","tts","tone","amadeus_example_tone_tts-0.1.0-py3-none-any.whl"),
+            ("com.example.notes-mcp","mcp","notes","amadeus_example_notes_mcp-0.1.0-py3-none-any.whl"),
+        ):
+            await install(package_id,"0.1.0")
+            if kind == "mcp":
+                binding=await page.evaluate("id=>window.amadeus.updateExtension({id,providers:['pi']})",package_id)
+                check("Notes provider binding saved through production IPC",binding.get("ok"))
+            await configure(True)
+            saved=json.loads(settings_path.read_text())["extensions"][package_id]
+            directory=settings_path.parent/"extensions"/saved["installId"]
+            record={key:saved[key] for key in ("id","version","revision","digest","manifest","enabled","providers")}
+            record.update(package_path=str(directory/"venv"/saved["sitePackages"]/saved["packageRoot"]),
+                python_path=str(directory/"venv/Scripts/python.exe"),
+                data_path=str(settings_path.parent/"extension-data"/hashlib.sha256(package_id.encode()).hexdigest()),
+                config=saved["values"],secrets={})
+            record_path=product.run_root/(name+"-record.json");record_path.write_text(json.dumps(record),encoding="utf-8")
+            wheel=fixture_data["wheels"][wheel_name]
+            runtime=product.run_root/(name+"-runtime.json")
+            def run_contract():
+                with (product.run_root/(name+"-contract.log")).open("w") as log:
+                    process=subprocess.Popen([sys.executable,"-I",str(ROOT/"tools/check_extension_contract.py"),"--execute","--kind",kind,"--wheel",wheel,"--record",str(record_path),"--scenario",str(ROOT/("examples/extensions/contract-scenarios/"+name+".json")),"--output",str(runtime)],cwd=ROOT,env=product._environment(),stdout=log,stderr=subprocess.STDOUT)
+                    tree=ProcessTree(process)
+                    try:
+                        return process.wait(timeout=90)
+                    finally:
+                        tree.terminate()
+            check("shipping-installed "+name+" passes native process contract",await asyncio.to_thread(run_contract)==0 and json.loads(runtime.read_text())["ok"])
+            used.add((package_id,"0.1.0"))
+            await configure(False);await button("Remove");await button("Confirm remove")
+        report["used_artifacts"]=[entry for entry in report["fixture_artifacts"] if (entry["id"],entry["version"]) in used]
         await product.screenshot("release-store-process-removed")
         check("native access confirmations exercised",await evaluate_main(product,"extensionReleaseFixture.confirmations")>=5)
         check("legacy settings preserve locale after catalog safety writes",json.loads(settings_path.read_text())["values"]["AMADEUS_UI_LOCALE"]=="en-US")
