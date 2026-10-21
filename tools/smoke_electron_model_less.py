@@ -351,7 +351,8 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 super()._environment(), python_executable=sys.executable
             )
             if args.extension_fixture:
-                environment["PI_PROVIDER_ENABLED"] = "true"
+                environment.update(PI_PROVIDER_ENABLED="true", PI_MODEL_PROVIDER="fixture",
+                    PI_MODEL="fixture", PI_AGENT_DIR=str(self.run_root / "state/pi"))
             if self.packaged_executable:
                 # The current distribution packages the Electron frontend;
                 # supply the separate Python runtime explicitly for this smoke.
@@ -393,6 +394,14 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         # A synthetic pre-catalog v2 settings file, never a copied user profile.
         settings = run_root / "state/electron-user-data/settings.json"
         settings.parent.mkdir(parents=True, exist_ok=True)
+        pi = run_root / "state/pi"
+        pi.mkdir(parents=True)
+        # Native Pi auth check is local/no-refresh. No model turn is sent; an
+        # accidental request can reach only a closed loopback port, never a service.
+        (pi / "models.json").write_text(json.dumps({"providers":{"fixture":{
+            "baseUrl":"http://127.0.0.1:1/v1", "api":"openai-completions",
+            "apiKey":"local-fixture", "models":[{"id":"fixture", "reasoning":False, "input":["text"]}]
+        }}}), encoding="utf-8")
         settings.write_text(json.dumps({"version":2, "values":{"AMADEUS_UI_LOCALE":"en-US"},
             "encryptedSecrets":{}, "mcpConnections":{}, "extensions":{},
             "pendingRevisions":{}, "nextRevision":1}), encoding="utf-8")
