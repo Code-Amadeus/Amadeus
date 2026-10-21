@@ -136,7 +136,11 @@
     "electron/src/renderer/components/extensionCatalogModel.ts",
     "electron/src/shared/extensionCatalog.ts",
     "docs/extension_catalog.md",
-    "docs/verification/extensions/store-v1.md"
+    "docs/verification/extensions/store-v1.md",
+    "tools/probes/extension_store_demo.py",
+    "tools/probes/extension_store_roundtrip.py",
+    "electron/tests/fixtures/extensionPublication.cjs",
+    "docs/extension_store_demo.md"
   ],
   "include_roots": [
     "characters",
@@ -307,7 +311,8 @@
     "docs/verification/extensions/community-preview-batch2-2026-10-21.md",
     "docs/verification/extensions/community-preview-batch3-2026-10-21.md",
     "docs/verification/extensions/community-preview-batch4-2026-10-21.md",
-    "docs/verification/extensions/community-preview-batch5-2026-10-21.md"
+    "docs/verification/extensions/community-preview-batch5-2026-10-21.md",
+    "docs/extension_store_demo.md"
   ],
   "exclude_globs": [
     "docs/reports/**",

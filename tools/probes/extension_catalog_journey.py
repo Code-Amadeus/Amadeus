@@ -24,25 +24,13 @@ from config.process_tree import ProcessTree
 from config.subprocess_environment import isolated_child_environment
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--execute", action="store_true", required=True)
-    parser.add_argument("--wheels", type=Path, required=True)
-    parser.add_argument(
-        "--store-ui",
-        action="store_true",
-        help="Run the real store UI journey with both reference versions",
-    )
-    parser.add_argument("--prepare-only", action="store_true", help="Prepare an isolated TLS/catalog fixture without starting Electron")
-    parser.add_argument("--failure-fixture", action="store_true", help="Add a deliberately failing runtime version for shipping-shell qualification")
-    args = parser.parse_args()
+def create_certificate(base: Path):
+    """Create disposable loopback TLS material without changing OS trust."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
-    base = ROOT / "build/extension-catalog-journey" / uuid.uuid4().hex[:12]
-    base.mkdir(parents=True)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -70,6 +58,23 @@ def main():
         )
     )
     (base / "cert.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--execute", action="store_true", required=True)
+    parser.add_argument("--wheels", type=Path, required=True)
+    parser.add_argument(
+        "--store-ui",
+        action="store_true",
+        help="Run the real store UI journey with both reference versions",
+    )
+    parser.add_argument("--prepare-only", action="store_true", help="Prepare an isolated TLS/catalog fixture without starting Electron")
+    parser.add_argument("--failure-fixture", action="store_true", help="Add a deliberately failing runtime version for shipping-shell qualification")
+    args = parser.parse_args()
+    base = ROOT / "build/extension-catalog-journey" / uuid.uuid4().hex[:12]
+    base.mkdir(parents=True)
+    create_certificate(base)
     entries = []
     wheels = {}
     for name, version in [

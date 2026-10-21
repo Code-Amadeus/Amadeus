@@ -377,6 +377,8 @@ async def _wait_clean_exit(
 
 
 async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
+    if args.extension_publication and (args.extension_fixture or args.extension_failures or args.native_confirmations):
+        raise ValueError("--extension-publication is a separate complete journey")
     if args.native_confirmations and (not args.extension_fixture or args.extension_failures):
         raise ValueError("--native-confirmations requires --extension-fixture and excludes --extension-failures")
     if args.extension_failures and not args.extension_fixture:
@@ -396,7 +398,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             environment = model_less_backend_environment(
                 super()._environment(), python_executable=sys.executable
             )
-            if args.extension_fixture:
+            if args.extension_fixture or args.extension_publication:
                 environment.update(PI_PROVIDER_ENABLED="true", PI_MODEL_PROVIDER="fixture",
                     PI_MODEL="fixture", PI_AGENT_DIR=str(self.run_root / "state/pi"))
             if self.packaged_executable:
@@ -436,7 +438,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "checks": {},
     }
 
-    if args.extension_fixture:
+    if args.extension_fixture or args.extension_publication:
         # A synthetic pre-catalog v2 settings file, never a copied user profile.
         settings = run_root / "state/electron-user-data/settings.json"
         settings.parent.mkdir(parents=True, exist_ok=True)
@@ -490,7 +492,10 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         report["checks"].update(
             await _exercise_renderer(product.page, timeout=float(args.ui_timeout), process_id=product.process.pid, inspector_port=product.main_debug_port)
         )
-        if args.native_confirmations:
+        if args.extension_publication:
+            from tools.probes.extension_store_roundtrip import exercise_publication
+            report["publication"] = await exercise_publication(product, args.extension_publication.resolve())
+        elif args.native_confirmations:
             from tools.probes.extension_native_confirmation import exercise_native
             report["native_confirmations"] = await exercise_native(product, args.extension_fixture.resolve())
         elif args.extension_fixture:
@@ -542,6 +547,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
     parser.add_argument("--native-confirmations", action="store_true", help="Wait for an external UI operator to cancel/install/enable through real native dialogs")
     parser.add_argument("--extension-failures", action="store_true", help="Run shipping IPC failure and cross-process corruption recovery cases; requires --extension-fixture")
+    parser.add_argument("--extension-publication", type=Path, help="Isolated full publisher/client demonstration configuration; use extension_store_demo.py")
     parser.add_argument("--extension-fixture", type=Path, help="Explicitly execute reference wheels from a prepared isolated catalog fixture")
     parser.add_argument("--debug-port", type=int, default=0)
     parser.add_argument("--startup-timeout", type=float, default=120.0)

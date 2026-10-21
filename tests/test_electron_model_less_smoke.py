@@ -116,3 +116,15 @@ def test_source_archive_identity_checks_actual_files_without_parent_git(tmp_path
     (source / "SOURCE_MANIFEST.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="file path"):
         launcher_code_identity(source)
+
+
+@pytest.mark.parametrize("other", [
+    ["--extension-fixture", "legacy-fixture"],
+    ["--extension-failures"],
+    ["--native-confirmations"],
+])
+def test_publication_journey_rejects_mixed_profile_modes_before_launch(other):
+    from tools.smoke_electron_model_less import _parser, run_smoke
+    args = _parser().parse_args(["--extension-publication", "demo.json", *other])
+    with pytest.raises(ValueError, match="separate complete journey"):
+        asyncio.run(run_smoke(args))

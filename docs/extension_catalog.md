@@ -232,3 +232,14 @@ A source ZIP may run the same smoke without Git. The launcher verifies every lis
 release input against `SOURCE_MANIFEST.json` before launch and records the archived
 commit. This is an input-integrity check, not a signature or an assertion about extra
 files. Dependency locks and actual frontend/executable hashes are recorded separately.
+
+
+## Complete local publication roundtrip
+
+The [functional prototype demonstration](extension_store_demo.md) connects the unchanged
+Git input/review, generation and publication CI tools to loopback HTTPS and the shipping
+desktop. It covers real Notes/theme installs and manual updates, copyright withdrawal,
+exact-artifact blocking, explicit unblocking and separate distribution restoration.
+Every accepted desktop snapshot is matched to the generated index bytes; offline
+restarts and single/double NUL damage exercise the same durable settings owners.
+This locally simulated review/publishing workflow is separate from public-release gates.
