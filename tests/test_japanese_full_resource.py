@@ -348,3 +348,30 @@ def test_resource_lifecycle_update_rollback_and_failed_update(tmp_path, monkeypa
     assert injected and {p.name: p.read_bytes() for p in installed.iterdir()} == before
     assert load_dictionary_pack(installed).version == "1"
     assert (personal.read_bytes(), legacy.read_bytes()) == protected
+
+
+def test_large_personal_dictionary_does_not_copy_official_vocabulary_per_row(tmp_path, monkeypatch):
+    _write_pack(tmp_path)
+    jtalk = _native(tmp_path)
+    size, personal_count = 120_000, 3_000
+    rows = [_row(f"word{i}", "テスト") for i in range(size)]
+    monkeypatch.setattr(runtime, "full_source_runtime_rows", lambda *args: (rows, {"glide": "グライド"}))
+    personal = tmp_path / "assets/text/ja/user.csv"
+    personal.write_bytes(csv_bytes([_row(f"word{i}", "テスト") for i in range(personal_count)]
+                                  + [_row("glide", "テスト")]))
+    work = []
+
+    class MeasuredVocabulary(frozenset):
+        def __sub__(self, other):
+            work.append(len(self))
+            # A deterministic copy-work budget avoids CI wall-clock noise.
+            assert sum(work) <= 2 * size, "personal overrides repeatedly copy the full official vocabulary"
+            return type(self)(super().__sub__(other))
+
+    monkeypatch.setattr(runtime, "frozenset", MeasuredVocabulary, raising=False)
+    status = runtime.configure_japanese_dictionary(jtalk, project_root=tmp_path, enabled=True)
+    assert status["ready"]
+    assert sum(work) <= 2 * size
+    assert len(runtime._official_latin_words) == size - personal_count
+    assert "word0" not in runtime._official_latin_words and "word119999" in runtime._official_latin_words
+    assert not runtime._official_katakana_aliases

@@ -40,11 +40,10 @@ def normalize_latin_case(text: str) -> str:
     def normalize(match):
         # Numeric suffix casing is owned by the frontend's unit rule, not the
         # word lexicon: compound units such as kHz are not one native lexeme.
-        prefix = re.match(r"[0-9０-９]*", match.group()).group()
-        if prefix:
-            return match.group()
-        spelling = match.group()[len(prefix):]
-        return prefix + (spelling if _official_base_owner and _official_base_owner(spelling) else spelling.lower())
+        spelling = match.group()
+        if spelling[0].isdigit():
+            return spelling
+        return spelling if _official_base_owner and _official_base_owner(spelling) else spelling.lower()
     return _LATIN_TOKEN.sub(normalize, text)
 
 
@@ -216,7 +215,7 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
         _official_base_owner = native_spelling_owner(normalizer)
         system = (base / "sys.dic").stat()
         native_key = (jtalk.__version__, str(base), system.st_size, system.st_mtime_ns,
-                      "lexical-morph-boundaries.v9-reviewed-source-selection")
+                      "lexical-morph-boundaries.v10-personal-surface-normalization")
         compiled, digests, issues = [], [], []
         data_review = None
         cache = project_root / ".cache/japanese_dictionary"
@@ -271,6 +270,15 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                         official_words = frozenset(latin_word_key(row[0]) for row in dictionary_rows(data)
                                                    if row[0].startswith(LATIN_WORD_BOUNDARY)
                                                    and row[0].endswith(LATIN_WORD_BOUNDARY))
+                elif source == personal:
+                    # Compile the same native spelling as input normalization,
+                    # while preserving the user's source CSV byte-for-byte.
+                    rows = list(dictionary_rows(data))
+                    for row in rows:
+                        row[0] = normalizer.normalize_for_mecab(row[0])
+                    buffer = io.StringIO(newline="")
+                    csv.writer(buffer, lineterminator="\n").writerows(rows)
+                    data = buffer.getvalue().encode("utf-8")
                 else:
                     for _ in dictionary_rows(data):
                         pass
@@ -320,9 +328,10 @@ def configure_japanese_dictionary(jtalk, *, project_root: Path = PROJECT_ROOT, e
                 version = "legacy-local"
             if source == personal:
                 # Explicit personal spellings retain ownership of their input.
-                for row in dictionary_rows(data):
-                    _official_katakana_aliases.pop(latin_word_key(row[0]), None)
-                    _official_latin_words = _official_latin_words - {latin_word_key(row[0])}
+                personal_keys = {latin_word_key(row[0]) for row in dictionary_rows(data)}
+                _official_latin_words = _official_latin_words - personal_keys
+                for key in personal_keys:
+                    _official_katakana_aliases.pop(key, None)
         for word, reading in _official_katakana_aliases.items():
             if KANJI_COMPOUND.fullmatch(word):
                 path = native_compound_path(jtalk, word, reading)

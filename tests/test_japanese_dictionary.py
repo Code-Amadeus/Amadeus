@@ -324,8 +324,10 @@ def test_runtime_uses_pack_before_legacy_and_compiles_only_disposable_cache(tmp_
     assert dictionary.with_latin_word_boundaries("Follower model 100rpm") == boundary + "follower" + boundary + " model 100rpm"
     assert len(jtalk.compiled) == 2
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.compiled)
-    assert [Path(path).read_bytes() for path in jtalk.registered[-1]] == [
-        b"compiled " + (pack_root / "userdict.csv").read_bytes(), b"compiled " + personal.read_bytes(),
+    assert [list(dictionary_pack.dictionary_rows(Path(path).read_bytes().removeprefix(b"compiled ")))
+            for path in jtalk.registered[-1]] == [
+        list(dictionary_pack.dictionary_rows((pack_root / "userdict.csv").read_bytes())),
+        list(dictionary_pack.dictionary_rows(personal.read_bytes())),
     ]
     assert all(Path(path).is_relative_to(root / ".cache") for path in jtalk.registered[-1])
     assert legacy.read_text(encoding="utf-8") == FOLLOWER

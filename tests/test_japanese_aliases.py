@@ -165,7 +165,8 @@ def test_personal_dictionary_keeps_ownership_of_explicit_spellings(tmp_path, nat
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_personal_dictionary_also_owns_official_native_word(tmp_path, native, format_version):
+@pytest.mark.parametrize("halfwidth", [False, True])
+def test_personal_dictionary_also_owns_official_native_word(tmp_path, native, format_version, halfwidth):
     pack = make_pack(tmp_path, [("during", "ダーリング")],
                      mode="mecab" if format_version == 1 else "katakana_alias")
     if format_version == 2:
@@ -179,6 +180,15 @@ def test_personal_dictionary_also_owns_official_native_word(tmp_path, native, fo
     assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
     assert "during" not in runtime._official_latin_words
     assert native.run_frontend(runtime.prepare_japanese_text("during"))[0]["read"] == "テスト"
+    personal = tmp_path / "assets/text/ja/user.csv"
+    if halfwidth:
+        row[0] = "during"
+        personal.write_text(",".join(row) + "\n", encoding="utf-8")
+    source = personal.read_bytes()
+    for _ in range(2):  # Both compilation and cached reload preserve ownership.
+        assert runtime.configure_japanese_dictionary(native, project_root=tmp_path, enabled=True)["ready"]
+        assert native.run_frontend(runtime.prepare_japanese_text("during"))[0]["read"] == "テスト"
+        assert personal.read_bytes() == source
 
 
 @pytest.mark.parametrize("installed", [False, True])

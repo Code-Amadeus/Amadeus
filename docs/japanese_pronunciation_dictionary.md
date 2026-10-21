@@ -12,7 +12,7 @@ Preservation and automated screening do not establish pronunciation accuracy.
 
 Release 0.17.1 was withdrawn. Candidate **2026.10.22.1-rc2** remains unpublished
 pending independent review and maintainer acceptance. See the
-[current evidence](evidence/japanese_resource_post_249_2026-10-22.json).
+[current follow-up](evidence/japanese_resource_personal_followup_2026-10-22.json).
 The [2026-10-21 receipt](evidence/japanese_resource_acceptance_2026-10-21.json)
 is historical and superseded.
 
@@ -61,7 +61,12 @@ Aliases match complete tokens. Hyphens between letters retain compounds such as
 `follow-up`; digits on either side form a boundary, so `Python-3` and `game-2` use
 the word reading and established number path. Personal keys are removed from both
 official aliases and native-word boundary insertion, allowing actual native output
-to honor user corrections.
+to honor user corrections. Personal keys are collected before one official-set
+subtraction, so adding personal entries does not copy the full official vocabulary
+once per row. Personal surfaces are normalized with the native frontend in the
+compiled snapshot (including halfwidth Latin to fullwidth); source CSV bytes are
+never rewritten. The runtime identity changes so old compiled/audio caches cannot
+mask the new behavior.
 
 Uncovered words follow native GSV. Context-dependent Kanji are not forced into
 one mapping. Context-reading model weights remain a separate default-off experiment.
@@ -116,9 +121,9 @@ costs seconds, substantially more than the small format-1 pack.
 
 ## Acceptance and later maintenance
 
-After #252 and #249 merged, seven inherited Qwen/provenance conflicts were
-resolved to the exact main versions. The Japanese frontend and loader code did
-not change. All seven fresh profiles (26,552 records each) reproduce the prior
+At reviewed head `916fa472`, after #252 and #249 merged, seven inherited
+Qwen/provenance conflicts were resolved to exact main versions. The Japanese
+frontend and loader code had not changed in that integration. All seven profiles (26,552 records each) reproduce the prior
 observations, and all nine resource members and the ZIP remain byte-identical.
 The earlier [review receipt](evidence/japanese_resource_review_followup_2026-10-22.json)
 remains available as history. Fresh final-head CI and independent review are
@@ -151,3 +156,27 @@ byte-identical independent reconstruction are covered. For later errors, retain
 the sentence and resource version, add evidence-backed corrections and tests,
 then build a new version. Uncertain evidence stays pending. Daily error-rate
 improvement remains unquantified, and the candidate is not a published release.
+
+### Personal-dictionary follow-up to the independent review
+
+The independent review of `916fa472` reproduced the four earlier fixes. The
+follow-up removes repeated full-set copying for personal overrides, normalizes
+personal surfaces only in the compiled snapshot, and simplifies dead prefix
+handling without changing the casing policy. The rc2 resource bytes and all
+134,201 source rows remain unchanged. The current follow-up receipt records
+fresh tests, corpus comparisons and Windows configuration measurements; CI must
+be checked on its new head, separately from the prior 17 green checks.
+
+`Hand` remains a known contextual base-segmentation exception (`これはHandです`
+can split into H + and). Blanket folding of equal-reading base spellings was
+rejected after the full legacy CSV comparison exposed changes to other readings.
+This follow-up does not claim to fix that exception or certify native acoustics.
+
+Data review remains separate from code qualification. External review identified
+`hidden`, `rollback`, `these`, `repair`, `subsequent`, `kerr` and `lumley` as
+priority correction candidates, and `directory`, `between`, `below`, `characters`,
+`did`, `rather` as priority deferred alternatives to review. These are pending
+linguistic checks, not newly approved mappings; ambiguous names must not receive
+one forced reading. The unverified-but-enabled admission policy (#244) still
+requires explicit maintainer acceptance. Keep the PR draft and resource unpublished
+until that decision and listening acceptance are complete.
