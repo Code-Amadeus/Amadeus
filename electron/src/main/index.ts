@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url'
 import { CompanionPanel } from './companionPanel.js'
 import { companionPortraitStatus } from './companionPortraits.js'
 import { projectPythonCommand } from './pythonRuntime.js'
+import { bundledDictionaryEnvironment } from './bundledDictionary.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -464,6 +465,7 @@ async function launchBackend(): Promise<void> {
     cwd: PROJECT_ROOT,
     env: {
       ...backendProcessEnvironment,
+      ...bundledDictionaryEnvironment(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
       ...defaultMpsFallbackEnvironment(process.platform, process.arch, backendProcessEnvironment),
       PYTHONUNBUFFERED: '1',
       PYTHONUTF8: '1',

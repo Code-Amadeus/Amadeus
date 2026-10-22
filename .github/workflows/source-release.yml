@@ -15,10 +15,25 @@ on:
       - wallpaper/**
       - electron/scripts/build-windows-wallpaper.cjs
       - tools/build_source_release.py
+      - tools/stage_japanese_dictionary.py
+      - tools/probes/verify_bundled_dictionary.py
+      - electron/scripts/build-runtime-resources.cjs
+      - electron/electron-builder-code-only.cjs
+      - config/japanese_dictionary.py
+      - tests/test_bundled_japanese_dictionary.py
       - tools/check_third_party_provenance.py
       - tests/test_release_tooling.py
       - .github/workflows/source-release.yml
   workflow_dispatch:
+    inputs:
+      dictionary_url:
+        description: "HTTPS URL of the exact pinned resource (required for full application archives)"
+        type: string
+        required: false
+      code_only:
+        description: "Build an explicitly labelled developer archive without runtime resources"
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -43,17 +58,43 @@ jobs:
       - name: Verify included third-party provenance
         run: python tools/check_third_party_provenance.py --release-ready
 
+      - name: Select distribution inputs
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CODE_ONLY: ${{ inputs.code_only }}
+          DICTIONARY_URL: ${{ inputs.dictionary_url }}
+        run: |
+          $codeOnly = $env:EVENT_NAME -eq 'pull_request' -or $env:CODE_ONLY -eq 'true'
+          if ($codeOnly) {
+            "SOURCE_ARCHIVE=amadeus-code-only.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CODE_ONLY_DISTRIBUTION=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            $pin = Get-Content release/japanese_dictionary.json -Raw | ConvertFrom-Json
+            $url = $env:DICTIONARY_URL
+            if (!$url) { $url = $pin.download_url }
+            if (!$url -or ([uri]$url).Scheme -ne 'https') {
+              throw 'Full application archives require the pinned dictionary URL; resources must be accepted and supplied before release.'
+            }
+            New-Item -ItemType Directory -Force build/release-inputs | Out-Null
+            Invoke-WebRequest -Uri $url -OutFile build/release-inputs/japanese-dictionary.zip
+            "SOURCE_ARCHIVE=amadeus-source.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CODE_ONLY_DISTRIBUTION=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
       - name: Build deterministic source archive
-        run: >-
-          python tools/build_source_release.py
-          --manifest-output build/release/source-manifest.json
-          --output dist/amadeus-source.zip
+        shell: pwsh
+        run: |
+          $resourceArgs = @('--dictionary-bundle', 'build/release-inputs/japanese-dictionary.zip')
+          if ($env:CODE_ONLY_DISTRIBUTION -eq 'true') { $resourceArgs = @('--code-only') }
+          python tools/build_source_release.py --manifest-output build/release/source-manifest.json --output "dist/$env:SOURCE_ARCHIVE" @resourceArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Write SHA-256 checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 dist/amadeus-source.zip).Hash.ToLowerInvariant()
-          "$hash  amadeus-source.zip" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+          $hash = (Get-FileHash -Algorithm SHA256 "dist/$env:SOURCE_ARCHIVE").Hash.ToLowerInvariant()
+          "$hash  $env:SOURCE_ARCHIVE" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
 
       # Repository builds cannot detect files missing from the allowlisted ZIP.
       # Install and launch the packaged frontend using only extracted sources.
@@ -71,7 +112,7 @@ jobs:
       - name: Extract the release archive
         shell: pwsh
         run: |
-          Expand-Archive -LiteralPath dist/amadeus-source.zip -DestinationPath build/source-smoke
+          Expand-Archive -LiteralPath "dist/$env:SOURCE_ARCHIVE" -DestinationPath build/source-smoke
           $manifest = Get-Content build/release/source-manifest.json -Raw | ConvertFrom-Json
           $sourceRoot = Join-Path $PWD "build/source-smoke/amadeus-$($manifest.version)"
           "SOURCE_ROOT=$sourceRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -83,6 +124,14 @@ jobs:
       - name: Verify extracted Python environment
         working-directory: ${{ env.SOURCE_ROOT }}
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
+
+      - name: Verify the extracted bundled dictionary with the native frontend
+        if: env.CODE_ONLY_DISTRIBUTION == 'false'
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: >-
+          uv run --locked --no-sync --with pyopenjtalk-plus==0.4.1.post9
+          python -X utf8 tools/probes/verify_bundled_dictionary.py
+          --output build/source-release-smoke/dictionary-source.json
 
       - name: Install Electron and Pi from extracted sources
         working-directory: ${{ env.SOURCE_ROOT }}/electron
@@ -103,7 +152,21 @@ jobs:
         working-directory: ${{ env.SOURCE_ROOT }}/electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --win --x64 --dir --publish never
+        shell: pwsh
+        run: |
+          $configArgs = @()
+          if ($env:CODE_ONLY_DISTRIBUTION -eq 'true') { $configArgs = @('--config', 'electron-builder-code-only.cjs') }
+          npx electron-builder --win --x64 --dir --publish never @configArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify the dictionary carried by the Electron package
+        if: env.CODE_ONLY_DISTRIBUTION == 'false'
+        working-directory: ${{ env.SOURCE_ROOT }}
+        shell: pwsh
+        run: |
+          $env:AMADEUS_BUNDLED_JAPANESE_DICTIONARY = Join-Path $PWD 'electron/build/win-unpacked/resources/assets/bundled/japanese-pronunciation'
+          uv run --locked --no-sync --with pyopenjtalk-plus==0.4.1.post9 python -X utf8 tools/probes/verify_bundled_dictionary.py --output build/source-release-smoke/dictionary-electron.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Launch packaged application from the source archive
         working-directory: ${{ env.SOURCE_ROOT }}
@@ -122,9 +185,9 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: amadeus-source-${{ github.sha }}
+          name: ${{ env.SOURCE_ARCHIVE }}-${{ github.sha }}
           path: |
-            dist/amadeus-source.zip
+            dist/*.zip
             dist/SHA256SUMS.txt
             build/release/source-manifest.json
           if-no-files-found: error

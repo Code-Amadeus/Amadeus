@@ -81,8 +81,10 @@ qualification path and needs PortAudio for PyAudio; the macos-14 candidate job
 also installs `local-mps` and switches back through T3 vad. A successful install, import
 or Electron build does not replace microphone, playback and desktop acceptance.
 The reference cu124 profile is Windows-only. The cu128 candidate targets
-Windows/Linux x86_64; the MPS candidate targets Apple Silicon macOS. Local model weights, reference audio
-and dictionaries are external assets and are not downloaded by this installer.
+Windows/Linux x86_64; the MPS candidate targets Apple Silicon macOS. Local model
+weights and reference audio remain external and are not downloaded by this installer.
+Full application distributions already contain the pinned Japanese dictionary;
+independent dictionary updates/rollbacks and personal entries remain separate.
 
 Local ASR/TTS model loading enforces Hugging Face offline mode even when the
 parent process sets `HF_HUB_OFFLINE=0` or Transformers/Hub have already been

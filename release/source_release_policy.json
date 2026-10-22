@@ -140,7 +140,12 @@
     "tools/probes/extension_store_demo.py",
     "tools/probes/extension_store_roundtrip.py",
     "electron/tests/fixtures/extensionPublication.cjs",
-    "docs/extension_store_demo.md"
+    "docs/extension_store_demo.md",
+    "release/japanese_dictionary.json",
+    "tools/stage_japanese_dictionary.py",
+    "electron/scripts/build-runtime-resources.cjs",
+    "electron/electron-builder-code-only.cjs",
+    "electron/src/main/bundledDictionary.ts"
   ],
   "include_roots": [
     "characters",

@@ -134,7 +134,13 @@ def external_asset_pack_status(
     except KeyError as exc:
         raise AssetPackageError(f"unknown external asset pack: {pack_id}") from exc
 
-    present = [path for path in spec.required if asset_path(asset_root, path).is_file()]
+    dictionary_root = None
+    if spec.validator == "japanese_dictionary":
+        from config.japanese_dictionary import dictionary_pack_root
+        dictionary_root = dictionary_pack_root(asset_root)
+    present = [path for path in spec.required
+               if (dictionary_root / path.relative_to(spec.trees[0]) if dictionary_root is not None
+                   else asset_path(asset_root, path)).is_file()]
     missing = [path for path in spec.required if path not in present]
     message = ""
     version = ""
@@ -156,7 +162,7 @@ def external_asset_pack_status(
     if state == "installed" and spec.validator == "japanese_dictionary":
         from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
         try:
-            pack = load_dictionary_pack(asset_path(asset_root, spec.trees[0]))
+            pack = load_dictionary_pack(dictionary_root)
             version = pack.version
             if pack.format_version == 2:
                 message = (f"{pack.entry_count} source rows preserved; {pack.reviewed_rows} reviewed reading corrections; "
@@ -197,6 +203,7 @@ def external_asset_pack_status(
         "required_count": len(spec.required),
         "missing": [path.as_posix() for path in missing],
         "message": message,
-        **({"version": version} if spec.validator == "japanese_dictionary" else {}),
+        **({"version": version, "source": "installed" if dictionary_root == asset_path(asset_root, spec.trees[0])
+            else "bundled"} if spec.validator == "japanese_dictionary" else {}),
         "install_command": "python tools/external_assets.py install <asset-bundle.zip>",
     }
