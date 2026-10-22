@@ -1,0 +1,19 @@
+/* Host-private console scale: type, weight and radius roles. Theme colors stay in the :root blocks of
+   index.css, where generate-theme-tokens.mjs reads the published palette; keep this file separate. */
+:root {
+  --font-caption: 11px;   /* badges, timestamps, counts, metadata */
+  --font-small: 12px;     /* descriptions and secondary text */
+  --font-body: 13px;      /* body text, controls, list items, chat messages */
+  --font-subtitle: 14px;  /* group headings */
+  --font-title: 17px;     /* panel titles */
+  --font-page: 20px;      /* page titles */
+
+  --weight-regular: 400;
+  --weight-medium: 500;   /* field labels, emphasized metadata */
+  --weight-strong: 600;   /* titles and headings */
+
+  --radius-chip: 4px;       /* tags, thumbnails, small chips */
+  --radius-control: 6px;    /* buttons, inputs, selects, tabs, menu and option rows, icon tiles */
+  --radius-container: 10px; /* cards, panels, notes, popovers, dialogs, message bubbles */
+  --radius-pill: 999px;     /* pills, circles, switches, status dots, thin bars */
+}

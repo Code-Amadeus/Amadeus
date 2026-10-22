@@ -242,7 +242,7 @@ test('disable and removal warn about the selected voice while preserving its ide
   const page = harness({}, { selectedVoiceBackend: 'org.example.voice/speech' })
   t.after(() => page.restore())
   page.button('Configure extension').props.onClick(); page.render()
-  page.find(node => node.type === 'input' && node.props?.id === 'extension-enabled').props.onChange({ target: { checked: false } }); page.render()
+  page.find(node => node.props?.id === 'extension-enabled' && node.props.onChange).props.onChange(false); page.render()
   assert.ok(page.find(node => node.props?.children === 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'))
   page.button('Cancel').props.onClick(); page.render()
   page.button('Remove').props.onClick(); page.render()

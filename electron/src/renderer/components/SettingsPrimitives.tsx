@@ -13,44 +13,15 @@ export function GroupTitle({ children, detail }: { children: string; detail?: st
 }
 
 export function CardShell({ children, vertical = false }: { children: ReactNode; vertical?: boolean }) {
-  return (
-    <div
-      className={`setting-card flex ${vertical ? 'flex-col items-stretch' : 'items-center'}`}
-      style={{
-        minHeight: vertical ? undefined : 64,
-        backgroundColor: 'var(--surface)',
-        border: '1px solid var(--card-border)',
-        borderRadius: 11,
-        padding: 12,
-        boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)',
-      }}
-    >
-      {children}
-    </div>
-  )
+  return <div className={`setting-card settings-row-card${vertical ? ' settings-row-card-vertical' : ''}`}>{children}</div>
 }
 
 export function CardIcon({ name }: { name: FluentIconName }) {
-  return (
-    <>
-      <div className="shrink-0 flex items-center justify-center" style={{ width: 24, color: 'var(--muted)' }}>
-        <FluentIcon name={name} size={17} />
-      </div>
-      <div style={{ width: 11, flexShrink: 0 }} />
-    </>
-  )
+  return <span className="settings-card-icon" aria-hidden="true"><FluentIcon name={name} size={16} /></span>
 }
 
 export function StatusPill({ ok, tone, children }: { ok: boolean; tone?: 'success' | 'warning' | 'neutral'; children: ReactNode }) {
-  const resolvedTone = tone || (ok ? 'success' : 'warning')
-  return (
-    <span
-      className="settings-status-pill text-[10px] font-[700] rounded-full px-2.5 py-1 shrink-0"
-      data-tone={resolvedTone}
-    >
-      {children}
-    </span>
-  )
+  return <span className="settings-status-pill" data-tone={tone || (ok ? 'success' : 'warning')}>{children}</span>
 }
 
 export function SettingsGroup({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
@@ -76,8 +47,10 @@ export function SettingsField({ id, label, description, children }: {
   </div>
 }
 
-export function SettingsButton({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
+/** The one text button: four tones, and a small size for compact toolbars and inline actions. */
+export function SettingsButton({ tone = 'secondary', size = 'regular', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: 'primary' | 'secondary' | 'quiet' | 'danger'
+  size?: 'regular' | 'small'
 }) {
-  return <button type="button" {...props} className={`settings-button ${className}`} data-tone={tone} />
+  return <button type="button" {...props} className={`settings-button ${className}`} data-tone={tone} data-size={size === 'small' ? 'small' : undefined} />
 }

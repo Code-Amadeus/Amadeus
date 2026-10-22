@@ -4,6 +4,7 @@ import { extensionDisclosure } from '../../shared/extensions.js'
 import { extensionNeedsAgent } from '../../shared/extensionProfile.js'
 import { useI18n } from '../i18n'
 import { CardShell, SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import Switch from './Switch'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 import { compatibleExtensionProviders, extensionDraft, extensionLanguageSupported, extensionRuntimeLabel, extensionText, extensionUpdate,
   type ExtensionDraft, type ExtensionProvider, type ExtensionRuntimeStatus } from './extensionSettingsCatalog'
@@ -145,7 +146,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         </div>
         <div className="settings-card-description">{extensionText(extension.manifest.description, locale)}</div>
         <details className="settings-field-description"><summary>{t('Declared access and commands')}</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{extensionDisclosure(extension.manifest)}</pre>
+          <pre className="whitespace-pre-wrap wrap-anywhere">{extensionDisclosure(extension.manifest)}</pre>
         </details>
         <div className="settings-connection-facts">
           <span><strong>{t('Saved state')}:</strong> {t(savedState)}</span>
@@ -200,7 +201,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         <div className="settings-card-description">{selected.id} · {selected.version}</div></div>
       <fieldset className="settings-form-body" disabled={busy}>
         <SettingsField id="extension-enabled" label="Enable extension" description={selected.application === 'frontend' ? 'Applies immediately after saving.' : 'Applies after saving and restarting the backend.'}>
-          <label className="settings-form-switch"><input id="extension-enabled" type="checkbox" checked={draft.enabled} onChange={event => change({ enabled: event.target.checked })} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></label>
+          <Switch id="extension-enabled" describedBy="extension-enabled-hint" checked={draft.enabled} onChange={enabled => change({ enabled })} />
         </SettingsField>
         {!draft.enabled && (selected.manifest.contributes.voice_backend || []).some(voice => `${selected.id}/${voice.id}` === selectedVoiceBackend) ? <div className="settings-field-description">{t('This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</div> : null}
         {Object.entries(selected.manifest.config || {}).map(([key, field]) => {
@@ -218,7 +219,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
                 onChange={event => change({ secrets: { ...draft.secrets, [key]: event.target.value } })} />
               {selected.secretConfigured[key] || draft.secrets[key] ? <SettingsButton tone="danger" disabled={!encryptionAvailable} onClick={() => change({ secrets: { ...draft.secrets, [key]: null } })}>{t('Clear')} {label}</SettingsButton> : null}
               {!encryptionAvailable ? <div className="settings-field-description">{t('Secure credential storage is unavailable. Credentials cannot be saved on this device.')}</div> : null}
-            </div> : field.type === 'boolean' ? <label className="settings-form-switch"><input id={id} type="checkbox" checked={draft.values[key] === true} onChange={event => change({ values: { ...draft.values, [key]: event.target.checked } })} /><span>{t(draft.values[key] === true ? 'On' : 'Off')}</span></label>
+            </div> : field.type === 'boolean' ? <Switch id={id} describedBy={description ? `${id}-hint` : undefined} checked={draft.values[key] === true}
+                onChange={value => change({ values: { ...draft.values, [key]: value } })} />
               : field.type === 'enum' ? <select id={id} className="settings-form-input" value={String(draft.values[key] ?? '')} required={draft.enabled && field.required}
                 aria-describedby={description ? `${id}-hint` : undefined} onChange={event => change({ values: { ...draft.values, [key]: event.target.value } })}>
                 <option value="">{t('Not set')}</option>

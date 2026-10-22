@@ -29,6 +29,9 @@ function settingsStore(file, dotenv, fileSystem = fs) {
 }
 const migration = compile('../src/renderer/components/RetiredRouteSetting.tsx', name => {
   if (name === '../i18n') return { useI18n: () => ({ t: value => value }) }
+  if (name === './SettingsPrimitives') {
+    return { SettingsButton: ({ size: _size, tone: _tone, ...props }) => React.createElement('button', { type: 'button', ...props }) }
+  }
   return require(name)
 })
 const key = migration.RETIRED_ROUTE_KEY

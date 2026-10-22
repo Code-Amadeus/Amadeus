@@ -45,7 +45,7 @@ export default function CharacterPage({ panels, connected, section, onSectionCha
       {sections.map((item, index) => <button type="button" role="tab" key={item.id}
         id={`character-tab-${item.id}`} aria-selected={section === item.id} aria-controls={`character-panel-${item.id}`}
         tabIndex={section === item.id ? 0 : -1} onClick={() => onSectionChange(item.id)} onKeyDown={event => move(event, index)}>
-        <FluentIcon name={item.icon} size={15} /><span>{t(item.label)}</span>
+        <FluentIcon name={item.icon} size={16} /><span>{t(item.label)}</span>
       </button>)}
     </div>
     <section className={`character-workspace-panel character-panel-${section}`} role="tabpanel" tabIndex={0}

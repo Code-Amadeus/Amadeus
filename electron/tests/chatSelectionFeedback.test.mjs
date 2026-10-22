@@ -306,9 +306,14 @@ test('same-named foreign roles retain full stable IDs in their tooltips and name
   for (const id of ids) {
     const row = rowMarkup(markup, id)
     assert.ok(row.includes(`Character: &lt;Same &amp; very long name&gt; (${id})`))
-    assert.match(row, /class="truncate" style="max-width:90px"/)
+    assert.match(row, /class="rail-session-character"/)
     assert.match(row, />&lt;Same &amp; very long name&gt;<\/span>/)
   }
+  // The role name gets a bounded width and an ellipsis instead of pushing the time out of the row.
+  const css = fs.readFileSync(new URL('../src/renderer/styles/index.css', import.meta.url), 'utf8')
+  const rule = css.match(/\.rail-session-character \{([^}]*)\}/)?.[1] || ''
+  assert.match(rule, /max-width: 90px/)
+  assert.match(rule, /text-overflow: ellipsis/)
 })
 
 test('missing and invalid roles are explicitly unavailable and never inherit the current role name', () => {

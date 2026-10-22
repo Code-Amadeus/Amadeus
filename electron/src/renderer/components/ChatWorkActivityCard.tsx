@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChatWorkActivityEntry, ChatWorkActivityRun } from './chatWorkActivity'
+import FluentIcon from './FluentIcon'
+import { SettingsButton } from './SettingsPrimitives'
 import { useI18n } from '../i18n'
 
 interface Props {
@@ -20,21 +22,12 @@ const STATUS_LABEL: Record<ChatWorkActivityRun['status'], string> = {
   orphaned: 'Outcome unknown',
 }
 
-const STATUS_COLOR: Record<ChatWorkActivityRun['status'], string> = {
-  running: '#2563EB',
-  succeeded: '#15803D',
-  failed: '#C42B1C',
-  cancelled: '#7C3AED',
-  stalled: '#B45309',
-  orphaned: '#B45309',
-}
-
-function entryGlyph(entry: ChatWorkActivityEntry): string {
-  if (entry.state === 'running') return '●'
-  if (entry.state === 'succeeded') return '✓'
-  if (entry.state === 'failed') return '×'
-  if (entry.state === 'attention') return '!'
-  return '·'
+// Status colors come from the theme (chat-activity CSS keyed by data-status / data-state).
+function EntryMark({ entry }: { entry: ChatWorkActivityEntry }) {
+  if (entry.state === 'succeeded') return <FluentIcon name="Checkmark" size={14} />
+  if (entry.state === 'failed') return <FluentIcon name="Dismiss" size={14} />
+  if (entry.state === 'running') return <span className="chat-activity-dot" />
+  return <>{entry.state === 'attention' ? '!' : '·'}</>
 }
 
 function durationLabel(activity: ChatWorkActivityRun, now: number): string {
@@ -64,7 +57,6 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
   ), [activity.entries])
   const completed = activity.entries.filter(item => item.state === 'succeeded').length
   const failed = activity.entries.filter(item => item.state === 'failed').length
-  const color = STATUS_COLOR[activity.status]
 
   const decidePermission = async (entry: ChatWorkActivityEntry, allow: boolean) => {
     if (!onPermissionDecision || !entry.permission || permissionBusy) return
@@ -81,147 +73,83 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
   }
 
   return (
-    <div
-      className="flex items-start gap-[10px] py-[1px]"
-      style={{ paddingInline: 'clamp(24px, 2.5vw, 34px)' }}
-      data-work-activity-run={activity.runId}
-    >
-      <div style={{ width: 28, flexShrink: 0 }} />
-      <details
-        className="chat-work-activity flex-[7] min-w-0"
-        style={{
-          maxWidth: 'calc(100% - 56px)',
-          color: 'var(--muted)',
-        }}
-      >
-        <summary
-          style={{
-            cursor: 'pointer',
-            listStyle: 'none',
-            padding: '4px 2px',
-            userSelect: 'none',
-          }}
-        >
-          <div className="flex items-center gap-1.5" style={{ minWidth: 0 }}>
-            <span
-              className="chat-work-activity-chevron"
-              aria-hidden="true"
-              style={{ display: 'inline-block', color: 'var(--faint)', fontSize: 12, lineHeight: 1, transition: 'transform 120ms ease' }}
-            >
-              ›
-            </span>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 5,
-                height: 5,
-                borderRadius: 3,
-                flexShrink: 0,
-                background: color,
-                opacity: activity.status === 'running' ? 0.9 : 0.72,
-              }}
-            />
-            <b style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>
-              {activity.provider} · {t(STATUS_LABEL[activity.status])}
-            </b>
-            <span aria-hidden="true" style={{ color: 'var(--border-strong)', fontSize: 10 }}>·</span>
-            <span className="truncate" style={{ color: 'var(--faint)', fontSize: 10.5, minWidth: 0 }}>
-              {current?.title || activity.task || t('Preparing the provider run…')}
-            </span>
-            <span style={{ marginLeft: 'auto', color: 'var(--faint)', fontSize: 10.5, flexShrink: 0 }}>
-              {durationLabel(activity, now)}
-            </span>
-          </div>
+    <div className="chat-activity-row" data-work-activity-run={activity.runId}>
+      <div className="chat-activity-gutter" />
+      <details className="chat-work-activity" data-status={activity.status}>
+        <summary className="chat-activity-summary">
+          <FluentIcon name="ChevronRight" size={14} className="chat-work-activity-chevron" aria-hidden="true" />
+          <span className="chat-activity-status-dot" aria-hidden="true" />
+          <strong className="chat-activity-provider">
+            {activity.provider} · {t(STATUS_LABEL[activity.status])}
+          </strong>
+          <span aria-hidden="true" className="chat-activity-separator">·</span>
+          <span className="chat-activity-current">
+            {current?.title || activity.task || t('Preparing the provider run…')}
+          </span>
+          <span className="chat-activity-duration">
+            {durationLabel(activity, now)}
+          </span>
         </summary>
 
-        <div style={{ margin: '2px 0 5px 8px', borderLeft: '1px solid var(--border)', padding: '2px 2px 4px 11px' }}>
+        <div className="chat-activity-body">
           {activity.entries.length === 0 ? (
-            <p style={{ color: 'var(--faint)', fontSize: 10.5, margin: '5px 0' }}>
+            <p className="chat-activity-empty">
               {t('Waiting for observable provider activity.')}
             </p>
           ) : activity.entries.map(entry => (
-            <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1fr)', gap: 4, padding: '3px 0' }}>
-              <span
-                aria-hidden="true"
-                style={{
-                  color: entry.state === 'failed'
-                    ? '#C42B1C'
-                    : entry.state === 'attention'
-                      ? '#B45309'
-                      : entry.state === 'succeeded'
-                        ? '#15803D'
-                        : 'var(--faint)',
-                  fontSize: 10,
-                  lineHeight: '15px',
-                }}
-              >
-                {entryGlyph(entry)}
+            <div key={entry.id} className="chat-activity-entry">
+              <span aria-hidden="true" className="chat-activity-mark" data-state={entry.state}>
+                <EntryMark entry={entry} />
               </span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: 'var(--muted)', fontSize: 10.5, lineHeight: '15px', overflowWrap: 'anywhere' }}>
+              <div className="min-w-0">
+                <div className="chat-activity-entry-title">
                   {entry.title}
                 </div>
                 {entry.detail && (
-                  <pre
-                    style={{
-                      margin: '5px 0 0 0',
-                      padding: '5px 7px',
-                      maxHeight: 180,
-                      overflow: 'auto',
-                      borderRadius: 6,
-                      background: 'var(--surface-alt)',
-                      color: 'var(--muted)',
-                      fontSize: 10,
-                      lineHeight: 1.45,
-                      whiteSpace: 'pre-wrap',
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
+                  <pre className="chat-activity-detail">
                     {entry.detail}
                   </pre>
                 )}
                 {entry.state === 'attention' && entry.permission && onPermissionDecision && (
                   <div
                     data-permission-request={entry.permission.requestId}
-                    style={{ display: 'flex', gap: 6, marginTop: 6 }}
+                    className="chat-activity-actions"
                   >
                     {entry.permission.options.includes('allow_once') && (
-                      <button
-                        type="button"
+                      <SettingsButton
+                        size="small"
                         disabled={Boolean(permissionBusy)}
                         onClick={() => { void decidePermission(entry, true) }}
-                        style={{ border: '1px solid var(--border-strong)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5 }}
                       >
                         {t('Allow once')}
-                      </button>
+                      </SettingsButton>
                     )}
                     {entry.permission.options.includes('deny') && (
-                      <button
-                        type="button"
+                      <SettingsButton
+                        size="small"
+                        tone="quiet"
                         disabled={Boolean(permissionBusy)}
                         onClick={() => { void decidePermission(entry, false) }}
-                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, color: 'var(--muted)' }}
                       >
                         {t('Deny')}
-                      </button>
+                      </SettingsButton>
                     )}
                   </div>
                 )}
                 {permissionError.message && entry.permission?.requestId === permissionError.requestId && (
-                  <div style={{ color: '#C42B1C', fontSize: 10, marginTop: 4 }}>
+                  <div className="chat-activity-error">
                     {permissionError.message}
                   </div>
                 )}
               </div>
             </div>
           ))}
-          <div style={{ color: 'var(--faint)', fontSize: 9.5, margin: '4px 0 0 16px' }}>
+          <div className="chat-activity-footer">
             {t('{count} completed', { count: completed })}{failed ? ` · ${t('{count} failed', { count: failed })}` : ''} · {t('observable activity only')}
           </div>
         </div>
-        <style>{`.chat-work-activity[open] .chat-work-activity-chevron { transform: rotate(90deg); }`}</style>
       </details>
-      <div className="flex-[3]" />
+      <div className="chat-activity-spacer" />
     </div>
   )
 }

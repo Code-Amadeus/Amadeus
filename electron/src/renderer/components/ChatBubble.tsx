@@ -65,10 +65,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
 
   if (role === 'system') {
     return (
-      <div
-        className="flex justify-center px-[18px]"
-        style={{ marginTop: hasPreviousMessage ? 10 : 0 }}
-      >
+      <div className="chat-message-row" data-role="system" data-follows={hasPreviousMessage || undefined}>
         <span className="chat-system-message">
           {text}
         </span>
@@ -80,74 +77,19 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
   const avatar = isUser ? userAvatar : assistantAvatar
 
   return (
-    <div
-      className="flex items-start gap-[10px]"
-      style={{
-        flexDirection: isUser ? 'row-reverse' : 'row',
-        paddingInline: 'clamp(24px, 2.5vw, 34px)',
-        marginTop: hasPreviousMessage ? 10 : 0,
-      }}
-    >
-      {/* compact desktop avatar */}
-      <div
-        className="shrink-0 flex items-center justify-center text-[10px] select-none overflow-hidden"
-        style={{
-          width: 28, height: 28, borderRadius: 14,
-          fontWeight: 600, fontFamily: 'var(--font)',
-          ...(isUser
-            ? { color: 'var(--on-accent, #FFFFFF)', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
-            : { color: 'var(--text)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }
-          ),
-        }}
-      >
+    <div className="chat-message-row" data-role={role} data-follows={hasPreviousMessage || undefined}>
+      <div className="chat-avatar">
         {avatar
-          ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ? <img src={avatar} alt="" />
           : isUser ? 'U' : characterInitial(activeCharacter)}
       </div>
 
       {/* Keep short messages compact while long messages wrap within the chat lane. */}
-      <div
-        className="min-w-0"
-        style={{
-          flex: '0 1 auto',
-          width: 'fit-content',
-          maxWidth: '70%',
-        }}
-      >
-        {/* User text is shown verbatim; assistant Markdown lays out its own blocks, so
-            preserving its newlines would add blank lines between paragraphs and lists. */}
-        <div
-          className={`text-[12px] leading-[150%] break-words select-text${isUser ? ' whitespace-pre-wrap' : ''}`}
-          style={{
-            fontFamily: 'var(--font-cjk)',
-            borderRadius: 8, padding: '8px 11px',
-            ...(isUser
-              ? {
-                  color: 'var(--on-accent, #FFFFFF)', backgroundColor: 'var(--accent)',
-                  boxShadow: '0 5px 16px rgba(17,24,39,0.09)',
-                }
-              : {
-                  color: 'var(--text)', backgroundColor: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 4px 14px rgba(17,24,39,0.07)',
-                }
-            ),
-          }}
-        >
+      <div className="chat-bubble-lane">
+        <div className="chat-bubble">
           {isUser ? display : <ReactMarkdown className="markdown-body">{display}</ReactMarkdown>}
           {!isUser && translation ? (
-            <div
-              aria-label={t('Translation')}
-              className="whitespace-pre-wrap break-words"
-              style={{
-                borderTop: '1px solid var(--border)',
-                color: 'var(--muted)',
-                fontSize: 11.5,
-                lineHeight: '155%',
-                marginTop: 7,
-                paddingTop: 7,
-              }}
-            >
+            <div aria-label={t('Translation')} className="chat-bubble-translation">
               {translation}
             </div>
           ) : null}

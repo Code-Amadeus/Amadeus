@@ -253,7 +253,7 @@ function SceneStatus({ capabilities, onOpenSection }: Props) {
             <strong>{t(diagnostic.capability)}</strong>
             <small>{t(diagnostic.status)} · {diagnostic.detail}</small>
           </span>
-          <button type="button" onClick={() => setDiagnostic(null)} aria-label={t('Close')}>×</button>
+          <button type="button" className="icon-button" data-size="small" data-tone="faint" onClick={() => setDiagnostic(null)} aria-label={t('Close')}><FluentIcon name="Dismiss" size={14} /></button>
         </div>
       ) : null}
       {SCENE_ORDER.map(sceneId => {
@@ -351,7 +351,7 @@ export function RuntimePackages({ runtimePackages }: Pick<Props, 'runtimePackage
           <article className="runtime-package-card" key={packageStatus.id}>
             <header>
               <span className="runtime-package-icon" aria-hidden="true">
-                <FluentIcon name={packageStatus.icon} size={18} />
+                <FluentIcon name={packageStatus.icon} size={16} />
               </span>
               <StatusBadge state={packageStatus.state} label={packageStatus.stateLabel} />
             </header>

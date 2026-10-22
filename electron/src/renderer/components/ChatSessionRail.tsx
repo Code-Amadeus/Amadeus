@@ -178,21 +178,7 @@ function SessionRow({
       ? t('{count} messages', { count: session.message_count })
       : t('Draft')
   return (
-    <div
-      className="group flex items-center min-w-0"
-      style={{
-        margin: '1px 6px',
-        borderRadius: 7,
-        color: active ? 'var(--text)' : 'var(--muted)',
-        backgroundColor: active ? 'var(--pressed)' : 'transparent',
-      }}
-      onMouseEnter={event => {
-        if (!active) event.currentTarget.style.backgroundColor = 'var(--hover)'
-      }}
-      onMouseLeave={event => {
-        if (!active) event.currentTarget.style.backgroundColor = 'transparent'
-      }}
-    >
+    <div className="rail-session" data-active={active || undefined}>
       {editing ? (
         <SessionTitleInput title={session.title} onCommit={onRename} onCancel={onCancelRename} />
       ) : <button
@@ -200,19 +186,18 @@ function SessionRow({
         data-chat-session-id={session.id}
         onClick={() => { if (canMutate) onSelect(); else onNotice(mutationNotice) }}
         onDoubleClick={() => { if (canMutate) onStartRename(); else onNotice(mutationNotice) }}
-        className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
-        style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
+        className="rail-session-button"
         title={canMutate ? session.title : `${session.title}\n${characterTooltip ? `${characterTooltip}\n` : ''}${mutationNotice}`}
       >
-        <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
+        <span className="rail-session-title">
           {session.title || t('Untitled chat')}
         </span>
-        <span className="flex items-center gap-1 min-w-0" style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
+        <span className="rail-session-meta">
           <span className="truncate">{detail}</span>
           {character && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="truncate" style={{ maxWidth: 90 }} title={characterTooltip}>
+              <span className="rail-session-character" title={characterTooltip}>
                 {characterLabel}
               </span>
             </>
@@ -227,10 +212,9 @@ function SessionRow({
         onClick={event => { event.stopPropagation(); onDelete() }}
         title={mutationNotice || t('Delete chat')}
         aria-label={`${t('Delete')} ${session.title || t('chat')}`}
-        className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"
-        style={{ color: 'var(--faint)', padding: '7px 7px 7px 3px', fontSize: 11 }}
+        className="icon-button rail-session-delete" data-size="small" data-tone="faint"
       >
-        x
+        <FluentIcon name="Dismiss" size={14} />
       </button>
     </div>
   )
@@ -388,27 +372,20 @@ export default function ChatSessionRail({
     return (
       <div
         key={group.id}
-        className="flex items-center min-w-0"
-        onMouseEnter={event => {
-          if (!selected) event.currentTarget.style.background = 'var(--hover)'
-        }}
-        onMouseLeave={event => {
-          if (!selected) event.currentTarget.style.background = 'transparent'
-        }}
+        className="rail-group"
+        data-selected={selected || undefined}
         onFocusCapture={() => setPreviewGroupId(group.id)}
-        style={{ margin: '1px 5px', borderRadius: 7, background: selected ? 'var(--pressed)' : 'transparent' }}
       >
         <button
           type="button"
           onClick={() => setPreviewGroupId(group.id)}
-          className="flex items-center flex-1 min-w-0 border-none bg-transparent cursor-pointer text-left"
-          style={{ height: 29, padding: '0 4px 0 8px', color: selected ? 'var(--text)' : 'var(--muted)', fontSize: 10 }}
+          className="rail-group-button"
           title={`${t('Show')} ${group.label} ${t('chats')}`}
           aria-current={selected ? 'true' : undefined}
         >
-          <span aria-hidden="true" style={{ width: 13, color: 'var(--faint)' }}>›</span>
-          <span className="flex-1 truncate" style={{ fontWeight: 600 }}>{group.label}</span>
-          <span style={{ color: 'var(--faint)', fontSize: 9 }}>{group.sessions.length}</span>
+          <FluentIcon name="ChevronRight" size={14} className="rail-faint" aria-hidden="true" />
+          <span className="rail-group-label">{group.label}</span>
+          <span className="rail-count">{group.sessions.length}</span>
         </button>
         {group.projectId && (
           <button
@@ -416,10 +393,9 @@ export default function ChatSessionRail({
             onClick={() => onNewProjectSession(group.projectId || '')}
             title={`${t('New chat in')} ${group.label}`}
             aria-label={`${t('New chat in')} ${group.label}`}
-            className="flex items-center justify-center border-none bg-transparent cursor-pointer"
-            style={{ width: 23, height: 25, borderRadius: 6, color: 'var(--faint)', fontSize: 15 }}
+            className="icon-button" data-size="small" data-tone="faint"
           >
-            +
+            <FluentIcon name="Add" size={14} />
           </button>
         )}
       </div>
@@ -427,18 +403,10 @@ export default function ChatSessionRail({
   }
 
   return (
-    <aside
-      className="shrink-0"
-      aria-label={t('Chat history')}
-      style={{
-        width: 44,
-        position: 'relative',
-        overflow: 'visible',
-        zIndex: 8,
-      }}
-    >
+    <aside className="rail" aria-label={t('Chat history')}>
       <div
-        className="flex flex-col h-full"
+        className="rail-panel"
+        data-open={railOpen || undefined}
         role="navigation"
         aria-label={t('Chat and artifact navigation')}
         aria-expanded={railOpen}
@@ -451,21 +419,8 @@ export default function ChatSessionRail({
             setRailFocused(false)
           }
         }}
-        style={{
-          position: 'absolute',
-          inset: '0 auto 0 0',
-          width: railOpen ? 206 : 44,
-          borderRight: '1px solid var(--border)',
-          backgroundColor: 'var(--surface-alt)',
-          boxShadow: railOpen ? '8px 0 20px rgba(17,24,39,0.08)' : 'none',
-          transition: 'width 140ms ease, box-shadow 140ms ease',
-          overflow: 'hidden',
-        }}
       >
-      <div
-        className="flex items-center shrink-0"
-        style={{ minHeight: 41, padding: railOpen ? '5px 7px' : '6px 7px', gap: 3 }}
-      >
+      <div className="rail-header">
         {railOpen ? (
           <>
             {(['chats', 'artifacts'] as RailMode[]).map(mode => (
@@ -474,26 +429,15 @@ export default function ChatSessionRail({
                 type="button"
                 onClick={() => setRailMode(mode)}
                 aria-pressed={railMode === mode}
-                className="flex items-center justify-center gap-1 border-none cursor-pointer"
-                style={{
-                  height: 30,
-                  flex: 1,
-                  minWidth: 0,
-                  padding: '0 6px',
-                  borderRadius: 7,
-                  background: railMode === mode ? 'var(--pressed)' : 'transparent',
-                  color: railMode === mode ? 'var(--text)' : 'var(--muted)',
-                  fontSize: 10,
-                  fontWeight: railMode === mode ? 650 : 500,
-                }}
+                className="rail-mode"
               >
-                <FluentIcon name={mode === 'chats' ? 'Chat' : 'Tiles'} size={13} />
+                <FluentIcon name={mode === 'chats' ? 'Chat' : 'Tiles'} size={14} />
                 <span className="truncate">{t(mode === 'chats' ? 'Chats' : 'Artifacts')}</span>
               </button>
             ))}
           </>
         ) : (
-          <span className="flex items-center justify-center" style={{ width: 30, height: 30, color: 'var(--muted)' }}>
+          <span className="rail-mode-icon">
             <FluentIcon name={railMode === 'chats' ? 'Chat' : 'Tiles'} size={16} />
           </span>
         )}
@@ -503,40 +447,29 @@ export default function ChatSessionRail({
             onClick={onNew}
             title={t('New chat')}
             aria-label={t('New chat')}
-            className="flex items-center justify-center border-none bg-transparent cursor-pointer"
-            style={{ width: 30, height: 30, borderRadius: 6, color: 'var(--muted)' }}
+            className="icon-button"
           >
-            <FluentIcon name="Edit" size={15} />
+            <FluentIcon name="Edit" size={16} />
           </button>
         )}
       </div>
 
       {railOpen && railMode === 'chats' && (
-        <div className="flex flex-col flex-1 min-h-0" style={{ paddingBottom: 7 }}>
-          <div style={{ padding: '4px 8px 6px' }}>
+        <div className="rail-body">
+          <div className="rail-search-row">
             <input
               type="search"
+              className="rail-search"
               value={query}
               onChange={event => setQuery(event.target.value)}
               placeholder={t('Search chats')}
               aria-label={t('Search chats')}
-              style={{
-                width: '100%',
-                height: 28,
-                border: '1px solid var(--border)',
-                borderRadius: 7,
-                padding: '0 8px',
-                outline: 'none',
-                background: 'var(--surface)',
-                color: 'var(--text)',
-                fontSize: 10,
-              }}
             />
           </div>
 
-          <div className="chat-scroll-area shrink-0 overflow-y-auto" style={{ maxHeight: '38%', paddingBottom: 5 }}>
-            <div className="flex items-center" style={{ padding: '1px 6px 2px 10px' }}>
-              <span className="flex-1" style={{ color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
+          <div className="chat-scroll-area rail-projects">
+            <div className="rail-section-row">
+              <span className="rail-section-label">
                 {t('PROJECTS')}
               </span>
               <button
@@ -544,25 +477,24 @@ export default function ChatSessionRail({
                 onClick={onNewProject}
                 title={t('New Project')}
                 aria-label={t('New Project')}
-                className="flex items-center justify-center border-none bg-transparent cursor-pointer"
-                style={{ width: 26, height: 26, borderRadius: 6, color: 'var(--faint)', fontSize: 16 }}
+                className="icon-button" data-size="small" data-tone="faint"
               >
-                +
+                <FluentIcon name="Add" size={14} />
               </button>
             </div>
             {projectGroups.length > 0
               ? projectGroups.map(renderProjectHeader)
-              : <p style={{ padding: '5px 10px 7px', color: 'var(--faint)', fontSize: 10 }}>{t('No Projects')}</p>}
-            <div style={{ height: 1, margin: '5px 9px', backgroundColor: 'var(--border)' }} />
+              : <p className="rail-empty">{t('No Projects')}</p>}
+            <hr className="rail-divider" />
             {renderProjectHeader(draftGroup)}
           </div>
 
-          <section className="flex flex-col flex-1 min-h-0" style={{ borderTop: '1px solid var(--border)', paddingTop: 5 }}>
-            <div className="flex items-center shrink-0" style={{ padding: '3px 10px 5px' }}>
-              <span className="flex-1 truncate" style={{ color: 'var(--muted)', fontSize: 10, fontWeight: 650 }}>
+          <section className="rail-sessions">
+            <div className="rail-sessions-header">
+              <span className="rail-sessions-title">
                 {t(previewGroup.label)}
               </span>
-              <span style={{ color: 'var(--faint)', fontSize: 9 }}>{previewGroup.sessions.length}</span>
+              <span className="rail-count">{previewGroup.sessions.length}</span>
             </div>
             <div className="chat-scroll-area flex-1 min-h-0 overflow-y-auto">
               {visibleSessions.map(session => (
@@ -584,7 +516,7 @@ export default function ChatSessionRail({
                 />
               ))}
               {previewGroup.sessions.length === 0 && (
-                <p style={{ padding: '9px 10px', color: 'var(--faint)', fontSize: 9 }}>
+                <p className="rail-empty">
                   {t(normalizedQuery ? 'No matching chats' : 'No chats yet')}
                 </p>
               )}
@@ -595,8 +527,7 @@ export default function ChatSessionRail({
                     ...current,
                     [previewGroup.id]: visibleCount + SESSION_PAGE_SIZE,
                   }))}
-                  className="border-none bg-transparent cursor-pointer"
-                  style={{ width: '100%', padding: '8px 10px', color: 'var(--accent)', fontSize: 9 }}
+                  className="rail-more"
                 >
                   {t('Show')} {Math.min(SESSION_PAGE_SIZE, previewGroup.sessions.length - visibleCount)} {t('more')}
                 </button>
@@ -607,34 +538,25 @@ export default function ChatSessionRail({
       )}
 
       {railOpen && railMode === 'artifacts' && (
-        <div className="flex flex-col flex-1 min-h-0" aria-label={t('Artifact collections')} style={{ padding: '5px 6px 8px' }}>
-          <div style={{ padding: '3px 5px 7px' }}>
-            <div style={{ color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
-              {t('DRAFTS')}
-            </div>
+        <div className="rail-artifacts" aria-label={t('Artifact collections')}>
+          <div className="rail-section-label rail-artifacts-label">
+            {t('DRAFTS')}
           </div>
           <button
             type="button"
             onClick={onOpenDraftApps}
             aria-current={artifactViewId === 'drafts' ? 'page' : undefined}
-            className="flex items-center gap-2 min-w-0 border-none cursor-pointer text-left"
-            style={{
-              minHeight: 38,
-              padding: '5px 8px',
-              borderRadius: 7,
-              background: artifactViewId === 'drafts' ? 'var(--pressed)' : 'transparent',
-              color: artifactViewId === 'drafts' ? 'var(--text)' : 'var(--muted)',
-            }}
+            className="rail-link"
           >
             <FluentIcon name="Tiles" size={14} />
             <span className="flex-1 min-w-0">
-              <span className="block truncate" style={{ fontSize: 10, fontWeight: 650 }}>{t('Draft artifacts')}</span>
-              <span className="block" style={{ marginTop: 1, color: 'var(--faint)', fontSize: 9 }}>{t('Recent {count}', { count: 5 })}</span>
+              <span className="rail-link-title">{t('Draft artifacts')}</span>
+              <span className="rail-link-meta">{t('Recent {count}', { count: 5 })}</span>
             </span>
           </button>
 
-          <div style={{ height: 1, margin: '8px 5px', backgroundColor: 'var(--border)' }} />
-          <div style={{ padding: '1px 5px 6px', color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
+          <hr className="rail-divider" />
+          <div className="rail-section-label rail-artifacts-label">
             {t('PROJECTS')}
           </div>
           <div className="chat-scroll-area flex-1 min-h-0 overflow-y-auto">
@@ -644,25 +566,14 @@ export default function ChatSessionRail({
                 type="button"
                 onClick={() => onOpenProject(group.projectId || '')}
                 aria-current={artifactViewId === group.projectId ? 'page' : undefined}
-                className="flex items-center gap-2 min-w-0 border-none cursor-pointer text-left"
-                style={{
-                  width: '100%',
-                  minHeight: 34,
-                  margin: '1px 0',
-                  padding: '5px 8px',
-                  borderRadius: 7,
-                  background: artifactViewId === group.projectId ? 'var(--pressed)' : 'transparent',
-                  color: artifactViewId === group.projectId ? 'var(--text)' : 'var(--muted)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                }}
+                className="rail-link"
               >
-                <FluentIcon name="Work" size={13} />
-                <span className="flex-1 truncate">{group.label}</span>
+                <FluentIcon name="Work" size={14} />
+                <span className="rail-link-title">{group.label}</span>
               </button>
             ))}
             {projectGroups.length === 0 && (
-              <p style={{ padding: '7px 8px', color: 'var(--faint)', fontSize: 9 }}>{t('No Projects')}</p>
+              <p className="rail-empty">{t('No Projects')}</p>
             )}
           </div>
         </div>

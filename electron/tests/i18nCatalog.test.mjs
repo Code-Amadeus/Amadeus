@@ -180,3 +180,12 @@ test('the real provider uses both dictionaries and retains English and interpola
     assert.equal(t('Unknown dynamic diagnostic'), 'Unknown dynamic diagnostic')
   }
 })
+
+test('without a provider, text stays in the source language with its variables filled in', () => {
+  const { useI18n } = loadTypeScript(new URL('../src/renderer/i18n.tsx', import.meta.url), {
+    react: { createContext: value => ({ Provider: 'test-provider', value }), useContext: context => context.value },
+  })
+  const { t } = useI18n()
+  assert.equal(t('View {title}', { title: 'report.md' }), 'View report.md')
+  assert.equal(t('Saving {name}…', { name: '$&' }), 'Saving $&…')
+})

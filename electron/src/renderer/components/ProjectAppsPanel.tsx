@@ -2,6 +2,7 @@ import { useState } from 'react'
 import FluentIcon from './FluentIcon'
 import type { ChatProjectSummary } from './ChatSessionRail'
 import WorkFilesPanel, { type WorkFileSummary } from './WorkFilesPanel'
+import { SettingsButton } from './SettingsPrimitives'
 import { useI18n } from '../i18n'
 
 export interface ProjectAppSummary {
@@ -58,21 +59,6 @@ function formatUpdatedAt(value?: string): string {
   })
 }
 
-const quietButton: React.CSSProperties = {
-  height: 30,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 6,
-  border: '1px solid var(--border)',
-  borderRadius: 7,
-  padding: '0 10px',
-  background: 'var(--surface)',
-  color: 'var(--muted)',
-  cursor: 'pointer',
-  fontSize: 10,
-}
-
 export default function ProjectAppsPanel({
   project,
   scope = 'project',
@@ -96,99 +82,87 @@ export default function ProjectAppsPanel({
   const [view, setView] = useState<'files' | 'apps'>('files')
   const complete = view === 'files' ? filesComplete : appsComplete
   return (
-    <section
-      className="absolute inset-0 z-[4] flex flex-col"
-      aria-label={t('{name} artifacts', { name: project.name })}
-      style={{ background: 'var(--bg)' }}
-    >
-      <header
-        className="flex items-center gap-2 shrink-0"
-        style={{ minHeight: 48, padding: '7px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
-      >
-        <button type="button" onClick={onBack} title={t('Back to chat')} aria-label={t('Back to chat')} style={{ ...quietButton, width: 30, padding: 0 }}>
+    <section className="artifacts-panel" aria-label={t('{name} artifacts', { name: project.name })}>
+      <header className="artifacts-header">
+        <button type="button" onClick={onBack} title={t('Back to chat')} aria-label={t('Back to chat')} className="icon-button">
           <FluentIcon name="LeftArrow" size={14} />
         </button>
         <div className="min-w-0 flex-1">
-          <strong className="block truncate" style={{ color: 'var(--text)', fontSize: 12 }}>{project.name}</strong>
-          <span style={{ color: 'var(--faint)', fontSize: 9 }}>
+          <strong className="artifacts-title">{project.name}</strong>
+          <span className="artifacts-kicker">
             {t(draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS')}
           </span>
         </div>
-        <button type="button" onClick={onRefresh} disabled={loading} title={t('Refresh artifacts')} style={quietButton}>
-          <FluentIcon name="Sync" size={13} /> {t(loading ? 'Loading' : 'Refresh')}
-        </button>
-        <button type="button" onClick={onNewChat} style={{ ...quietButton, color: 'var(--accent)' }}>
-          <FluentIcon name="Edit" size={13} /> {t('New chat')}
-        </button>
+        <SettingsButton size="small" onClick={onRefresh} disabled={loading} title={t('Refresh artifacts')}>
+          <FluentIcon name="Sync" size={14} /> {t(loading ? 'Loading' : 'Refresh')}
+        </SettingsButton>
+        <SettingsButton size="small" onClick={onNewChat}>
+          <FluentIcon name="Edit" size={14} /> {t('New chat')}
+        </SettingsButton>
       </header>
 
-      <div className="chat-scroll-area flex-1 overflow-y-auto" style={{ padding: 18 }}>
-        <div style={{ maxWidth: 760, margin: '0 auto' }}>
-          <div style={{ marginBottom: 16 }}>
-            <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 650 }}>{t('Artifacts')}</h2>
-            <p style={{ margin: '5px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: 1.55 }}>
+      <div className="chat-scroll-area artifacts-scroll">
+        <div className="artifacts-content">
+          <div className="artifacts-intro">
+            <h2 className="artifacts-heading">{t('Artifacts')}</h2>
+            <p className="artifacts-description">
               {t(draftMode
                 ? 'Files and interactive applications have separate recent lists. Application components stay with their application.'
                 : 'Files and interactive applications kept by this Project. Promoted artifacts appear here without copying their files.')}
             </p>
           </div>
 
-          <div role="tablist" aria-label={t('Artifact types')} className="flex gap-2" style={{ marginBottom: 16 }}>
-            <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')}
-              style={{ ...quietButton, color: view === 'files' ? 'var(--accent)' : 'var(--muted)' }}>{t('Files')} · {files.length}</button>
-            <button type="button" role="tab" aria-selected={view === 'apps'} onClick={() => setView('apps')}
-              style={{ ...quietButton, color: view === 'apps' ? 'var(--accent)' : 'var(--muted)' }}>{t('Interactive apps')} · {apps.length}</button>
+          <div role="tablist" aria-label={t('Artifact types')} className="capability-page-tabs artifacts-tabs">
+            <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')}>{t('Files')} · {files.length}</button>
+            <button type="button" role="tab" aria-selected={view === 'apps'} onClick={() => setView('apps')}>{t('Interactive apps')} · {apps.length}</button>
           </div>
 
           {feedback && (
-            <p role="status" style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--muted)', background: 'var(--surface)', fontSize: 10 }}>
+            <p role="status" className="artifacts-feedback">
               {feedback}
             </p>
           )}
 
           {!complete && (
-            <p role="status" style={{ color: 'var(--muted)', fontSize: 10 }}>
+            <p role="status" className="artifacts-note">
               {t(view === 'files' ? 'More files may exist outside this recent view.' : 'More applications may exist outside this recent view.')}
             </p>
           )}
 
           {!loading && (view === 'files' ? files.length === 0 : apps.length === 0) && (
-            <div style={{ padding: '36px 22px', textAlign: 'center', border: '1px dashed var(--border-strong)', borderRadius: 12, background: 'var(--surface)' }}>
-              <FluentIcon name="Tiles" size={24} style={{ color: 'var(--faint)', marginBottom: 8 }} />
-              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>{t(view === 'files' ? 'No files yet' : 'No interactive apps ready to open')}</strong>
-              <p style={{ margin: '6px auto 0', maxWidth: 420, color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
+            <div className="artifacts-empty">
+              <FluentIcon name="Tiles" size={24} className="artifacts-empty-icon" />
+              <strong className="artifacts-empty-title">{t(view === 'files' ? 'No files yet' : 'No interactive apps ready to open')}</strong>
+              <p className="artifacts-empty-text">
                 {t(view === 'files' ? 'Application components are available in their application details.' : 'Applications appear here when they are ready to open.')}
               </p>
             </div>
           )}
 
           {view === 'files' && files.length > 0 && <WorkFilesPanel files={files} read={readFile} />}
-          {view === 'apps' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+          {view === 'apps' && <div className="artifacts-grid">
             {apps.map(app => {
               const opening = actionKey === `open:${app.workItemId}`
               const interacting = actionKey === `interact:${app.workItemId}`
               return (
-                <article
-                  key={app.workItemId}
-                  style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)', boxShadow: '0 5px 18px rgba(17,24,39,0.04)' }}
-                >
+                <article key={app.workItemId} className="artifacts-card">
                   <div className="flex items-start gap-3">
-                    <span className="flex items-center justify-center shrink-0" style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--surface-alt)', color: 'var(--accent)' }}>
-                      <FluentIcon name="Tiles" size={17} />
+                    <span className="artifacts-card-icon">
+                      <FluentIcon name="Tiles" size={16} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <strong className="block truncate" title={app.title} style={{ color: 'var(--text)', fontSize: 12 }}>{app.title}</strong>
-                      <span className="block truncate" title={app.workTitle} style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
+                      <strong className="artifacts-card-title" title={app.title}>{app.title}</strong>
+                      <span className="artifacts-card-meta" title={app.workTitle}>
                         {app.version ? `v${app.version}` : t('version unknown')}{app.revision ? ` · ${t('revision {count}', { count: app.revision })}` : ''}
                       </span>
                     </div>
                   </div>
 
-                  <p style={{ minHeight: 34, margin: '11px 0', color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
+                  <p className="artifacts-card-text">
                     {app.objective || app.interactionSummary || app.workTitle || t('Verified interactive application')}
                   </p>
 
-                  <div className="flex items-center gap-2" style={{ marginBottom: 11, color: 'var(--faint)', fontSize: 9 }}>
+                  <div className="artifacts-card-facts">
                     <span>{app.artifactStatus || 'registered'}</span>
                     <span aria-hidden="true">·</span>
                     <span>{t('Execution')}: {app.execution || 'idle'}</span>
@@ -197,40 +171,25 @@ export default function ProjectAppsPanel({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={Boolean(actionKey)}
-                      onClick={() => onOpen(app)}
-                      style={{ ...quietButton, color: 'var(--text)' }}
-                    >
-                      <FluentIcon name="Play" size={13} /> {t(opening ? 'Opening' : 'Open')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={Boolean(actionKey)}
-                      onClick={() => onInteract(app)}
-                      style={{ ...quietButton, flex: 1, color: 'var(--accent)' }}
-                    >
-                      <FluentIcon name="Chat" size={13} /> {t(interacting ? 'Opening chat' : 'Interact with Amadeus')}
-                    </button>
+                    <SettingsButton size="small" disabled={Boolean(actionKey)} onClick={() => onOpen(app)}>
+                      <FluentIcon name="Play" size={14} /> {t(opening ? 'Opening' : 'Open')}
+                    </SettingsButton>
+                    <SettingsButton size="small" tone="primary" className="flex-1" disabled={Boolean(actionKey)} onClick={() => onInteract(app)}>
+                      <FluentIcon name="Chat" size={14} /> {t(interacting ? 'Opening chat' : 'Interact with Amadeus')}
+                    </SettingsButton>
                   </div>
-                  {Boolean(app.files?.length) && <details style={{ marginTop: 12 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>{t('Application files')} · {app.files!.length}</summary>
+                  {Boolean(app.files?.length) && <details className="artifacts-card-files">
+                    <summary>{t('Application files')} · {app.files!.length}</summary>
                     <WorkFilesPanel files={app.files!.map(file => ({
                       projectId: app.projectId, workItemId: app.workItemId, workTitle: app.title,
                       workState: app.workState || 'open', execution: app.execution || 'idle', ...file,
                     }))} read={readFile} />
                   </details>}
                   {draftMode && app.canPromote && onPromote && (
-                    <button
-                      type="button"
-                      disabled={Boolean(actionKey)}
-                      onClick={() => onPromote(app)}
-                      style={{ ...quietButton, width: '100%', marginTop: 8, color: 'var(--accent)', borderStyle: 'dashed' }}
-                    >
-                      <FluentIcon name="Work" size={13} />
+                    <SettingsButton size="small" className="w-full mt-2" disabled={Boolean(actionKey)} onClick={() => onPromote(app)}>
+                      <FluentIcon name="Work" size={14} />
                       {t(actionKey === `promote:${app.workItemId}` ? 'Promoting' : 'Promote to Project')}
-                    </button>
+                    </SettingsButton>
                   )}
                 </article>
               )

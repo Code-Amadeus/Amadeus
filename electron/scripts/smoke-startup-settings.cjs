@@ -101,7 +101,7 @@ app.whenReady().then(async () => {
   console.log('PASS shared subtitle language persists offline and waits for live application without restart')
   await win.webContents.executeJavaScript(`(() => {
     const section = document.getElementById('settings-vision');
-    section.querySelector('button[aria-pressed]').click(); return true;
+    section.querySelector('button[role="switch"]').click(); return true;
   })()`)
   await until(`(async () => (await window.amadeus.getDesktopSettings()).values.AMADEUS_VISION_ENABLED === 'true')()`)
   assert.equal(store.snapshot(environment).values.AMADEUS_VISION_MODE, 'watching')

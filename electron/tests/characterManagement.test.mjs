@@ -124,10 +124,15 @@ test('fresh catalog edits do not replace the pinned active name and parent autho
 
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
+// SettingsPrimitives stand-ins: a card is a div and a SettingsButton is a plain button.
+const settingsPrimitives = {
+  CardShell: ({ children }) => React.createElement('div', null, children),
+  SettingsButton: ({ tone: _tone, size: _size, ...props }) => React.createElement('button', { type: 'button', ...props }),
+}
 const { StartupFailureCard } = compile('../src/renderer/components/BackendStartupRecovery.tsx', name => {
   if (name === '../../shared/characterStartup') return shared
   if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
-  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  if (name === './SettingsPrimitives') return settingsPrimitives
   return require(name)
 })
 
@@ -135,7 +140,7 @@ const { default: CharacterManagementSettings, CharacterRoleLabel } = compile('..
   if (name === './characterManagement') return management
   if (name === '../../shared/characterStartup') return shared
   if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
-  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  if (name === './SettingsPrimitives') return settingsPrimitives
   return require(name)
 })
 
