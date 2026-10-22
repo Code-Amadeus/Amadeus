@@ -1209,16 +1209,32 @@ html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-page-
 }
 
 .capability-status-dot {
+  /* Keep the four scene states distinct, including off versus unverified. */
+  --capability-dot-color: #98a2b3;
+  --capability-dot-border: rgba(71, 84, 103, 0.08);
   display: inline-block;
   width: 18px;
   height: 8px;
   flex: 0 0 18px;
   border-radius: var(--radius-pill);
-  background: var(--faint);
+  background: var(--capability-dot-color);
+  box-shadow: inset 0 0 0 1px var(--capability-dot-border), 0 0 0 2px color-mix(in srgb, var(--capability-dot-color) 9%, transparent);
 }
 
-.capability-status-dot[data-state='ready'] { background: var(--success); }
-.capability-status-dot[data-state='attention'] { background: var(--warning); }
+.capability-status-dot[data-state='ready'] {
+  --capability-dot-color: #12a66a;
+  --capability-dot-border: rgba(2, 122, 72, 0.1);
+}
+
+.capability-status-dot[data-state='attention'] {
+  --capability-dot-color: #b54708;
+  --capability-dot-border: rgba(122, 46, 0, 0.1);
+}
+
+.capability-status-dot[data-state='unknown'] {
+  --capability-dot-color: #7f56d9;
+  --capability-dot-border: rgba(83, 43, 154, 0.1);
+}
 
 .capability-configure-button {
   display: inline-flex;
