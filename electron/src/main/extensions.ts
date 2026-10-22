@@ -12,6 +12,7 @@ import { bundledExtensionSdk } from './extensionSdk.js'
 import { DesktopSettingsStore, EXTENSIONS_ENV, type StoredExtension } from './desktopSettings.js'
 import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate, ExtensionConfirmation } from '../shared/extensions.js'
 import { ExtensionThemeResources } from './extensionThemes.js'
+import { readExtensionImage } from './extensionImages.js'
 import { startupValue } from '../shared/startupSettings.js'
 import type { DesktopThemeState } from '../shared/extensionTheme.js'
 import { extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
@@ -333,6 +334,7 @@ export class ExtensionInstaller {
         if (JSON.stringify(installedManifest) !== JSON.stringify(manifest)) throw new Error('The installed extension manifest differs from the inspected wheel')
         await this.helper.call('validate-installed', [packagePath], { manifest })
         await this.themes.validate(manifest, packagePath)
+        if (manifest.icon) readExtensionImage(packagePath, manifest.icon, { label: 'Package icon', maxMiB: 1, maxDimension: 1024 })
         // A replacement is prepared beside the running version. Only a complete
         // validated installation replaces desired state; old code is collected
         // after confirmed backend stop, using the existing ownership markers.
@@ -523,6 +525,20 @@ export class ExtensionInstaller {
       this.changed()
       return complete
     })
+  }
+
+  icon(id: string): string | null {
+    const record = this.store.extensionRecords().find(item => item.id === id)
+    if (!record?.manifest.icon) return null
+    try {
+      const image = readExtensionImage(this.packagePath(record), record.manifest.icon,
+        { label: 'Package icon', maxMiB: 1, maxDimension: 1024 })
+      return `data:${image.mime};base64,${image.base64}`
+    } catch {
+      // Cosmetic resources do not grant authority or block the package card.
+      console.warn('[extensions] Package icon unavailable:', record.id)
+      return null
+    }
   }
 
   private packagePath(record: StoredExtension): string {

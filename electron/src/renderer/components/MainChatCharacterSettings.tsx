@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useI18n } from '../i18n'
 import { desktopCatalogFields } from '../../shared/configCatalog.js'
-import { CardShell } from './SettingsPrimitives'
+import { CardShell, SettingsButton } from './SettingsPrimitives'
 
 interface Props {
   savedOverride: string
@@ -46,8 +46,8 @@ export default function MainChatCharacterSettings({ savedOverride, preview, canS
           disabled={disabled} onChange={event => edit(event.target.value)} />
         {info.active === false ? <div className="settings-field-description">{t('This Kurisu setting is inactive for the current replies. It applies only when Kurisu is active and replies are Japanese.')}</div> : null}
         <div className="character-prompt-actions">
-          <button type="button" disabled={disabled || !canSave || !dirty} onClick={() => void save()}>{t(saving ? 'Saving…' : 'Save character prompt')}</button>
-          <button type="button" disabled={disabled} onClick={() => edit('')}>{t('Clear override')}</button>
+          <SettingsButton tone="primary" disabled={disabled || !canSave || !dirty} onClick={() => void save()}>{t(saving ? 'Saving…' : 'Save character prompt')}</SettingsButton>
+          <SettingsButton disabled={disabled} onClick={() => edit('')}>{t('Clear override')}</SettingsButton>
         </div>
       </div>
     </CardShell>

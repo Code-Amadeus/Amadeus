@@ -68,6 +68,7 @@ export declare global {
     }) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     removeMcpConnection: (connectionId: string) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     extensionCatalog: (request: CatalogRequest) => Promise<CatalogReply>
+    getExtensionIcon: (id: string) => Promise<string | null>
     installExtension: () => Promise<ExtensionMutationResult>
     updateExtension: (update: ExtensionUpdate) => Promise<ExtensionMutationResult>
     removeExtension: (id: string, options?: ExtensionRemovalOptions) => Promise<ExtensionMutationResult>

@@ -1,4 +1,5 @@
 import { useI18n } from '../i18n'
+import { SettingsButton } from './SettingsPrimitives'
 
 export const RETIRED_ROUTE_KEY = 'COOPERATIVE_CHAT_ENABLED'
 
@@ -51,16 +52,16 @@ export default function RetiredRouteSetting({
   const { t } = useI18n()
   if (!migration.storedFalse && migration.externalFalse.length === 0) return null
   return (
-    <div role="note" className="text-[11px] rounded-md p-3 mb-4" style={{ color: 'var(--warning)', background: 'var(--warning-bg)' }}>
-      <strong>{t('Retired Chat runtime setting')}</strong>
-      <p>{t('The old Off value selected the original Chat runtime. It never prohibited Work execution. Cooperative is now the sole Chat runtime; existing Work permissions still apply.')}</p>
+    <div role="note" className="settings-note mb-4" data-tone="warning">
+      <strong className="settings-note-title">{t('Retired Chat runtime setting')}</strong>
+      <p className="settings-note-description">{t('The old Off value selected the original Chat runtime. It never prohibited Work execution. Cooperative is now the sole Chat runtime; existing Work permissions still apply.')}</p>
       {migration.storedFalse ? <>
-        <p>{t('Your saved Off value is retained until you confirm this explanation. Confirmation removes only the retired setting from desktop storage.')}</p>
-        <button type="button" disabled={saving} onClick={() => void onConfirm()} className="rounded-md px-3 py-1 disabled:opacity-50" style={{ border: '1px solid var(--warning)', background: 'transparent' }}>
+        <p className="settings-note-description">{t('Your saved Off value is retained until you confirm this explanation. Confirmation removes only the retired setting from desktop storage.')}</p>
+        <SettingsButton size="small" className="mt-2" disabled={saving} onClick={() => void onConfirm()}>
           {t(saving ? 'Saving…' : 'I understand; remove the saved setting')}
-        </button>
+        </SettingsButton>
       </> : null}
-      {migration.externalFalse.map(fact => <p key={fact.source}>
+      {migration.externalFalse.map(fact => <p key={fact.source} className="settings-note-description">
         {t(fact.source === 'dotenv'
           ? 'The retired Off value in .env is ignored. This source is read-only in desktop Settings.'
           : 'The retired Off value in the startup environment is ignored. This source is read-only in desktop Settings.')}

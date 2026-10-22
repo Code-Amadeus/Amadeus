@@ -14,6 +14,7 @@ import ChatSessionRail, {
 import ChatWorkActivityCard from './ChatWorkActivityCard'
 import FluentIcon from './FluentIcon'
 import ProjectAppsPanel, { type ProjectAppSummary } from './ProjectAppsPanel'
+import { SettingsButton } from './SettingsPrimitives'
 import type { WorkFileSummary } from './WorkFilesPanel'
 import CrtWorkWidget from './work/CrtWorkWidget'
 import { attentionRequestsFromEnvelope } from './work/attentionProjection'
@@ -43,7 +44,10 @@ import {
   chatTranslationKey,
 } from './chatTranslationState'
 import { useI18n } from '../i18n'
+import { useActiveCharacter } from '../activeCharacter'
 import { startupCharacterSelection } from '../../shared/characterStartup'
+import { catalogOptionValues, desktopCatalogFields } from '../../shared/configCatalog.js'
+import { configuredChatProfiles } from './chatModelCapabilities'
 import { characterCatalog, type CharacterRecord } from './characterManagement'
 import { visualStatusFromFrame, type VisualSurfaceStatus } from './characterVisuals'
 
@@ -53,7 +57,12 @@ interface Props {
   connected: boolean
   renderActive: boolean       // visibility of the embedded character surface
   renderAssetUrl: string      // URL served by backend AssetServer
+  renderRequested: boolean    // projection intent: on while the render surface is starting or shown
+  onToggleRender: () => void
 }
+
+// Every main-chat model profile the backend accepts, in catalog order.
+const CHAT_PROFILES = catalogOptionValues(desktopCatalogFields.LLM_PROVIDER) || []
 
 interface VisualAttachment {
   name: string
@@ -137,7 +146,7 @@ function clampChatWidth(width: number, totalWidth = Number.POSITIVE_INFINITY): n
 }
 
 
-export default function ChatPage({ send, subscribe, connected, renderActive, renderAssetUrl }: Props) {
+export default function ChatPage({ send, subscribe, connected, renderActive, renderAssetUrl, renderRequested, onToggleRender }: Props) {
   const { t } = useI18n()
   const [messages, setMessages] = useState<Message[]>([])
   const [chatTranslationEnabled, setChatTranslationEnabled] = useState(false)
@@ -151,6 +160,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [streaming, setStreaming] = useState(false)
   const [input, setInput] = useState('')
   const [provider, setProvider] = useState('deepseek')
+  // Configured model connection groups from the backend; null until the first config arrives.
+  const [modelConnections, setModelConnections] = useState<Array<{ id: string; configured?: boolean }> | null>(null)
+  const activeCharacter = useActiveCharacter()
   const [canUseMultimodal, setCanUseMultimodal] = useState(false)
   const [chatAvatars, setChatAvatars] = useState({ user: '', assistant: '' })
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
@@ -597,6 +609,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     if (!connected) return
     send('system.get_config', {}).then(res => {
       if (res?.llm_provider) setProvider(String(res.llm_provider))
+      if (Array.isArray(res?.model_connections)) setModelConnections(res.model_connections)
       setCanUseMultimodal(res?.chat_supports_images === true)
       // The selected mode survives disabling vision; it is not the enabled state.
       setVisionVideoMode(res?.vision_enabled === true && res?.vision_mode === 'watching')
@@ -605,6 +618,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     const unsub = subscribe('system.config', (p) => {
       const values = (p.values ?? p) as Record<string, unknown>
       if (values.llm_provider !== undefined) setProvider(String(values.llm_provider))
+      const connections = p.model_connections ?? values.model_connections
+      if (Array.isArray(connections)) setModelConnections(connections)
       if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
       setVisionVideoMode(values.vision_enabled === true && values.vision_mode === 'watching')
     })
@@ -983,12 +998,12 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     } catch {
       setMessages(prev => [...prev, {
         role: 'system',
-        text: persisted
+        text: t(persisted
           ? 'Default model saved for the next backend start; the current conversation still uses the previous model.'
-          : 'Model switch failed; wait for the current reply to finish and try again.',
+          : 'Model switch failed; wait for the current reply to finish and try again.'),
       }])
     }
-  }, [send])
+  }, [send, t])
 
   const handleNewSession = useCallback(async () => {
     try {
@@ -1252,8 +1267,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
   }, [activeSession, loadSession, selectSession, sessions])
 
-  const handleRenameSession = useCallback(async (id: string, currentTitle: string) => {
-    const title = window.prompt('Rename session', currentTitle)?.trim()
+  // The rail edits titles inline; Electron does not implement window.prompt.
+  const handleRenameSession = useCallback(async (id: string, nextTitle: string) => {
+    const title = nextTitle.trim()
     if (!title) return
     try {
       await runSessionSelection({ pending: 0 }, () => {},
@@ -1286,12 +1302,15 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const visualButtonDisabled = !connected || !canUseMultimodal
   const visualButtonTitle = !canUseMultimodal
-    ? 'Select an image-capable model, such as DeepSeek Flash, OpenAI, or Gemini'
+    ? t('Select an image-capable model, such as DeepSeek Flash, OpenAI, or Gemini')
     : visionVideoMode
-      ? 'Global vision watching is on. Hold to turn it off. Right-click to choose a window.'
+      ? t('Global vision watching is on. Hold to turn it off. Right-click to choose a window.')
       : pendingVisualAttachment
-        ? `${pendingVisualAttachment.name} will be sent with the next message. Click to choose another image; hold for watching; right-click for window.`
-        : 'Choose an image for the next message. Hold for watching; right-click for window.'
+        ? t('{name} will be sent with the next message. Click to choose another image; hold for watching; right-click for window.', { name: pendingVisualAttachment.name })
+        : t('Choose an image for the next message. Hold for watching; right-click for window.')
+
+  // The composer lists configured model profiles by their raw IDs; the current one always stays listed.
+  const chatProfiles = useMemo(() => configuredChatProfiles(CHAT_PROFILES, modelConnections, provider), [modelConnections, provider])
 
   const activitiesByTurn = useMemo(() => {
     const grouped = new Map<string, ChatWorkActivityRun[]>()
@@ -1304,31 +1323,18 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   }, [workActivities])
   const activityAnchors = useMemo(() => assistantTurnAnchors(messages), [messages])
 
-  const comboCls = `text-[10px] border border-[var(--border)] rounded-md px-2
-    bg-[var(--surface)] text-[var(--text)] outline-none
-    hover:border-[var(--border-strong)]`
-
   /* Chat panel (right side) */
   const chatPanel = (
     <div
-      className="flex min-w-0"
+      className="chat-panel"
+      data-split={renderActive || undefined}
       style={{
         minWidth: renderActive ? CHAT_PANEL_MIN_W : 0,
         width: renderActive ? chatWidth : '100%',
         flex: renderActive ? undefined : 1,
-        padding: renderActive ? '12px 12px 12px 6px' : 14,
       }}
       >
-      <div
-        className="flex min-w-0 w-full h-full"
-        style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 14,
-          overflow: 'hidden',
-          boxShadow: '0 10px 30px rgba(17,24,39,0.06)',
-        }}
-      >
+      <div className="chat-frame">
       <ChatSessionRail
         sessions={sessions}
         projects={projects}
@@ -1354,21 +1360,16 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         <div
           role="alert"
           aria-label={t('Chat selection notice')}
-          className="flex items-start gap-2"
-          style={{ position: 'absolute', top: 8, left: 12, right: 12, zIndex: 9,
-            padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)',
-            backgroundColor: 'var(--surface)', color: 'var(--text)', fontSize: 12,
-            boxShadow: '0 4px 16px rgba(17,24,39,0.12)' }}
+          className="chat-notice"
         >
           <span className="flex-1 min-w-0">{t(sessionSelectionNotice)}</span>
           <button
             type="button"
             aria-label={t('Dismiss chat selection notice')}
             onClick={() => setSessionSelectionNotice('')}
-            className="border-none bg-transparent cursor-pointer shrink-0"
-            style={{ color: 'var(--muted)', padding: 0, fontSize: 16, lineHeight: 1 }}
+            className="icon-button" data-size="small" data-tone="faint"
           >
-            ×
+            <FluentIcon name="Dismiss" size={14} />
           </button>
         </div>
       )}
@@ -1401,11 +1402,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         />
       )}
       {/* Current conversation bar */}
-      <div
-        className="flex items-center gap-2 shrink-0"
-        style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '5px 14px' }}
-      >
-        <span className="flex-1 text-[11px] font-[500] truncate" style={{ color: 'var(--text)' }}>
+      <div className="chat-bar">
+        <span className="chat-bar-title">
           {activeSession ? sessions.find(s => s.id === activeSession)?.title ?? t('Chat') : t('Chat')}
         </span>
         {projectCorrectionOpen ? (
@@ -1419,8 +1417,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               if (value) void correctProjectBinding(value === '__draft__' ? '' : value)
             }}
             disabled={!connected || streaming}
-            className={comboCls}
-            style={{ width: 148, height: 28 }}
+            className="chat-select chat-select-project"
           >
             <option value="" disabled>{t('Move chat…')}</option>
             <option value="__draft__">{t('Draft')}</option>
@@ -1430,23 +1427,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           </select>
         ) : (
           <div
-            className="group flex items-center shrink-0"
+            className="chat-project-chip"
             aria-label={t('Current chat project')}
             title={activeContext?.projectId
-              ? `This chat is bound to ${activeContext.projectName}`
+              ? t('This chat is bound to {name}', { name: activeContext.projectName })
               : t('This is a default Draft chat')}
-            style={{
-              height: 28,
-              padding: '0 8px',
-              borderRadius: 7,
-              border: '1px solid var(--border)',
-              backgroundColor: 'var(--surface-alt)',
-              color: 'var(--muted)',
-              fontSize: 10,
-              gap: 6,
-            }}
           >
-            <span className="truncate" style={{ maxWidth: 120 }}>
+            <span className="chat-project-name">
               {activeContext?.projectId ? activeContext.projectName : t('Draft')}
             </span>
             {!activeContext?.projectId && activeContext?.canPromoteToProject && (
@@ -1454,8 +1441,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 type="button"
                 onClick={() => { void promoteActiveDraft() }}
                 title={t('Promote this Draft to a Project')}
-                className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer"
-                style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 600 }}
+                className="chat-project-action"
+                data-tone="accent"
               >
                 {t('Promote')}
               </button>
@@ -1465,37 +1452,39 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 type="button"
                 onClick={() => setProjectCorrectionOpen(true)}
                 title={t('Move this chat and preserve its history. Existing Work keeps its original Project; moving waits for active Work to finish.')}
-                className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer"
-                style={{ color: 'var(--faint)', fontSize: 10 }}
+                className="chat-project-action"
               >
                 {t('Move')}
               </button>
             )}
           </div>
         )}
+        <SettingsButton
+          size="small"
+          aria-pressed={renderRequested}
+          disabled={!connected}
+          onClick={onToggleRender}
+          title={t('Character render')}
+        >
+          <FluentIcon name={renderRequested ? 'Movie' : 'Video'} size={14} /> {t('Render')}
+        </SettingsButton>
         <button
           type="button"
           onClick={() => { void handleNewSession() }}
           title={t('New chat')}
           aria-label={t('New chat')}
-          className="flex items-center justify-center rounded-md border-none bg-transparent text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)] cursor-pointer shrink-0"
-          style={{ width: 30, height: 30, borderRadius: 6 }}
+          className="icon-button"
         >
           <FluentIcon name="Edit" size={16} />
         </button>
       </div>
 
       {/* Chat messages */}
-      <div
-        className="chat-scroll-area flex-1 overflow-y-auto"
-        style={{
-          backgroundColor: 'var(--bg)',
-        }}
-      >
-        <div className="flex flex-col" style={{ padding: '14px 0 12px 0' }}>
-          {messages.length === 0 && !streaming && (
-            <p className="text-center mt-20" style={{ color: 'var(--faint)', fontSize: 13 }}>{t('Type a message to start.')}</p>
-          )}
+      <div className="chat-scroll-area chat-messages">
+        <div className="chat-message-list">
+          {messages.length === 0 && !streaming && (activeCharacter
+            ? <p className="chat-empty chat-empty-title">{t('Start a conversation with {name}', { name: activeCharacter.short_name })}</p>
+            : <p className="chat-empty">{t('Type a message to start.')}</p>)}
           {messages.map((msg, i) => {
             const key = msg.messageId || `${msg.role}-${msg.turnId || 'local'}-${i}`
             const attached = msg.role === 'assistant' && msg.turnId && activityAnchors.get(msg.turnId) === i
@@ -1521,122 +1510,82 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               </Fragment>
             )
           })}
-          {attentionRequests[0] && (
-            <div
-              role="dialog"
-              aria-label={attentionRequests[0].title}
-              style={{ margin: '8px clamp(24px, 2.5vw, 34px)', padding: 12,
-                border: '1px solid var(--border)', borderRadius: 10,
-                background: 'var(--surface-alt)' }}
-            >
-              <b style={{ fontSize: 12 }}>{attentionRequests[0].title}</b>
-              {attentionRequests[0].prompt && (
-                <p style={{ color: 'var(--muted)', fontSize: 11, margin: '5px 0 8px' }}>
-                  {attentionRequests[0].prompt}
-                </p>
-              )}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {attentionRequests[0].options.map(option => (
-                  <button
-                    type="button"
-                    key={option.id}
-                    disabled={Boolean(attentionResolving)}
-                    onClick={() => { void resolveAttention(attentionRequests[0].id, option.id) }}
-                    title={option.description}
-                    style={{ border: '1px solid var(--border-strong)', borderRadius: 7,
-                      padding: '5px 9px', fontSize: 10.5 }}
-                  >
-                    {option.label}{attentionResolving === option.id ? '…' : ''}
-                  </button>
-                ))}
-              </div>
-              {attentionError && (
-                <p style={{ color: '#C42B1C', fontSize: 10.5, marginTop: 7 }}>{attentionError}</p>
-              )}
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input bar */}
-      <div className="shrink-0" style={{ backgroundColor: 'var(--bg)', padding: '10px 14px 14px 14px' }}>
-        <div
-          className="transition-colors"
-          style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', borderRadius: 18, boxShadow: '0 5px 18px rgba(17,24,39,0.06)' }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--surface)'
-            ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--surface-alt)'
-            ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
-          }}
-        >
-          <div style={{ padding: '10px 11px 9px 14px' }}>
+      {/* Input bar. A pending approval stays pinned above the composer instead of scrolling away. */}
+      <div className="chat-composer-bar">
+        {attentionRequests[0] && (
+          <div
+            role="dialog"
+            aria-label={attentionRequests[0].title}
+            className="chat-attention"
+          >
+            <div className="chat-attention-header">
+              <strong className="chat-attention-title">{attentionRequests[0].title}</strong>
+              {attentionRequests.length > 1 && (
+                <span className="chat-attention-more">{t('{count} more waiting', { count: attentionRequests.length - 1 })}</span>
+              )}
+            </div>
+            {attentionRequests[0].prompt && (
+              <p className="chat-attention-prompt">
+                {attentionRequests[0].prompt}
+              </p>
+            )}
+            <div className="chat-attention-options">
+              {attentionRequests[0].options.map(option => (
+                <SettingsButton
+                  key={option.id}
+                  disabled={Boolean(attentionResolving)}
+                  onClick={() => { void resolveAttention(attentionRequests[0].id, option.id) }}
+                  title={option.description}
+                >
+                  {option.label}{attentionResolving === option.id ? '…' : ''}
+                </SettingsButton>
+              ))}
+            </div>
+            {attentionError && (
+              <p className="chat-attention-error">{attentionError}</p>
+            )}
+          </div>
+        )}
+        <div className="chat-composer">
+          <div className="chat-composer-body">
             {artifactContext && (
-              <div
-                className="flex items-center gap-2"
-                style={{
-                  marginBottom: 8,
-                  padding: '6px 8px',
-                  borderRadius: 9,
-                  border: '1px solid color-mix(in srgb, var(--accent) 30%, var(--border))',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--muted)',
-                  fontSize: 10,
-                }}
-              >
-                <FluentIcon name="Chat" size={13} style={{ color: 'var(--accent)' }} />
+              <div className="chat-composer-chip" data-tone="accent">
+                <FluentIcon name="Chat" size={14} className="chat-accent" />
                 <span className="truncate">
-                  Interacting with Amadeus about <strong style={{ color: 'var(--text)' }}>{artifactContext.title}</strong>
+                  {t('Interacting with Amadeus about')} <strong>{artifactContext.title}</strong>
                 </span>
                 <button
                   type="button"
                   onClick={() => setArtifactContext(null)}
                   title={t('Dismiss Artifact context label')}
                   aria-label={t('Dismiss Artifact context label')}
-                  style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--faint)', cursor: 'pointer' }}
+                  className="icon-button ml-auto" data-size="small" data-tone="faint"
                 >
-                  x
+                  <FluentIcon name="Dismiss" size={14} />
                 </button>
               </div>
             )}
             {pendingVisualAttachment && (
-              <div
-                className="flex items-center gap-2"
-                style={{
-                  marginBottom: 8,
-                  padding: '6px 8px',
-                  borderRadius: 9,
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--muted)',
-                  fontSize: 11,
-                }}
-              >
+              <div className="chat-composer-chip">
                 <FluentIcon name="Photo" size={14} />
-                <span className="truncate" style={{ color: 'var(--text)', maxWidth: 190 }}>
+                <span className="chat-composer-chip-name">
                   {pendingVisualAttachment.name}
                 </span>
-                <span className="shrink-0" style={{ color: 'var(--faint)' }}>
+                <span className="chat-faint shrink-0">
                   {pendingVisualAttachment.width}x{pendingVisualAttachment.height}
                 </span>
                 <button
                   type="button"
                   title={t('Remove image')}
+                  aria-label={t('Remove image')}
                   onClick={() => setPendingVisualAttachment(null)}
-                  style={{
-                    marginLeft: 'auto',
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--faint)',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    lineHeight: 1,
-                  }}
+                  className="icon-button ml-auto" data-size="small" data-tone="faint"
                 >
-                  x
+                  <FluentIcon name="Dismiss" size={14} />
                 </button>
               </div>
             )}
@@ -1645,97 +1594,39 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={artifactContext
-                ? `Ask Amadeus about ${artifactContext.title}…`
+                ? t('Ask Amadeus about {title}…', { title: artifactContext.title })
                 : t('Type a message or press mic to speak...')}
               disabled={!connected || !sessionReady || sessionSwitching} rows={3}
-              className="w-full resize-none text-[12px] leading-[150%] placeholder-[var(--faint)] disabled:opacity-40"
-              style={{ height: 64, fontFamily: 'var(--font-cjk)', color: 'var(--text)', backgroundColor: 'transparent', border: 'none', outline: 'none', padding: 0 }}
+              className="chat-composer-input"
             />
 
-            <div className="flex items-center gap-2" style={{ marginTop: 7 }}>
-              <select value={provider} onChange={e => { void handleProviderChange(e.target.value) }} className={comboCls} style={{ width: 116, height: 30 }}>
-                {['local', 'deepseek', 'openai', 'gemini', 'bedrock', 'hybrid', 'hybrid2', 'hybrid3'].map(p => <option key={p} value={p}>{p}</option>)}
+            <div className="chat-composer-tools">
+              <select value={provider} onChange={e => { void handleProviderChange(e.target.value) }} className="chat-select chat-select-model">
+                {chatProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <div className="flex-1" />
 
               <button onClick={handleMicToggle}
                 title={t(asrListening ? 'Stop voice input' : 'Start voice input')}
                 aria-label={t(asrListening ? 'Stop voice input' : 'Start voice input')}
-                className="flex items-center justify-center shrink-0 cursor-pointer transition-colors" disabled={!connected || !sessionReady || sessionSwitching}
-                style={{
-                  width: 36, height: 36, borderRadius: 18,
-                  color: asrListening ? '#DC2626' : 'var(--muted)',
-                  backgroundColor: asrListening ? '#FEF2F2' : 'transparent',
-                  border: asrListening ? '1px solid #DC2626' : '1px solid var(--border)',
-                  animation: asrListening ? 'pulse 1.5s ease-in-out infinite' : 'none',
-                }}
-                onMouseEnter={e => {
-                  if (!asrListening) {
-                    const b = e.currentTarget; b.style.color = 'var(--text)'; b.style.backgroundColor = 'var(--hover)'; b.style.borderColor = 'var(--border-strong)'
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!asrListening) {
-                    const b = e.currentTarget; b.style.color = 'var(--muted)'; b.style.backgroundColor = 'transparent'; b.style.borderColor = 'var(--border)'
-                  }
-                }}
+                className="chat-round-button" data-state={asrListening ? 'listening' : undefined}
+                disabled={!connected || !sessionReady || sessionSwitching}
               >
                 <FluentIcon name="Microphone" size={16} />
               </button>
 
               <button
                 type="button"
-                title={t(visualButtonTitle)}
-                aria-label={t(visualButtonTitle)}
+                title={visualButtonTitle}
+                aria-label={visualButtonTitle}
                 disabled={visualButtonDisabled}
                 onPointerDown={handleVisionPointerDown}
                 onPointerUp={handleVisionPointerUp}
                 onPointerLeave={handleVisionPointerCancel}
                 onPointerCancel={handleVisionPointerCancel}
                 onContextMenu={handleVisionContextMenu}
-                className="flex items-center justify-center shrink-0 transition-colors"
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  color: visualButtonDisabled
-                    ? 'var(--faint)'
-                    : visionVideoMode
-                      ? '#8B5CF6'
-                      : pendingVisualAttachment
-                        ? 'var(--accent)'
-                        : 'var(--muted)',
-                  backgroundColor: visualButtonDisabled
-                    ? 'transparent'
-                    : visionVideoMode
-                      ? 'rgba(139, 92, 246, 0.12)'
-                      : pendingVisualAttachment
-                        ? 'rgba(0, 120, 212, 0.10)'
-                        : 'transparent',
-                  border: visualButtonDisabled
-                    ? '1px solid var(--border)'
-                    : visionVideoMode
-                      ? '1px solid rgba(139, 92, 246, 0.65)'
-                      : pendingVisualAttachment
-                        ? '1px solid var(--accent)'
-                        : '1px solid var(--border)',
-                  cursor: visualButtonDisabled ? 'not-allowed' : 'pointer',
-                  opacity: visualButtonDisabled ? 0.45 : 1,
-                }}
-                onMouseEnter={e => {
-                  if (visualButtonDisabled || visionVideoMode || pendingVisualAttachment) return
-                  const b = e.currentTarget
-                  b.style.color = 'var(--text)'
-                  b.style.backgroundColor = 'var(--hover)'
-                  b.style.borderColor = 'var(--border-strong)'
-                }}
-                onMouseLeave={e => {
-                  if (visionVideoMode || pendingVisualAttachment) return
-                  const b = e.currentTarget
-                  b.style.color = visualButtonDisabled ? 'var(--faint)' : 'var(--muted)'
-                  b.style.backgroundColor = 'transparent'
-                  b.style.borderColor = 'var(--border)'
-                }}
+                className="chat-round-button"
+                data-state={visionVideoMode ? 'watching' : pendingVisualAttachment ? 'attached' : undefined}
               >
                 <FluentIcon name={visionVideoMode ? 'Video' : 'Photo'} size={16} />
               </button>
@@ -1744,106 +1635,57 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 ref={imageInputRef}
                 type="file"
                 accept="image/*"
-                style={{ display: 'none' }}
+                className="hidden"
                 onChange={handleVisionFileChange}
               />
 
               <button onClick={handleSend} disabled={!connected || !sessionReady || sessionSwitching || (!input.trim() && !pendingVisualAttachment)}
-                className="flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-                style={{
-                  width: 38, height: 38, borderRadius: 19, color: 'var(--on-accent, #FFFFFF)',
-                  backgroundColor: connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment) ? 'var(--accent)' : 'var(--border-strong)',
-                  border: '1px solid ' + (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment) ? 'var(--accent)' : 'var(--border-strong)'),
-                }}
-                onMouseEnter={e => { if (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment)) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--accent-hover)' }}
-                onMouseLeave={e => { if (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment)) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--accent)' }}
+                className="chat-send-button"
+                aria-label={t('Send')}
               >
-                <FluentIcon name="Send" size={18} color="currentColor" />
+                <FluentIcon name="Send" size={16} />
               </button>
             </div>
 
             {visionWindowPickerOpen && (
-              <div
-                style={{
-                  marginTop: 9,
-                  borderRadius: 10,
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--surface)',
-                  boxShadow: '0 8px 22px rgba(17,24,39,0.10)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  className="flex items-center gap-2"
-                  style={{
-                    padding: '8px 9px',
-                    borderBottom: '1px solid var(--border)',
-                    color: 'var(--muted)',
-                    fontSize: 11,
-                  }}
-                >
-                  <span className="font-[600]" style={{ color: 'var(--text)' }}>{t('Monitor window')}</span>
-                  <button
-                    type="button"
+              <div className="chat-window-picker">
+                <div className="chat-window-picker-header">
+                  <span className="chat-window-picker-title">{t('Monitor window')}</span>
+                  <SettingsButton
+                    size="small"
+                    className="ml-auto"
                     onClick={() => loadVisionWindows().catch(() => {})}
                     disabled={visionWindowLoading}
-                    className="ml-auto text-[11px]"
-                    style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: 7,
-                      background: 'transparent',
-                      color: 'var(--muted)',
-                      cursor: visionWindowLoading ? 'default' : 'pointer',
-                      padding: '3px 7px',
-                    }}
                   >
                     {t('Refresh')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleVisionFullScreenSelect}
-                    className="text-[11px]"
-                    style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: 7,
-                      background: 'transparent',
-                      color: 'var(--muted)',
-                      cursor: 'pointer',
-                      padding: '3px 7px',
-                    }}
-                  >
+                  </SettingsButton>
+                  <SettingsButton size="small" onClick={handleVisionFullScreenSelect}>
                     {t('Full screen')}
-                  </button>
+                  </SettingsButton>
                   <button
                     type="button"
                     onClick={() => setVisionWindowPickerOpen(false)}
                     title={t('Close')}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--faint)',
-                      cursor: 'pointer',
-                      fontSize: 15,
-                      lineHeight: 1,
-                    }}
+                    aria-label={t('Close')}
+                    className="icon-button" data-size="small" data-tone="faint"
                   >
-                    x
+                    <FluentIcon name="Dismiss" size={14} />
                   </button>
                 </div>
-                <div className="chat-scroll-area" style={{ maxHeight: 184, overflowY: 'auto', padding: 5 }}>
+                <div className="chat-scroll-area chat-window-list">
                   {visionWindowLoading && (
-                    <div style={{ padding: '10px 8px', color: 'var(--faint)', fontSize: 11 }}>
+                    <div className="chat-window-status">
                       {t('Loading windows...')}
                     </div>
                   )}
                   {!visionWindowLoading && visionWindowError && (
-                    <div style={{ padding: '10px 8px', color: '#C42B1C', fontSize: 11 }}>
+                    <div className="chat-window-status" data-tone="danger">
                       {visionWindowError}
                     </div>
                   )}
                   {!visionWindowLoading && !visionWindowError && visionWindows.length === 0 && (
-                    <div style={{ padding: '10px 8px', color: 'var(--faint)', fontSize: 11 }}>
-                      No visible windows found.
+                    <div className="chat-window-status">
+                      {t('No visible windows found.')}
                     </div>
                   )}
                   {!visionWindowLoading && !visionWindowError && visionWindows.map(win => (
@@ -1851,36 +1693,19 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                       key={win.hwnd}
                       type="button"
                       onClick={() => handleVisionWindowSelect(win)}
-                      className="w-full flex items-center gap-2 text-left"
-                      style={{
-                        border: 'none',
-                        borderRadius: 8,
-                        background: win.selected ? 'var(--pressed)' : 'transparent',
-                        color: 'var(--text)',
-                        cursor: 'pointer',
-                        padding: '7px 8px',
-                        marginBottom: 2,
-                      }}
-                      onMouseEnter={e => {
-                        if (!win.selected) e.currentTarget.style.backgroundColor = 'var(--hover)'
-                      }}
-                      onMouseLeave={e => {
-                        if (!win.selected) e.currentTarget.style.backgroundColor = 'transparent'
-                      }}
+                      className="chat-window-option"
+                      data-selected={win.selected || undefined}
                     >
-                      <span
-                        className="truncate"
-                        style={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: win.selected ? 600 : 500 }}
-                      >
+                      <span className="chat-window-option-title">
                         {win.title}
                       </span>
                       {win.processName && (
-                        <span className="truncate" style={{ maxWidth: 110, color: 'var(--faint)', fontSize: 10 }}>
+                        <span className="chat-window-option-meta chat-window-option-process">
                           {win.processName}
                         </span>
                       )}
                       {win.rect && (
-                        <span style={{ color: 'var(--faint)', fontSize: 10, whiteSpace: 'nowrap' }}>
+                        <span className="chat-window-option-meta">
                           {Math.round(win.rect.width)}x{Math.round(win.rect.height)}
                         </span>
                       )}
@@ -1892,15 +1717,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           </div>
         </div>
       </div>
-
-      <style>{`@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }`}</style>
       </div>
       </div>
     </div>
   )
 
   return (
-    <div ref={splitRootRef} className="flex-1 flex min-h-0" style={{ backgroundColor: 'var(--bg)' }}>
+    <div ref={splitRootRef} className="chat-page flex-1 flex min-h-0">
       {/* Character render area (left, PixiJS mode only) */}
       {renderActive && (
           <div className="crt-render-stage flex flex-col min-w-0" style={{ minWidth: CHARACTER_MIN_W, flex: '1 1 auto' }}>
@@ -1908,7 +1731,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           <iframe
             ref={renderFrameRef}
             src={renderAssetUrl || 'about:blank'}
-            title="Character Render"
+            title={t('Character render')}
             onLoad={handleRenderFrameLoad}
             className="flex-1 border-0"
               style={{ width: '100%', pointerEvents: isSplitResizing ? 'none' : 'auto' }}

@@ -1,4 +1,4 @@
-import { chatProviderSupportsImages } from './chatModelCapabilities'
+import { chatProfileConnections, chatProviderSupportsImages } from './chatModelCapabilities'
 
 export type SceneCapabilityState = 'ready' | 'attention' | 'inactive' | 'unknown'
 export type SceneCapabilityImportance = 'core' | 'expected' | 'optional'
@@ -8,8 +8,11 @@ export type SceneConfigureSection = 'general' | 'models' | 'voice' | 'providers'
 export interface SceneCapabilityItem {
   id: string
   label: string
+  /** Independent parts joined with " · "; the panel translates each part. */
   implementation: string
+  /** An i18n key; runtime values are supplied separately in detailVars. */
   detail: string
+  detailVars?: Record<string, string>
   importance: SceneCapabilityImportance
   state: SceneCapabilityState
   stateLabel?: string
@@ -88,17 +91,6 @@ const MODEL_LABELS: Record<string, string> = {
   hybrid3: 'Hybrid local + OpenAI',
 }
 
-const ACTIVE_MODEL_CONNECTIONS: Record<string, string[]> = {
-  deepseek: ['deepseek'],
-  openai: ['openai'],
-  gemini: ['gemini'],
-  bedrock: ['bedrock'],
-  local: ['local'],
-  hybrid: ['hybrid_local', 'bedrock'],
-  hybrid2: ['hybrid_local', 'deepseek'],
-  hybrid3: ['hybrid_local', 'openai'],
-}
-
 function groups(value: unknown): ConfigurationGroup[] {
   return Array.isArray(value) ? value as ConfigurationGroup[] : []
 }
@@ -151,7 +143,7 @@ function mainModelCapability(
   label: string,
 ): SceneCapabilityItem {
   const provider = String(settings.llm_provider || 'deepseek').trim().toLowerCase()
-  const requiredConnections = ACTIVE_MODEL_CONNECTIONS[provider] || [provider]
+  const requiredConnections = chatProfileConnections(provider)
   const runtimeFactsAvailable = Array.isArray(settings.model_connections)
   const available = requiredConnections.length > 0
     && requiredConnections.every(id => groupAvailable(findGroup(modelConnections, id)))
@@ -304,6 +296,7 @@ function translationCapability(
   modelConnections: ConfigurationGroup[],
   enabledDetail: string,
   disabledDetail: string,
+  detailVars?: Record<string, string>,
 ): SceneCapabilityItem {
   const connections = configuredTranslationConnections(modelConnections)
   const available = connections.length > 0
@@ -312,6 +305,7 @@ function translationCapability(
     label,
     implementation: available ? `Automatic · ${connections.join(', ')}` : 'No configured translation model',
     detail: enabled ? enabledDetail : disabledDetail,
+    detailVars,
     importance,
     state: enabled ? available ? 'ready' : 'attention' : 'inactive',
     stateLabel: enabled ? available ? 'Enabled' : 'Missing credentials' : 'Available · Off',
@@ -327,7 +321,7 @@ function sceneVisualCapability(
   const backendFactsAvailable = groups(settings.model_connections).length > 0
   const provider = String(settings.llm_provider || 'deepseek').trim().toLowerCase()
   const modelConnections = groups(settings.model_connections)
-  const requiredConnections = ACTIVE_MODEL_CONNECTIONS[provider] || [provider]
+  const requiredConnections = chatProfileConnections(provider)
   const imageModel = provider === 'deepseek' || provider === 'hybrid2'
     ? fieldValue(findGroup(modelConnections, 'deepseek'), 'DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash')
     : ''
@@ -380,11 +374,12 @@ function sceneVisualCapability(
       ? 'The shared main-chat profile does not accept direct image input. Choose a multimodal main-chat model before using visual context.'
       : scene === 'wallpaper'
         ? enabled
-          ? `Wallpaper chat turns inherit the shared visual context, currently using ${String(settings.vision_mode || 'on_demand').replaceAll('_', ' ')} mode with ${scope} capture.`
+          ? 'Wallpaper chat turns inherit the shared visual context, currently using {mode} mode with {scope} capture.'
           : 'The current main-chat model supports images. Wallpaper inherits the shared visual setting, which is currently off.'
         : enabled
-          ? `Shared visual context is enabled in ${String(settings.vision_mode || 'on_demand').replaceAll('_', ' ')} mode with ${scope} capture.`
+          ? 'Shared visual context is enabled in {mode} mode with {scope} capture.'
           : 'The current main-chat model supports images; image and screen input are available but off in the current setup.',
+    detailVars: { mode: String(settings.vision_mode || 'on_demand').replaceAll('_', ' '), scope },
     importance: 'optional',
     state: !modelConfigured || !supported ? 'attention' : enabled ? 'ready' : 'inactive',
     stateLabel: !modelConfigured ? 'Missing credentials' : !supported ? 'Text-only model' : enabled ? 'Enabled' : 'Available · Off',
@@ -460,8 +455,9 @@ export function buildSceneCapabilityProfiles(settings: SettingsSnapshot): SceneC
         wallpaperTranslationEnabled,
         wallpaperTranslationEnabled ? 'expected' : 'optional',
         modelConnections,
-        `Caption mode is ${wallpaperCaptionMode}; translation is requested only for presentation.`,
-        `Caption mode is ${wallpaperCaptionMode}; translated captions are not requested.`,
+        'Caption mode is {mode}; translation is requested only for presentation.',
+        'Caption mode is {mode}; translated captions are not requested.',
+        { mode: wallpaperCaptionMode },
       ), modelFactsAvailable),
       sceneVisualCapability(settings, mainModelLabel, 'wallpaper'),
     ],
@@ -505,8 +501,11 @@ export function buildSceneCapabilityProfiles(settings: SettingsSnapshot): SceneC
         label: 'VN companion model',
         implementation: vnModelOverride ? `${vnProviderLabel} · ${vnModelOverride}` : `${vnProviderLabel} · connection default`,
         detail: groupAvailable(vnModel)
-          ? `The VN companion role uses the configured ${vnProviderLabel} connection${vnModelOverride ? ' with an explicit model override' : ''}.`
-          : `The VN companion role requires a configured ${vnProviderLabel} connection before its model lanes can run.`,
+          ? vnModelOverride
+            ? 'The VN companion role uses the configured {provider} connection with an explicit model override.'
+            : 'The VN companion role uses the configured {provider} connection.'
+          : 'The VN companion role requires a configured {provider} connection before its model lanes can run.',
+        detailVars: { provider: vnProviderLabel },
         importance: 'core',
         state: groupAvailable(vnModel) ? 'ready' : 'attention',
         policyLabel: !vnRole || vnRole.status === 'recommended' ? 'Recommended default' : 'Current selection',
@@ -631,7 +630,8 @@ export function buildCapabilityProfiles(
       ? 'Backend status is unavailable; Work Provider readiness is unknown.'
       : workReady
         ? 'The configured Work Provider passed its startup registration boundary.'
-        : `The selected Work Provider is not ready: ${String(workProvider?.reason || 'provider unavailable')}.`,
+        : 'The selected Work Provider is not ready: {reason}.',
+    detailVars: { reason: String(workProvider?.reason || 'provider unavailable') },
     importance: 'expected',
     state: !backendFactsAvailable ? 'unknown' : workReady ? 'ready' : 'attention',
     stateLabel: !backendFactsAvailable ? 'Backend not connected' : workReady ? 'Provider registered' : 'Provider unavailable',

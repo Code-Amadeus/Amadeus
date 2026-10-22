@@ -70,10 +70,13 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     apps = (
         root / "electron" / "src" / "renderer" / "components" / "ProjectAppsPanel.tsx"
     ).read_text(encoding="utf-8")
+    styles = (root / "electron" / "src" / "renderer" / "styles" / "index.css").read_text(
+        encoding="utf-8"
+    )
     assert "<ChatSessionRail" in chat
     assert "maxHeight: 124" not in chat
     assert "PROJECTS" in rail
-    assert "label: 'Drafts'" in rail
+    assert "label: t('Drafts')" in rail
     assert "projectGroups.map(renderProjectHeader)" in rail
     assert "title={t('New Project')}" in rail
     assert "onNewProjectSession(group.projectId" in rail
@@ -85,14 +88,17 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "setPreviewGroupId(group.id)" in rail
     assert "onMouseEnter={() => setPreviewGroupId(group.id)}" not in rail
     assert "onClick={() => setPreviewGroupId(group.id)}" in rail
-    assert "if (!selected) event.currentTarget.style.background = 'var(--hover)'" in rail
+    # Hover paints only unselected project rows, from the stylesheet rather than mouse handlers.
+    assert "data-selected={selected || undefined}" in rail
+    assert ".rail-group:hover:not([data-selected])" in styles
+    assert "event.currentTarget.style" not in rail
     assert "SESSION_PAGE_SIZE = 30" in rail
     assert "previewGroup.sessions.slice(0, visibleCount)" in rail
     assert "aria-label={t('Search chats')}" in rail
     assert 'type RailMode = \'chats\' | \'artifacts\'' in rail
     assert "aria-label={t('Artifact collections')}" in rail
     assert "Draft artifacts" in rail
-    assert "Recent 5" in rail
+    assert "t('Recent {count}', { count: 5 })" in rail
     assert "onClick={onOpenDraftApps}" in rail
     assert "Open ${group.label} Apps" not in rail
     assert 'title="Open recent Draft Apps"' not in rail

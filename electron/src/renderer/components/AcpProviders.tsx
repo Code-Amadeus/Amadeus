@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
 import FluentIcon from './FluentIcon'
 import { SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import Switch from './Switch'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 
 type Profile = {
@@ -118,7 +119,7 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
           <textarea id="acp-arguments" aria-describedby="acp-arguments-hint" className="settings-form-input settings-form-code" rows={3} value={draft.args.join('\n')} onChange={e => setDraft({ ...draft, args: e.target.value.split('\n') })} placeholder={'C:\\path\\to\\installed-agent\\cli.js\n--profile\nacp'}/>
         </SettingsField>
         <SettingsField id="acp-enabled" label="Enable agent" description="Applies after saving and restarting the backend.">
-          <div className="settings-form-switch"><input id="acp-enabled" aria-describedby="acp-enabled-hint" type="checkbox" role="switch" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })}/><span>{t(draft.enabled ? 'On' : 'Off')}</span></div>
+          <Switch id="acp-enabled" describedBy="acp-enabled-hint" checked={draft.enabled} onChange={enabled => setDraft({ ...draft, enabled })}/>
         </SettingsField>
       </section>
       <section className="settings-form-section" aria-label={t('Credential references')}>
@@ -151,7 +152,7 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
             <textarea id="acp-options" aria-describedby="acp-options-hint" className="settings-form-input settings-form-code" value={options} rows={2} placeholder="model=agent-model-id" onChange={e => setOptions(e.target.value)}/>
           </SettingsField>
           <SettingsField id="acp-resume" label="Reuse persistent native sessions">
-            <div className="settings-form-switch"><input id="acp-resume" type="checkbox" role="switch" checked={draft.resume} onChange={e => setDraft({ ...draft, resume: e.target.checked })}/><span>{t(draft.resume ? 'On' : 'Off')}</span></div>
+            <Switch id="acp-resume" checked={draft.resume} onChange={resume => setDraft({ ...draft, resume })}/>
           </SettingsField>
           <SettingsField id="acp-skills" label="Installed Skill discovery" description="Choose DeepSeek Harness only for a DSH agent. Selected Skills load at startup; save and restart to apply.">
             <select id="acp-skills" className="settings-form-input" value={draft.skill_discovery || 'catalog'} onChange={e => setDraft({ ...draft, skill_discovery: e.target.value as 'catalog' | 'dsh' })}>
@@ -208,6 +209,7 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
             </div>
             <StatusPill ok={false} tone={tone}>{t(status)}</StatusPill>
           </div>
+          <FluentIcon name="ChevronRight" size={16} className="configuration-card-chevron" aria-hidden="true" />
         </summary>
         {open ? renderEditor() : null}
       </details>

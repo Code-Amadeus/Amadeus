@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import FluentIcon from './FluentIcon'
 import { useI18n } from '../i18n'
 import { SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import Switch from './Switch'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 
 export interface McpConnectionSummary {
@@ -210,7 +211,7 @@ export default function McpConnections({
 
   return (
     <div className="settings-embedded-stack">
-      <div className="rounded-lg" style={{ padding: '10px 12px', border: '1px solid var(--border)', background: 'var(--focus-fill)' }}>
+      <div className="settings-note">
         <div className="settings-note-title">{t('Provider-only boundary')}</div>
         <div className="settings-note-description">
           {t('MCP connections are available only to compatible Work Providers. Main Chat cannot access MCP tools.')}
@@ -218,24 +219,24 @@ export default function McpConnections({
       </div>
 
       {connections.map(connection => (
-        <div key={connection.id} className="setting-card" style={{ background: 'var(--surface)', border: '1px solid var(--card-border)', borderRadius: 11, padding: 12, boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)' }}>
+        <div key={connection.id} className="setting-card settings-list-card mcp-connection-card">
           <div className="flex items-start gap-3">
-            <div className="flex items-center justify-center mt-0.5" style={{ width: 24, color: 'var(--muted)' }}><FluentIcon name="CommandPrompt" size={17} /></div>
+            <div className="settings-leading-icon"><FluentIcon name="CommandPrompt" size={16} /></div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="settings-card-title">{connection.name}</span>
-                <span className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{connection.transport}</span>
+                <span className="settings-tag">{connection.transport}</span>
               </div>
               <div className="settings-card-description truncate">{endpointLabel(connection)}</div>
             </div>
             <StatusPill ok={false} tone={restartPending ? 'warning' : 'neutral'}>{t(restartPending ? 'Restart required' : connection.enabled ? 'Enabled on startup' : 'Disabled')}</StatusPill>
           </div>
-          <div className="settings-connection-facts" style={{ borderTop: '1px solid var(--divider)', color: 'var(--muted)' }}>
-            <div><span className="font-[600]">{t('Providers')}:</span> {connection.providerIds.length ? connection.providerIds.join(', ') : t('Not bound')}</div>
-            <div><span className="font-[600]">{t('Main Chat')}:</span> {t('No access')}</div>
-            <div className="col-span-2"><span className="font-[600]">{t('Encrypted environment')}:</span> {connection.environmentKeys.length ? connection.environmentKeys.join(', ') : t('None')}</div>
+          <div className="settings-connection-facts mcp-connection-facts">
+            <div><strong>{t('Providers')}:</strong> {connection.providerIds.length ? connection.providerIds.join(', ') : t('Not bound')}</div>
+            <div><strong>{t('Main Chat')}:</strong> {t('No access')}</div>
+            <div className="col-span-2"><strong>{t('Encrypted environment')}:</strong> {connection.environmentKeys.length ? connection.environmentKeys.join(', ') : t('None')}</div>
           </div>
-          {testState[connection.id] ? <div role="status" className="settings-field-description" style={{ color: testState[connection.id].ok ? 'var(--success)' : 'var(--muted)', whiteSpace: 'pre-line' }}>{testState[connection.id].message}</div> : null}
+          {testState[connection.id] ? <div role="status" className="settings-field-description mcp-test-status" data-ok={testState[connection.id].ok || undefined}>{testState[connection.id].message}</div> : null}
           <div className="settings-form-actions-end">
             <SettingsButton tone="quiet" onClick={() => void test(connection.id)} disabled={restartPending || saving} title={t(restartPending ? 'Restart the backend before testing' : 'Connect and discover tools')}>{t('Test')}</SettingsButton>
             <SettingsButton onClick={() => beginEdit(draftFrom(connection))} disabled={locked || saving}>{t('Edit')}</SettingsButton>
@@ -250,7 +251,7 @@ export default function McpConnections({
           <div className="settings-form-section-heading settings-connection-editor-heading">
             <div><h4 className="settings-card-title">{t(draft.id ? 'Edit MCP connection' : 'Add MCP server')}</h4>
               <p className="settings-card-description">{t('Saved by the Host and applied to selected Work Providers after restart.')}</p></div>
-            <SettingsButton tone="quiet" disabled={saving} onClick={closeEditor} aria-label={t('Close MCP editor')}>×</SettingsButton>
+            <button type="button" className="icon-button" disabled={saving} onClick={closeEditor} aria-label={t('Close MCP editor')} title={t('Close MCP editor')}><FluentIcon name="Dismiss" size={14} /></button>
           </div>
           <div className="settings-form">
             <fieldset disabled={locked || saving} className="settings-form-body">
@@ -286,7 +287,7 @@ export default function McpConnections({
                   }) : <p className="settings-field-description">{t('No installed Work Provider currently accepts MCP connections.')}</p>}
                 </div>
                 <SettingsField id="mcp-enabled" label="Enable for selected Providers" description="Applies after saving and restarting the backend.">
-                  <div className="settings-form-switch"><input id="mcp-enabled" type="checkbox" role="switch" aria-describedby="mcp-enabled-hint" checked={draft.enabled} onChange={event => updateDraft('enabled', event.target.checked)} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></div>
+                  <Switch id="mcp-enabled" describedBy="mcp-enabled-hint" checked={draft.enabled} onChange={enabled => updateDraft('enabled', enabled)} />
                 </SettingsField>
               </section>
             </fieldset>
@@ -298,10 +299,10 @@ export default function McpConnections({
           </div>
         </div>
       ) : (
-        <SettingsButton className="self-start" onClick={() => beginEdit({ ...EMPTY_DRAFT })} disabled={locked}>+ {t('Add MCP server')}</SettingsButton>
+        <SettingsButton className="self-start" onClick={() => beginEdit({ ...EMPTY_DRAFT })} disabled={locked}><FluentIcon name="Add" size={14} /> {t('Add MCP server')}</SettingsButton>
       )}
-      {locked ? <div className="text-[10.5px]" style={{ color: 'var(--muted)' }}>{t('MCP registry is locked by the parent process environment.')}</div> : null}
-      {!connections.length && !draft ? <div className="text-[10.5px]" style={{ color: 'var(--muted)' }}>{t('No MCP connections configured.')}</div> : null}
+      {locked ? <div className="settings-field-description">{t('MCP registry is locked by the parent process environment.')}</div> : null}
+      {!connections.length && !draft ? <div className="settings-field-description">{t('No MCP connections configured.')}</div> : null}
       {error && !draft ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
     </div>
   )

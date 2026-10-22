@@ -295,6 +295,44 @@ checks the copies offline. To verify the source as well, run
 Updating the protocol requires updating the reviewed pin and matching copies;
 an upstream draft change does not silently change the Host's accepted subset.
 
+## Package icons
+
+The Host accepts both `amadeus.extension/v0` and `amadeus.extension/v1`.
+Existing v0 packages need no migration; v0 remains unchanged and does not allow
+`icon`. A package opting into icons includes these fields alongside the required
+metadata in `amadeus-extension.json`:
+
+```json
+{ "schema": "amadeus.extension/v1", "icon": "assets/icon.png" }
+```
+
+Include that file in the wheel's package data. Icons must be package-relative
+PNG/JPEG files with matching signatures, at most 1 MiB and 1024×1024 pixels.
+A square 256×256 image is recommended. Installation checks package containment,
+file type and native decoding; no network URL or executable image format is accepted.
+The UI displays the image in a 36 px tile without cropping. Existing packages
+need no change: absent or unavailable images use the first displayed name
+grapheme, uppercase for Latin names. A damaged image can fall back without hiding
+the package's name or actions. Updates and uninstall resolve through the current
+Host-owned installation; the renderer never supplies a path or reads package files.
+
+This optional metadata does not change runtime permissions, configuration or the
+Host API version. A v0-only Host rejects v1, even when the icon is omitted.
+Existing Hosts validate the schema before `engines` and may report an invalid
+manifest rather than an incompatible package; raising the Host API requirement
+does not alter that old validation order. Authors must identify a v1-capable
+minimum application version in distribution notes once this update is released.
+The store's independently pinned checker must be requalified for v1 before
+icon-bearing packages enter its catalog. The canonical contract is proposed in
+[Amadeus-Extensions #4](https://github.com/Code-Amadeus/Amadeus-Extensions/pull/4)
+with [design issue #3](https://github.com/Code-Amadeus/Amadeus-Extensions/issues/3).
+Review and merge that protocol change before the dependent Host change; if its
+accepted commit changes, update the Host source pin and recheck provenance.
+After the protocol PR merges, fetch the canonical repository and verify that
+`git merge-base --is-ancestor <pinned-commit> origin/main` succeeds, then run
+`python tools/check_extension_protocol.py --source <canonical-checkout>`.
+The offline hash check alone does not prove that a pin has reached canonical main.
+
 ## Evidence and explicit limits
 
 The implemented profile supports local wheel installation of TTS, MCP, Skill

@@ -117,7 +117,7 @@ test('extension lifecycle and English-only compatibility use the real Chinese di
   const i18n = loadTypeScript(new URL('../src/renderer/i18n.tsx', import.meta.url), {}, cache)
   const Component = loadTypeScript(new URL('../src/renderer/components/ExtensionSettings.tsx', import.meta.url), { './FluentIcon': { default: () => null } }, cache).default
   const html = renderToStaticMarkup(React.createElement(i18n.I18nProvider, null, React.createElement(Component, props({ extensions: [extension({ pendingRemoval: true, restartRequired: true })] }))))
-  for (const label of ['示例语音', '已保存状态', '当前后端', '重启后卸载', '安装或更新本地 wheel', '日语输出尚未验证']) assert.ok(html.includes(label), label)
+  for (const label of ['示例语音', '已保存状态', '当前后端', '重启后卸载', '安装插件', '日语输出尚未验证']) assert.ok(html.includes(label), label)
   assert.ok(!html.includes('Saved state'))
 })
 
@@ -135,7 +135,7 @@ function harness(api, initialProps = {}) {
   const render = (update = {}) => { cleanups.forEach(cleanup => cleanup()); cleanups = []; currentProps = { ...currentProps, ...update }; cursor = 0; effects = []; tree = Component(currentProps); cleanups = effects.map(callback => callback()).filter(value => typeof value === 'function'); return tree }
   function* walk(node) { if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) { for (const item of node) yield* walk(item); return }
-    yield node; yield* walk(node.props?.children)
+    yield node; yield* walk(node.props?.children); yield* walk(node.props?.action)
   }
   const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : String(node ?? '')
   render()
@@ -184,7 +184,7 @@ test('wheel cancellation retains a draft; compatible Provider choices and secret
   t.after(() => page.restore())
   page.button('Configure extension').props.onClick(); page.render()
   page.find(node => node.props?.id === 'extension-config-note' && node.type === 'input').props.onChange({ target: { value: 'draft' } }); page.render()
-  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
+  page.button('Install plugin…').props.onClick(); await flush(); page.render()
   assert.equal(installs, 1)
   assert.equal(page.find(node => node.props?.id === 'extension-config-note' && node.type === 'input').props.value, 'draft')
   assert.equal(page.find(node => node.type === 'label' && node.props.children?.[1] === 'Incompatible agent'), undefined)
@@ -206,10 +206,10 @@ test('a rejected update replaces previous success feedback without claiming it a
     ? { ok: false, error: 'Theme contrast is invalid' }
     : { ok: true, settings: { extensions: [extension({ revision: 2 })] } } })
   t.after(() => page.restore())
-  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
+  page.button('Install plugin…').props.onClick(); await flush(); page.render()
   assert.ok(page.find(node => node.props?.role === 'status'))
   reject = true
-  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
+  page.button('Install plugin…').props.onClick(); await flush(); page.render()
   assert.equal(page.find(node => node.props?.role === 'status'), undefined)
   assert.equal(page.find(node => node.props?.role === 'alert').props.children, 'Theme contrast is invalid')
 })
@@ -218,7 +218,7 @@ test('a save receipt remains accurate when a later backend restart applies the p
   const pending = extension({ revision: 2, appliedRevision: 1, restartRequired: true })
   const page = harness({ installExtension: async () => ({ ok: true, settings: { restartRequired: true, extensions: [pending] } }) })
   t.after(() => page.restore())
-  page.button('Install or update local wheel…').props.onClick(); await flush()
+  page.button('Install plugin…').props.onClick(); await flush()
   page.render({ extensions: [pending] })
   const receipt = page.find(node => node.props?.role === 'status').props.children
   assert.equal(receipt, 'Saved. Current application status is shown on each package.')
@@ -238,15 +238,38 @@ test('removal requests data deletion only when explicitly selected', async t => 
   assert.deepEqual(options, { deleteData: true })
 })
 
-test('disable and removal warn about the selected voice while preserving its identity', t => {
-  const page = harness({}, { selectedVoiceBackend: 'org.example.voice/speech' })
+const SELECTED_VOICE_WARNING = 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'
+const cardSwitch = (page, id = 'org.example.voice') => page.find(node => node.props?.id === `extension-enabled-${id}` && node.props.onChange)
+
+test('turning off the package that holds the saved voice asks first, and removal warns too', async t => {
+  const updates = []
+  const page = harness({ updateExtension: async update => { updates.push(update); return { ok: true, settings: {} } } },
+    { selectedVoiceBackend: 'org.example.voice/speech' })
   t.after(() => page.restore())
-  page.button('Configure extension').props.onClick(); page.render()
-  page.find(node => node.type === 'input' && node.props?.id === 'extension-enabled').props.onChange({ target: { checked: false } }); page.render()
-  assert.ok(page.find(node => node.props?.children === 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'))
-  page.button('Cancel').props.onClick(); page.render()
+  cardSwitch(page).props.onChange(false); page.render()
+  assert.ok(page.find(node => node.props?.children === SELECTED_VOICE_WARNING))
+  assert.deepEqual(updates, [], 'nothing is saved before confirming')
+  page.button('Keep enabled').props.onClick(); page.render()
+  assert.equal(page.find(node => node.props?.children === SELECTED_VOICE_WARNING), undefined)
+  cardSwitch(page).props.onChange(false); page.render()
+  page.button('Disable').props.onClick(); await flush(); page.render()
+  assert.deepEqual(updates, [{ id: 'org.example.voice', enabled: false, values: {}, secrets: {}, providers: ['pi'] }])
   page.button('Remove').props.onClick(); page.render()
-  assert.ok(page.find(node => node.props?.children === 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'))
+  assert.ok(page.find(node => node.props?.children === SELECTED_VOICE_WARNING))
+})
+
+test('the card switch changes only enabled, and a form save never sends enabled', async t => {
+  const updates = []
+  const page = harness({ updateExtension: async update => { updates.push(update); return { ok: true, settings: {} } } })
+  t.after(() => page.restore())
+  cardSwitch(page).props.onChange(false); await flush(); page.render()
+  assert.deepEqual(updates, [{ id: 'org.example.voice', enabled: false, values: {}, secrets: {}, providers: ['pi'] }])
+  page.button('Configure extension').props.onClick(); page.render()
+  assert.ok(page.find(node => node.type === 'form'), 'the editor opens inside the package card')
+  page.find(node => node.props?.id === 'extension-config-speed' && node.type === 'input').props.onChange({ target: { value: '1.75' } }); page.render()
+  page.find(node => node.type === 'form').props.onSubmit({ preventDefault() {} }); await flush(); page.render()
+  assert.equal('enabled' in updates[1], false, 'a switch flipped while the form was open stays as saved')
+  assert.deepEqual(updates[1].values, { speed: 1.75 })
 })
 
 test('pending installation reports a busy navigation guard; failed installation leaves saved packages intact', async t => {
@@ -256,9 +279,9 @@ test('pending installation reports a busy navigation guard; failed installation 
   })
   t.after(() => page.restore())
   assert.deepEqual(state, { dirty: false, busy: false })
-  page.button('Install or update local wheel…').props.onClick(); page.render()
+  page.button('Install plugin…').props.onClick(); page.render()
   assert.deepEqual(state, { dirty: false, busy: true })
-  assert.equal(page.button('Install or update local wheel…'), undefined)
+  assert.equal(page.button('Install plugin…'), undefined)
   resolve({ ok: false, error: 'Synthetic invalid wheel' }); await flush(); page.render()
   assert.equal(writes, 0)
   assert.equal(state.busy, false)

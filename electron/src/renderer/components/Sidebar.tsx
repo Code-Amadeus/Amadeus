@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import type { Page } from '../App'
 import FluentIcon from './FluentIcon'
 import { useI18n } from '../i18n'
@@ -6,37 +6,21 @@ import { useI18n } from '../i18n'
 interface Props {
   page: Page
   onNavigate: (p: Page) => void
-  renderActive: boolean
   wallpaperActive: boolean
-  onToggleRender: () => void
   onToggleWallpaper: () => void
 }
 
+// Pages, plus Wallpaper: a full interaction mode that is switched on and off rather than navigated to.
+// Render lives in the chat header and backend diagnostics in Settings.
 type NavItem =
-  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' | 'Tiles' }
-  | { kind: 'toggle'; label: string; icon: 'Video'; iconActive: 'Movie'; active: boolean; onClick: () => void }
-  | { kind: 'toggle-simple'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
-
-function navButtonStyle(active: boolean, collapsed: boolean): CSSProperties {
-  return {
-    height: 40,
-    paddingLeft: collapsed ? (active ? 14 : 17) : (active ? 17 : 20),
-    paddingRight: collapsed ? 0 : 20,
-    color: active ? 'var(--accent)' : 'var(--muted)',
-    backgroundColor: active ? 'var(--selection-bg)' : 'transparent',
-    borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
-    fontWeight: active ? 600 : 400,
-  }
-}
+  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'Movie' | 'PuzzlePiece' }
+  | { kind: 'toggle'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
 
 function CollapseGlyph({ collapsed }: { collapsed: boolean }) {
   return <span className={`nav-collapse-glyph ${collapsed ? 'collapsed' : 'expanded'}`} />
 }
 
-export default function Sidebar({
-  page, onNavigate,
-  renderActive, wallpaperActive, onToggleRender, onToggleWallpaper,
-}: Props) {
+export default function Sidebar({ page, onNavigate, wallpaperActive, onToggleWallpaper }: Props) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('amadeus.sidebar.collapsed') === '1')
 
@@ -48,27 +32,12 @@ export default function Sidebar({
 
   const topItems: NavItem[] = [
     { kind: 'page', page: 'chat', label: 'Chat', icon: 'Edit' },
-    {
-      kind: 'toggle',
-      label: 'Render',
-      icon: 'Video',
-      iconActive: 'Movie',
-      active: renderActive,
-      onClick: onToggleRender,
-    },
-    {
-      kind: 'toggle-simple',
-      label: 'Wallpaper',
-      icon: 'Tiles',
-      active: wallpaperActive,
-      onClick: onToggleWallpaper,
-    },
+    { kind: 'toggle', label: 'Wallpaper', icon: 'Tiles', active: wallpaperActive, onClick: onToggleWallpaper },
     { kind: 'page', page: 'vn', label: 'VN Player', icon: 'Movie' },
-    // Keep experimental plugin management in Settings until integration is ready.
+    { kind: 'page', page: 'plugins', label: 'Plugins', icon: 'PuzzlePiece' },
   ]
 
   const bottomItems: NavItem[] = [
-    { kind: 'page', page: 'backend', label: 'Backend', icon: 'CommandPrompt' },
     { kind: 'page', page: 'settings', label: 'Settings', icon: 'Setting' },
   ]
 
@@ -80,104 +49,48 @@ export default function Sidebar({
           key={item.page}
           onClick={() => onNavigate(item.page)}
           title={collapsed ? t(item.label) : undefined}
-          className="flex items-center gap-3 w-full text-left text-[13px]
-                     transition-colors duration-150"
-          style={navButtonStyle(active, collapsed)}
-          onMouseEnter={e => {
-            if (!active) {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--hover)'
-              ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
-            }
-          }}
-          onMouseLeave={e => {
-            if (!active) {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
-              ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
-            }
-          }}
+          className="sidebar-item"
+          data-active={active || undefined}
+          aria-current={active ? 'page' : undefined}
         >
-          <FluentIcon name={item.icon} size={18} />
+          <FluentIcon name={item.icon} size={16} />
           {!collapsed && <span>{t(item.label)}</span>}
         </button>
       )
     }
-    // toggle items — selectable=false, show active state
-    const iconName = item.kind === 'toggle' && item.active ? item.iconActive : item.icon
+    // Wallpaper is switched on and off; it shows its running state instead of being the current page.
     return (
       <button
         key={item.label}
         onClick={item.onClick}
         title={collapsed ? t(item.label) : undefined}
-        className="flex items-center gap-3 w-full text-left text-[13px]
-                   transition-colors duration-150"
-        style={navButtonStyle(item.active, collapsed)}
-        onMouseEnter={e => {
-          if (!item.active) {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--hover)'
-            ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
-          }
-        }}
-        onMouseLeave={e => {
-          if (!item.active) {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
-            ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
-          }
-        }}
+        className="sidebar-item"
+        data-active={item.active || undefined}
+        aria-pressed={item.active}
       >
-        <FluentIcon name={iconName} size={18} />
+        <FluentIcon name={item.icon} size={16} />
         {!collapsed && <span>{t(item.label)}</span>}
       </button>
     )
   }
 
   return (
-    <nav
-      className="flex flex-col select-none shrink-0"
-      style={{
-        width: collapsed ? 56 : 220,
-        backgroundColor: 'var(--bg)',
-        border: 'none',
-        transition: 'width 140ms ease',
-      }}
-    >
-      <div
-        className="flex items-center"
-        style={{
-          height: 44,
-          padding: collapsed ? '7px 8px' : '7px 12px',
-          justifyContent: collapsed ? 'center' : 'flex-end',
-        }}
-      >
+    <nav className="sidebar" data-collapsed={collapsed || undefined}>
+      <div className="sidebar-header">
         <button
           onClick={() => setCollapsed(v => !v)}
           title={t(collapsed ? 'Expand navigation' : 'Collapse navigation')}
-          className="flex items-center justify-center border-none bg-transparent cursor-pointer"
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 6,
-            color: 'var(--muted)',
-          }}
-          onMouseEnter={e => {
-            const b = e.currentTarget
-            b.style.backgroundColor = 'var(--hover)'
-            b.style.color = 'var(--text)'
-          }}
-          onMouseLeave={e => {
-            const b = e.currentTarget
-            b.style.backgroundColor = 'transparent'
-            b.style.color = 'var(--muted)'
-          }}
+          className="icon-button"
         >
           <CollapseGlyph collapsed={collapsed} />
         </button>
       </div>
 
-      <div className="flex-1" style={{ paddingTop: 0 }}>
+      <div className="flex-1">
         {topItems.map(renderItem)}
       </div>
 
-      <div style={{ paddingTop: 6, paddingBottom: 8, borderTop: '1px solid var(--divider)' }}>
+      <div className="sidebar-footer">
         {bottomItems.map(renderItem)}
       </div>
     </nav>
