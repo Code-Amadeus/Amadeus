@@ -317,8 +317,14 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
     )
     checks["project_navigation_rendered"] = True
 
-    await page.get_by_role("button", name="Artifacts", exact=True).click()
-    await page.get_by_role("navigation", name="Chat and artifact navigation").hover()
+    # The drawer is owned by hover or focus. Retain keyboard focus while its
+    # contents change instead of moving the pointer across the resizing panel.
+    await rail.focus()
+    artifact_mode = rail.get_by_role("button", name="Artifacts", exact=True)
+    await artifact_mode.click()
+    from playwright.async_api import expect
+    await expect(artifact_mode).to_have_attribute("aria-pressed", "true", timeout=timeout_ms)
+    await rail.focus()
     await page.get_by_label("Artifact collections", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )

@@ -32,6 +32,6 @@ Windows CI 增加正式生成器、固定 Host checker 和真实打包客户端�
 - N2 实际 code-only exe 已打包；从其 resources/extension-host 校验真实 v0 与 v1 wheel 均成功，build/merge-actual-bundle-schemas.json。
 - 独立 extensionSettings UI 验收通过。首次用 PowerShell 直接启动 GUI exe 导致父进程提前返回、Vite 向关闭的日志管道写入 EPIPE，用户看到了测试窗口弹窗。确认 PID、可执行路径和命令后仅清理该测试进程；改用现有 ProcessTree 和持有文件日志句柄的 Python 启动器，等待真实结束后通过。没有在产品中忽略 EPIPE。
 - 随后用户明确授权关闭当前 Amadeus；通过正常窗口关闭请求退出 UI 及所属后台，释放 17777，开始本机完整验收。未删除或改写用户 profile，不自动重启日常应用。
-- 完整验收探索轮保留失败：一次旧聊天侧栏 Artifacts 悬停定位超时，后续同断言通过；整合探针的多卡片选择歧义及一次参数名错误已定位修正。最终完整源码/打包/发布闭环及新 head 的 CI 结果以各自回执为准，未完成前不将 #256 记为已合并。
+- 完整验收探索轮保留失败：聊天侧栏 Artifacts 悬停定位两次超时；探针改用既有焦点维持展开契约，额外断言页签 aria-pressed=true，并保留内容可见性和原超时；整合探针的多卡片选择歧义及一次参数名错误已定位修正。最终完整源码/打包/发布闭环及新 head 的 CI 结果以各自回执为准，未完成前不将 #256 记为已合并。
 
 后续独立资格：把目录 checker 重新认证到含 v1 的 Host main、将 manifest 版本纳入目录兼容信息并覆盖旧客户端、测试真实图标 wheel。当前历史 checker 仍拒绝它，空目录未发布任何包。历史计划和 Pi 测试保留，不重写已被 pin 引用的提交。
