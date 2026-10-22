@@ -1023,6 +1023,7 @@ automatic rights to character, model, reference-audio, or external asset packs.
 
 ## Related projects
 
+- [Pi](https://github.com/earendil-works/pi): the MIT-licensed agent toolkit behind Amadeus's default daily-task agent. Amadeus integrates its pinned coding-agent runtime through native RPC; see [Pi integration and configuration](docs/pi-rpc-provider.md).
 - [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS): an MIT-licensed low-latency GPT-SoVITS v3 inference runtime. Amadeus does not require Aqua to start today.
 - [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge): public **0.1.0 Source Alpha** for local sprite inspection, behavior-graph editing, and KTX2 character-pack preview/export. Licensed under AGPL-3.0-only; generation services are separate from the Amadeus runtime.
 - [Experimental extension Host profile](docs/extension_host_profile_v0.1.md): the implemented local-wheel TTS/MCP/Skill/theme subset, package application lifecycle, Agent binding and current limits. This is not a stable SDK or a full extension protocol conformance claim.
