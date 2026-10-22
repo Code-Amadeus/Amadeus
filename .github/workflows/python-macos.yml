@@ -25,6 +25,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
+          # Bootstrap uv only; qualify the application's uv-managed interpreter below.
           python-version: "3.12.10"
 
       - name: Install pinned uv
@@ -37,10 +38,17 @@ jobs:
           cache-dependency-path: electron/package-lock.json
 
       - name: Install locked environment (T1 + T2 voice)
-        run: uv sync --locked --extra voice --extra dev
+        run: |
+          uv python install 3.12.14
+          uv venv .venv --python 3.12.14 --managed-python
+          uv sync --locked --extra voice --extra dev
 
       - name: Verify environment (voice profile)
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+
+      - name: Verify native VN portrait Tk and ImageTk
+        timeout-minutes: 2
+        run: uv run --locked --no-sync python tools/verify_vn_portrait_environment.py
 
       - name: Check source and architecture views
         shell: bash
@@ -56,6 +64,7 @@ jobs:
           uv run --locked --no-sync python -m pytest -q
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
+          tests/test_vn_portrait_environment.py
           tests/test_cu124_dependency_audit_tool.py
           tests/test_core_install_tiers.py
           tests/test_asset_paths.py
@@ -63,6 +72,7 @@ jobs:
           tests/test_voice_backend_registry.py
           tests/test_extension_examples.py
           tests/test_extension_resources.py
+          tests/test_electron_model_less_smoke.py
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
           tests/test_playback_device_recovery.py
@@ -77,3 +87,14 @@ jobs:
           node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
           npm test
           npm run build
+
+      - name: Run Electron model-less smoke (macOS)
+        run: >-
+          uv run --locked --no-sync python tools/smoke_electron_model_less.py
+          --report-dir build/electron-smoke
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: electron-macos-smoke-${{ github.run_id }}
+          path: build/electron-smoke/**

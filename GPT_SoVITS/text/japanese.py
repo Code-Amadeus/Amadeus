@@ -2,7 +2,10 @@
 import re
 import pyopenjtalk
 
-from tts.japanese_dictionary import configure_japanese_dictionary, with_latin_word_boundaries
+from tts.japanese_dictionary import (
+    configure_japanese_dictionary, prepare_japanese_text,
+    with_latin_readings, with_latin_word_boundaries, latin_token_spans, normalize_latin_case,
+)
 from tts.japanese_reading import run_frontend
 
 configure_japanese_dictionary(pyopenjtalk)
@@ -16,15 +19,17 @@ _japanese_characters = re.compile(
 
 # Regular expression matching non-Japanese characters or punctuation marks:
 _japanese_marks = re.compile(
-    # Preserve punctuation inside Latin words so a native dictionary can match
-    # ballet's / coca-cola. Standalone punctuation retains the usual boundary.
-    r"(?!(?<=[A-Za-zＡ-Ｚａ-ｚ])(?:['’＇]|[\-−－](?=[A-Za-zＡ-Ｚａ-ｚ])))"
     r"[^A-Za-z\d\u3005\u3040-\u30ff\u4e00-\u9fff\uff11-\uff19\uff21-\uff3a\uff41-\uff5a\uff66-\uff9d]"
 )
 
 # List of (symbol, Japanese) pairs for marks:
 _symbols_to_japanese = [(re.compile("%s" % x[0]), x[1]) for x in [("％", "パーセント")]]
 
+# Keep the established case folding for short numeric unit suffixes (100L,
+# 170CM). Their unit interpretation is separate from proper-name spelling.
+_numeric_latin_suffix = re.compile(
+    r"(?<=[0-9０-９])[A-Za-zＡ-Ｚａ-ｚ]{1,2}(?![A-Za-zＡ-Ｚａ-ｚ0-9０-９])"
+)
 
 # List of (consonant, sokuon) pairs:
 _real_sokuon = [
@@ -84,15 +89,27 @@ def symbols_to_japanese(text):
 def preprocess_jap(text, with_prosody=False):
     """Reference https://r9y9.github.io/ttslearn/latest/notebooks/ch10_Recipe-Tacotron.html"""
     text = symbols_to_japanese(text)
-    # English words to lower case, should have no influence on japanese words.
-    text = text.lower()
-    sentences = re.split(_japanese_marks, text)
-    marks = re.findall(_japanese_marks, text)
+    text = _numeric_latin_suffix.sub(lambda match: match.group().lower(), text)
+    text = with_latin_readings(normalize_latin_case(text))
+    # Preserve alphabetic compounds such as follow-up; model-2 has a numeric
+    # boundary and follows the established punctuation/number frontend path.
+    spans = iter(latin_token_spans(text))
+    span = next(spans, None)
+    sentences, marks, start = [], [], 0
+    for mark in _japanese_marks.finditer(text):
+        while span and span[1] <= mark.start():
+            span = next(spans, None)
+        if span and span[0] <= mark.start() < span[1]:
+            continue
+        sentences.append(text[start:mark.start()])
+        marks.append(mark.group())
+        start = mark.end()
+    sentences.append(text[start:])
     text = []
     for i, sentence in enumerate(sentences):
         if re.match(_japanese_characters, sentence):
             if with_prosody:
-                text += pyopenjtalk_g2p_prosody(sentence)[1:-1]
+                text += pyopenjtalk_g2p_prosody(sentence, resolve_aliases=False)[1:-1]
             else:
                 features = run_frontend(pyopenjtalk, with_latin_word_boundaries(sentence))
                 labels = pyopenjtalk.make_label(features)
@@ -114,7 +131,7 @@ def text_normalize(text):
     return text
 
 # Copied from espnet https://github.com/espnet/espnet/blob/master/espnet2/text/phoneme_tokenizer.py
-def pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True):
+def pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True, *, resolve_aliases=True):
     """Extract phoneme + prosoody symbol sequence from input full-context labels.
 
     The algorithm is based on `Prosodic features control by symbols as input of
@@ -123,6 +140,8 @@ def pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True):
     Args:
         text (str): Input text.
         drop_unvoiced_vowels (bool): whether to drop unvoiced vowels.
+        resolve_aliases (bool): False only when the complete original input
+            already passed alias resolution before punctuation splitting.
 
     Returns:
         List[str]: List of phoneme + prosody symbols.
@@ -136,7 +155,8 @@ def pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True):
         modeling for neural TTS`: https://doi.org/10.1587/transinf.2020EDP7104
 
     """
-    labels = pyopenjtalk.make_label(run_frontend(pyopenjtalk, with_latin_word_boundaries(text)))
+    prepared = prepare_japanese_text(text) if resolve_aliases else with_latin_word_boundaries(text)
+    labels = pyopenjtalk.make_label(run_frontend(pyopenjtalk, prepared))
     N = len(labels)
 
     phones = []

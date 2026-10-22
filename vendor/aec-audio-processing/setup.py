@@ -9,8 +9,47 @@ import shutil
 import subprocess
 import sys
 import glob
+import json
+import re
+from pathlib import Path
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext as _build_ext
+
+
+def validate_swig_bindings(source_dir):
+    """Reject bindings left at different generations by an earlier install."""
+    source_dir = Path(source_dir)
+    patterns = {
+        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9]{6})\b',
+        'audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
+        'webrtc_audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
+    }
+    versions = {}
+    for name, pattern in patterns.items():
+        try:
+            text = (source_dir / name).read_text(encoding='utf-8')
+        except (OSError, UnicodeError):
+            text = ''
+        match = re.search(pattern, text, re.MULTILINE)
+        if match is None:
+            versions[name] = None
+        elif name.endswith('.cpp'):
+            # SWIG uses decimal digit pairs: 0x010311 represents 1.3.11.
+            versions[name] = tuple(int(match[1][index:index + 2], 10) for index in (0, 2, 4))
+        else:
+            versions[name] = tuple(map(int, match.groups()))
+    if None in versions.values() or len(set(versions.values())) != 1:
+        details = ', '.join(
+            f'{name}={".".join(map(str, version)) if version else "unreadable"}'
+            for name, version in versions.items()
+        )
+        raise RuntimeError(
+            f'AEC SWIG binding versions are inconsistent or unreadable: {details}. '
+            'Back up any intentional edits, then from the updated repository root run '
+            '`git restore --source=HEAD -- vendor/aec-audio-processing/src` and rebuild. '
+            'For a source archive, unpack a fresh copy instead.'
+        )
+    return versions['audio_processing_wrap.cpp']
 
 
 def get_webrtc_library_path():
@@ -71,6 +110,17 @@ def build_webrtc():
     ]
     subprocess.check_call(meson_cmd, cwd=webrtc_dir)
 
+    # Verify the actual resolution, not just the requested Meson option.
+    info_dir = os.path.join(build_dir, 'meson-info')
+    with open(os.path.join(info_dir, 'intro-buildoptions.json'), encoding='utf-8') as handle:
+        options = {item['name']: item['value'] for item in json.load(handle)}
+    with open(os.path.join(info_dir, 'intro-projectinfo.json'), encoding='utf-8') as handle:
+        subprojects = {item['name']: item['version'] for item in json.load(handle)['subprojects']}
+    if ('abseil-cpp' not in options['force_fallback_for']
+            or subprojects.get('abseil-cpp') != '20240722.0'):
+        raise RuntimeError('AEC build did not select bundled Abseil 20240722.0')
+    print('AEC build: forced bundled Abseil 20240722.0', flush=True)
+
     print("Building with ninja...")
     subprocess.check_call(['ninja', '-C', build_dir], cwd=webrtc_dir)
 
@@ -91,6 +141,7 @@ def build_webrtc():
 
 class build_ext(_build_ext):
     def run(self):
+        validate_swig_bindings(Path(__file__).resolve().parent / 'src')
         # Build WebRTC library if not found
         lib_path = get_webrtc_library_path()
         if not os.path.exists(lib_path):
@@ -157,15 +208,6 @@ include_dirs = [
     install_include_dir,
 ]
 
-swig_opts = [
-    '-c++',
-    '-Isrc',
-    f'-I{webrtc_dir}',
-    f'-I{os.path.join(webrtc_dir, "webrtc")}',
-    f'-I{abseil_dir}',
-    f'-I{install_include_dir}',
-]
-
 # EDIT 2: Use the correct C++ standard flag for the MSVC compiler
 if sys.platform == 'win32':
     cxx_flags = ['/std:c++20']
@@ -201,9 +243,10 @@ else:
 ext_modules = [
     Extension(
         name='aec_audio_processing._webrtc_audio_processing',
-        sources=['src/audio_processing.i', 'src/audio_processing_module.cpp'],
+        # Keep the committed SWIG 4.3.1 wrapper and Python proxies together.
+        # Regeneration is an explicit source-maintenance task, not installation.
+        sources=['src/audio_processing_wrap.cpp', 'src/audio_processing_module.cpp'],
         include_dirs=include_dirs,
-        swig_opts=swig_opts,
         extra_compile_args=cxx_flags,
         extra_link_args=[],  # Populated by build_ext
         extra_objects=[],    # Populated by build_ext

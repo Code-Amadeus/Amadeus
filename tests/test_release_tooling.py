@@ -264,6 +264,7 @@ def test_source_release_keeps_the_linux_aec_path_dependency() -> None:
     manifest = json.loads((ROOT / "LICENSES/provenance.json").read_text(encoding="utf-8"))
     required = [
         "vendor/aec-audio-processing/setup.py",
+        "vendor/aec-audio-processing/build_backend.py",
         "vendor/aec-audio-processing/pyproject.toml",
         "vendor/aec-audio-processing/LICENSE",
         "vendor/aec-audio-processing/src/files/THIRD_PARTY_NOTICES.txt",

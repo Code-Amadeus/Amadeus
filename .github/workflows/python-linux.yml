@@ -66,6 +66,7 @@ jobs:
           tests/test_voice_backend_registry.py
           tests/test_extension_examples.py
           tests/test_extension_resources.py
+          tests/test_electron_model_less_smoke.py
 
       - name: Typecheck Pi extensions and build Electron renderer (Linux)
         working-directory: electron
@@ -74,6 +75,22 @@ jobs:
           node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
           npm test
           npm run build
+
+      - name: Prepare sandboxed Electron under Xvfb
+        run: |
+          uv run --locked --no-sync python -m playwright install-deps chromium
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run Electron model-less smoke (Linux)
+        run: >-
+          xvfb-run -a uv run --locked --no-sync python tools/smoke_electron_model_less.py
+          --report-dir build/electron-smoke
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: electron-linux-smoke-${{ github.run_id }}
+          path: build/electron-smoke/**
 
   voice-tier:
     # Linux Voice source-build qualification, not audio runtime coverage.
@@ -114,8 +131,13 @@ jobs:
             echo "No pkg-config-visible system Abseil"
           fi
 
-      - name: Install locked environment (T1 + T2 voice)
-        run: uv sync --locked --extra voice --extra dev
+      - name: Qualify cold locked Voice install and standalone AEC wheel
+        # Builds an sdist/wheel as well as the locked install, verifies actual
+        # Meson resolution, and detects ignored build/install source pollution.
+        env:
+          # Regression: the qualifier must prevent an inherited uv log filter.
+          RUST_LOG: warn
+        run: python tools/verify_aec_source_build.py
 
       - name: Verify environment (voice profile)
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
@@ -130,25 +152,6 @@ jobs:
           for n in ('torch', 'torchaudio', 'silero_vad', 'onnxruntime'));
           print('AEC 1.0.1 import and model-free Voice: PASS')"
 
-      - name: Assert bundled Abseil build
-        shell: bash
-        run: |
-          uv run --locked --no-sync python - <<'PYTHON'
-          import json
-          from pathlib import Path
-
-          info = Path("vendor/aec-audio-processing/webrtc-audio-processing/build/meson-info")
-          options = {
-              item["name"]: item["value"]
-              for item in json.loads((info / "intro-buildoptions.json").read_text())
-          }
-          assert "abseil-cpp" in options["force_fallback_for"], options["force_fallback_for"]
-          project = json.loads((info / "intro-projectinfo.json").read_text())
-          subprojects = {item["name"]: item["version"] for item in project["subprojects"]}
-          assert subprojects.get("abseil-cpp") == "20240722.0", subprojects
-          print("AEC build: forced bundled Abseil 20240722.0")
-          PYTHON
-
       - name: Check third-party provenance
         run: uv run --locked --no-sync python tools/check_third_party_provenance.py --release-ready
 
@@ -162,6 +165,7 @@ jobs:
           tests/test_voice_backend_registry.py
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
+          tests/test_aec_build_contract.py
           tests/test_playback_device_recovery.py
           tests/test_tts_contract.py
           tests/test_tts_fish_audio_backend.py

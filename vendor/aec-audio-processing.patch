@@ -1,10 +1,169 @@
 --- a/setup.py
 +++ b/setup.py
-@@ -65,6 +65,7 @@
-         'meson', 'setup',
-         '--buildtype=release',
-         '--default-library=shared',
+@@ -11,0 +12,3 @@
++import json
++import re
++from pathlib import Path
+@@ -13,0 +17,36 @@
++
++
++def validate_swig_bindings(source_dir):
++    """Reject bindings left at different generations by an earlier install."""
++    source_dir = Path(source_dir)
++    patterns = {
++        'audio_processing_wrap.cpp': r'^\s*#define\s+SWIG_VERSION\s+0x([0-9]{6})\b',
++        'audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
++        'webrtc_audio_processing.py': r'^# Version (\d+)\.(\d+)\.(\d+)\s*$',
++    }
++    versions = {}
++    for name, pattern in patterns.items():
++        try:
++            text = (source_dir / name).read_text(encoding='utf-8')
++        except (OSError, UnicodeError):
++            text = ''
++        match = re.search(pattern, text, re.MULTILINE)
++        if match is None:
++            versions[name] = None
++        elif name.endswith('.cpp'):
++            # SWIG uses decimal digit pairs: 0x010311 represents 1.3.11.
++            versions[name] = tuple(int(match[1][index:index + 2], 10) for index in (0, 2, 4))
++        else:
++            versions[name] = tuple(map(int, match.groups()))
++    if None in versions.values() or len(set(versions.values())) != 1:
++        details = ', '.join(
++            f'{name}={".".join(map(str, version)) if version else "unreadable"}'
++            for name, version in versions.items()
++        )
++        raise RuntimeError(
++            f'AEC SWIG binding versions are inconsistent or unreadable: {details}. '
++            'Back up any intentional edits, then from the updated repository root run '
++            '`git restore --source=HEAD -- vendor/aec-audio-processing/src` and rebuild. '
++            'For a source archive, unpack a fresh copy instead.'
++        )
++    return versions['audio_processing_wrap.cpp']
+@@ -67,0 +107 @@
 +        '--force-fallback-for=abseil-cpp',
-         f'--prefix={install_dir}',
-         build_dir
-     ]
+@@ -71,0 +112,11 @@
++
++    # Verify the actual resolution, not just the requested Meson option.
++    info_dir = os.path.join(build_dir, 'meson-info')
++    with open(os.path.join(info_dir, 'intro-buildoptions.json'), encoding='utf-8') as handle:
++        options = {item['name']: item['value'] for item in json.load(handle)}
++    with open(os.path.join(info_dir, 'intro-projectinfo.json'), encoding='utf-8') as handle:
++        subprojects = {item['name']: item['version'] for item in json.load(handle)['subprojects']}
++    if ('abseil-cpp' not in options['force_fallback_for']
++            or subprojects.get('abseil-cpp') != '20240722.0'):
++        raise RuntimeError('AEC build did not select bundled Abseil 20240722.0')
++    print('AEC build: forced bundled Abseil 20240722.0', flush=True)
+@@ -92,0 +144 @@
++        validate_swig_bindings(Path(__file__).resolve().parent / 'src')
+@@ -157,9 +208,0 @@
+-]
+-
+-swig_opts = [
+-    '-c++',
+-    '-Isrc',
+-    f'-I{webrtc_dir}',
+-    f'-I{os.path.join(webrtc_dir, "webrtc")}',
+-    f'-I{abseil_dir}',
+-    f'-I{install_include_dir}',
+@@ -203 +246,3 @@
+-        sources=['src/audio_processing.i', 'src/audio_processing_module.cpp'],
++        # Keep the committed SWIG 4.3.1 wrapper and Python proxies together.
++        # Regeneration is an explicit source-maintenance task, not installation.
++        sources=['src/audio_processing_wrap.cpp', 'src/audio_processing_module.cpp'],
+@@ -205 +249,0 @@
+-        swig_opts=swig_opts,
+@@ -218 +262 @@
+-)
+\ No newline at end of file
++)
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -5 +4,0 @@
+-    "swig>=4.0.0",
+@@ -10 +9,2 @@
+-build-backend = "setuptools.build_meta"
++build-backend = "build_backend"
++backend-path = ["."]
+--- a/MANIFEST.in
++++ b/MANIFEST.in
+@@ -5,0 +6 @@
++include build_backend.py
+@@ -25 +26 @@
+-global-exclude .git*
+\ No newline at end of file
++global-exclude .git*
+--- /dev/null
++++ b/build_backend.py
+@@ -0,0 +1,70 @@
++"""Run the vendored setuptools build in a disposable source copy.
++
++Meson and setuptools both write beside their inputs. A PEP 517 path dependency
++must not let those writes mutate Amadeus's checked-in third-party sources.
++"""
++
++from contextlib import contextmanager
++import os
++from pathlib import Path
++import shutil
++import tempfile
++
++from setuptools import build_meta
++
++
++SOURCE = Path(__file__).resolve().parent
++
++
++def _ignore_build_outputs(directory, names):
++    ignored = {"__pycache__", ".git", ".pytest_cache"}
++    directory = Path(directory)
++    if directory == SOURCE:
++        ignored.update({"build", "dist", ".eggs"})
++        ignored.update(name for name in names if name.endswith(".egg-info"))
++    if directory == SOURCE / "webrtc-audio-processing":
++        ignored.update({"build", "install"})
++    return ignored.intersection(names)
++
++
++@contextmanager
++def _staged_source():
++    previous = Path.cwd()
++    with tempfile.TemporaryDirectory(prefix="amadeus-aec-build-") as directory:
++        staging = Path(directory) / "source"
++        shutil.copytree(SOURCE, staging, ignore=_ignore_build_outputs)
++        try:
++            os.chdir(staging)
++            yield
++        finally:
++            os.chdir(previous)
++
++
++def get_requires_for_build_wheel(config_settings=None):
++    with _staged_source():
++        return build_meta.get_requires_for_build_wheel(config_settings)
++
++
++def get_requires_for_build_sdist(config_settings=None):
++    with _staged_source():
++        return build_meta.get_requires_for_build_sdist(config_settings)
++
++
++def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
++    metadata_directory = str(Path(metadata_directory).resolve())
++    with _staged_source():
++        return build_meta.prepare_metadata_for_build_wheel(metadata_directory, config_settings)
++
++
++def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
++    wheel_directory = str(Path(wheel_directory).resolve())
++    if metadata_directory is not None:
++        metadata_directory = str(Path(metadata_directory).resolve())
++    with _staged_source():
++        return build_meta.build_wheel(wheel_directory, config_settings, metadata_directory)
++
++
++def build_sdist(sdist_directory, config_settings=None):
++    sdist_directory = str(Path(sdist_directory).resolve())
++    with _staged_source():
++        return build_meta.build_sdist(sdist_directory, config_settings)

@@ -156,7 +156,11 @@ def external_asset_pack_status(
     if state == "installed" and spec.validator == "japanese_dictionary":
         from config.japanese_dictionary import JapaneseDictionaryError, load_dictionary_pack
         try:
-            version = load_dictionary_pack(asset_path(asset_root, spec.trees[0])).version
+            pack = load_dictionary_pack(asset_path(asset_root, spec.trees[0]))
+            version = pack.version
+            if pack.format_version == 2:
+                message = (f"{pack.entry_count} source rows preserved; {pack.reviewed_rows} reviewed reading corrections; "
+                           f"{pack.entry_count - pack.reviewed_rows} original rows remain unverified.")
         except JapaneseDictionaryError as exc:
             state = "invalid"
             message = str(exc)

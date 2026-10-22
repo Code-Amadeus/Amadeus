@@ -261,14 +261,31 @@ macOS. For T2 on macOS, install PortAudio first with `brew install portaudio`;
 PyAudio builds from source there. Chinese step-by-step guides that cover every
 feature and its external prerequisites (for example Lively Wallpaper on Windows)
 are in [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md), [MACOS_INSTALL.md](MACOS_INSTALL.md)
-and [LINUX_INSTALL.md](LINUX_INSTALL.md). Then clone and choose a tier with the same
-commands on both platforms:
+and [LINUX_INSTALL.md](LINUX_INSTALL.md). First clone the repository:
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
+```
 
+Create the environment for your platform. On **Windows**:
+
+```bash
 uv venv .venv --python 3.12
+```
+
+On **macOS**, use the uv-managed build qualified for the native VN portrait.
+If `.venv` already exists, follow the [interpreter migration
+instructions](MACOS_INSTALL.md#vn-portrait-tk) first:
+
+```bash
+uv python install 3.12.14
+uv venv .venv --python 3.12.14 --managed-python
+```
+
+Then choose a tier on either platform:
+
+```bash
 uv sync --locked                              # T1 core
 uv sync --locked --extra voice                # T2 voice (optional)
 ```
@@ -276,6 +293,11 @@ uv sync --locked --extra voice                # T2 voice (optional)
 Keep the environment named `.venv`. Electron discovers its interpreter
 automatically (`Scripts/python.exe` on Windows, `bin/python3` on macOS), without
 requiring an `AMADEUS_PYTHON` override.
+
+When enabling the native VN portrait on macOS, run
+`uv run --locked --no-sync python tools/verify_vn_portrait_environment.py` in a
+graphical desktop session. Older standalone Python builds can pass the package
+verifier but fail Tk/ImageTk. This additional check is not required for headless use.
 
 Build the Electron frontend on either platform:
 
