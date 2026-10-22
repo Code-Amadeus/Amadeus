@@ -206,7 +206,7 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
     await page.get_by_role('button', name='Expand navigation', exact=True).click()
     await plugins.click()
     await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
-    await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    await page.get_by_role('button', name='Install plugin…', exact=True).wait_for(state='visible', timeout=timeout_ms)
     checks['plugins_in_sidebar'] = True
     await page.get_by_role('button', name='Settings', exact=True).click()
     await page.get_by_role('button', name='General', exact=True).click()

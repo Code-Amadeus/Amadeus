@@ -516,7 +516,6 @@
   "Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.": "从可信作者处安装本地 wheel。纯前端包立即生效；包含后端贡献的包在后端重启后整包生效。",
   "Install local wheel…": "安装本地 wheel…",
   "Install once. Manage contributions and their application state here.": "安装一次，在这里管理所有贡献及其生效状态。",
-  "Install or update local wheel…": "安装或更新本地 wheel…",
   "Install plugins and manage their settings.": "安装插件并管理设置。",
   "Install plugin…": "安装插件…",
   "Install the optional emotion reference pack, then restart.": "请安装可选情绪参考包，然后重启。",
