@@ -221,7 +221,7 @@ S0 至 S2 使用维护者参考包和 fixture 独立验收。S3 可以收录维�
 
 **依赖与发布位置**
 
-依赖 D1，不依赖 D3。先使用已有参考包和测试 fixture 验收。目录源放在 Amadeus-Extensions 的 `catalog/`，首版选择受保护 main 上的 `catalog/index.json`，通过官方 raw HTTPS 地址分发，不另外部署 Pages 或 Release 索引资产。
+依赖 D1，不依赖 D3。先使用已有参考包和测试 fixture 验收。目录源放在 Amadeus-Extensions 的 `catalog/`，首版选择受保护 main 上的 `catalog/v1/index.json`，通过官方 raw HTTPS 地址分发，不另外部署 Pages 或 Release 索引资产。
 
 目录输入先经审核合入 main。发布 PR 选定一个已合入的输入 commit，固定生成器和 Host 校验器版本，生成索引并提交审核。生成时间取该输入 commit 的时间，不读取构建机器当前时间；相同输入和工具版本生成相同字节。索引记录输入 commit，避免把包含生成文件自身的 commit 当作输入造成循环。
 
@@ -272,7 +272,7 @@ S0 至 S2 使用维护者参考包和 fixture 独立验收。S3 可以收录维�
 
 **改哪里**
 
-- 协议仓拟新增 `catalog/packages/`、`catalog/schema.json`、`catalog/README.md`、`catalog/REVIEW_CHECKLIST.md`、`catalog/index.json`、`tools/check_catalog.py`、`tools/build_catalog.py` 及对应测试。
+- 协议仓拟新增 `catalog/packages/`、`catalog/schema.json`、`catalog/README.md`、`catalog/REVIEW_CHECKLIST.md`、`catalog/v1/index.json`、`tools/check_catalog.py`、`tools/build_catalog.py` 及对应测试。
 - 固定 Host 校验器 commit 和 D1 的最小依赖锁；复用协议 validator、规范 fixture 和指定 Host 入口，目录收录规则保持独立于一般本地安装准入。
 - 首版纯 Python、版本格式、依赖和命令限制集中在目录收录政策与公开清单中，不写成所有插件的永久运行条件。客户端需要复核的目录交付限制使用同一政策定义/一致性 fixture，不能在 renderer、Runner 和 Provider 各维护一份允许列表。
 - `.github/workflows/validate.yml` 增加 Windows 收录检查、wheel 内容差异和索引重建比对；发布 PR 使用受保护 main 的审核流程。
@@ -470,7 +470,7 @@ Pi/MCP 资格在包含 #234 的目标主线上至少覆盖 `tests/test_pi_mcp.py
 | --- | --- | --- |
 | 开发依赖 | D1 后分作者线和商店线；S0 至 S2 不等 D3 | D3 未完成只能交付相应技术预览，不能声称外部作者验证完成 |
 | 首批目录来源 | 允许维护者参考包；同清单、非作者本人审核 | 不强制外部作者公开发布，不以参考包替代 D3 |
-| 索引承载与序号 | 官方仓受保护 main 的 raw `catalog/index.json`，发布 PR 递增序号 | 固定输入 commit/工具，提交时间用于重建；回退内容不回退序号 |
+| 索引承载与序号 | 官方仓受保护 main 的 raw `catalog/v1/index.json`，发布 PR 递增序号 | 固定输入 commit/工具，提交时间用于重建；回退内容不回退序号 |
 | 无签名的信任根 | 官方 GitHub 仓库与发布权限 | S3 核实保护、评审、两步验证和最小权限；不承诺仓库失陷后的独立真实性 |
 | 产物镜像 | Host 设置可配置 HTTPS 镜像，仅下载字节 | 索引仍只认官方；逐跳检查、无请求凭据、安装器验证官方摘要 |
 | 首批包规则 | `py3-none-any`、可审查源码/资源、`X.Y.Z`、无第三方依赖或仅 SDK | 当前仅为目录收录限制；不顺带收紧一般本地包协议 |

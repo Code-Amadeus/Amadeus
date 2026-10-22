@@ -1,7 +1,7 @@
 {
   "name": "amadeus-desktop",
   "version": "0.17.1-alpha.0",
-  "description": "Amadeus AI Companion \u2014 Electron frontend",
+  "description": "Amadeus AI Companion — Electron frontend",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
@@ -17,24 +17,10 @@
     "electron:build": "npm run build && electron-builder"
   },
   "build": {
-    "directories": {
-      "output": "build"
-    },
-    "files": [
-      "dist/main/**/*",
-      "dist/shared/**/*",
-      "dist/preload/**/*",
-      "dist/renderer/**/*",
-      "package.json"
-    ],
+    "directories": { "output": "build" },
+    "files": ["dist/main/**/*", "dist/shared/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
     "extraResources": [
-      {
-        "from": "../vendor/extension-sdk",
-        "to": "extension-sdk",
-        "filter": [
-          "*.whl"
-        ]
-      },
+      { "from": "../vendor/extension-sdk", "to": "extension-sdk", "filter": ["*.whl"] },
       {
         "from": "..",
         "to": "extension-host",
@@ -65,22 +51,9 @@
     "win": {
       "icon": "../assets/icons/app/app_icon.ico",
       "extraResources": [
-        {
-          "from": "../assets/icons/app/app_icon.ico",
-          "to": "assets/icons/app/app_icon.ico"
-        },
-        {
-          "from": "../build/windows-wallpaper/host",
-          "to": "windows-wallpaper",
-          "filter": [
-            "**/*",
-            "!*.pdb"
-          ]
-        },
-        {
-          "from": "../scripts/setup_windows_wallpaper.ps1",
-          "to": "windows-wallpaper/setup_windows_wallpaper.ps1"
-        }
+        { "from": "../assets/icons/app/app_icon.ico", "to": "assets/icons/app/app_icon.ico" },
+        { "from": "../build/windows-wallpaper/host", "to": "windows-wallpaper", "filter": ["**/*", "!*.pdb"] },
+        { "from": "../scripts/setup_windows_wallpaper.ps1", "to": "windows-wallpaper/setup_windows_wallpaper.ps1" }
       ]
     }
   },

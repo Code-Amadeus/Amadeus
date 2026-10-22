@@ -8,7 +8,7 @@ can provide a public store. The current S0 reference index contains no reviewed 
 
 ## Authority and compatibility
 
-The only index is `https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/index.json`.
+The only index is `https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/v1/index.json`.
 Its repository permissions and HTTPS delivery are the trust root; this version has no
 independent index signature. Renderer IPC selects an action and, where needed, a package
 ID and version. Main resolves the URL, digest, review and compatibility. Cache data can be
@@ -243,3 +243,15 @@ exact-artifact blocking, explicit unblocking and separate distribution restorati
 Every accepted desktop snapshot is matched to the generated index bytes; offline
 restarts and single/double NUL damage exercise the same durable settings owners.
 This locally simulated review/publishing workflow is separate from public-release gates.
+
+
+The official v1 path is permanently bound to amadeus.catalog/v1. Future index
+formats use distinct versioned paths; supported older clients keep receiving
+safety decisions on their existing path. Empty catalogs retain the Browse view
+with an explicit preview notice.
+
+Downloads abort after 30 seconds without progress. Their separate total budget
+allows 32 KiB/s over the admitted maximum size plus connection time (at least two
+minutes), so an active slow wheel transfer can continue past the old two-minute
+limit. Asynchronous stream backpressure bounds queued writes and completion waits
+for disk flush/close. Limits, HTTPS redirect validation and digest checks still apply.

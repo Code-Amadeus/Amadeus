@@ -197,7 +197,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   const missingProviders = draft?.providers.filter(id => !compatibleProviders.some(provider => provider.provider_id === id)) || []
 
   return <div className="settings-embedded-stack extension-settings">
-    <div role="tablist" aria-label={t('Plugin manager views')} className="extension-manager-tabs">
+    <div role="tablist" aria-label={t('Plugin manager views')} className="capability-page-tabs">
       {(['installed', 'browse'] as const).map(value => <button type="button" key={value} role="tab" id={`extension-tab-${value}`} aria-controls={`extension-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
         onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'installed' : event.key === 'End' ? 'browse' : tab === 'installed' ? 'browse' : 'installed'; switchTab(next); document.getElementById(`extension-tab-${next}`)?.focus() } }}
         onClick={() => switchTab(value)}>{t(value === 'installed' ? 'Installed' : 'Browse')}</button>)}

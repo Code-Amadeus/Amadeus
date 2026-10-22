@@ -7,7 +7,7 @@ import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } 
 import { artifactUrl, downloadExtension, httpsUrl, MAX_INDEX_BYTES, MAX_WHEEL_BYTES, stagingDirectory, type Download } from './extensionDownloads.js'
 import { securityBlock, securitySnapshot } from './extensionSecurity.js'
 
-export const OFFICIAL_EXTENSION_INDEX = 'https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/index.json'
+export const OFFICIAL_EXTENSION_INDEX = 'https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/v1/index.json'
 export function catalogRequest(raw: unknown): CatalogRequest {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid catalog request')
   const r = raw as CatalogRequest

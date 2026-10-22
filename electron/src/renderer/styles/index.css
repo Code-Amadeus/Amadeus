@@ -6261,9 +6261,6 @@ html[data-theme-extension] .settings-inline-action[data-tone='danger']:is(:hover
 
 /* Catalog shares the existing plugin manager and theme tokens. Third-party copy is text only. */
 .extension-settings [hidden] { display: none !important; }
-.extension-manager-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--card-border); }
-.extension-manager-tabs [role="tab"] { padding: 9px 16px; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
-.extension-manager-tabs [aria-selected="true"] { color: var(--text); border-bottom-color: currentColor; font-weight: 700; }
 .extension-catalog-toolbar, .extension-download-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .extension-download-progress { padding: 12px; border: 1px solid var(--card-border); border-radius: 10px; }
 .extension-download-progress strong, .extension-download-progress > div { flex-basis: 100%; overflow-wrap: anywhere; }

@@ -69,10 +69,10 @@ class Publisher:
                 self.wheels[filename] = destination
         self.clone(Path(config["protocol_repo"]), self.repo)
         self.generator = self.git(self.repo, "rev-parse", "HEAD")
-        if json.loads((self.repo / "catalog/index.json").read_text())["entries"]:
+        if json.loads((self.repo / "catalog/v1/index.json").read_text())["entries"]:
             raise ValueError("Demo expects the experimental empty bootstrap")
         self.current = root / "bootstrap.json"
-        shutil.copyfile(self.repo / "catalog/index.json", self.current)
+        shutil.copyfile(self.repo / "catalog/v1/index.json", self.current)
         publisher = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -82,7 +82,7 @@ class Publisher:
                 if route == "/index.json":
                     file = publisher.current
                 elif route == "/candidate-index.json":
-                    file = publisher.repo / "catalog/index.json"
+                    file = publisher.repo / "catalog/v1/index.json"
                 elif route.startswith(("/artifacts/", "/mirror/")):
                     candidate = publisher.wheels.get(route.rsplit("/", 1)[-1])
                     if candidate and route in (
@@ -171,7 +171,7 @@ class Publisher:
         base = phase / "protected-base"
         self.clone(self.repo, base)
         previous_commit = self.git(base, "rev-parse", "HEAD")
-        previous = base / "catalog/index.json"
+        previous = base / "catalog/v1/index.json"
         if version:
             for name in PACKAGES:
                 path = self.repo / "catalog/packages" / f"{name}-{version}.json"
@@ -229,7 +229,7 @@ class Publisher:
         build = [
             "--source-repo", self.repo, "--source-commit", input_commit,
             "--approved-ref", "demo-approved", "--sequence", str(number),
-            "--previous", previous, "--output", self.repo / "catalog/index.json",
+            "--previous", previous, "--output", self.repo / "catalog/v1/index.json",
             "--fetch", *common,
         ]
         # Always run the original reviewed generator revision, not submitted input code.
@@ -239,15 +239,15 @@ class Publisher:
             self.git(generator, "checkout", "--detach", self.generator)
         self.tool(generator, "build_catalog.py", *build)
         self.tool(generator, "build_catalog.py", *build, "--check")
-        self.tool(base, "check_catalog.py", "--index", self.repo / "catalog/index.json", "--previous", previous)
+        self.tool(base, "check_catalog.py", "--index", self.repo / "catalog/v1/index.json", "--previous", previous)
         publication = self.commit(f"DEMO ONLY: publish catalog sequence {number}")
         self.tool(base, "check_catalog_ci.py", "--proposal", self.repo, "--base", input_commit,
                   "--evidence", phase / "publication-evidence", *common)
         self.tool(generator, "verify_publication.py", "--index-url", self.origin + "/candidate-index.json",
-                  "--expected", self.repo / "catalog/index.json", "--previous", previous,
+                  "--expected", self.repo / "catalog/v1/index.json", "--previous", previous,
                   "--output", phase / "candidate-delivery.json")
         snapshot = phase / "index.json"
-        shutil.copyfile(self.repo / "catalog/index.json", snapshot)
+        shutil.copyfile(self.repo / "catalog/v1/index.json", snapshot)
         self.current = snapshot
         self.sequence = number
         self.tool(generator, "verify_publication.py", "--index-url", self.origin + "/index.json",
@@ -275,7 +275,7 @@ class Publisher:
         index = json.loads(self.current.read_text())
         index["sequence"] += 1
         index["entries"][0]["display"]["description"] = "DEMO tampered output"
-        (proposal / "catalog/index.json").write_text(json.dumps(index), encoding="utf-8")
+        (proposal / "catalog/v1/index.json").write_text(json.dumps(index), encoding="utf-8")
         self.tool(self.repo, "check_catalog_ci.py", "--proposal", proposal,
                   "--base", self.git(self.repo, "rev-parse", "HEAD"),
                   "--host", self.config["checker_host"], "--python", self.config["checker_python"],

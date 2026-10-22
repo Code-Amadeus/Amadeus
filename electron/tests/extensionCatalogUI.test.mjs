@@ -53,3 +53,11 @@ test('closed and future voice roles are not presented as TTS', () => {
   assert.equal(model.catalogApplication(asr), 'Compatibility unavailable')
   assert.equal(model.recommendedUpdate([asr], installed), undefined)
 })
+
+
+test('empty catalog keeps browsing available and explains preview status', () => {
+  const Component = loadTypeScript(new URL('../src/renderer/components/ExtensionCatalog.tsx', import.meta.url), { '../i18n': { useI18n: () => ({ locale: 'en-US', t: s => s }) }, './FluentIcon': { default: () => null } }).default
+  const html = renderToStaticMarkup(React.createElement(Component, { catalog: { entries: [], cached: false }, installed: [], busy: false, selection: null, onSelect() {}, onInstall() {}, onLink() {} }))
+  assert.match(html, /Plugin store preview: no packages have been listed yet/)
+  assert.match(html, /Catalog packages/)
+})

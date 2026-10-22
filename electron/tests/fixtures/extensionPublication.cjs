@@ -14,7 +14,7 @@ async function setupPublicationTransport(origin, certificate) {
   const state = globalThis.extensionPublicationTransport = {requests:[], confirmations:0}
   net.request = options => {
     const source = typeof options === 'string' ? options : options.url
-    const target = source === 'https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/index.json'
+    const target = source === 'https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/v1/index.json'
       ? origin + '/index.json' : source
     state.requests.push({source, target})
     return request(typeof options === 'string' ? target : {...options, url:target})

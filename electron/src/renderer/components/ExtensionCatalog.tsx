@@ -30,7 +30,7 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
       <label>{t('Plugin type')}<select className="settings-form-input" value={kind} onChange={event => setKind(event.target.value)}><option value="">{t('All types')}</option>{kinds.map(type => <option key={type} value={type}>{t(contributionLabel(type))}</option>)}</select></label>
     </div>
     {catalog.cached && catalog.entries.length > 0 ? <p className="settings-field-description">{t('Showing the last catalog snapshot. Installation checks the official index again.')}</p> : null}
-    {!catalog.entries.length ? <p role="status" className="settings-field-description">{t(catalog.error ? 'The catalog is unavailable. Installed packages remain manageable.' : 'No packages are listed in this catalog yet.')}</p> : !groups.length ? <p role="status">{t('No plugins match this search.')}</p> : null}
+    {!catalog.entries.length ? <p role="status" className="settings-field-description">{t(catalog.error ? 'The catalog is unavailable. Installed packages remain manageable.' : 'Plugin store preview: no packages have been listed yet.')}</p> : !groups.length ? <p role="status">{t('No plugins match this search.')}</p> : null}
     {selected ? <section ref={detail} tabIndex={-1} className="extension-catalog-detail" aria-label={t('Plugin details')}>
       <CardShell vertical>
         <div className="extension-card-heading"><div><h4 className="settings-card-title">{catalogText(selected.display.display_name, locale, selected.id)}</h4><div className="extension-package-identity">{selected.id}</div></div><SettingsButton tone="quiet" onClick={() => onSelect(null)}>{t('Close details')}</SettingsButton></div>

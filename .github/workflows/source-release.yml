@@ -12,6 +12,8 @@ on:
       - electron/package.json
       - electron/package-lock.json
       - scripts/**
+      - wallpaper/**
+      - electron/scripts/build-windows-wallpaper.cjs
       - tools/build_source_release.py
       - tools/check_third_party_provenance.py
       - tests/test_release_tooling.py

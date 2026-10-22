@@ -1,6 +1,7 @@
 import { net, session } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { Transform, pipeline } from 'node:stream'
 import { assertExtensionPath } from './extensionPaths.js'
 
 export const MAX_WHEEL_BYTES = 256 * 1024 * 1024
@@ -25,27 +26,35 @@ export type Download = (url: string, destination: string, limit: number, signal:
 export const downloadExtension: Download = (url, destination, limit, signal, progress) => new Promise((resolve, reject) => {
   httpsUrl(url)
   if (signal.aborted) { reject(new Error('Extension download cancelled')); return }
+  // Claim the file synchronously; never remove a pre-existing destination on failure.
   const handle = fs.openSync(destination, 'wx', 0o600)
+  const output = fs.createWriteStream(destination, { fd: handle, autoClose: true, flush: true })
   let request: Electron.ClientRequest | undefined
   let finished = false
   let received = 0
   let redirects = 0
-  const timer = setTimeout(() => finish(new Error('Extension download timed out')), 120_000)
+  let stalled: ReturnType<typeof setTimeout>
+  // At least 32 KiB/s is allowed for the full admitted size, plus connection time.
+  const total = setTimeout(() => finish(new Error('Extension download exceeded its total time limit')), Math.max(120_000, Math.ceil(limit / 32768) * 1000 + 30_000))
+  const activity = () => { clearTimeout(stalled); stalled = setTimeout(() => finish(new Error('Extension download stalled')), 30_000) }
   const cancel = () => finish(new Error('Extension download cancelled'))
   const finish = (error?: Error) => {
     if (finished) return
     finished = true
-    clearTimeout(timer)
+    clearTimeout(stalled); clearTimeout(total)
     signal.removeEventListener('abort', cancel)
-    try { if (!error) fs.fsyncSync(handle) } catch { error = new Error('Extension download could not be saved') }
-    try { fs.closeSync(handle) } catch { error ||= new Error('Extension download could not be saved') }
-    if (error) {
-      request?.abort()
-      try { fs.unlinkSync(destination) } catch { /* The owned staging scope retries cleanup. */ }
-      reject(error)
-    } else resolve()
+    const settle = () => {
+      if (error) {
+        fs.promises.unlink(destination).catch(() => {}).finally(() => reject(error))
+      } else resolve()
+    }
+    if (error) request?.abort()
+    if (output.closed) settle()
+    else { output.once('close', settle); output.destroy() }
   }
+  output.on('error', () => finish(new Error('Extension download could not be saved')))
   signal.addEventListener('abort', cancel, { once: true })
+  activity()
   try {
     request = net.request({ url, session: session.fromPartition('amadeus-extension-downloads', { cache: false }),
       credentials: 'omit', redirect: 'manual', useSessionCookies: false, cache: 'no-store', bypassCustomProtocolHandlers: true })
@@ -56,24 +65,36 @@ export const downloadExtension: Download = (url, destination, limit, signal, pro
     request.on('error', () => finish(new Error('Extension download failed; check network, proxy and certificate settings')))
     request.on('abort', () => finish(new Error('Extension download cancelled')))
     request.on('response', response => {
+      if (finished) return
       if (response.statusCode !== 200) { finish(new Error('Extension download did not return a complete artifact')); return }
-      // Chromium emits decoded bytes; Content-Length describes wire bytes when compressed.
       const header = (name: string): string => { const value = response.headers[name]; return Array.isArray(value) ? value.join(',') : value || '' }
+      // Chromium emits decoded bytes; compressed Content-Length measures wire bytes.
       const encoding = header('content-encoding').toLowerCase()
       const length = encoding && encoding !== 'identity' ? 0 : Number(header('content-length') || 0)
-      if (!Number.isFinite(length) || length > limit) { finish(new Error('Extension download exceeds size limit')); return }
+      if (!Number.isFinite(length) || length < 0 || length > limit) { finish(new Error('Extension download exceeds size limit')); return }
+      activity()
       response.on('error', () => finish(new Error('Extension download was interrupted')))
-      response.on('data', chunk => {
-        if (finished) return
-        received += chunk.length
-        if (received > limit) { finish(new Error('Extension download exceeds size limit')); return }
-        try { fs.writeFileSync(handle, chunk); progress?.(received) } catch { finish(new Error('Extension download could not be saved')) }
+      response.on('aborted', cancel)
+      const bounded = new Transform({
+        transform(chunk, _encoding, callback) {
+          received += chunk.length
+          if (received > limit) { callback(new Error('Extension download exceeds size limit')); return }
+          activity()
+          try { progress?.(received); callback(null, chunk) }
+          catch { callback(new Error('Extension download progress failed')) }
+        },
+        flush(callback) {
+          callback(received === 0 || (length && received !== length) ? new Error('Incomplete extension download') : undefined)
+        },
       })
-      response.on('end', () => finish(received === 0 || (length && received !== length) ? new Error('Incomplete extension download') : undefined))
+      // pipeline applies disk backpressure; success waits for asynchronous flush/close.
+      // Electron 44 implements Readable; its generated IncomingMessage type only lists EventEmitter.
+      pipeline(response as unknown as NodeJS.ReadableStream, bounded, output, error => finish(error ? new Error('Extension download was incomplete or could not be saved') : undefined))
     })
     request.end()
   } catch { finish(new Error('Extension download could not start')) }
 })
+
 const activeStages = new Set<string>()
 const STAGE_MARKER = '.amadeus-extension-download'
 const STAGE_OWNER = 'amadeus.download/v1'

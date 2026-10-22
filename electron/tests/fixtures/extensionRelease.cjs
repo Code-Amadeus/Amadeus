@@ -22,7 +22,7 @@ async function setupReleaseFixture(base, automaticConfirm = true) {
   const request=net.request.bind(net)
   net.request=options=>{
     const url=typeof options==='string'?options:options.url
-    const target=url==='https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/index.json'?origin+'/index.json'
+    const target=url==='https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/v1/index.json'?origin+'/index.json'
       : url.startsWith('https://artifact.test/')||url.startsWith('https://mirror.test/')?origin+new URL(url).pathname:null
     return request(target?{...options,url:target}:options)
   }

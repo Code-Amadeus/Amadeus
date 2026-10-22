@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode>true</RestoreLockedMode>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <RuntimeFrameworkVersion>8.0.31</RuntimeFrameworkVersion>
   </PropertyGroup>
   <ItemGroup>
