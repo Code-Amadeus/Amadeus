@@ -39,7 +39,7 @@
           "server/extensions/catalog.py",
           "server/extensions/catalog-source.json",
           "server/extensions/protocol-source.json",
-          "server/extensions/amadeus-extension.v0.schema.json",
+          "server/extensions/*.schema.json",
           "server/extensions/theme-tokens.v0.json",
           "agent_host/__init__.py",
           "agent_host/skills.py",

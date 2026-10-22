@@ -6,11 +6,16 @@ inspector belongs to its isolated no-credentials process; production has no test
 
 from __future__ import annotations
 import asyncio
+import base64
+import csv
+import io
 import hashlib
 import http.client
 import json
 import subprocess
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +56,50 @@ async def evaluate_main(product, expression):
                 return result["result"].get("value")
 
 
+def verify_checker_schemas(checker_root: Path, wheel: Path, python: str = sys.executable):
+    """Run the shipped helper against a real v0 wheel and its v1 icon variant."""
+    helper = checker_root / "tools/extension_package.py"
+    with zipfile.ZipFile(wheel) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    manifest_name, = [name for name in members if name.endswith("/amadeus-extension.json")]
+    manifest = json.loads(members[manifest_name])
+    assert manifest["schema"] == "amadeus.extension/v0"
+    results = {}
+    with tempfile.TemporaryDirectory(prefix="extension-bundle-schemas-") as temporary:
+        target = Path(temporary) / wheel.name
+        for schema in ("amadeus.extension/v0", "amadeus.extension/v1"):
+            source = wheel
+            if schema.endswith("/v1"):
+                manifest.update(schema=schema, icon="qualification-icon.png")
+                members[manifest_name] = json.dumps(manifest).encode("utf-8")
+                members[manifest_name.rsplit("/", 1)[0] + "/qualification-icon.png"] = (
+                    ROOT / "electron/tests/fixtures/extension-preview.png"
+                ).read_bytes()
+                record = next((name for name in members if name.endswith(".dist-info/RECORD")), None)
+                if record:
+                    rows = io.StringIO(newline="")
+                    writer = csv.writer(rows, lineterminator="\n")
+                    for name, content in sorted(members.items()):
+                        if name != record:
+                            digest = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode()
+                            writer.writerow((name, "sha256=" + digest, len(content)))
+                    writer.writerow((record, "", ""))
+                    members[record] = rows.getvalue().encode()
+                with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+                    for name, content in members.items():
+                        archive.writestr(name, content)
+                source = target
+            process = subprocess.run(
+                [python, "-I", str(helper), "check-wheel", str(source)],
+                cwd=temporary, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            assert process.returncode == 0, process.stdout + process.stderr
+            result = json.loads(process.stdout)
+            assert result["ok"] and result["manifest"]["schema"] == schema
+            results[schema] = {"ok": True, "digest": result["digest"]}
+    return results
+
+
 async def exercise(product, fixture: Path):
     from playwright.async_api import expect
     from config.process_tree import ProcessTree
@@ -81,19 +130,16 @@ async def exercise(product, fixture: Path):
         )
 
     async def configure(enabled, provider=None):
-        await button("Configure extension")
-        await page.locator("#extension-enabled").set_checked(enabled)
         if provider:
-            await (
-                page.locator(".settings-form-provider-choices label")
-                .filter(has_text=provider)
-                .locator("input")
-                .check(timeout=30000)
-            )
-        await button("Save extension")
-        await expect(page.locator("form.settings-connection-editor")).to_have_count(
-            0, timeout=30000
-        )
+            await button("Configure extension")
+            await (page.locator(".settings-form-provider-choices label")
+                   .filter(has_text=provider).locator("input").check(timeout=30000))
+            await button("Save extension")
+            await expect(page.locator('form[aria-label="Configure extension"]')).to_have_count(0, timeout=30000)
+        toggle = page.locator('#extension-panel-installed [role="switch"][id^="extension-enabled-"]')
+        if (await toggle.get_attribute("aria-checked") == "true") != enabled:
+            await toggle.click()
+        await expect(toggle).to_have_attribute("aria-checked", str(enabled).lower(), timeout=30000)
 
     async def install(package_id, version):
         await page.get_by_role("tab", name="Browse", exact=True).click()
@@ -104,7 +150,7 @@ async def exercise(product, fixture: Path):
             await selection.select_option(version)
         await button("Install plugin…")
         await expect(page.locator("#extension-panel-installed")).to_be_visible(timeout=120000)
-        await expect(page.get_by_text(package_id + " · " + version, exact=True)).to_be_visible(
+        await expect(page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(
             timeout=120000
         )
         await expect(page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
@@ -125,6 +171,12 @@ async def exercise(product, fixture: Path):
         (checker_root / "server/extensions/catalog-source.json").read_text()
     )
     if product.packaged_executable:
+        fixture_data = json.loads((fixture / "fixture.json").read_text(encoding="utf-8"))
+        entry = next(e for e in fixture_data["index"]["entries"] if e["id"] == "com.example.desktop-theme" and e["version"] == "0.1.0")
+        from urllib.parse import urlsplit
+        wheel = Path(fixture_data["wheels"][Path(urlsplit(entry["url"]).path).name])
+        report["packaged_schema_checks"] = await asyncio.to_thread(verify_checker_schemas, checker_root, wheel)
+        check("packaged helper accepts both v0 and v1 icon wheels")
         report["checker_files_sha256"] = {
             p.relative_to(checker_root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(checker_root.rglob("*"))
@@ -158,17 +210,14 @@ async def exercise(product, fixture: Path):
         ),
     )
     try:
-        await button("Settings")
-        await button("General")
-        await button("Manage plugins")
+        await button("Plugins")
         theme = "com.example.desktop-theme"
         await install(theme, "0.1.0")
         check("resource installed through shipping UI and IPC", True)
         await configure(True)
         await button("Open appearance settings")
         await page.get_by_role("radio").filter(has_text="Quiet day").click()
-        await button("General")
-        await button("Manage plugins")
+        await button("Plugins")
         theme_state = await page.evaluate("window.amadeus.getDesktopTheme()")
         check("theme applied through native frontend owner", bool(theme_state.get("theme")))
         await product.screenshot("release-store-theme")
@@ -182,7 +231,7 @@ async def exercise(product, fixture: Path):
         )
         await button("Check updates and security status")
         await button("Update plugin…")
-        await expect(page.get_by_text(theme + " · 0.2.0", exact=True)).to_be_visible(timeout=120000)
+        await expect(page.locator(f'[data-extension-id="{theme}"][data-extension-version="0.2.0"]')).to_be_visible(timeout=120000)
         await expect(page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
         theme_state = await page.evaluate("window.amadeus.getDesktopTheme()")
         check("manual update retains enabled appearance", bool(theme_state.get("theme")))
@@ -199,6 +248,7 @@ async def exercise(product, fixture: Path):
         )
         await evaluate_main(product, "extensionReleaseFixture.offline=false")
         await configure(False)
+        await page.locator(".extension-details > summary").click()
         await button("Remove")
         await button("Confirm remove")
         await expect(
@@ -299,6 +349,7 @@ async def exercise(product, fixture: Path):
             )
             used.add((package_id, "0.1.0"))
             await configure(False)
+            await page.locator(".extension-details > summary").click()
             await button("Remove")
             await button("Confirm remove")
         report["used_artifacts"] = [

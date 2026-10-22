@@ -44,11 +44,11 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
           <dt>{t('Host API')}</dt><dd>{value(selected.compatibility.host_api)}</dd>
           <dt>{t('Platform')}</dt><dd>{value(selected.compatibility.platforms) || t('No platform restriction declared')}</dd>
           <dt>{t('Plugin runtime')}</dt><dd>{selected.compatibility.runtime === 'none' ? t('No plugin process') : selected.compatibility.runtime === 'python' ? t('Private Python environment') : value(selected.compatibility.runtime)}</dd>
-          <dt>{t('Python compatibility')}</dt><dd>{value(selected.compatibility.python) || t('No version restriction declared')} · SDK {value(selected.compatibility.sdk)}</dd>
+          <dt>{t('Python compatibility')}</dt><dd>{value(selected.compatibility.python) || t('No version restriction declared')} · {t('SDK')} {value(selected.compatibility.sdk)}</dd>
           <dt>{t('Wheel download size')}</dt><dd>{catalogBytes(selected.size)} · {t('Excludes external services and runtimes.')}</dd>
           <dt>{t('When changes apply')}</dt><dd>{t(catalogApplication(selected))}</dd>
           <dt>{t('Artifact URL')}</dt><dd className="extension-package-identity">{selected.url}</dd>
-          <dt>SHA-256</dt><dd className="extension-package-identity">{selected.sha256}</dd>
+          <dt>{t('SHA-256')}</dt><dd className="extension-package-identity">{selected.sha256}</dd>
           <dt>{t('Artifact review')}</dt><dd>{value(selected.review.reviewer)} · {value(selected.review.date)} · {value(selected.review.policy)}</dd>
         </dl>
         <p className="settings-field-description">{t('Review covers this wheel digest against the public checklist. It does not grant permissions or guarantee runtime safety.')}</p>

@@ -54,8 +54,10 @@ async function until(source,message){const deadline=Date.now()+90000;while(Date.
 async function click(label){await until(`(()=>{const n=Array.from(document.querySelectorAll('button')).find(n=>n.getClientRects().length&&!n.disabled&&n.textContent.trim()===${JSON.stringify(label)});if(!n)return false;n.click();return true})()`,'Button unavailable: '+label);await pause(70)}
 async function input(selector,value){await ui(`(()=>{const n=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(n,${JSON.stringify(value)});n.dispatchEvent(new Event('input',{bubbles:true}))})()`);await pause(70)}
 async function capture(name){const image=await window.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true});fs.writeFileSync(path.join(base,name+'.png'),image.toPNG());report.screenshots.push(name+'.png')}
-async function installed(id,version){await until(`document.querySelector('#extension-panel-installed:not([hidden])')&&document.body.innerText.includes(${JSON.stringify(id+' · '+version)})&&!document.querySelector('.extension-download-progress')`,'Install did not finish: '+id)}
-async function configure(enabled){await click('Configure extension');await ui(`(()=>{const n=document.querySelector('#extension-enabled');if(n.checked!==${enabled})n.click()})()`);await click('Save extension');await until("!document.querySelector('form.settings-connection-editor')",'Configuration did not save')}
+async function installed(id,version){await until(`document.querySelector('#extension-panel-installed:not([hidden])')&&Array.from(document.querySelectorAll('[data-extension-id]')).some(n=>n.dataset.extensionId===${JSON.stringify(id)}&&n.dataset.extensionVersion===${JSON.stringify(version)})&&!document.querySelector('.extension-download-progress')`,'Install did not finish: '+id)}
+async function configure(enabled){await until(`(()=>{const n=document.querySelector('#extension-panel-installed [role="switch"][id^="extension-enabled-"]');if(!n||n.disabled)return false;if((n.getAttribute('aria-checked')==='true')!==${enabled})n.click();return true})()`,'Card switch unavailable');await until(`document.querySelector('#extension-panel-installed [role="switch"][id^="extension-enabled-"]').getAttribute('aria-checked')===${JSON.stringify(String(enabled))}`,'Enable intent did not save')}
+async function remove(){await ui("document.querySelector('.extension-details').open=true");await click('Remove')}
+
 try {
  console.log('store phase: ready')
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='https://localhost:'+server.address().port
@@ -123,17 +125,16 @@ try {
  badWheel=false;await click('Update plugin…');await installed(themeId,'0.2.0')
  check('manual update preserves enable intent and applies resource package',store.storedExtensionRecords()[0].enabled&&(await installer.themeState()).theme.version==='0.2.0')
  await capture('store-updated-en')
- // A refresh while editing cannot lose a draft or leave a stale success receipt.
- await click('Configure extension');await ui("document.querySelector('#extension-enabled').click()")
+ // Offline refresh preserves the installed version and enabled state.
  offline=true;await click('Check updates and security status');await until("document.querySelector('[role=alert]')",'Offline refresh failure absent')
- check('offline refresh preserves draft and saved version',await ui("!document.querySelector('#extension-enabled').checked&&!document.body.innerText.includes('Package saved. Configure')"))
- offline=false;await click('Save extension');await until("!document.querySelector('form.settings-connection-editor')",'Disable failed')
+ check('offline refresh preserves saved version and enable intent',store.storedExtensionRecords()[0].version==='0.2.0'&&store.storedExtensionRecords()[0].enabled)
+ offline=false;await configure(false)
  check('disable restores builtin appearance',!(await installer.themeState()).theme)
  const data=path.join(base,'extension-data',createHash('sha256').update(themeId).digest('hex'));fs.writeFileSync(path.join(data,'retained.txt'),'fixture')
- await click('Remove');await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Uninstall failed')
+ await remove();await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Uninstall failed')
  check('uninstall retains data by default',fs.existsSync(path.join(data,'retained.txt')))
  await click('Browse');await input('input[type=search]',themeId);await click('View plugin details');await click('Install plugin…');await installed(themeId,'0.2.0')
- await click('Remove');await ui("Array.from(document.querySelectorAll('input[type=checkbox]')).find(n=>n.closest('.extension-removal-data')).click()");await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Explicit deletion failed')
+ await remove();await ui("Array.from(document.querySelectorAll('input[type=checkbox]')).find(n=>n.closest('.extension-removal-data')).click()");await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Explicit deletion failed')
  check('explicit uninstall data deletion',!fs.existsSync(data))
  // A process package uses the same UI and real offline pip transaction, then its actual Runner.
  index={...index,sequence:3}
@@ -143,7 +144,7 @@ try {
  const tone=fixture.index.entries.find(e=>e.id===toneId&&e.version==='0.1.0')
  await new Promise((resolve,reject)=>{const child=spawn(python,['-I',path.join(root,'tools/check_extension_contract.py'),'--execute','--kind','tts','--wheel',fixture.wheels[new URL(tone.url).pathname.split('/').at(-1)],'--record',path.join(base,'tone-record.json'),'--scenario',path.join(root,'examples/extensions/contract-scenarios/tone.json'),'--output',path.join(base,'tone-runtime.json')],{cwd:root,env:environment,windowsHide:true,stdio:'ignore'});child.on('error',reject);child.on('close',code=>code===0?resolve():reject(new Error('Tone contract failed')))})
  check('UI-installed TTS runs through the actual Runner',JSON.parse(fs.readFileSync(path.join(base,'tone-runtime.json'))).ok)
- await configure(false);await click('Remove');await click('Confirm remove');await installer.cleanupStoppedBackend()
+ await configure(false);await remove();await click('Confirm remove');await installer.cleanupStoppedBackend()
  index={...index,sequence:4,security:[{id:themeId,version:'0.2.0',sha256:fixture.index.entries.find(e=>e.id===themeId&&e.version==='0.2.0').sha256,status:'blocked',sequence:4,reason:'security',evidence:'https://fixture.test/block'}]}
  index.entries.find(e=>e.id===themeId&&e.version==='0.1.0').withdrawal={reason:'copyright',evidence:'https://fixture.test/copyright'}
  store.update({}, {values:{AMADEUS_UI_LOCALE:'zh-CN',AMADEUS_UI_THEME:'wallpaper-slice'}})

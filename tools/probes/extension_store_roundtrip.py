@@ -81,9 +81,7 @@ async def exercise_publication(product, invocation):
         )
 
     async def open_manager():
-        await button("Settings")
-        await button("General")
-        await button("Manage plugins")
+        await button("Plugins")
 
     async def install_ui(package_id, version):
         await product.page.get_by_role("tab", name="Browse", exact=True).click()
@@ -94,7 +92,7 @@ async def exercise_publication(product, invocation):
             await selection.select_option(version)
         await button("Install selected version…" if package_id in settings()["extensions"] else "Install plugin…")
         await expect(product.page.locator("#extension-panel-installed")).to_be_visible(timeout=120000)
-        await expect(product.page.get_by_text(package_id + " · " + version, exact=True)).to_be_visible(timeout=120000)
+        await expect(product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(timeout=120000)
         await expect(product.page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
         record = settings()["extensions"][package_id]
         entry = next(e for e in json.loads(publisher.current.read_text())["entries"]
@@ -105,27 +103,29 @@ async def exercise_publication(product, invocation):
     async def update_ui(package_id, version):
         await product.page.get_by_role("tab", name="Installed", exact=True).click()
         old = settings()["extensions"][package_id]["version"]
-        text = product.page.get_by_text(package_id + " · " + old, exact=True)
+        text = product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{old}"]')
         card = product.page.locator("#extension-panel-installed .setting-card").filter(has=text)
         await card.get_by_role("button", name="Update plugin…", exact=True).click()
-        await expect(product.page.get_by_text(package_id + " · " + version, exact=True)).to_be_visible(timeout=120000)
+        await expect(product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(timeout=120000)
         await expect(product.page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
         entry = next(e for e in json.loads(publisher.current.read_text())["entries"]
                      if e["id"] == package_id and e["version"] == version)
         assert settings()["extensions"][package_id]["digest"] == entry["sha256"]
 
     async def configure(package_id):
-        # Installed cards may contain multiple packages; select its own edit button.
         await product.page.get_by_role("tab", name="Installed", exact=True).click()
-        text = product.page.get_by_text(package_id + " · " + settings()["extensions"][package_id]["version"], exact=True)
-        card = product.page.locator("#extension-panel-installed .setting-card").filter(has=text)
-        await card.get_by_role("button", name="Configure extension", exact=True).click()
-        await product.page.locator("#extension-enabled").set_checked(True)
+        card = product.page.locator("#extension-panel-installed .setting-card").filter(
+            has=product.page.locator(f'[data-extension-id="{package_id}"]'))
         if package_id == notes:
-            await (product.page.locator(".settings-form-provider-choices label")
+            await card.get_by_role("button", name="Configure extension", exact=True).click()
+            await (card.locator(".settings-form-provider-choices label")
                    .filter(has_text="Pi").locator("input").check())
-        await button("Save extension")
-        await expect(product.page.locator("form.settings-connection-editor")).to_have_count(0, timeout=30000)
+            await button("Save extension")
+            await expect(card.locator('form[aria-label="Configure extension"]')).to_have_count(0, timeout=30000)
+        toggle = card.locator('[role="switch"][id^="extension-enabled-"]')
+        if await toggle.get_attribute("aria-checked") != "true":
+            await toggle.click()
+        await expect(toggle).to_have_attribute("aria-checked", "true", timeout=30000)
 
     async def select_theme():
         response = await product.page.evaluate(

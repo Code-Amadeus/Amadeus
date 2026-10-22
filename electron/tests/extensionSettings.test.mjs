@@ -289,19 +289,24 @@ test('pending installation reports a busy navigation guard; failed installation 
   assert.equal(page.find(node => node.props?.role === 'alert').props.children, 'Synthetic invalid wheel')
 })
 
-test('catalog view switching retains a draft and policy-blocked packages can be disabled but not activated', async t => {
-  const page = harness({extensionCatalog: async () => ({ok:true,catalog:{entries:[],cached:false,installed:[{id:'org.example.voice',version:'1.0.0',digest:'a'.repeat(64),catalogState:'matched',blocked:true}]},settings:{extensionSecurity:{status:'ready'}}})})
+test('catalog view switching retains a draft and blocked packages can be disabled but not activated', async t => {
+  const updates=[]
+  const page = harness({extensionCatalog: async () => ({ok:true,catalog:{entries:[],cached:false,installed:[{id:'org.example.voice',version:'1.0.0',digest:'a'.repeat(64),catalogState:'matched',blocked:true}]},settings:{extensionSecurity:{status:'ready'}}}),
+    updateExtension: async update => { updates.push(update); return {ok:true,settings:{}} }})
   t.after(()=>page.restore())
   await flush();page.render()
   page.button('Configure extension').props.onClick();page.render()
-  const field=()=>page.find(n=>n.props?.id==='extension-enabled'&&n.type==='input')
-  assert.equal(field().props.disabled,false)
-  field().props.onChange({target:{checked:false}});page.render()
-  assert.equal(field().props.disabled,true)
+  const value=()=>page.find(n=>n.props?.id==='extension-config-speed'&&n.type==='input')
+  value().props.onChange({target:{value:'1.75'}});page.render()
+  const toggle=()=>page.find(n=>n.props?.id==='extension-enabled-org.example.voice')
+  assert.equal(toggle().props.disabled,false)
+  toggle().props.onChange(false);await flush();page.render({extensions:[extension({enabled:false})]})
+  assert.equal(updates[0].enabled,false)
+  assert.equal(toggle().props.disabled,true)
   page.button('Browse').props.onClick();await flush();page.render()
   page.button('Installed').props.onClick();page.render()
-  assert.equal(field().props.checked,false)
-  assert.ok(page.find(n=>n.props?.role==='alert'&&n.props.children.includes('Security policy')))
+  assert.equal(value().props.value,'1.75')
+  assert.equal(toggle().props.checked,false)
 })
 
 test('opening Browse cannot implicitly recover damaged safety state', async t => {

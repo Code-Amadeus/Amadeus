@@ -170,6 +170,31 @@ jobs:
           --report-dir build\electron-packaged-smoke
           --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}" --extension-failures
 
+      - uses: actions/checkout@v7
+        with:
+          repository: Code-Amadeus/Amadeus-Extensions
+          ref: e2fc0e93fa7cfd9bf98e378cac6e158f14181b9a
+          path: build/catalog-demo-protocol
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 1840c8e4f646992ddaebea3139c8895f29743a8f
+          path: build/catalog-demo-host
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Qualify packaged catalog publication and recovery roundtrip
+        shell: pwsh
+        run: |
+          python -m venv build/catalog-demo-checker
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          build/catalog-demo-checker/Scripts/python.exe -m pip install --require-hashes -r build/catalog-demo-host/tools/requirements-extension-authoring.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $authorRun = Get-ChildItem -LiteralPath build/extension-author-journey -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (!$authorRun) { throw 'Author journey wheels missing' }
+          uv run --locked --no-sync python -X utf8 tools/probes/extension_store_demo.py --execute --protocol-repo build/catalog-demo-protocol --checker-host build/catalog-demo-host --checker-python build/catalog-demo-checker/Scripts/python.exe --wheels (Join-Path $authorRun.FullName 'wheels') --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe --report-dir build/catalog-publication-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload Electron smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@v6
@@ -185,6 +210,11 @@ jobs:
             build/extension-catalog-journey/**/*.log
             build/electron-smoke/**
             build/electron-packaged-smoke/**
+            build/catalog-publication-smoke/**/report.json
+            build/catalog-publication-smoke/**/*-report.json
+            build/catalog-publication-smoke/**/publication.json
+            build/catalog-publication-smoke/**/result.json
+            build/catalog-publication-smoke/**/*.png
           if-no-files-found: ignore
 
   # Preserve the branch-protection check name. A failed, cancelled or skipped
