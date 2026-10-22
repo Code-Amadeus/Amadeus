@@ -40,3 +40,8 @@ export function useActiveCharacterSnapshot(connected: boolean, send: Send) {
 export function useActiveCharacter() {
   return useContext(ActiveCharacterContext)
 }
+
+/** Avatar fallback for the assistant: the active role's first character, or A for Amadeus. */
+export function characterInitial(character: ActiveCharacter | null): string {
+  return Array.from(character?.short_name || '')[0] || 'A'
+}

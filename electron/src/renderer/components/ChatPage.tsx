@@ -983,12 +983,12 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     } catch {
       setMessages(prev => [...prev, {
         role: 'system',
-        text: persisted
+        text: t(persisted
           ? 'Default model saved for the next backend start; the current conversation still uses the previous model.'
-          : 'Model switch failed; wait for the current reply to finish and try again.',
+          : 'Model switch failed; wait for the current reply to finish and try again.'),
       }])
     }
-  }, [send])
+  }, [send, t])
 
   const handleNewSession = useCallback(async () => {
     try {
@@ -1252,8 +1252,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
   }, [activeSession, loadSession, selectSession, sessions])
 
-  const handleRenameSession = useCallback(async (id: string, currentTitle: string) => {
-    const title = window.prompt('Rename session', currentTitle)?.trim()
+  // The rail edits titles inline; Electron does not implement window.prompt.
+  const handleRenameSession = useCallback(async (id: string, nextTitle: string) => {
+    const title = nextTitle.trim()
     if (!title) return
     try {
       await runSessionSelection({ pending: 0 }, () => {},
@@ -1286,12 +1287,12 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const visualButtonDisabled = !connected || !canUseMultimodal
   const visualButtonTitle = !canUseMultimodal
-    ? 'Select an image-capable model, such as DeepSeek Flash, OpenAI, or Gemini'
+    ? t('Select an image-capable model, such as DeepSeek Flash, OpenAI, or Gemini')
     : visionVideoMode
-      ? 'Global vision watching is on. Hold to turn it off. Right-click to choose a window.'
+      ? t('Global vision watching is on. Hold to turn it off. Right-click to choose a window.')
       : pendingVisualAttachment
-        ? `${pendingVisualAttachment.name} will be sent with the next message. Click to choose another image; hold for watching; right-click for window.`
-        : 'Choose an image for the next message. Hold for watching; right-click for window.'
+        ? t('{name} will be sent with the next message. Click to choose another image; hold for watching; right-click for window.', { name: pendingVisualAttachment.name })
+        : t('Choose an image for the next message. Hold for watching; right-click for window.')
 
   const activitiesByTurn = useMemo(() => {
     const grouped = new Map<string, ChatWorkActivityRun[]>()
@@ -1433,7 +1434,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             className="group flex items-center shrink-0"
             aria-label={t('Current chat project')}
             title={activeContext?.projectId
-              ? `This chat is bound to ${activeContext.projectName}`
+              ? t('This chat is bound to {name}', { name: activeContext.projectName })
               : t('This is a default Draft chat')}
             style={{
               height: 28,
@@ -1551,7 +1552,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 ))}
               </div>
               {attentionError && (
-                <p style={{ color: '#C42B1C', fontSize: 10.5, marginTop: 7 }}>{attentionError}</p>
+                <p style={{ color: 'var(--danger)', fontSize: 10.5, marginTop: 7 }}>{attentionError}</p>
               )}
             </div>
           )}
@@ -1589,7 +1590,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               >
                 <FluentIcon name="Chat" size={13} style={{ color: 'var(--accent)' }} />
                 <span className="truncate">
-                  Interacting with Amadeus about <strong style={{ color: 'var(--text)' }}>{artifactContext.title}</strong>
+                  {t('Interacting with Amadeus about')} <strong style={{ color: 'var(--text)' }}>{artifactContext.title}</strong>
                 </span>
                 <button
                   type="button"
@@ -1645,7 +1646,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={artifactContext
-                ? `Ask Amadeus about ${artifactContext.title}…`
+                ? t('Ask Amadeus about {title}…', { title: artifactContext.title })
                 : t('Type a message or press mic to speak...')}
               disabled={!connected || !sessionReady || sessionSwitching} rows={3}
               className="w-full resize-none text-[12px] leading-[150%] placeholder-[var(--faint)] disabled:opacity-40"
@@ -1685,8 +1686,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
               <button
                 type="button"
-                title={t(visualButtonTitle)}
-                aria-label={t(visualButtonTitle)}
+                title={visualButtonTitle}
+                aria-label={visualButtonTitle}
                 disabled={visualButtonDisabled}
                 onPointerDown={handleVisionPointerDown}
                 onPointerUp={handleVisionPointerUp}
@@ -1837,13 +1838,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                     </div>
                   )}
                   {!visionWindowLoading && visionWindowError && (
-                    <div style={{ padding: '10px 8px', color: '#C42B1C', fontSize: 11 }}>
+                    <div style={{ padding: '10px 8px', color: 'var(--danger)', fontSize: 11 }}>
                       {visionWindowError}
                     </div>
                   )}
                   {!visionWindowLoading && !visionWindowError && visionWindows.length === 0 && (
                     <div style={{ padding: '10px 8px', color: 'var(--faint)', fontSize: 11 }}>
-                      No visible windows found.
+                      {t('No visible windows found.')}
                     </div>
                   )}
                   {!visionWindowLoading && !visionWindowError && visionWindows.map(win => (
@@ -1908,7 +1909,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           <iframe
             ref={renderFrameRef}
             src={renderAssetUrl || 'about:blank'}
-            title="Character Render"
+            title={t('Character render')}
             onLoad={handleRenderFrameLoad}
             className="flex-1 border-0"
               style={{ width: '100%', pointerEvents: isSplitResizing ? 'none' : 'auto' }}

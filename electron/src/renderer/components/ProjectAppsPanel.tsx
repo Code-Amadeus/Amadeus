@@ -2,6 +2,7 @@ import { useState } from 'react'
 import FluentIcon from './FluentIcon'
 import type { ChatProjectSummary } from './ChatSessionRail'
 import WorkFilesPanel, { type WorkFileSummary } from './WorkFilesPanel'
+import { useI18n } from '../i18n'
 
 export interface ProjectAppSummary {
   projectId: string
@@ -90,52 +91,53 @@ export default function ProjectAppsPanel({
   onInteract,
   onPromote,
 }: Props) {
+  const { t } = useI18n()
   const draftMode = scope === 'drafts'
   const [view, setView] = useState<'files' | 'apps'>('files')
   const complete = view === 'files' ? filesComplete : appsComplete
   return (
     <section
       className="absolute inset-0 z-[4] flex flex-col"
-      aria-label={`${project.name} artifacts`}
+      aria-label={t('{name} artifacts', { name: project.name })}
       style={{ background: 'var(--bg)' }}
     >
       <header
         className="flex items-center gap-2 shrink-0"
         style={{ minHeight: 48, padding: '7px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
       >
-        <button type="button" onClick={onBack} title="Back to chat" aria-label="Back to chat" style={{ ...quietButton, width: 30, padding: 0 }}>
+        <button type="button" onClick={onBack} title={t('Back to chat')} aria-label={t('Back to chat')} style={{ ...quietButton, width: 30, padding: 0 }}>
           <FluentIcon name="LeftArrow" size={14} />
         </button>
         <div className="min-w-0 flex-1">
           <strong className="block truncate" style={{ color: 'var(--text)', fontSize: 12 }}>{project.name}</strong>
           <span style={{ color: 'var(--faint)', fontSize: 9 }}>
-            {draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS'}
+            {t(draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS')}
           </span>
         </div>
-        <button type="button" onClick={onRefresh} disabled={loading} title="Refresh artifacts" style={quietButton}>
-          <FluentIcon name="Sync" size={13} /> {loading ? 'Loading' : 'Refresh'}
+        <button type="button" onClick={onRefresh} disabled={loading} title={t('Refresh artifacts')} style={quietButton}>
+          <FluentIcon name="Sync" size={13} /> {t(loading ? 'Loading' : 'Refresh')}
         </button>
         <button type="button" onClick={onNewChat} style={{ ...quietButton, color: 'var(--accent)' }}>
-          <FluentIcon name="Edit" size={13} /> New chat
+          <FluentIcon name="Edit" size={13} /> {t('New chat')}
         </button>
       </header>
 
       <div className="chat-scroll-area flex-1 overflow-y-auto" style={{ padding: 18 }}>
         <div style={{ maxWidth: 760, margin: '0 auto' }}>
           <div style={{ marginBottom: 16 }}>
-            <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 650 }}>Artifacts</h2>
+            <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 650 }}>{t('Artifacts')}</h2>
             <p style={{ margin: '5px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: 1.55 }}>
-              {draftMode
+              {t(draftMode
                 ? 'Files and interactive applications have separate recent lists. Application components stay with their application.'
-                : 'Files and interactive applications kept by this Project. Promoted artifacts appear here without copying their files.'}
+                : 'Files and interactive applications kept by this Project. Promoted artifacts appear here without copying their files.')}
             </p>
           </div>
 
-          <div role="tablist" aria-label="Artifact types" className="flex gap-2" style={{ marginBottom: 16 }}>
+          <div role="tablist" aria-label={t('Artifact types')} className="flex gap-2" style={{ marginBottom: 16 }}>
             <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')}
-              style={{ ...quietButton, color: view === 'files' ? 'var(--accent)' : 'var(--muted)' }}>Files · {files.length}</button>
+              style={{ ...quietButton, color: view === 'files' ? 'var(--accent)' : 'var(--muted)' }}>{t('Files')} · {files.length}</button>
             <button type="button" role="tab" aria-selected={view === 'apps'} onClick={() => setView('apps')}
-              style={{ ...quietButton, color: view === 'apps' ? 'var(--accent)' : 'var(--muted)' }}>Interactive apps · {apps.length}</button>
+              style={{ ...quietButton, color: view === 'apps' ? 'var(--accent)' : 'var(--muted)' }}>{t('Interactive apps')} · {apps.length}</button>
           </div>
 
           {feedback && (
@@ -146,16 +148,16 @@ export default function ProjectAppsPanel({
 
           {!complete && (
             <p role="status" style={{ color: 'var(--muted)', fontSize: 10 }}>
-              {view === 'files' ? 'More files may exist outside this recent view.' : 'More applications may exist outside this recent view.'}
+              {t(view === 'files' ? 'More files may exist outside this recent view.' : 'More applications may exist outside this recent view.')}
             </p>
           )}
 
           {!loading && (view === 'files' ? files.length === 0 : apps.length === 0) && (
             <div style={{ padding: '36px 22px', textAlign: 'center', border: '1px dashed var(--border-strong)', borderRadius: 12, background: 'var(--surface)' }}>
               <FluentIcon name="Tiles" size={24} style={{ color: 'var(--faint)', marginBottom: 8 }} />
-              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>{view === 'files' ? 'No files yet' : 'No interactive apps ready to open'}</strong>
+              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>{t(view === 'files' ? 'No files yet' : 'No interactive apps ready to open')}</strong>
               <p style={{ margin: '6px auto 0', maxWidth: 420, color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
-                {view === 'files' ? 'Application components are available in their application details.' : 'Applications appear here when they are ready to open.'}
+                {t(view === 'files' ? 'Application components are available in their application details.' : 'Applications appear here when they are ready to open.')}
               </p>
             </div>
           )}
@@ -177,20 +179,20 @@ export default function ProjectAppsPanel({
                     <div className="min-w-0 flex-1">
                       <strong className="block truncate" title={app.title} style={{ color: 'var(--text)', fontSize: 12 }}>{app.title}</strong>
                       <span className="block truncate" title={app.workTitle} style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
-                        {app.version ? `v${app.version}` : 'version unknown'}{app.revision ? ` · revision ${app.revision}` : ''}
+                        {app.version ? `v${app.version}` : t('version unknown')}{app.revision ? ` · ${t('revision {count}', { count: app.revision })}` : ''}
                       </span>
                     </div>
                   </div>
 
                   <p style={{ minHeight: 34, margin: '11px 0', color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
-                    {app.objective || app.interactionSummary || app.workTitle || 'Verified interactive application'}
+                    {app.objective || app.interactionSummary || app.workTitle || t('Verified interactive application')}
                   </p>
 
                   <div className="flex items-center gap-2" style={{ marginBottom: 11, color: 'var(--faint)', fontSize: 9 }}>
                     <span>{app.artifactStatus || 'registered'}</span>
                     <span aria-hidden="true">·</span>
-                    <span>Execution: {app.execution || 'idle'}</span>
-                    <span>{app.workState === 'review_ready' ? 'Awaiting review' : app.workState || 'open'}</span>
+                    <span>{t('Execution')}: {app.execution || 'idle'}</span>
+                    <span>{app.workState === 'review_ready' ? t('Awaiting review') : app.workState || 'open'}</span>
                     {formatUpdatedAt(app.updatedAt) && <><span aria-hidden="true">·</span><span>{formatUpdatedAt(app.updatedAt)}</span></>}
                   </div>
 
@@ -201,7 +203,7 @@ export default function ProjectAppsPanel({
                       onClick={() => onOpen(app)}
                       style={{ ...quietButton, color: 'var(--text)' }}
                     >
-                      <FluentIcon name="Play" size={13} /> {opening ? 'Opening' : 'Open'}
+                      <FluentIcon name="Play" size={13} /> {t(opening ? 'Opening' : 'Open')}
                     </button>
                     <button
                       type="button"
@@ -209,11 +211,11 @@ export default function ProjectAppsPanel({
                       onClick={() => onInteract(app)}
                       style={{ ...quietButton, flex: 1, color: 'var(--accent)' }}
                     >
-                      <FluentIcon name="Chat" size={13} /> {interacting ? 'Opening chat' : 'Interact with Amadeus'}
+                      <FluentIcon name="Chat" size={13} /> {t(interacting ? 'Opening chat' : 'Interact with Amadeus')}
                     </button>
                   </div>
                   {Boolean(app.files?.length) && <details style={{ marginTop: 12 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>Application files · {app.files!.length}</summary>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>{t('Application files')} · {app.files!.length}</summary>
                     <WorkFilesPanel files={app.files!.map(file => ({
                       projectId: app.projectId, workItemId: app.workItemId, workTitle: app.title,
                       workState: app.workState || 'open', execution: app.execution || 'idle', ...file,
@@ -227,7 +229,7 @@ export default function ProjectAppsPanel({
                       style={{ ...quietButton, width: '100%', marginTop: 8, color: 'var(--accent)', borderStyle: 'dashed' }}
                     >
                       <FluentIcon name="Work" size={13} />
-                      {actionKey === `promote:${app.workItemId}` ? 'Promoting' : 'Promote to Project'}
+                      {t(actionKey === `promote:${app.workItemId}` ? 'Promoting' : 'Promote to Project')}
                     </button>
                   )}
                 </article>

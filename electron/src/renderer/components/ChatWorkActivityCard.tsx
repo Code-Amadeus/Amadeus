@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChatWorkActivityEntry, ChatWorkActivityRun } from './chatWorkActivity'
+import { useI18n } from '../i18n'
 
 interface Props {
   activity: ChatWorkActivityRun
@@ -47,6 +48,7 @@ function durationLabel(activity: ChatWorkActivityRun, now: number): string {
 }
 
 export default function ChatWorkActivityCard({ activity, onPermissionDecision }: Props) {
+  const { t } = useI18n()
   const [now, setNow] = useState(Date.now())
   const [permissionBusy, setPermissionBusy] = useState('')
   const [permissionError, setPermissionError] = useState({ requestId: '', message: '' })
@@ -72,7 +74,7 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
       await onPermissionDecision(activity, entry, allow)
     } catch (error) {
       setPermissionError({ requestId: entry.permission.requestId,
-        message: error instanceof Error ? error.message : 'Permission decision failed' })
+        message: error instanceof Error ? error.message : t('Permission decision failed') })
     } finally {
       setPermissionBusy('')
     }
@@ -120,11 +122,11 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
               }}
             />
             <b style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>
-              {activity.provider} · {STATUS_LABEL[activity.status]}
+              {activity.provider} · {t(STATUS_LABEL[activity.status])}
             </b>
             <span aria-hidden="true" style={{ color: 'var(--border-strong)', fontSize: 10 }}>·</span>
             <span className="truncate" style={{ color: 'var(--faint)', fontSize: 10.5, minWidth: 0 }}>
-              {current?.title || activity.task || 'Preparing the provider run…'}
+              {current?.title || activity.task || t('Preparing the provider run…')}
             </span>
             <span style={{ marginLeft: 'auto', color: 'var(--faint)', fontSize: 10.5, flexShrink: 0 }}>
               {durationLabel(activity, now)}
@@ -135,7 +137,7 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
         <div style={{ margin: '2px 0 5px 8px', borderLeft: '1px solid var(--border)', padding: '2px 2px 4px 11px' }}>
           {activity.entries.length === 0 ? (
             <p style={{ color: 'var(--faint)', fontSize: 10.5, margin: '5px 0' }}>
-              Waiting for observable provider activity.
+              {t('Waiting for observable provider activity.')}
             </p>
           ) : activity.entries.map(entry => (
             <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1fr)', gap: 4, padding: '3px 0' }}>
@@ -190,7 +192,7 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
                         onClick={() => { void decidePermission(entry, true) }}
                         style={{ border: '1px solid var(--border-strong)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5 }}
                       >
-                        Allow once
+                        {t('Allow once')}
                       </button>
                     )}
                     {entry.permission.options.includes('deny') && (
@@ -200,7 +202,7 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
                         onClick={() => { void decidePermission(entry, false) }}
                         style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, color: 'var(--muted)' }}
                       >
-                        Deny
+                        {t('Deny')}
                       </button>
                     )}
                   </div>
@@ -214,7 +216,7 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
             </div>
           ))}
           <div style={{ color: 'var(--faint)', fontSize: 9.5, margin: '4px 0 0 16px' }}>
-            {completed} completed{failed ? ` · ${failed} failed` : ''} · observable activity only
+            {t('{count} completed', { count: completed })}{failed ? ` · ${t('{count} failed', { count: failed })}` : ''} · {t('observable activity only')}
           </div>
         </div>
         <style>{`.chat-work-activity[open] .chat-work-activity-chevron { transform: rotate(90deg); }`}</style>

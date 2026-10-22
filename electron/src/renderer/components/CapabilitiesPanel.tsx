@@ -93,6 +93,18 @@ function statusLabel(state: SceneCapabilityState, explicit?: string): string {
   return explicit || STATE_LABELS[state]
 }
 
+type Translate = ReturnType<typeof useI18n>['t']
+
+// Implementation labels join independent parts with " · "; each part is its own term.
+function translateParts(t: Translate, value: string): string {
+  return value.split(' · ').map(part => t(part)).join(' · ')
+}
+
+// Detail variables are terms too ("on demand", "full screen"); identifiers stay as written.
+function translateDetail(t: Translate, detail: string, vars?: Record<string, string>): string {
+  return t(detail, Object.fromEntries(Object.entries(vars || {}).map(([key, value]) => [key, t(value)])))
+}
+
 function compactStatusLabel(state: SceneCapabilityState): string {
   if (state === 'attention') return 'Needs attention'
   if (state === 'inactive') return 'Off'
@@ -188,7 +200,7 @@ function Overview({ capabilities, onOpenSection }: Props) {
                   <CapabilityIdentity capability={capability} />
                   <div className="capability-implementation">
                     <span>{t('Implementation')}</span>
-                    <strong>{t(capability.implementation)}</strong>
+                    <strong>{translateParts(t, capability.implementation)}</strong>
                   </div>
                   <div className="capability-row-actions">
                     <StatusBadge state={capability.state} label={capability.stateLabel} />
@@ -239,7 +251,7 @@ function SceneStatus({ capabilities, onOpenSection }: Props) {
         <div className="capability-scene-diagnostic" role="status">
           <span>
             <strong>{t(diagnostic.capability)}</strong>
-            <small>{t(diagnostic.status)} · {t(diagnostic.detail)}</small>
+            <small>{t(diagnostic.status)} · {diagnostic.detail}</small>
           </span>
           <button type="button" onClick={() => setDiagnostic(null)} aria-label={t('Close')}>×</button>
         </div>
@@ -289,24 +301,24 @@ function SceneStatus({ capabilities, onOpenSection }: Props) {
                     </div>
                     <div className="capability-scene-grid">
                       {items.map(({ capability, usage }) => (
-                        <div className="capability-scene-item" key={capability.id} aria-label={`${t(capability.label)}: ${t(statusLabel(usage.state, usage.stateLabel))}. ${t(usage.detail)}`}>
+                        <div className="capability-scene-item" key={capability.id} aria-label={`${t(capability.label)}: ${t(statusLabel(usage.state, usage.stateLabel))}. ${translateDetail(t, usage.detail, usage.detailVars)}`}>
                           <div className="capability-scene-item-name">
                             <span aria-hidden="true">
                               <FluentIcon name={CAPABILITY_ICONS[capability.id] || 'Tiles'} size={14} />
                             </span>
                             <strong>{t(capability.label)}</strong>
-                            <span className="sr-only">{t(usage.detail)}</span>
+                            <span className="sr-only">{translateDetail(t, usage.detail, usage.detailVars)}</span>
                           </div>
                           <span className="capability-scene-item-actions">
                             <button
                               type="button"
                               className="capability-status-inspect"
-                              aria-label={`${t(capability.label)}: ${t(statusLabel(usage.state, usage.stateLabel))}. ${t(usage.detail)}`}
+                              aria-label={`${t(capability.label)}: ${t(statusLabel(usage.state, usage.stateLabel))}. ${translateDetail(t, usage.detail, usage.detailVars)}`}
                               title={t('View status reason')}
                               onClick={() => setDiagnostic({
                                 capability: capability.label,
                                 status: statusLabel(usage.state, usage.stateLabel),
-                                detail: usage.detail,
+                                detail: translateDetail(t, usage.detail, usage.detailVars),
                               })}
                             >
                               <span className="capability-status-dot" data-state={usage.state} aria-hidden="true" />
@@ -377,7 +389,7 @@ export default function CapabilitiesPanel({ capabilities, runtimePackages, onOpe
         </p>
       </div>
 
-      <div className="capability-page-tabs" role="tablist" aria-label="Capability views">
+      <div className="capability-page-tabs" role="tablist" aria-label={t('Capability views')}>
         <button id="capability-tab-overview" aria-controls="capability-panel-overview" type="button" role="tab" aria-selected={page === 'overview'} tabIndex={page === 'overview' ? 0 : -1} onKeyDown={event => moveTab(event, 'overview')} onClick={() => setPage('overview')}>
           {t('Overview')}
         </button>

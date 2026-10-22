@@ -1,5 +1,7 @@
 ﻿import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { characterInitial, useActiveCharacter } from '../activeCharacter'
+import { useI18n } from '../i18n'
 
 interface Props {
   role: 'user' | 'assistant' | 'system'
@@ -15,6 +17,8 @@ interface Props {
 const DOT_PHASES = ['●', '● ●', '● ● ●', '● ●']
 
 export default function ChatBubble({ role, text, translation = '', streaming, onStreamIdle, userAvatar = '', assistantAvatar = '', hasPreviousMessage }: Props) {
+  const { t } = useI18n()
+  const activeCharacter = useActiveCharacter()
   const [display, setDisplay] = useState(text)
   const [dotPhase, setDotPhase] = useState(0)
   const [cursorVisible, setCursorVisible] = useState(true)
@@ -65,7 +69,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
         className="flex justify-center px-[18px]"
         style={{ marginTop: hasPreviousMessage ? 10 : 0 }}
       >
-        <span className="text-[12px] text-[#C42B1C] bg-[#FFF3CD]/60 rounded-lg px-4 py-1.5 max-w-[80%] text-center">
+        <span className="chat-system-message">
           {text}
         </span>
       </div>
@@ -98,7 +102,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
       >
         {avatar
           ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : isUser ? 'U' : 'K'}
+          : isUser ? 'U' : characterInitial(activeCharacter)}
       </div>
 
       {/* Keep short messages compact while long messages wrap within the chat lane. */}
@@ -110,8 +114,10 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
           maxWidth: '70%',
         }}
       >
+        {/* User text is shown verbatim; assistant Markdown lays out its own blocks, so
+            preserving its newlines would add blank lines between paragraphs and lists. */}
         <div
-          className="text-[12px] leading-[150%] whitespace-pre-wrap break-words select-text"
+          className={`text-[12px] leading-[150%] break-words select-text${isUser ? ' whitespace-pre-wrap' : ''}`}
           style={{
             fontFamily: 'var(--font-cjk)',
             borderRadius: 8, padding: '8px 11px',
@@ -131,7 +137,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
           {isUser ? display : <ReactMarkdown className="markdown-body">{display}</ReactMarkdown>}
           {!isUser && translation ? (
             <div
-              aria-label="Simplified Chinese translation"
+              aria-label={t('Translation')}
               className="whitespace-pre-wrap break-words"
               style={{
                 borderTop: '1px solid var(--border)',

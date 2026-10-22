@@ -99,27 +99,67 @@ function formatSessionTime(value: number | undefined): string {
   })
 }
 
+/** Inline title editor. Enter commits a changed, non-empty title; Escape or an unchanged title cancels. */
+function SessionTitleInput({ title, onCommit, onCancel }: {
+  title: string
+  onCommit: (title: string) => void
+  onCancel: () => void
+}) {
+  const { t } = useI18n()
+  const [draft, setDraft] = useState(title)
+  // Enter or Escape unmounts the input, which can also report a blur; settle exactly once.
+  const settled = useRef(false)
+  const settle = (commit: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    const next = draft.trim()
+    if (commit && next && next !== title) onCommit(next)
+    else onCancel()
+  }
+  return (
+    <input
+      autoFocus
+      className="chat-session-rename"
+      value={draft}
+      aria-label={t('Rename chat')}
+      onChange={event => setDraft(event.target.value)}
+      onFocus={event => event.currentTarget.select()}
+      onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); settle(true) }
+        if (event.key === 'Escape') { event.preventDefault(); settle(false) }
+      }}
+      onBlur={() => settle(true)}
+    />
+  )
+}
+
 function SessionRow({
   session,
   active,
+  editing,
   currentCharacterId,
   characters,
   connected,
   startupCharacterLocked,
   onNotice,
   onSelect,
+  onStartRename,
   onRename,
+  onCancelRename,
   onDelete,
 }: {
   session: ChatSessionSummary
   active: boolean
+  editing: boolean
   currentCharacterId: string
   characters: CharacterRecord[] | null
   connected: boolean
   startupCharacterLocked: boolean
   onNotice: (notice: string) => void
   onSelect: () => void
-  onRename: () => void
+  onStartRename: () => void
+  onRename: (title: string) => void
+  onCancelRename: () => void
   onDelete: () => void
 }) {
   const { t } = useI18n()
@@ -133,10 +173,10 @@ function SessionRow({
   const characterTooltip = character
     ? `${t('Character')}: ${characterLabel}${character.name === character.id ? '' : ` (${character.id})`}` : ''
   const detail = session.context?.bindingKind === 'work_item'
-    ? session.context.workItemTitle || 'Task'
+    ? session.context.workItemTitle || t('Task')
     : session.message_count
-      ? `${session.message_count} messages`
-      : 'Draft'
+      ? t('{count} messages', { count: session.message_count })
+      : t('Draft')
   return (
     <div
       className="group flex items-center min-w-0"
@@ -153,11 +193,13 @@ function SessionRow({
         if (!active) event.currentTarget.style.backgroundColor = 'transparent'
       }}
     >
-      <button
+      {editing ? (
+        <SessionTitleInput title={session.title} onCommit={onRename} onCancel={onCancelRename} />
+      ) : <button
         type="button"
         data-chat-session-id={session.id}
         onClick={() => { if (canMutate) onSelect(); else onNotice(mutationNotice) }}
-        onDoubleClick={() => { if (canMutate) onRename(); else onNotice(mutationNotice) }}
+        onDoubleClick={() => { if (canMutate) onStartRename(); else onNotice(mutationNotice) }}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
         style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
         title={canMutate ? session.title : `${session.title}\n${characterTooltip ? `${characterTooltip}\n` : ''}${mutationNotice}`}
@@ -178,7 +220,7 @@ function SessionRow({
           <span aria-hidden="true">·</span>
           <span className="shrink-0">{formatSessionTime(session.timestamp)}</span>
         </span>
-      </button>
+      </button>}
       <button
         type="button"
         disabled={!canMutate}
@@ -220,6 +262,8 @@ export default function ChatSessionRail({
   const [previewGroupId, setPreviewGroupId] = useState('')
   const [query, setQuery] = useState('')
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
+  // One chat title is editable at a time; the rail owns which one.
+  const [editingId, setEditingId] = useState('')
   const railCloseTimerRef = useRef<number | null>(null)
 
   const { projectGroups, drafts } = useMemo(() => {
@@ -229,7 +273,7 @@ export default function ChatSessionRail({
       byProject.set(project.projectId, {
         id: `project:${project.projectId}`,
         projectId: project.projectId,
-        label: project.name || 'Untitled project',
+        label: project.name || t('Untitled project'),
         sessions: [],
         latestAt: 0,
       })
@@ -243,7 +287,7 @@ export default function ChatSessionRail({
       const current = byProject.get(projectId) || {
         id: `project:${projectId}`,
         projectId,
-        label: session.context?.projectName || 'Untitled project',
+        label: session.context?.projectName || t('Untitled project'),
         sessions: [],
         latestAt: 0,
       }
@@ -258,7 +302,7 @@ export default function ChatSessionRail({
       projectGroups: groups,
       drafts: sortSessions(draftSessions, activeId),
     }
-  }, [activeId, projects, sessions])
+  }, [activeId, projects, sessions, t])
 
   const activeGroupId = useMemo(() => {
     const active = sessions.find(session => session.id === activeId)
@@ -269,10 +313,10 @@ export default function ChatSessionRail({
 
   const draftGroup = useMemo<SessionGroup>(() => ({
     id: 'drafts',
-    label: 'Drafts',
+    label: t('Drafts'),
     sessions: drafts,
     latestAt: drafts.reduce((latest, session) => Math.max(latest, sessionTimeValue(session)), 0),
-  }), [drafts])
+  }), [drafts, t])
 
   useEffect(() => {
     if (activeGroupId) setPreviewGroupId(activeGroupId)
@@ -526,13 +570,16 @@ export default function ChatSessionRail({
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  editing={session.id === editingId}
                   currentCharacterId={currentCharacterId}
                   characters={characters}
                   connected={connected}
                   startupCharacterLocked={startupCharacterLocked}
                   onNotice={onNotice}
                   onSelect={() => onSelect(session.id)}
-                  onRename={() => onRename(session.id, session.title)}
+                  onStartRename={() => setEditingId(session.id)}
+                  onRename={title => { setEditingId(''); onRename(session.id, title) }}
+                  onCancelRename={() => setEditingId('')}
                   onDelete={() => onDelete(session.id)}
                 />
               ))}
@@ -581,14 +628,14 @@ export default function ChatSessionRail({
           >
             <FluentIcon name="Tiles" size={14} />
             <span className="flex-1 min-w-0">
-              <span className="block truncate" style={{ fontSize: 10, fontWeight: 650 }}>Draft artifacts</span>
-              <span className="block" style={{ marginTop: 1, color: 'var(--faint)', fontSize: 9 }}>Recent 5</span>
+              <span className="block truncate" style={{ fontSize: 10, fontWeight: 650 }}>{t('Draft artifacts')}</span>
+              <span className="block" style={{ marginTop: 1, color: 'var(--faint)', fontSize: 9 }}>{t('Recent {count}', { count: 5 })}</span>
             </span>
           </button>
 
           <div style={{ height: 1, margin: '8px 5px', backgroundColor: 'var(--border)' }} />
           <div style={{ padding: '1px 5px 6px', color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
-            PROJECTS
+            {t('PROJECTS')}
           </div>
           <div className="chat-scroll-area flex-1 min-h-0 overflow-y-auto">
             {projectGroups.map(group => (
@@ -615,7 +662,7 @@ export default function ChatSessionRail({
               </button>
             ))}
             {projectGroups.length === 0 && (
-              <p style={{ padding: '7px 8px', color: 'var(--faint)', fontSize: 9 }}>No Projects</p>
+              <p style={{ padding: '7px 8px', color: 'var(--faint)', fontSize: 9 }}>{t('No Projects')}</p>
             )}
           </div>
         </div>

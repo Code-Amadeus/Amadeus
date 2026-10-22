@@ -196,8 +196,8 @@ export default function BackendPage({ projections, send, subscribe, connected, r
           </div>
           {(renderStatus || wallpaperStatus) && (
             <div className="grid gap-1" style={{ padding: '9px 10px', borderRadius: 7, background: 'var(--surface-alt)' }}>
-              {renderStatus ? <pre className="whitespace-pre-wrap break-words" style={{ margin: 0, color: 'var(--text)', fontSize: 9.5 }}>Render: {renderStatus}</pre> : null}
-              {wallpaperStatus ? <pre className="whitespace-pre-wrap break-words" style={{ margin: 0, color: 'var(--text)', fontSize: 9.5 }}>Wallpaper: {wallpaperStatus}</pre> : null}
+              {renderStatus ? <pre className="whitespace-pre-wrap break-words" style={{ margin: 0, color: 'var(--text)', fontSize: 9.5 }}>{t('Render')}: {renderStatus}</pre> : null}
+              {wallpaperStatus ? <pre className="whitespace-pre-wrap break-words" style={{ margin: 0, color: 'var(--text)', fontSize: 9.5 }}>{t('Wallpaper')}: {wallpaperStatus}</pre> : null}
             </div>
           )}
         </div>
