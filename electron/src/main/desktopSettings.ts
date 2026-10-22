@@ -7,6 +7,8 @@ import { catalogApplication, catalogInputKeys, catalogLaunchDefaults, catalogOpt
 import type { ExtensionConfigValue, ExtensionManifest, InstalledExtensionSummary } from '../shared/extensions.js'
 import { matchesExtensionSelection, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
+import { acceptSecurity, parseSecurity, recoverSecurity, securityBlock, type ArtifactIdentity, type ExtensionSecurity } from './extensionSecurity.js'
+
 export const EXTENSIONS_ENV = 'AMADEUS_EXTENSIONS'
 export type StoredExtension = {
   revision?: number
@@ -27,6 +29,7 @@ export type StoredExtension = {
 export type ExtensionRecordValidator = (manifest: ExtensionManifest, values: Record<string, ExtensionConfigValue>) => boolean | 'unavailable'
 
 type StoredDesktopSettings = {
+  extensionSecurity?: ExtensionSecurity
   themeBase?: 'classic' | 'wallpaper-slice'
   version: 2
   values: Record<string, string>
@@ -353,6 +356,7 @@ function storedSettingsFrom(text: string, validate: ExtensionRecordValidator, er
   const extensions = cleanStoredExtensions(parsed.extensions, validate)
   errors.push(...extensions.errors)
   return {
+    extensionSecurity: parseSecurity(parsed.extensionSecurity),
     version: 2,
     values: cleanRecord(parsed.values, VALUE_KEYS),
     encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
@@ -409,30 +413,47 @@ export class DesktopSettingsStore {
       if (result === false) this.incompatibleExtensionIds.add(manifest.id)
       return result
     }
-    let failure: unknown
-    try {
-      return storedSettingsFrom(fs.readFileSync(this.filePath, 'utf8'), validate, this.extensionErrors)
-    } catch (error) {
-      failure = error
+    const copies = [this.filePath, this.backupPath].map(file => {
+      try {
+        const text = fs.readFileSync(file, 'utf8')
+        const raw = JSON.parse(text)
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new SyntaxError('Invalid settings object')
+        const security = parseSecurity(raw.extensionSecurity)
+        const malformed = security?.status === 'unavailable' && raw.extensionSecurity?.status !== 'unavailable'
+        return { file, text, raw, security: malformed ? undefined : security, corrupt: malformed, missing: false }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code && code !== 'ENOENT') throw error // never overwrite unreadable files
+        return { file, text: undefined, raw: undefined, security: undefined, corrupt: !code, missing: code === 'ENOENT' }
+      }
+    })
+    const security = recoverSecurity(copies.map(c => c.security), copies.some(c => c.corrupt))
+    // Keep legacy deliberate-reset behavior only when there are no durable security facts.
+    const source = copies[0].missing && !security ? undefined : copies.find(c => c.raw)
+    const stored = source ? storedSettingsFrom(source.text!, validate, this.extensionErrors) : emptyStore()
+    stored.extensionSecurity = security
+    if (security?.status === 'unavailable' && !copies.every(c => c.raw && isDeepStrictEqual(c.raw.extensionSecurity, security))) {
+      // Copy evidence before replacing anything. A failed write leaves either damaged
+      // original bytes or a durable fault sentinel, never an apparent first launch.
+      for (const copy of copies.filter(c => c.corrupt)) {
+        const evidence = `${copy.file}.corrupt-${Date.now()}`
+        fs.copyFileSync(copy.file, evidence, fs.constants.COPYFILE_EXCL)
+      }
+      this.write(stored)
     }
-    const code = (failure as NodeJS.ErrnoException).code
-    // A missing file is a first launch or a deliberate reset, not damage.
-    if (code === 'ENOENT') return emptyStore()
-    try {
-      const saved = storedSettingsFrom(fs.readFileSync(this.backupPath, 'utf8'), validate, this.extensionErrors)
-      console.error(`[desktop-settings] ${this.filePath} is unreadable; using the copy from its last save`, failure)
-      return saved
-    } catch {
-      // No usable copy; decide below without guessing.
-    }
-    // An I/O error says nothing about the content, so it is not replaced.
-    if (code) throw failure
-    // Unparseable content without a usable copy: keep the bytes for inspection
-    // and start from defaults instead of silently overwriting them.
-    const setAside = `${this.filePath}.corrupt-${Date.now()}`
-    fs.renameSync(this.filePath, setAside)
-    console.error(`[desktop-settings] unreadable settings were moved to ${setAside}`, failure)
-    return emptyStore()
+    return stored
+  }
+
+  extensionSecurityState(): ExtensionSecurity | undefined { return this.read().extensionSecurity }
+  extensionSecurityBlock(identity?: ArtifactIdentity): string { return securityBlock(this.read().extensionSecurity, identity) }
+  assertExtensionAllowed(identity?: ArtifactIdentity): void {
+    const reason = this.extensionSecurityBlock(identity)
+    if (reason) throw new Error(reason)
+  }
+  commitExtensionSecurity(next: ExtensionSecurity, recovery = false): void {
+    const stored = this.read()
+    stored.extensionSecurity = acceptSecurity(stored.extensionSecurity, next, recovery)
+    this.write(stored)
   }
 
   private write(value: StoredDesktopSettings): void {
@@ -532,18 +553,24 @@ export class DesktopSettingsStore {
         .sort((left, right) => left.name.localeCompare(right.name))
         .map(mcpConnectionSnapshot),
       mcpConnectionsLocked: environment[MCP_CONNECTIONS_ENV] !== undefined,
-      extensions: Object.values(stored.extensions).map(record => this.extensionSummary(record, pendingKeys.includes(EXTENSIONS_ENV), this.validatedExtensionIds.has(record.id))),
-      extensionErrors: [...this.extensionErrors, ...this.extensionWarnings, ...(environment[EXTENSIONS_ENV] !== undefined
+      extensionSecurity: stored.extensionSecurity ? { status: stored.extensionSecurity.status, ...(stored.extensionSecurity.status === 'ready' ? { sequence: stored.extensionSecurity.sequence, checkedAt: stored.extensionSecurity.checkedAt } : {}) } : { status: 'unseen' },
+      extensions: Object.values(stored.extensions).map(record => this.extensionSummary(record, pendingKeys.includes(EXTENSIONS_ENV), this.validatedExtensionIds.has(record.id), stored.extensionSecurity)),
+      extensionErrors: [...this.extensionErrors, ...this.extensionWarnings,
+        ...([...this.appliedExtensions.values()].some(record => record.enabled && extensionRequiresRestart(record.manifest) && securityBlock(stored.extensionSecurity, record))
+          ? ['A running extension is blocked by security policy or unreadable security state. Stop or restart the backend.'] : []),
+        ...(environment[EXTENSIONS_ENV] !== undefined
         ? ['Parent AMADEUS_EXTENSIONS was ignored; extension startup is owned by desktop installation records.'] : [])],
     }
   }
 
-  private extensionSummary(record: StoredExtension, restartRequired: boolean, validated: boolean): InstalledExtensionSummary {
+  private extensionSummary(record: StoredExtension, restartRequired: boolean, validated: boolean, security?: ExtensionSecurity): InstalledExtensionSummary {
     const applied = this.appliedExtensions.get(record.id)
     const application = this.extensionChangeNeedsRestart(record) ? 'backend_restart' : 'frontend'
     restartRequired = restartRequired && application === 'backend_restart' && (record.pendingRemoval || applied?.revision !== record.revision)
+    const appliedPolicyError = applied?.enabled ? securityBlock(security, applied) : ''
+    const policyError = securityBlock(security, record) || appliedPolicyError
     const revisions = { revision: record.revision ?? 1, appliedRevision: applied?.revision, appliedVersion: applied?.version, application,
-      frontendSuppressed: this.closedFrontends.has(record.id), applicationError: this.applicationErrors.get(record.id),
+      frontendSuppressed: Boolean(policyError) || this.closedFrontends.has(record.id), applicationError: policyError ? policyError + (appliedPolicyError && applied && extensionRequiresRestart(applied.manifest) ? ' Stop or restart the running backend.' : '') : this.applicationErrors.get(record.id),
       backendStillRunning: Boolean(applied?.enabled && extensionRequiresRestart(applied.manifest)) } as const
     if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
       ...revisions,
@@ -572,7 +599,12 @@ export class DesktopSettingsStore {
     if (record.enabled && desired?.enabled && desired.revision === record.revision) this.closedFrontends.delete(record.id)
     this.applicationErrors.delete(record.id)
   }
-  extensionFrontendClosed(id: string): boolean { return this.closedFrontends.has(id) }
+  extensionFrontendClosed(id: string): boolean {
+    const stored = this.read()
+    const desired = stored.extensions[id]
+    const applied = this.appliedExtensions.get(id)
+    return this.closedFrontends.has(id) || Boolean(securityBlock(stored.extensionSecurity, desired) || (applied && securityBlock(stored.extensionSecurity, applied)))
+  }
   reportExtensionApplicationError(id: string, error: string): void { this.applicationErrors.set(id, error) }
   verifiedThemeBase(): 'classic' | 'wallpaper-slice' { return this.read().themeBase ?? 'wallpaper-slice' }
   rememberThemeBase(base: 'classic' | 'wallpaper-slice'): void {
@@ -817,7 +849,7 @@ export class DesktopSettingsStore {
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value) && !extensionSelection) throw new Error(`Invalid value for ${key}: ${value}`)
       const schemes = desktopCatalogFields[key]?.schemes
-      if (schemes) {
+      if (schemes && !(value === '' && desktopCatalogFields[key]?.allow_empty)) {
         let protocol = ''
         try { protocol = new URL(value).protocol.slice(0, -1) } catch { /* rejected below */ }
         if (!schemes.includes(protocol)) throw new Error(`${key} must use ${schemes.join(' or ')} URL`)

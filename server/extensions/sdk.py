@@ -34,3 +34,18 @@ def validate_sdk_requirements(requirements: list[str]) -> None:
             raise ValueError("SDK direct URL dependencies are unsupported; Amadeus supplies its pinned SDK")
         if version not in requirement.specifier:
             raise ValueError(f"extension requires SDK {requirement.specifier}; Amadeus provides {version}")
+
+
+def dependency_mode(requirements: list[str]) -> str:
+    """Classify effective requirements in the same interpreter as installation."""
+    validate_sdk_requirements(requirements)
+    for text in requirements:
+        try:
+            requirement = Requirement(text)
+        except InvalidRequirement:
+            raise ValueError("wheel contains an invalid Python dependency requirement") from None
+        if requirement.marker and not requirement.marker.evaluate({"extra": ""}):
+            continue
+        if canonicalize_name(requirement.name) != "amadeus-extension-sdk" or requirement.extras:
+            return "resolve"
+    return "offline"

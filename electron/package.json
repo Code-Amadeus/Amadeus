@@ -22,6 +22,31 @@
     "files": ["dist/main/**/*", "dist/shared/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
     "extraResources": [
       { "from": "../vendor/extension-sdk", "to": "extension-sdk", "filter": ["*.whl"] },
+      {
+        "from": "..",
+        "to": "extension-host",
+        "filter": [
+          "LICENSE",
+          "tools/requirements-extension-authoring.txt",
+          "pyproject.toml",
+          "tools/extension_package.py",
+          "server/__init__.py",
+          "server/extensions/__init__.py",
+          "server/extensions/package.py",
+          "server/extensions/manifest.py",
+          "server/extensions/profile.py",
+          "server/extensions/profile.json",
+          "server/extensions/sdk.py",
+          "server/extensions/catalog.py",
+          "server/extensions/catalog-source.json",
+          "server/extensions/protocol-source.json",
+          "server/extensions/*.schema.json",
+          "server/extensions/theme-tokens.v0.json",
+          "agent_host/__init__.py",
+          "agent_host/skills.py",
+          "vendor/extension-catalog/**/*"
+        ]
+      },
       { "from": "../build/bundled-assets/assets/bundled/japanese-pronunciation", "to": "assets/bundled/japanese-pronunciation", "filter": ["**/*"] }
     ],
     "beforePack": "scripts/build-runtime-resources.cjs",
@@ -48,6 +73,6 @@
     "electron-builder": "^26.15.3",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.0",
-    "vite": "^8.2.2"
+    "vite": "^8.2.4"
   }
 }

@@ -109,3 +109,85 @@ test('legacy manual MCP bindings survive explicit encrypted environment migratio
   assert.equal(registry.connections[0].command, 'python')
   assert.ok(!JSON.stringify(restarted.snapshot({})).includes('synthetic-explicit-token'))
 })
+
+const { securitySnapshot } = require('./extensionSecurity.js')
+const identity = { id: 'org.example.demo', version: '0.1.0', digest: 'a'.repeat(64) }
+const facts = (sequence, blocked = true) => securitySnapshot(sequence, [{ ...identity, blocked, sequence }], '2026-10-21T00:00:00Z')
+function restart(file) { return new exports.DesktopSettingsStore(file, path.join(path.dirname(file), '.env')) }
+
+for (const damaged of ['primary', 'backup', 'missing-primary']) test(`security survives ${damaged} loss and ordinary save`, t => {
+  const { file, store } = savedStore(t)
+  store.commitExtensionSecurity(facts(5))
+  if (damaged === 'missing-primary') fs.unlinkSync(file)
+  else zeroFill(damaged === 'primary' ? file : file + '.bak')
+  const next = restart(file)
+  assert.match(next.extensionSecurityBlock(identity), /blocked/)
+  next.update({}, { values: { WORK_EXECUTION_PROVIDER: 'pi' } })
+  assert.equal(restart(file).extensionSecurityState().sequence, 5)
+  assert.match(restart(file).extensionSecurityBlock(identity), /blocked/)
+})
+for (const damage of ['nul', 'truncated', 'field']) test(`both copies ${damage}: durable fail-closed until explicit official recovery`, t => {
+  const { root, file, store } = savedStore(t)
+  store.commitExtensionSecurity(facts(5))
+  for (const target of [file, file + '.bak']) {
+    if (damage === 'nul') zeroFill(target)
+    else if (damage === 'truncated') fs.writeFileSync(target, '{"version":2,"extensionSecurity":')
+    else { const raw = JSON.parse(fs.readFileSync(target)); raw.extensionSecurity.decisions = []; fs.writeFileSync(target, JSON.stringify(raw)) }
+  }
+  let next = restart(file)
+  assert.equal(next.extensionSecurityState().status, 'unavailable')
+  assert.match(next.extensionSecurityBlock(), /damaged/)
+  assert.equal(fs.readdirSync(root).filter(n => n.includes('.corrupt-')).length, 2)
+  next.update({}, { values: { WORK_EXECUTION_PROVIDER: 'pi' } })
+  next.markApplied({}, {})
+  next = restart(file)
+  assert.equal(next.extensionSecurityState().status, 'unavailable')
+  assert.throws(() => next.commitExtensionSecurity(facts(6)), /explicit/)
+  next.commitExtensionSecurity(facts(6), true)
+  assert.match(restart(file).extensionSecurityBlock(identity), /blocked/)
+  next.commitExtensionSecurity(facts(7, false))
+  assert.equal(restart(file).extensionSecurityBlock(identity), '')
+})
+test('higher complete backup survives failure between backup and primary commit', t => {
+  const { file, store } = savedStore(t)
+  store.commitExtensionSecurity(facts(3, false))
+  const rename = fs.renameSync
+  fs.renameSync = (source, target) => { if (target === file) throw new Error('injected power loss'); return rename(source, target) }
+  try { assert.throws(() => store.commitExtensionSecurity(facts(4)), /power loss/) } finally { fs.renameSync = rename }
+  assert.equal(JSON.parse(fs.readFileSync(file)).extensionSecurity.sequence, 3)
+  assert.equal(JSON.parse(fs.readFileSync(file + '.bak')).extensionSecurity.sequence, 4)
+  assert.match(restart(file).extensionSecurityBlock(identity), /blocked/)
+  restart(file).update({}, { values: { WORK_EXECUTION_PROVIDER: 'pi' } })
+  assert.equal(JSON.parse(fs.readFileSync(file)).extensionSecurity.sequence, 4)
+})
+test('same-sequence conflict stays unavailable across interrupted fault persistence and restart', t => {
+  const { file, store } = savedStore(t)
+  store.commitExtensionSecurity(facts(4))
+  const backup = JSON.parse(fs.readFileSync(file + '.bak'))
+  backup.extensionSecurity = facts(4, false)
+  fs.writeFileSync(file + '.bak', JSON.stringify(backup))
+  const rename = fs.renameSync
+  fs.renameSync = (source, target) => { if (target === file) throw new Error('injected power loss'); return rename(source, target) }
+  try { assert.throws(() => restart(file).extensionSecurityState(), /power loss/) } finally { fs.renameSync = rename }
+  const next = restart(file)
+  assert.equal(next.extensionSecurityState().status, 'unavailable')
+  next.update({}, { values: { WORK_EXECUTION_PROVIDER: 'pi' } })
+  assert.equal(restart(file).extensionSecurityState().status, 'unavailable')
+  assert.throws(() => next.commitExtensionSecurity(facts(3), true), /rollback/)
+  next.commitExtensionSecurity(facts(4), true)
+  assert.match(restart(file).extensionSecurityBlock(identity), /blocked/)
+})
+test('legacy migration, replay, omission, same-sequence change and explicit higher unban', t => {
+  const { file, store } = savedStore(t)
+  assert.equal(store.extensionSecurityState(), undefined)
+  store.commitExtensionSecurity(securitySnapshot(0, [], '2026-10-21T00:00:00Z'))
+  store.commitExtensionSecurity(facts(3))
+  assert.throws(() => store.commitExtensionSecurity(facts(2)), /rollback/)
+  assert.throws(() => store.commitExtensionSecurity(facts(3, false)), /Conflicting/)
+  assert.throws(() => store.commitExtensionSecurity(securitySnapshot(4, [], '2026-10-21T00:00:00Z')), /disappear/)
+  store.commitExtensionSecurity(securitySnapshot(4, [{ ...identity, blocked: true, sequence: 3 }], '2026-10-21T00:00:00Z'))
+  assert.match(restart(file).extensionSecurityBlock(identity), /blocked/)
+  store.commitExtensionSecurity(facts(6, false))
+  assert.equal(restart(file).extensionSecurityBlock(identity), '')
+  assert.equal(store.backendEnvironment({}).DEEPSEEK_API_KEY, 'sk-test')
+})

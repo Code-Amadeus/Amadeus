@@ -53,3 +53,29 @@ from server.extensions.manifest import _validator
 for schema in ('amadeus.extension/v0', 'amadeus.extension/v1'):
     assert _validator(schema).is_valid({}) is False
 ''', str(installed)], cwd=tmp_path, check=True, capture_output=True, text=True)
+
+
+def test_electron_helper_resource_selection_accepts_v0_and_v1_wheels(tmp_path):
+    from test_extension_authoring import package
+    from tools.probes.extension_release_shell import verify_checker_schemas
+
+    root = Path(__file__).parents[1]
+    resources = json.loads((root / "electron/package.json").read_text(encoding="utf-8"))["build"]["extraResources"]
+    selection = next(item for item in resources if item["to"] == "extension-host")
+    source = (root / "electron" / selection["from"]).resolve()
+    bundled = tmp_path / "resources/extension-host"
+    for pattern in selection["filter"]:
+        for file in source.glob(pattern):
+            if file.is_file():
+                destination = bundled / file.relative_to(source)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file, destination)
+    _, _, wheel = package(tmp_path)
+    result = verify_checker_schemas(bundled, wheel)
+    assert set(result) == {"amadeus.extension/v0", "amadeus.extension/v1"}
+    assert all(item["ok"] for item in result.values())
+    # Prove that source checkout files cannot hide a missing resource in the bundle.
+    (bundled / "server/extensions/amadeus-extension.v1.schema.json").unlink()
+    import pytest
+    with pytest.raises(AssertionError):
+        verify_checker_schemas(bundled, wheel)

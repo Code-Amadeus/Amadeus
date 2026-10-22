@@ -113,6 +113,49 @@ def _frontend_build_identity(directory: Path) -> dict[str, Any]:
     return {"kind": "packaged-asar" if directory.is_file() else "source-dist", "sha256": digest.hexdigest(), "file_count": len(files)}
 
 
+def launcher_code_identity(root: Path) -> dict[str, Any]:
+    """Identify a Git checkout or verify the shipped source-manifest file set.
+
+    A ZIP nested inside another checkout must not inherit that parent's Git HEAD.
+    Manifest identity describes the release inputs; installed dependencies and built
+    frontend bytes have their own lock/build evidence. It is not a signature.
+    """
+    from tools.semantic_journey_evidence import code_identity
+
+    manifest_path = root / "SOURCE_MANIFEST.json"
+    if (root / ".git").exists() or not manifest_path.is_file():
+        return code_identity(root)
+    raw = manifest_path.read_bytes()
+    manifest = json.loads(raw)
+    records = manifest.get("selected_files")
+    commit = manifest.get("commit", "")
+    if (manifest.get("schema") != "amadeus.source-release-manifest.v1"
+            or manifest.get("release_ready") is not True
+            or not re.fullmatch(r"[a-f0-9]{40}", commit)
+            or not isinstance(records, list) or not records
+            or manifest.get("selected_file_count") != len(records)):
+        raise ValueError("Invalid source release identity")
+    seen: set[str] = set()
+    for record in records:
+        name = record.get("path", "")
+        if (not isinstance(name, str) or not name or "\\" in name
+                or ":" in name or name.startswith("/")
+                or any(part in {"", ".", ".."} for part in name.split("/"))
+                or name in seen):
+            raise ValueError("Invalid source release file path")
+        seen.add(name)
+        file = root / name
+        if not file.resolve().is_relative_to(root.resolve()) or not file.is_file():
+            raise ValueError("Source release input is missing or outside the archive")
+        data = file.read_bytes()
+        if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
+            raise ValueError("Source release input differs from its manifest: " + name)
+    digest = hashlib.sha256(raw).hexdigest()
+    return {"commit_sha": commit, "workspace_dirty": False,
+            "workspace_fingerprint": digest, "identity_kind": "source-release-manifest",
+            "verified_source_files": len(records)}
+
+
 async def _press_native_theme_recovery(process_id: int, inspector_port: int) -> None:
     """Exercise the actual Electron input hook in this isolated owned process."""
     import websockets
@@ -274,8 +317,14 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
     )
     checks["project_navigation_rendered"] = True
 
-    await page.get_by_role("button", name="Artifacts", exact=True).click()
-    await page.get_by_role("navigation", name="Chat and artifact navigation").hover()
+    # The drawer is owned by hover or focus. Retain keyboard focus while its
+    # contents change instead of moving the pointer across the resizing panel.
+    await rail.focus()
+    artifact_mode = rail.get_by_role("button", name="Artifacts", exact=True)
+    await artifact_mode.click()
+    from playwright.async_api import expect
+    await expect(artifact_mode).to_have_attribute("aria-pressed", "true", timeout=timeout_ms)
+    await rail.focus()
     await page.get_by_label("Artifact collections", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
@@ -354,13 +403,18 @@ async def _wait_clean_exit(
 
 
 async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
+    if args.extension_publication and (args.extension_fixture or args.extension_failures or args.native_confirmations):
+        raise ValueError("--extension-publication is a separate complete journey")
+    if args.native_confirmations and (not args.extension_fixture or args.extension_failures):
+        raise ValueError("--native-confirmations requires --extension-fixture and excludes --extension-failures")
+    if args.extension_failures and not args.extension_fixture:
+        raise ValueError("--extension-failures requires --extension-fixture")
     from tools.e2e_live_product_journey import (
         BACKEND_PORT,
         ElectronProduct,
         WsProbe,
         _free_port,
         _port_is_open,
-        code_identity,
     )
 
     class ModelLessElectronProduct(ElectronProduct):
@@ -370,6 +424,9 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             environment = model_less_backend_environment(
                 super()._environment(), python_executable=sys.executable
             )
+            if args.extension_fixture or args.extension_publication:
+                environment.update(PI_PROVIDER_ENABLED="true", PI_MODEL_PROVIDER="fixture",
+                    PI_MODEL="fixture", PI_AGENT_DIR=str(self.run_root / "state/pi"))
             if self.packaged_executable:
                 # The current distribution packages the Electron frontend;
                 # supply the separate Python runtime explicitly for this smoke.
@@ -390,7 +447,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         debug_port=int(args.debug_port or _free_port()),
         main_debug_port=_free_port(),
         no_tts=True,
-        identity=code_identity(ROOT),
+        identity=launcher_code_identity(ROOT),
         packaged_executable=args.packaged_executable.resolve() if args.packaged_executable else None,
     )
     report: dict[str, Any] = {
@@ -407,6 +464,21 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "checks": {},
     }
 
+    if args.extension_fixture or args.extension_publication:
+        # A synthetic pre-catalog v2 settings file, never a copied user profile.
+        settings = run_root / "state/electron-user-data/settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        pi = run_root / "state/pi"
+        pi.mkdir(parents=True)
+        # Native Pi auth check is local/no-refresh. No model turn is sent; an
+        # accidental request can reach only a closed loopback port, never a service.
+        (pi / "models.json").write_text(json.dumps({"providers":{"fixture":{
+            "baseUrl":"http://127.0.0.1:1/v1", "api":"openai-completions",
+            "apiKey":"local-fixture", "models":[{"id":"fixture", "reasoning":False, "input":["text"]}]
+        }}}), encoding="utf-8")
+        settings.write_text(json.dumps({"version":2, "values":{"AMADEUS_UI_LOCALE":"en-US"},
+            "encryptedSecrets":{}, "mcpConnections":{}, "extensions":{},
+            "pendingRevisions":{}, "nextRevision":1}), encoding="utf-8")
     try:
         await product.start(startup_timeout=float(args.startup_timeout))
         report["checks"]["electron_started_backend"] = True
@@ -446,6 +518,18 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         report["checks"].update(
             await _exercise_renderer(product.page, timeout=float(args.ui_timeout), process_id=product.process.pid, inspector_port=product.main_debug_port)
         )
+        if args.extension_publication:
+            from tools.probes.extension_store_roundtrip import exercise_publication
+            report["publication"] = await exercise_publication(product, args.extension_publication.resolve())
+        elif args.native_confirmations:
+            from tools.probes.extension_native_confirmation import exercise_native
+            report["native_confirmations"] = await exercise_native(product, args.extension_fixture.resolve())
+        elif args.extension_fixture:
+            from tools.probes.extension_release_shell import exercise
+            report["extensions"] = await exercise(product, args.extension_fixture.resolve())
+            if args.extension_failures:
+                from tools.probes.extension_release_failures import exercise_failures
+                report["extension_failures"] = await exercise_failures(product, args.extension_fixture.resolve())
         if product.app_page_errors or product.app_console_errors:
             raise RuntimeError(
                 "Electron renderer reported errors: "
@@ -487,6 +571,10 @@ def _parser() -> argparse.ArgumentParser:
         default=str(RUNTIME / "electron_model_less_smoke"),
     )
     parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
+    parser.add_argument("--native-confirmations", action="store_true", help="Wait for an external UI operator to cancel/install/enable through real native dialogs")
+    parser.add_argument("--extension-failures", action="store_true", help="Run shipping IPC failure and cross-process corruption recovery cases; requires --extension-fixture")
+    parser.add_argument("--extension-publication", type=Path, help="Isolated full publisher/client demonstration configuration; use extension_store_demo.py")
+    parser.add_argument("--extension-fixture", type=Path, help="Explicitly execute reference wheels from a prepared isolated catalog fixture")
     parser.add_argument("--debug-port", type=int, default=0)
     parser.add_argument("--startup-timeout", type=float, default=120.0)
     parser.add_argument("--ui-timeout", type=float, default=30.0)

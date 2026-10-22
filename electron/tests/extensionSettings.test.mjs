@@ -105,7 +105,7 @@ test('saved disable and removal remain distinct from observed active runtime; di
   assert.ok(offline.includes('Backend status unavailable'))
   assert.ok(!offline.includes('Synthetic runtime'))
   assert.ok(offline.includes('Japanese output has not been verified'))
-  assert.ok(!offline.includes('<input'))
+  assert.ok(!offline.includes('aria-label="Configure extension"'))
   assert.ok(!offline.includes('Grant'))
 })
 
@@ -124,7 +124,7 @@ test('extension lifecycle and English-only compatibility use the real Chinese di
 function harness(api, initialProps = {}) {
   const previous = globalThis.window
   globalThis.window = { amadeus: api, confirm: () => true }
-  const slots = []; let cursor = 0; let tree; let effects = []; let currentProps = props(initialProps)
+  const slots = []; let cursor = 0; let tree; let effects = []; let cleanups = []; let currentProps = props(initialProps)
   const hooks = { ...React,
     useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
       return [slots[index], update => { slots[index] = typeof update === 'function' ? update(slots[index]) : update }] },
@@ -132,7 +132,7 @@ function harness(api, initialProps = {}) {
     useEffect(callback) { effects.push(callback) },
   }
   const Component = loadTypeScript(new URL('../src/renderer/components/ExtensionSettings.tsx', import.meta.url), { ...mocks, react: hooks }).default
-  const render = (update = {}) => { currentProps = { ...currentProps, ...update }; cursor = 0; effects = []; tree = Component(currentProps); effects.forEach(callback => callback()); return tree }
+  const render = (update = {}) => { cleanups.forEach(cleanup => cleanup()); cleanups = []; currentProps = { ...currentProps, ...update }; cursor = 0; effects = []; tree = Component(currentProps); cleanups = effects.map(callback => callback()).filter(value => typeof value === 'function'); return tree }
   function* walk(node) { if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) { for (const item of node) yield* walk(item); return }
     yield node; yield* walk(node.props?.children); yield* walk(node.props?.action)
@@ -140,7 +140,7 @@ function harness(api, initialProps = {}) {
   const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : String(node ?? '')
   render()
   return { render, find: predicate => [...walk(tree)].find(predicate), button: label => [...walk(tree)].find(node => node.props?.onClick && text(node) === label),
-    restore() { globalThis.window = previous } }
+    restore() { cleanups.forEach(cleanup => cleanup()); globalThis.window = previous } }
 }
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
@@ -287,4 +287,35 @@ test('pending installation reports a busy navigation guard; failed installation 
   assert.equal(state.busy, false)
   assert.ok(page.button('Configure extension'))
   assert.equal(page.find(node => node.props?.role === 'alert').props.children, 'Synthetic invalid wheel')
+})
+
+test('catalog view switching retains a draft and blocked packages can be disabled but not activated', async t => {
+  const updates=[]
+  const page = harness({extensionCatalog: async () => ({ok:true,catalog:{entries:[],cached:false,installed:[{id:'org.example.voice',version:'1.0.0',digest:'a'.repeat(64),catalogState:'matched',blocked:true}]},settings:{extensionSecurity:{status:'ready'}}}),
+    updateExtension: async update => { updates.push(update); return {ok:true,settings:{}} }})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  page.button('Configure extension').props.onClick();page.render()
+  const value=()=>page.find(n=>n.props?.id==='extension-config-speed'&&n.type==='input')
+  value().props.onChange({target:{value:'1.75'}});page.render()
+  const toggle=()=>page.find(n=>n.props?.id==='extension-enabled-org.example.voice')
+  assert.equal(toggle().props.disabled,false)
+  toggle().props.onChange(false);await flush();page.render({extensions:[extension({enabled:false})]})
+  assert.equal(updates[0].enabled,false)
+  assert.equal(toggle().props.disabled,true)
+  page.button('Browse').props.onClick();await flush();page.render()
+  page.button('Installed').props.onClick();page.render()
+  assert.equal(value().props.value,'1.75')
+  assert.equal(toggle().props.checked,false)
+})
+
+test('opening Browse cannot implicitly recover damaged safety state', async t => {
+  const requests=[]
+  const page=harness({extensionCatalog:async request=>{requests.push(request);return {ok:true,catalog:{entries:[],cached:true},settings:{extensionSecurity:{status:'unavailable'}}}}})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  page.button('Browse').props.onClick();await flush();page.render()
+  assert.equal(requests.filter(r=>r.action==='recover'||r.action==='refresh').length,0)
+  page.button('Recover official extension security state').props.onClick();await flush();page.render()
+  assert.equal(requests.filter(r=>r.action==='recover').length,1)
 })

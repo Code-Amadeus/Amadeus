@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+  "commit": "58d3892d55c6a7ec6f8626153f503291bb10ab9a",
+  "files": {
+    "tools/catalog.py": "746dd13bf6e38992fb69e77cab2708166d78663c7dda0b1961757fac3c8246cc",
+    "catalog/schema.json": "bcc80b10d9367f9bff0bdfd19c6f675474ae1a646c549fac4bad53224cffa673",
+    "catalog/policy.json": "a16f51689832d7793fdfcbc8ad1b2ec85237e83b54af5e994329138a7a76812b",
+    "catalog/toolchain.json": "9e462d4a4ddf41951fae3c193537063af9ec55a6bfa5c926a41ff709daa5335b",
+    "catalog/fixtures/compatibility.json": "d3e0501a0aa8678156da3944a823fc4de4388871da21ea10cfe2400302bedc21",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  }
+}

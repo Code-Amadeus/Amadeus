@@ -51,11 +51,11 @@ function fixture(t, options = {}) {
   const calls = []
   const helper = { refreshRecords: async () => {}, call: async (command, args = [], input) => {
     calls.push({ command, args, input })
-    if (command === 'inspect-wheel') {
+    if (['inspect-wheel', 'inspect-catalog-wheel'].includes(command)) {
       if (options.inspectionError) throw new Error(options.inspectionError)
       assert.notEqual(args[0], selectedWheel)
       return { ok: true, manifest: metadata, digest: createHash('sha256').update(fs.readFileSync(args[0])).digest('hex'),
-        package_root: 'demo', manifest_member: 'demo/amadeus-extension.json', distribution: 'demo' }
+        package_root: 'demo', manifest_member: 'demo/amadeus-extension.json', distribution: 'demo', dependency_mode: options.dependencyMode || 'offline' }
     }
     if (command === 'validate-installed') {
       assert.ok(fs.existsSync(path.join(args[0], 'amadeus-extension.json')))
@@ -107,7 +107,7 @@ function fixture(t, options = {}) {
     fs.renameSync(path.join(directory, 'vendor', 'extension-sdk', name), path.join(sdkDirectory, name))
   }
   const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
-    async review => { calls.push({ command: 'confirm', review }); return options.confirm !== false }, sdkDirectory)
+    async review => { calls.push({ command: 'confirm', review }); return typeof options.confirm === 'function' ? options.confirm(review, store) : options.confirm !== false }, sdkDirectory)
   return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata }
 }
 
@@ -1029,4 +1029,146 @@ test('removed frontend theme keeps its identity and directs the user to Appearan
   assert.doesNotMatch(current.reason, /restart/i)
   assert.match(current.reason, /Choose another theme/)
   assert.deepEqual(f.store.snapshot({}).pendingKeys, [])
+})
+
+const { securitySnapshot } = loadTypeScript(new URL('../src/main/extensionSecurity.ts', import.meta.url))
+const securityFor = (record, sequence, blocked = true) => securitySnapshot(sequence, [{ id: record.id, version: record.version, digest: record.digest, sequence, blocked }], '2026-10-21T00:00:00Z')
+test('offline dependency classification applies equally to local and catalog installation', async t => {
+  for (const catalog of [false, true]) {
+    const f = fixture(t)
+    const digest = createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')
+    await f.installer.install(f.selectedWheel, catalog ? { identity: { id: 'org.example.demo', version: '0.1.0', digest }, assertCurrent() {} } : undefined)
+    for (const call of f.commandCalls.filter(c => c.args.includes('pip'))) {
+      assert.ok(call.args.includes('--no-index'))
+      assert.ok(call.args.includes('--no-deps'))
+    }
+  }
+})
+test('third-party dependencies retain the local resolver and are rejected by catalog install', async t => {
+  const f = fixture(t, { dependencyMode: 'resolve' })
+  await f.installer.install(f.selectedWheel)
+  assert.ok(f.commandCalls.filter(c => c.args.includes('pip')).at(-1).args.every(a => a !== '--no-index'))
+  const g = fixture(t, { dependencyMode: 'resolve' })
+  await assert.rejects(g.installer.install(g.selectedWheel, { identity: { id: 'org.example.demo', version: '0.1.0', digest: createHash('sha256').update(fs.readFileSync(g.selectedWheel)).digest('hex') }, assertCurrent() {} }), /dependencies/)
+  assert.equal(g.commandCalls.length, 0)
+})
+test('catalog identity is checked on the installer copy before confirmation or pip', async t => {
+  for (const changed of ['id', 'version', 'digest']) {
+    const f = fixture(t)
+    const expected = { id: 'org.example.demo', version: '0.1.0', digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex') }
+    expected[changed] = 'wrong'
+    await assert.rejects(f.installer.install(f.selectedWheel, { identity: expected, assertCurrent() {} }), /identity or digest/)
+    assert.equal(f.commandCalls.length, 0)
+    assert.equal(f.store.storedExtensionRecords().length, 0)
+  }
+})
+test('ban during confirmation rejects both installation entries before preparation', async t => {
+  for (const catalog of [false, true]) {
+    const f = fixture(t, { confirm: (review, store) => { store.commitExtensionSecurity(securityFor({ ...review.manifest, digest: review.digest }, 1)); return true } })
+    const digest = createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')
+    await assert.rejects(f.installer.install(f.selectedWheel, catalog ? { identity: { id: 'org.example.demo', version: '0.1.0', digest }, assertCurrent() {} } : undefined), /blocked/)
+    assert.equal(f.commandCalls.length, 0)
+    assert.equal(f.store.storedExtensionRecords().length, 0)
+  }
+})
+test('known ban blocks activation and launch without removing enabled intent or credentials', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: 'org.example.demo', enabled: true, secrets: { token: 'fixture-value' } })
+  const record = f.store.storedExtensionRecords()[0]
+  f.store.acceptExtensionApplication(record)
+  f.store.commitExtensionSecurity(securityFor(record, 1))
+  await assert.rejects(f.installer.update({ id: record.id, enabled: true }), /blocked/)
+  const launch = JSON.parse(await f.installer.launchSnapshot())
+  assert.ok(launch[0].startup_error)
+  assert.deepEqual(launch[0].secrets, {})
+  const summary = f.store.snapshot({}).extensions[0]
+  assert.ok(summary.frontendSuppressed)
+  assert.ok(summary.backendStillRunning)
+  assert.match(summary.applicationError, /Stop or restart/)
+  assert.equal(f.store.storedExtensionRecords()[0].enabled, true)
+  assert.ok(f.store.storedExtensionRecords()[0].encryptedSecrets.token)
+  await f.installer.update({ id: record.id, enabled: false })
+  await f.installer.remove(record.id)
+})
+
+for (const blockedVersion of ['desired', 'applied']) test(`security checks ${blockedVersion} identity across pending version changes`, async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'fixture-value' } })
+  const loaded = f.store.storedExtensionRecords()[0]
+  f.store.acceptExtensionApplication(loaded)
+  const desired = { ...loaded, version: '0.2.0', digest: 'b'.repeat(64), manifest: { ...loaded.manifest, version: '0.2.0' } }
+  f.store.saveExtension({}, desired)
+  f.store.commitExtensionSecurity(securityFor(blockedVersion === 'desired' ? desired : loaded, 1))
+  const summary = f.store.snapshot({}).extensions[0]
+  assert.equal(summary.appliedVersion, '0.1.0')
+  assert.equal(summary.version, '0.2.0')
+  assert.equal(summary.applicationError.includes('Stop or restart'), blockedVersion === 'applied')
+  assert.ok(summary.frontendSuppressed)
+  assert.ok(summary.backendStillRunning)
+  assert.match(summary.applicationError, /blocked/)
+  const launch = JSON.parse(await f.installer.launchSnapshot())
+  assert.equal(Boolean(launch[0].startup_error), blockedVersion === 'desired')
+})
+
+test('replacement of downloaded bytes is rejected; concurrent remove remains serialized behind confirmation', async t => {
+  const f = fixture(t)
+  const identity = { id: f.metadata.id, version: f.metadata.version, digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex') }
+  fs.writeFileSync(f.selectedWheel, 'replacement bytes after download')
+  await assert.rejects(f.installer.install(f.selectedWheel, { identity, assertCurrent() {} }), /identity or digest/)
+  assert.equal(f.commandCalls.length, 0)
+  let entered, release
+  const reviewing = new Promise(resolve => { entered = resolve })
+  const confirmation = new Promise(resolve => { release = resolve })
+  const g = fixture(t, { confirm: async () => { entered(); return confirmation } })
+  const install = g.installer.install(g.selectedWheel)
+  await reviewing
+  const removal = g.installer.remove(g.metadata.id)
+  assert.equal(g.store.storedExtensionRecords().length, 0)
+  release(true)
+  await install; await removal
+  assert.equal(g.store.storedExtensionRecords()[0].pendingRemoval, true)
+  assert.ok(fs.existsSync(path.join(g.root, g.store.storedExtensionRecords()[0].installId)))
+  await g.installer.cleanupStoppedBackend()
+  assert.equal(g.store.storedExtensionRecords().length, 0)
+})
+
+test('a blocked active theme falls back immediately with the security reason', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  assert.ok((await f.installer.themeState()).theme)
+  f.store.commitExtensionSecurity(securityFor(f.store.storedExtensionRecords()[0], 1))
+  const state = await f.installer.themeState()
+  assert.equal(state.theme, undefined)
+  assert.match(state.reason, /blocked for security/)
+  assert.equal(f.store.storedExtensionRecords()[0].enabled, true)
+  await f.installer.restoreBuiltinTheme()
+  assert.equal((await f.installer.themeState()).reason, '')
+})
+
+test('lost durable inventory still reports an actually running blocked backend', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'fixture-value' } })
+  f.store.acceptExtensionApplication(f.store.storedExtensionRecords()[0])
+  for (const file of [f.file, f.file + '.bak']) fs.writeFileSync(file, Buffer.alloc(100))
+  const snapshot = f.store.snapshot({})
+  assert.deepEqual(snapshot.extensions, [])
+  assert.equal(snapshot.extensionSecurity.status, 'unavailable')
+  assert.ok(snapshot.extensionErrors.some(message => message.includes('Stop or restart the backend')))
+  assert.equal(f.store.extensionFrontendClosed(f.metadata.id), true)
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(!f.store.snapshot({}).extensionErrors.some(message => message.includes('Stop or restart the backend')))
+})
+
+test('catalog progress reports inspection, native confirmation and preparation without claiming commit early', async t => {
+  const phases = []
+  const f = fixture(t, { confirm: () => { assert.equal(phases.at(-1), 'confirming'); assert.equal(f.store.storedExtensionRecords().length, 0); return true } })
+  const identity = { id: f.metadata.id, version: f.metadata.version, digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex') }
+  await f.installer.install(f.selectedWheel, { identity, assertCurrent() {}, onStage: phase => phases.push(phase) })
+  assert.deepEqual(phases, ['verifying', 'confirming', 'preparing'])
+  assert.equal(f.store.storedExtensionRecords()[0].digest, identity.digest)
 })

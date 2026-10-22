@@ -12,6 +12,8 @@ on:
       - electron/package.json
       - electron/package-lock.json
       - scripts/**
+      - wallpaper/**
+      - electron/scripts/build-windows-wallpaper.cjs
       - tools/build_source_release.py
       - tools/stage_japanese_dictionary.py
       - tools/probes/verify_bundled_dictionary.py

@@ -41,6 +41,7 @@ import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } 
 import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 import { extensionDisclosure } from '../shared/extensions.js'
+import { ExtensionCatalog } from './extensionCatalog.js'
 import { ExtensionThemeResources } from './extensionThemes.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
@@ -55,14 +56,16 @@ const CACHE_DIR = process.env.AMADEUS_ELECTRON_CACHE_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_CACHE_DIR)
   : path.join(PROJECT_ROOT, '.electron-cache')
 const APP_ICON_PATH = path.join(PROJECT_ROOT, 'assets', 'icons', 'app', 'app_icon.ico')
-const extensionPackageHelper = new ExtensionPackageHelper(PROJECT_ROOT, getPythonCommand, process.env)
+// Keep the static checker separate from the externally supplied backend runtime.
+const EXTENSION_HOST_ROOT = app.isPackaged ? path.join(process.resourcesPath, 'extension-host') : PROJECT_ROOT
+const extensionPackageHelper = new ExtensionPackageHelper(EXTENSION_HOST_ROOT, getPythonCommand, process.env)
 const desktopSettings = new DesktopSettingsStore(
   path.join(USER_DATA_DIR, 'settings.json'),
   path.join(PROJECT_ROOT, '.env'),
   process.platform,
   extensionPackageHelper.validateRecord,
 )
-const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), PROJECT_ROOT,
+const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), EXTENSION_HOST_ROOT,
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
       message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,
@@ -74,6 +77,9 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('System fonts cannot be checked before the main window is available')
     return mainWindow.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
   }), () => notifyDesktopThemeChanged())
+
+const extensionCatalog = new ExtensionCatalog(path.join(USER_DATA_DIR, 'extension-catalog'), desktopSettings, extensionPackageHelper, extensionInstaller,
+  () => String(startupValue('AMADEUS_EXTENSION_ARTIFACT_MIRROR', desktopSettings.snapshot(process.env), '')), () => notifyDesktopThemeChanged())
 
 function notifyDesktopThemeChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed() && isTrustedBackendRenderer(window.webContents)) window.webContents.send('desktop-theme.changed')
@@ -2219,6 +2225,10 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
       error: error instanceof Error ? error.message : String(error),
     }
   }
+})
+ipcMain.handle('extensions.catalog', async (event, raw: unknown) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  return extensionCatalog.dispatch(raw, process.env, url => shell.openExternal(url))
 })
 ipcMain.handle('extensions.icon', (event, id: string) => {
   if (!isTrustedBackendRenderer(event.sender) || typeof id !== 'string') return null

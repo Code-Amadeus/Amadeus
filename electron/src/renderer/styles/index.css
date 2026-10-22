@@ -2604,3 +2604,25 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--focus-fill);
 
 /* Extension surfaces are the same opaque token surfaces the Host validates. */
 html[data-theme-extension] .capability-scene-item { background: var(--surface); }
+html[data-theme-extension] .settings-inline-action[data-tone='danger']:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-bg) !important;
+}
+
+/* Catalog shares the existing plugin manager and theme tokens. Third-party copy is text only. */
+.extension-settings [hidden] { display: none !important; }
+.extension-catalog-toolbar, .extension-download-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.extension-download-progress { padding: 12px; border: 1px solid var(--card-border); border-radius: var(--radius-container); }
+.extension-download-progress strong, .extension-download-progress > div { flex-basis: 100%; overflow-wrap: anywhere; }
+.extension-download-progress progress { flex: 1; min-width: 100px; accent-color: var(--text); }
+.extension-catalog-filters { display: flex; gap: 12px; flex-wrap: wrap; }
+.extension-catalog-filters label { flex: 1; min-width: min(180px, 100%); }
+.extension-catalog-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr)); gap: 12px; }
+.extension-catalog-copy { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font: inherit; }
+.extension-catalog-facts { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr); gap: 7px 16px; font-size: var(--font-small); }
+.extension-catalog-facts dt { color: var(--muted); }
+.extension-catalog-facts dd { margin: 0; overflow-wrap: anywhere; }
+.extension-catalog-update { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@container settings-main (max-width: 560px) { .extension-catalog-facts { grid-template-columns: 1fr; } .extension-catalog-facts dd { margin-bottom: 8px; } }
+
+.extension-catalog .settings-card-title, .extension-catalog .settings-status-pill { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }

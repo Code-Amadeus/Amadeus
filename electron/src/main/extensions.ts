@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import { securityBlock, type ArtifactIdentity } from './extensionSecurity.js'
+import type { CatalogIndex } from '../shared/extensionCatalog.js'
 import { assertExtensionPath } from './extensionPaths.js'
 export { assertExtensionPath } from './extensionPaths.js'
 import path from 'node:path'
@@ -15,9 +17,9 @@ import { startupValue } from '../shared/startupSettings.js'
 import type { DesktopThemeState } from '../shared/extensionTheme.js'
 import { extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
-type HelperReply = { ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
+type HelperReply = { catalog?: CatalogIndex; dependency_mode?: 'offline' | 'resolve'; ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
   package_root?: string; manifest_member?: string; distribution?: string; config?: Record<string, ExtensionConfigValue>; missing?: string[] }
-type RunOptions = { cwd: string; env: NodeJS.ProcessEnv; input?: string; allowFailureJson?: boolean; timeoutMs?: number }
+type RunOptions = { cwd: string; env: NodeJS.ProcessEnv; input?: string; allowFailureJson?: boolean; timeoutMs?: number; maxOutputBytes?: number }
 export type ExtensionCommandRunner = (command: string, args: string[], options: RunOptions) => Promise<string>
 
 export class ExtensionPreparationShutdownError extends Error {
@@ -55,7 +57,7 @@ export const runExtensionCommand: ExtensionCommandRunner = (command, args, optio
   const timeout = setTimeout(() => { timedOut = true; terminate() }, options.timeoutMs ?? 300_000)
   child.stdout?.on('data', chunk => {
     size += chunk.length
-    if (size > 1_048_576) { overflow = true; terminate(); return }
+    if (size > (options.maxOutputBytes ?? 1_048_576)) { overflow = true; terminate(); return }
     stdout += String(chunk)
   })
   // Pip may include authenticated index/proxy URLs. Never forward its output.
@@ -111,10 +113,10 @@ export class ExtensionPackageHelper {
     }
   }
 
-  async call(command: 'inspect-wheel' | 'prepare-data-wheel' | 'validate-config' | 'validate-installed', args: string[] = [], input?: unknown): Promise<HelperReply> {
+  async call(command: 'validate-catalog' | 'inspect-catalog-wheel' | 'inspect-wheel' | 'prepare-data-wheel' | 'validate-config' | 'validate-installed', args: string[] = [], input?: unknown): Promise<HelperReply> {
     const output = await this.run(this.python(), ['-I', this.script, command, ...args], {
       cwd: this.projectRoot, env: extensionInstallerEnvironment(this.environment),
-      allowFailureJson: true,
+      allowFailureJson: true, maxOutputBytes: command === 'validate-catalog' ? 8 * 1024 * 1024 : undefined,
       ...(input === undefined ? {} : { input: JSON.stringify(input) }),
     })
     let reply: HelperReply
@@ -238,8 +240,10 @@ export class ExtensionInstaller {
     return result
   }
 
-  install(wheel: string): Promise<Record<string, unknown>> {
+  install(wheel: string, delivery?: { identity: ArtifactIdentity; assertCurrent: () => void; onStage?: (stage: 'verifying' | 'confirming' | 'preparing') => void }): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
+      this.store.assertExtensionAllowed()
+      delivery?.assertCurrent()
       if (!path.isAbsolute(wheel) || path.extname(wheel).toLowerCase() !== '.whl' || !fs.lstatSync(wheel).isFile()) {
         throw new Error('Select a local Python wheel (.whl)')
       }
@@ -256,11 +260,21 @@ export class ExtensionInstaller {
         // inspected by the trusted helper even if the selected source changes.
         const copied = path.join(directory, path.basename(wheel))
         fs.copyFileSync(wheel, copied, fs.constants.COPYFILE_EXCL)
-        const inspection = await this.helper.call('inspect-wheel', [copied])
+        delivery?.onStage?.('verifying')
+        const inspection = await this.helper.call(delivery ? 'inspect-catalog-wheel' : 'inspect-wheel', [copied])
         const manifest = inspection.manifest!
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
+        const identity = { id: manifest.id, version: manifest.version, digest: inspection.digest }
+        const assertAllowed = () => {
+          this.store.assertExtensionAllowed(identity)
+          if (delivery && (identity.id !== delivery.identity.id || identity.version !== delivery.identity.version || identity.digest !== delivery.identity.digest)) throw new Error('Downloaded artifact identity or digest differs from the official catalog')
+          delivery?.assertCurrent()
+        }
+        assertAllowed()
+        if (!['offline', 'resolve'].includes(inspection.dependency_mode!)) throw new Error('Dependency classification is unavailable')
+        if (delivery && inspection.dependency_mode !== 'offline') throw new Error('Third-party dependencies require local installation')
         await this.themes.validate(manifest)
         let sdkWheel = ''
         if (manifest.runtime.kind === 'python') {
@@ -272,10 +286,13 @@ export class ExtensionInstaller {
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
         }
+        delivery?.onStage?.('confirming')
         if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version, previousManifest: existing?.manifest,
           digest: inspection.digest, sourceFile: path.basename(wheel) })) {
           throw new ExtensionChangeCancelled()
         }
+        assertAllowed()
+        delivery?.onStage?.('preparing')
         const env = extensionInstallerEnvironment(this.environment)
         const venv = path.join(directory, 'venv')
         let purelib: string
@@ -302,10 +319,10 @@ export class ExtensionInstaller {
             || Object.keys(pipConfiguration).some(key => /\.(root|prefix|target|user)$/.test(key))) {
             throw new Error('Configured pip installation path overrides are unsupported; use index, proxy, and certificate transport settings')
           }
-          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
+          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-index', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
           const constraints = path.join(directory, 'constraints.txt')
           fs.writeFileSync(constraints, `amadeus-extension-sdk @ ${pathToFileURL(sdkWheel).href}\n`, { mode: 0o600 })
-          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--only-binary=:all:', '--constraint', constraints, copied], { cwd: directory, env })
+          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--only-binary=:all:', '--constraint', constraints, ...(inspection.dependency_mode === 'offline' ? ['--no-index', '--no-deps'] : []), copied], { cwd: directory, env })
         }
         const packagePath = path.join(purelib, inspection.package_root)
         assertExtensionPath(directory, packagePath)
@@ -331,6 +348,7 @@ export class ExtensionInstaller {
           deleteDataOnRemoval: false,
           values: checked.config || {}, encryptedSecrets: retainedSecrets, providers: existing?.providers || [] }
         if (existing && (extensionRequiresRestart(existing.manifest) || extensionRequiresRestart(manifest))) this.backendReferences.add(existing.installId)
+        assertAllowed()
         this.store.saveExtension(this.environment, record)
         committed = true
         await this.applyFrontendChanges()
@@ -362,6 +380,7 @@ export class ExtensionInstaller {
       const providers = raw.providers === undefined ? record.providers : raw.providers
       if (!Array.isArray(providers) || providers.length > 32 || providers.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))) throw new Error('Invalid extension Work Provider binding')
       const enabled = raw.enabled ?? record.enabled
+      if (enabled) this.store.assertExtensionAllowed(record)
       if (enabled && !record.enabled && !await this.confirm({ operation: 'enable', manifest: record.manifest, digest: record.digest })) {
         throw new ExtensionChangeCancelled()
       }
@@ -384,6 +403,7 @@ export class ExtensionInstaller {
       // command arguments, environment variables, or plaintext temporary files.
       const validated = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...values, ...secrets }, allow_incomplete: !enabled })
       if (enabled) await this.themes.validate(record.manifest, this.packagePath(record))
+      if (enabled) this.store.assertExtensionAllowed(record)
       this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
         providers: [...new Set(providers)] }, changedSecrets)
       await this.applyFrontendChanges()
@@ -543,7 +563,7 @@ export class ExtensionInstaller {
         } catch { this.store.reportExtensionApplicationError(record.id, 'Extension cleanup is incomplete; ownership records were retained for retry.') }
         continue
       }
-      if (!valid.has(record.id)) continue
+      if (!valid.has(record.id) || this.store.extensionSecurityBlock(record)) continue
       const applied = this.store.appliedExtensionRecords().find(item => item.id === record.id)
       if (applied?.revision === record.revision) continue
       try {
@@ -552,6 +572,7 @@ export class ExtensionInstaller {
           await this.helper.call('validate-installed', [packagePath], { manifest: record.manifest })
           await this.themes.validate(record.manifest, packagePath)
           this.packageData(record.id)
+          this.store.assertExtensionAllowed(record)
         }
         this.store.acceptExtensionApplication(record)
         if (applied && applied.installId !== record.installId) released.add(applied.installId)
@@ -577,11 +598,15 @@ export class ExtensionInstaller {
       if (selected === 'classic' || selected === 'wallpaper-slice') { this.store.rememberThemeBase(selected); return { selected, base: selected, reason: '' } }
       const fallback = (reason: string): DesktopThemeState => ({ selected, base: this.store.verifiedThemeBase(), reason })
       const [packageId] = selected.split('/')
+      const policyState = this.store.extensionSecurityState()
+      if (securityBlock(policyState)) return fallback(securityBlock(policyState))
       const desired = this.store.extensionRecords().find(record => record.id === packageId)
       if (!desired) return fallback('The saved theme is unavailable. Its last verified base is shown.')
       if (!desired.enabled || desired.pendingRemoval) return fallback('The saved theme is disabled or being removed. Its base is shown.')
-      if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')
       const applied = this.store.appliedExtensionRecords().find(record => record.id === desired.id && record.enabled)
+      const policyError = securityBlock(policyState, desired) || (applied ? securityBlock(policyState, applied) : '')
+      if (policyError) return fallback(policyError)
+      if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')
       if (!applied) return fallback('This theme is waiting for its package to be applied.')
       const item = (applied.manifest.contributes.theme || []).find(theme => selected === `${applied.id}/${theme.id}`)
       if (!item) {
@@ -613,6 +638,7 @@ export class ExtensionInstaller {
       let config: Record<string, ExtensionConfigValue> = { ...record.values }
       let startupError = ''
       try {
+        this.store.assertExtensionAllowed(record)
         assertExtensionPath(this.root, packagePath)
         if (privatePython) assertExtensionPath(this.root, privatePython)
         if (!fs.existsSync(packagePath) || (privatePython && !fs.existsSync(privatePython))) throw new Error('missing installation')
@@ -620,10 +646,11 @@ export class ExtensionInstaller {
         const checked = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...record.values, ...secrets }, allow_incomplete: false })
         config = checked.config || {}
         this.packageData(record.id)
+        this.store.assertExtensionAllowed(record)
       } catch {
         // Saved enable intent remains visible. Python retains the contribution
         // in its unavailable catalog and never executes a startup-error entry.
-        startupError = 'Extension installation, credentials, configuration, or package data could not be validated'
+        startupError = this.store.extensionSecurityBlock(record) || 'Extension installation, credentials, configuration, or package data could not be validated'
         secrets = {}
         this.store.reportExtensionWarning(startupError)
       }

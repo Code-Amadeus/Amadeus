@@ -22,7 +22,7 @@ from amadeus_extension import CancelledError, RequestContext, TTSRequest
 import amadeus_example_mimo as mimo
 
 
-@pytest.mark.parametrize('name', ['mimo-tts', 'fish-audio', 'notes-mcp', 'handoff-skill', 'csv-audit-skill', 'desktop-theme'])
+@pytest.mark.parametrize('name', ['mimo-tts', 'fish-audio', 'notes-mcp', 'handoff-skill', 'csv-audit-skill', 'desktop-theme', 'tone-tts'])
 def test_example_package_conforms_to_implemented_host_profile(name):
     from server.extensions.package import validate_manifest, validate_installed
     example = ROOT / 'examples/extensions' / name

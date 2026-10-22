@@ -63,12 +63,14 @@ const desktop = {
   sources: { AMADEUS_UI_LOCALE: 'user', AMADEUS_UI_THEME: 'user', TTS_BACKEND: 'user', TTS_OUTPUT_LANGUAGE: 'user' }, locked: {}, secrets: {}, encryptionAvailable: true,
   mcpConnections: [], mcpConnectionsLocked: false, restartRequired: false, pendingKeys: [] as string[], pendingRevisions: {} as Record<string, number>, retired_settings: [],
   extensions: [voice, tools, skill],
+  extensionSecurity: { status: query.get('security') === 'damaged' ? 'unavailable' : 'unseen', checkedAt: '' },
 }
 let runtime = desktop.extensions.map(extension => ({ id: extension.id, version: extension.version, enabled: extension.enabled,
   state: extension.enabled ? 'active' : 'inactive', detail: extension.enabled ? 'Runner is ready' : 'Package is disabled',
   contributions: Object.entries(extension.manifest.contributes).flatMap(([kind, items]) => items.map(item => ({ kind, id: item.id, qualified_id: `${extension.id}/${item.id}`, health: extension.enabled ? 'ready' : 'disabled' }))),
 }))
 let failSave = false
+let failCatalog = false
 if (palette) {
   desktop.values.AMADEUS_UI_THEME = `${themeManifest.id}/${palette.id}`
   desktop.extensions.push({ id: themeManifest.id, version: themeManifest.version, revision: 2, appliedRevision: 2, appliedVersion: themeManifest.version,
@@ -95,6 +97,7 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
   throw new Error('Unexpected synthetic RPC: ' + method)
 }
 host.amadeus = {
+  getBackendStartupFailure: async () => null,
   getExtensionIcon: async () => 'data:image/png;base64,' + btoa(String.fromCharCode(...new Uint8Array(await (await fetch(previewBackground)).arrayBuffer()))),
   getDesktopTheme: async () => {
     if (!palette) return { selected: theme, base: theme, reason: '' }
@@ -107,6 +110,14 @@ host.amadeus = {
   getDesktopSettings: async () => snapshot(),
   getCompanionPortraitStatus: async () => ({ installed: false, state: 'not_installed', emotionCount: 0, frameCount: 0, detail: '' }),
   setTitleBarTheme: async () => true,
+  extensionCatalog: async (request: { action: string }) => {
+    calls.push({ method: 'extensions.catalog', params: request })
+    if (request.action === 'status') return { ok: true }
+    if (request.action === 'get') return { ok: true, settings: snapshot(), catalog: { entries: [], cached: true } }
+    if (failCatalog) return { ok: false, error: 'Synthetic catalog offline', settings: snapshot() }
+    desktop.extensionSecurity = { status: 'ready', checkedAt: '2026-10-21T00:00:00Z' }
+    return { ok: true, settings: snapshot(), catalog: { entries: [], cached: false } }
+  },
   installExtension: async () => ({ ok: false, cancelled: true }),
   updateExtension: async (update: ExtensionUpdate) => {
     calls.push({ method: 'updateExtension', params: structuredClone(update) })
@@ -141,7 +152,8 @@ host.amadeus = {
     desktop.restartRequired = false; desktop.pendingKeys = []; desktop.pendingRevisions = {}; emit(); return true
   },
 }
-host.extensionFixture = { calls, errors, snapshot, setFailSave: (value: boolean) => { failSave = value },
+if (query.has('real')) Object.assign(host.amadeus, host.extensionStoreFixture)
+host.extensionFixture = { calls, errors, snapshot, setFailCatalog: (value: boolean) => { failCatalog = value }, setFailSave: (value: boolean) => { failSave = value },
   refreshRuntime: () => { emit() },
   setContributionHealth: (health: string, detail: string) => { Object.assign(runtime[0].contributions[0], { health, detail }); emit() } }
 document.documentElement.style.height = '100%'
@@ -154,7 +166,7 @@ function FixtureApp() {
   // The App sidebar's Settings entry: the smoke uses it once no package card links back.
   host.extensionFixture.openSettings = openSettings
   return <ThemeProvider><I18nProvider>
-    <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
+    <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected={!query.has('real')} reconnectBackend={async () => {}} /></div>
   </I18nProvider></ThemeProvider>
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(<FixtureApp />)

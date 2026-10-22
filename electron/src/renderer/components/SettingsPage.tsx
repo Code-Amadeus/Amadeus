@@ -1318,6 +1318,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
                 onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
+              {catalogConfiguration('desktop_extensions', desktop).fields.map(field => <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
             </> : null}
             {section === 'diagnostics' ? diagnostics : null}
             {section === 'capabilities' ? (

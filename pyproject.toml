@@ -158,6 +158,10 @@ dev = [
     "wheel==0.47.0",
 ]
 
+[dependency-groups]
+# Versions and hashes come from the same uv.lock as the Host environment.
+extension-authoring = ["jsonschema", "packaging", "PyYAML"]
+
 # Build selections are mutually exclusive. Optional model interpreters remain
 # configurable; this only selects the packages in the current project environment.
 [tool.uv]

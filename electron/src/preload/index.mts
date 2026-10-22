@@ -1,3 +1,4 @@
+import type { CatalogRequest, CatalogReply } from '../shared/extensionCatalog.js'
 /**
  * Preload script — exposes minimal backend IPC to the renderer via contextBridge.
  */
@@ -51,6 +52,7 @@ contextBridge.exposeInMainWorld('amadeus', {
     clearEnvironment?: boolean
   }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.upsert', update),
   removeMcpConnection: (connectionId: string): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.remove', connectionId),
+  extensionCatalog: (request: CatalogRequest): Promise<CatalogReply> => ipcRenderer.invoke('extensions.catalog', request),
   getExtensionIcon: (id: string): Promise<string | null> => ipcRenderer.invoke('extensions.icon', id),
   installExtension: (): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.install'),
   updateExtension: (update: ExtensionUpdate): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.update', update),
