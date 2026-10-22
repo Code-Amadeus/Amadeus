@@ -311,6 +311,7 @@ def main():
     parser.add_argument("--checker-host", type=Path, required=True)
     parser.add_argument("--checker-python", type=Path, required=True)
     parser.add_argument("--wheels", type=Path, required=True)
+    parser.add_argument("--publisher-only", action="store_true", help="Run local Git/preflight/revision/distribution tools without launching the desktop")
     parser.add_argument("--packaged-executable", type=Path)
     parser.add_argument("--report-dir", type=Path, default=ROOT / "build/extension-store-demo")
     args = parser.parse_args()
@@ -320,6 +321,26 @@ def main():
               for name in ("protocol_repo", "checker_host", "checker_python", "wheels")}
     invocation = directory / "invocation.json"
     invocation.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    if args.publisher_only:
+        publisher = Publisher(directory / "publisher", config)
+        try:
+            for label, changes in (
+                ("initial", {"version": "0.1.0"}),
+                ("update", {"version": "0.2.0"}),
+                ("copyright-withdrawal", {"withdrawal": True}),
+                ("security-block", {"decision": "blocked"}),
+                ("security-unblock", {"decision": "allowed"}),
+                ("restore-distribution", {"withdrawal": False}),
+            ):
+                publisher.publish(label, **changes)
+            publisher.verify_rejections()
+            result = {"ok": True, "scope": "publisher-only", "desktop": "not_run",
+                      "phases": publisher.phases, "publication_rejections": "passed"}
+            (directory / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+            print(json.dumps({"ok": True, "report": str(directory / "result.json"), "desktop": "not_run"}))
+            return 0
+        finally:
+            publisher.close()
     command = [sys.executable, ROOT / "tools/smoke_electron_model_less.py",
                "--extension-publication", invocation, "--report-dir", directory]
     if args.packaged_executable:
