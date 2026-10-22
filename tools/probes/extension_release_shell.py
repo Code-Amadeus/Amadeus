@@ -129,14 +129,19 @@ async def exercise(product, fixture: Path):
             .click(timeout=30000)
         )
 
-    async def configure(enabled, provider=None):
+    def package_card(package_id):
+        return page.locator("#extension-panel-installed .setting-card").filter(
+            has=page.locator(f'[data-extension-id="{package_id}"]'))
+
+    async def configure(package_id, enabled, provider=None):
+        card = package_card(package_id)
         if provider:
-            await button("Configure extension")
-            await (page.locator(".settings-form-provider-choices label")
+            await card.get_by_role("button", name="Configure extension", exact=True).click()
+            await (card.locator(".settings-form-provider-choices label")
                    .filter(has_text=provider).locator("input").check(timeout=30000))
             await button("Save extension")
             await expect(page.locator('form[aria-label="Configure extension"]')).to_have_count(0, timeout=30000)
-        toggle = page.locator('#extension-panel-installed [role="switch"][id^="extension-enabled-"]')
+        toggle = card.locator('[role="switch"][id^="extension-enabled-"]')
         if (await toggle.get_attribute("aria-checked") == "true") != enabled:
             await toggle.click()
         await expect(toggle).to_have_attribute("aria-checked", str(enabled).lower(), timeout=30000)
@@ -214,7 +219,7 @@ async def exercise(product, fixture: Path):
         theme = "com.example.desktop-theme"
         await install(theme, "0.1.0")
         check("resource installed through shipping UI and IPC", True)
-        await configure(True)
+        await configure(theme, True)
         await button("Open appearance settings")
         await page.get_by_role("radio").filter(has_text="Quiet day").click()
         await button("Plugins")
@@ -247,10 +252,10 @@ async def exercise(product, fixture: Path):
             not failure["ok"] and any(e["id"] == theme for e in failure["catalog"]["installed"]),
         )
         await evaluate_main(product, "extensionReleaseFixture.offline=false")
-        await configure(False)
-        await page.locator(".extension-details > summary").click()
-        await button("Remove")
-        await button("Confirm remove")
+        await configure(theme, False)
+        await package_card(theme).locator(".extension-details > summary").click()
+        await package_card(theme).get_by_role("button", name="Remove", exact=True).click()
+        await package_card(theme).get_by_role("button", name="Confirm remove", exact=True).click()
         await expect(
             page.get_by_text("No community extensions installed.", exact=True)
         ).to_be_visible(timeout=30000)
@@ -275,7 +280,7 @@ async def exercise(product, fixture: Path):
             ),
         ):
             await install(package_id, "0.1.0")
-            await configure(True, "Pi" if kind == "mcp" else None)
+            await configure(package_id, True, "Pi" if kind == "mcp" else None)
             saved = json.loads(settings_path.read_text())["extensions"][package_id]
             if kind == "mcp":
                 check(
@@ -348,10 +353,10 @@ async def exercise(product, fixture: Path):
                 and json.loads(runtime.read_text())["ok"],
             )
             used.add((package_id, "0.1.0"))
-            await configure(False)
-            await page.locator(".extension-details > summary").click()
-            await button("Remove")
-            await button("Confirm remove")
+            await configure(package_id, False)
+            await package_card(package_id).locator(".extension-details > summary").click()
+            await package_card(package_id).get_by_role("button", name="Remove", exact=True).click()
+            await package_card(package_id).get_by_role("button", name="Confirm remove", exact=True).click()
         report["used_artifacts"] = [
             entry
             for entry in report["fixture_artifacts"]
