@@ -35,3 +35,9 @@ Windows CI 增加正式生成器、固定 Host checker 和真实打包客户端�
 - 完整验收探索轮保留失败：聊天侧栏 Artifacts 悬停定位两次超时；探针改用既有焦点维持展开契约，额外断言页签 aria-pressed=true，并保留内容可见性和原超时；整合探针的多卡片选择歧义及一次参数名错误已定位修正。最终完整源码/打包/发布闭环及新 head 的 CI 结果以各自回执为准，未完成前不将 #256 记为已合并。
 
 后续独立资格：把目录 checker 重新认证到含 v1 的 Host main、将 manifest 版本纳入目录兼容信息并覆盖旧客户端、测试真实图标 wheel。当前历史 checker 仍拒绝它，空目录未发布任何包。历史计划和 Pi 测试保留，不重写已被 pin 引用的提交。
+
+## 新 head 的审计与本机路径诊断
+
+CI run 39817357388 的 checks-and-smoke 在依赖审计阶段报告 opentelemetry-api 1.44.0 / CVE-2026-114603（修复版 1.45.1）。使用 uv lock --upgrade-package opentelemetry-api==1.45.1，仅该包的版本和产物哈希变化；独立验收环境审计通过，原有忽略不变，uv pip check 通过。作者最小依赖导出字节不变。相关运行状态/打包/子进程测试 18 项通过。
+
+完整本机探针的长产物目录曾导致真实 Runner 启动失败。保留报告 unexpected_runtime 后，直接用同一合成安装记录调用 _launch，得到 WinError 267；data_path 长度 260。复制到短的隔离目录后回执为 accepted/active。此处归类为本机验收路径问题，最终验收使用 build/src 和 build/pkg；没有修改产品启动目录、状态要求或重试时限。超长自定义 profile 路径不在本次支持声明内。

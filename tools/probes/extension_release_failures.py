@@ -138,6 +138,10 @@ async def exercise_failures(product, fixture):
             if found and found["state"] in expected:
                 return found
             await asyncio.sleep(0.5)
+        report["unexpected_runtime"] = rows
+        (product.run_root / "extension-failure-report.json").write_text(
+            json.dumps(report, indent=2), encoding="utf-8"
+        )
         raise AssertionError("Runtime never reached expected plugin state")
 
     try:
