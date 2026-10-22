@@ -7,7 +7,7 @@ website is part of v1.
 
 ## Prerequisites and entry point
 
-Use the experimental Host checkout without a personal .env, with its Python
+Use the Host checkout containing the store implementation without a personal .env, with its Python
 core/dev and independent Electron/Pi Node dependencies installed. Build the
 frontend with npm --prefix electron run build. Do not use directory junctions
 to another checkout's dependencies.
@@ -16,8 +16,8 @@ The catalog toolchain requires Windows and CPython 3.12.10. Supply a real clean
 Git checkout of Host commit 1840c8e4f646992ddaebea3139c8895f29743a8f and its
 minimal checker environment installed from tools/requirements-extension-authoring.txt
 with pip --require-hashes. The protocol tools verify the commit, checker inputs,
-Python/platform and dependency-file hash themselves. Use the protocol experiment
-at 8fb39ba (submission/delivery tools) (or a separately reviewed compatible
+Python/platform and dependency-file hash themselves. Use protocol main commit
+e2fc0e93fa7cfd9bf98e378cac6e158f14181b9a (or a separately reviewed compatible
 revision); its real bootstrap remains empty.
 
 Build reference wheels with python -X utf8 tools/probes/extension_author_journey.py,
@@ -27,7 +27,7 @@ package. The demonstration snapshots these four files before serving them.
 Run from the Host checkout:
 
 ~~~powershell
-python -X utf8 tools/probes/extension_store_demo.py --execute --protocol-repo <protocol-checkout> --checker-host <fixed-host-checkout> --checker-python <minimal-venv>\Scripts\python.exe --wheels <reference-wheel-directory> --report-dir build/store-demo
+python -X utf8 tools/probes/extension_store_demo.py --execute --protocol-repo <protocol-checkout> --checker-host <fixed-host-checkout> --checker-python <minimal-venv>\Scripts\python.exe --wheels <reference-wheel-directory> --report-dir build/pub
 ~~~
 
 To exercise the actual packaged Windows desktop, add:
@@ -42,8 +42,13 @@ not claim a self-contained installer or clean-machine qualification.
 For this experiment's existing local environments, the complete command is:
 
 ~~~powershell
-& '..\qualification-20261021\fix-runtime\Scripts\python.exe' -X utf8 tools/probes/extension_store_demo.py --execute --protocol-repo '..\amadeus-extensions' --checker-host '..\qualification-20261021\pinned-host' --checker-python '..\qualification-20261021\checker\Scripts\python.exe' --wheels 'build\extension-author-journey\d151d209c26f\wheels' --report-dir 'build\store-demo'
+& '..\qualification-20261021\fix-runtime\Scripts\python.exe' -X utf8 tools/probes/extension_store_demo.py --execute --protocol-repo '..\amadeus-extensions' --checker-host '..\qualification-20261021\pinned-host' --checker-python '..\qualification-20261021\checker\Scripts\python.exe' --wheels 'build\extension-author-journey\d151d209c26f\wheels' --report-dir 'build\pub'
 ~~~
+
+Use a short checkout and report path on Windows: the generated plugin working
+directory must remain below the Windows process-creation path limit. The final
+integrated local run used `build/pub`; a deeply nested report path previously
+produced `WinError 267` at a 260-character working directory.
 
 Each invocation creates a new run directory, new desktop settings/install/data
 directories, a disposable HTTPS certificate and local Git clones without remotes.

@@ -41,3 +41,13 @@ Windows CI 增加正式生成器、固定 Host checker 和真实打包客户端�
 CI run 39817357388 的 checks-and-smoke 在依赖审计阶段报告 opentelemetry-api 1.44.0 / CVE-2026-114603（修复版 1.45.1）。使用 uv lock --upgrade-package opentelemetry-api==1.45.1，仅该包的版本和产物哈希变化；独立验收环境审计通过，原有忽略不变，uv pip check 通过。作者最小依赖导出字节不变。相关运行状态/打包/子进程测试 18 项通过。
 
 完整本机探针的长产物目录曾导致真实 Runner 启动失败。保留报告 unexpected_runtime 后，直接用同一合成安装记录调用 _launch，得到 WinError 267；data_path 长度 260。复制到短的隔离目录后回执为 accepted/active。此处归类为本机验收路径问题，最终验收使用 build/src 和 build/pkg；没有修改产品启动目录、状态要求或重试时限。超长自定义 profile 路径不在本次支持声明内。
+
+## 完整本机闭环最终结果
+
+- 源码：build/src/electron_model_less_20261022T170153Z_1e5bdb/report.json，passed；15 桌面 + 14 插件 + 18 故障检查，3 次应用重启。启动时身份为 1e564d38 加随后提交到 cd3f36fe 的工作区修改，原始 fingerprint 保留，不能称为干净提交验收。
+- 实际 code-only 打包版：build/pkg/electron_model_less_20261022T170614Z_44a275/report.json，passed；15 桌面 + 15 插件（含包内 v0/v1 helper）+ 18 故障检查，3 次应用重启。源码探针为干净 cd3f36fe；exe 是同一整合生产代码的既有构建，锁文件修复通过显式 Python runtime 提供。
+- 正式工具本地 HTTPS 发布闭环：build/pub/057de5788e6a/electron_model_less_20261022T170924Z_62b5d3/report.json，passed；15 桌面 + 27 闭环检查，4 次应用重启、5 次真实安装 Notes 原生 MCP 合约、10 次目录摘要对照。六次发布的 candidate/live 分发校验均通过。起跑为干净 cd3f36fe，运行中只补写文档，代码未变。
+
+最终覆盖：浏览/详情/安装/镜像手动更新、撤回与安全封禁独立语义、明确解除封禁、单/双设置 NUL 损坏、无缓存离线重启、显式安全恢复、旧序号拒绝、原生 MCP 安装产物读写以及生成器输出原字节分发。NUL 注入只发生在测试应用停止后，不是物理断电实验；确认框为受控测试自动确认，没有宣称独立人工审核。
+
+新 head 的 build、source-archive 等远端检查已通过；Windows 必需汇总继续等待完整分片和新增打包发布闭环。本次文档提交的最终 CI/合并回执保存在 PR #256 与不可变外审补充包 `external-review-2026-10-23-merge-final.zip`，不把等待中的状态记成完成。原始 r1/r2/r3 及此前补充包不覆盖。
