@@ -17,7 +17,7 @@ Git checkout of Host commit 1840c8e4f646992ddaebea3139c8895f29743a8f and its
 minimal checker environment installed from tools/requirements-extension-authoring.txt
 with pip --require-hashes. The protocol tools verify the commit, checker inputs,
 Python/platform and dependency-file hash themselves. Use the protocol experiment
-at 153153598a9f94e3b44a477e99c3017f978d13e5 (or a separately reviewed compatible
+at 8fb39ba (submission/delivery tools) (or a separately reviewed compatible
 revision); its real bootstrap remains empty.
 
 Build reference wheels with python -X utf8 tools/probes/extension_author_journey.py,
@@ -116,3 +116,26 @@ rewritten during sanitization.
 Public release still requires independent exact-wheel/asset review, public immutable
 URLs and pins, remote CI, repository governance and an explicit release decision.
 Those are separate from completion of this local functional-prototype journey.
+
+
+## Lightweight submission and maintainer-only runs
+
+Authors need one preflight command and one submission PR. The protocol repository's
+catalog/SUBMISSION.md and short catalog PR template explain the four evidence items;
+existing README/release notes/logs are accepted. Updates reuse ownership and rights
+evidence unless those facts changed. Maintainers prepare catalog records and the
+separate publication PR; authors need no second form or reviewer roster.
+
+The demo now performs preflight, submits an incorrect digest, records protected-base
+CI rejection and revises the same submission before simulated approval. Every stage
+also verifies exact candidate and served index bytes, freshly downloading newly
+available/relocated artifacts. This includes unblocking and restored distribution;
+unavailable retired artifacts do not prevent urgent safety publication.
+
+When the regular desktop is in use, append --publisher-only to the same command.
+This runs Git/preflight/revision/generation/HTTPS delivery without Electron or port
+17777. result.json explicitly says desktop=not_run. This does not replace the
+separate actual desktop qualification. No live application is stopped.
+
+The [2026-10-23 record](verification/extensions/community-preview-batch9-2026-10-23.md)
+separates this maintainer-only run from the earlier complete desktop evidence.
