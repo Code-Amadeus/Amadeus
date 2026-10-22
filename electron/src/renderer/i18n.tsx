@@ -19,10 +19,18 @@ interface I18nContextValue {
   t: (source: string, variables?: TranslateVariables) => string
 }
 
+function interpolate(text: string, variables: TranslateVariables = {}): string {
+  for (const [key, value] of Object.entries(variables)) {
+    text = text.replaceAll(`{${key}}`, () => String(value))
+  }
+  return text
+}
+
+// Without a provider (component fixtures), text stays in the source language with its variables filled in.
 const I18nContext = createContext<I18nContextValue>({
   locale: desktopCatalogFields.AMADEUS_UI_LOCALE.default as UiLocale,
   setLocale: async () => {},
-  t: source => source,
+  t: interpolate,
 })
 
 function normalizeLocale(value: unknown): UiLocale {
@@ -56,13 +64,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLocaleState(normalized)
   }, [])
 
-  const t = useCallback((source: string, variables: TranslateVariables = {}) => {
-    let result = locale === 'zh-CN' ? ZH_CN[source] || source : source
-    for (const [key, value] of Object.entries(variables)) {
-      result = result.replaceAll(`{${key}}`, () => String(value))
-    }
-    return result
-  }, [locale])
+  const t = useCallback((source: string, variables: TranslateVariables = {}) =>
+    interpolate(locale === 'zh-CN' ? ZH_CN[source] || source : source, variables), [locale])
 
   const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t])
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>

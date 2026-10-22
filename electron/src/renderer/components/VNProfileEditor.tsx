@@ -112,14 +112,14 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       <header className="vn-editor-heading">
         <div><h2 id="vn-profile-title" className="settings-panel-title">{t(initial?.id ? 'Edit game profile' : 'Add game')}</h2>
           <p>{t('Set up once. Next time, just start playing.')}</p></div>
-        <button type="button" className="vn-icon-button" aria-label={t('Close')} disabled={busy} onClick={onClose}>×</button>
+        <button type="button" className="icon-button" aria-label={t('Close')} title={t('Close')} disabled={busy} onClick={onClose}><FluentIcon name="Dismiss" size={14} /></button>
       </header>
       <fieldset disabled={busy} className="vn-editor-fields">
         <div className="vn-editor-layout">
           <nav className="settings-section-nav vn-editor-nav" role="tablist" aria-label={t('Profile settings')} aria-orientation="vertical">
             {sections.map((item, index) => <button key={item.id} type="button" role="tab" id={`vn-tab-${item.id}`} aria-controls={`vn-panel-${item.id}`}
               aria-selected={section === item.id} tabIndex={section === item.id ? 0 : -1} onKeyDown={event => moveSection(event, index)} onClick={() => setSection(item.id)}>
-              <FluentIcon name={item.icon} size={15} aria-hidden="true" />{t(item.title)}
+              <FluentIcon name={item.icon} size={16} aria-hidden="true" />{t(item.title)}
             </button>)}
           </nav>
           <div className="vn-editor-body settings-scroll-area">

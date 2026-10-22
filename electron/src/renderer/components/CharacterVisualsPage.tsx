@@ -53,7 +53,7 @@ export function VisualDiagnostic({ diagnostic }: { diagnostic?: VisualSurfaceSta
     </ul>}
     <details className="visuals-note">
       <summary>{t('Runtime details')}</summary>
-      <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 10 }}>{JSON.stringify(diagnostic, null, 2)}</pre>
+      <pre className="visuals-diagnostic-json">{JSON.stringify(diagnostic, null, 2)}</pre>
     </details>
   </div>
 }
@@ -341,7 +341,7 @@ export default function CharacterVisualsPage({ send, subscribe, connected }: Pro
                 {!profile && <option value="">{t('Select a Live2D profile')}</option>}
                 {draft.profiles.map(value => <option key={value.profile_id} value={value.profile_id}>{value.name}</option>)}
               </select>
-              <div className="visuals-actions" style={{ marginTop: 12 }}>
+              <div className="visuals-actions mt-3">
                 <button className="visuals-button" disabled={unavailable} onClick={() => chooseModel(true)}>{t('Add Live2D model…')}</button>
                 <button className="visuals-button danger" disabled={unavailable || !profile} onClick={removeProfile}>{t('Remove profile')}</button>
               </div>
@@ -355,7 +355,7 @@ export default function CharacterVisualsPage({ send, subscribe, connected }: Pro
               <label className="visuals-label" htmlFor="visual-model-path">{t('Model file')}</label>
               <input id="visual-model-path" type="text" value={modelPath} disabled={unavailable}
                 placeholder={t('Absolute path to a .model3.json file')} onChange={event => setModelPath(event.target.value)} />
-              <div className="visuals-actions" style={{ marginTop: 8 }}>
+              <div className="visuals-actions mt-2">
                 <button className="visuals-button" disabled={unavailable || !window.amadeus} onClick={() => chooseModel(false)}>{t('Choose model file…')}</button>
                 <button className="visuals-button" disabled={unavailable || !modelPath.trim()}
                   onClick={() => void run('inspecting', () => inspectPath(modelPath, false))}>{t(profile ? 'Inspect and update' : 'Inspect and add')}</button>
@@ -426,7 +426,7 @@ export default function CharacterVisualsPage({ send, subscribe, connected }: Pro
                 <option value="render">{t('Render')}</option>
                 <option value="wallpaper">{t('Wallpaper')}</option>
               </select>
-              <div className="visuals-actions" style={{ marginTop: 12 }}>
+              <div className="visuals-actions mt-3">
                 <button className="visuals-button primary" disabled={unavailable || !profile} onClick={openPreview}>{t(preview ? 'Refresh preview' : 'Open preview')}</button>
                 <button className="visuals-button" disabled={!preview} onClick={closePreview}>{t('Close preview')}</button>
                 {preview && <span className={'visuals-state ' + (preview.status?.state || '')}>{t(LOAD_LABELS[preview.status?.state || 'loading'])}</span>}
@@ -439,20 +439,20 @@ export default function CharacterVisualsPage({ send, subscribe, connected }: Pro
               {preview?.status?.error && <p className="visuals-banner error" role="alert">{t(preview.status.error)}</p>}
               <VisualDiagnostic diagnostic={preview?.status?.diagnostic} />
               {preview && <p className="visuals-note">{t('The preview uses the selected layout in this viewport; wallpaper cropping is verified in the wallpaper surface.')}</p>}
-              <h5 style={{ marginTop: 16 }}>{t('Registered expressions')}</h5>
+              <h5 className="visuals-subheading">{t('Registered expressions')}</h5>
               <div className="visuals-expression-list">
                 {capability?.expressions.map(name => <button className="visuals-button" key={name}
                   disabled={!previewReady} onClick={() => postPreview('expression', { name })}>{name}</button>)}
                 {!capability?.expressions.length && <span className="visuals-note">{t('No registered expressions')}</span>}
               </div>
               <label className="visuals-label" htmlFor="visual-mouth-test">{t('Mouth test')} · {mouthValue.toFixed(2)}</label>
-              <input id="visual-mouth-test" type="range" style={{ width: '100%' }} min={0} max={1} step={0.01}
+              <input id="visual-mouth-test" type="range" className="w-full" min={0} max={1} step={0.01}
                 value={mouthValue} disabled={!previewReady} onChange={event => {
                   const value = Number(event.target.value)
                   setMouthValue(value)
                   postPreview('mouth', { value })
                 }} />
-              <button className="visuals-button" style={{ marginTop: 8 }} disabled={!previewReady} onClick={resetPreview}>{t('Reset preview')}</button>
+              <button className="visuals-button mt-2" disabled={!previewReady} onClick={resetPreview}>{t('Reset preview')}</button>
             </section>
 
             {profile && <section className="visuals-card">
@@ -478,7 +478,7 @@ export default function CharacterVisualsPage({ send, subscribe, connected }: Pro
             {profile && <section className="visuals-card">
               <h4>{t('Surface layouts')}</h4>
               <p className="visuals-note">{t('Scale is relative to the fitted model. Position is relative to each viewport: −1 to 1.')}</p>
-              <div className="visuals-layouts" style={{ marginTop: 12 }}>
+              <div className="visuals-layouts mt-3">
                 {(['render', 'wallpaper'] as const).map(surface => <div key={surface}>
                   <h5>{t(surface === 'render' ? 'Render' : 'Wallpaper')}</h5>
                   <NumberField disabled={unavailable} label={t('Scale')} value={profile.layouts[surface].scale} min={0.1} max={5} step={0.1}

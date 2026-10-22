@@ -23,7 +23,7 @@ def test_wheel_contains_and_loads_catalog_in_new_nested_folder(tmp_path):
     shutil.copytree(root / 'config/catalog', project / 'config/catalog', dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copy2(root / 'config/environment.py', project / 'config/environment.py')
-    for name in ('manifest.py', 'amadeus-extension.v0.schema.json', 'theme-tokens.v0.json'):
+    for name in ('manifest.py', 'amadeus-extension.v0.schema.json', 'amadeus-extension.v1.schema.json', 'theme-tokens.v0.json'):
         shutil.copy2(root / 'server/extensions' / name, project / 'server/extensions' / name)
     relative = Path('config/catalog/new_capability/nested/fixture.json')
     (project / relative).parent.mkdir(parents=True)
@@ -38,6 +38,7 @@ def test_wheel_contains_and_loads_catalog_in_new_nested_folder(tmp_path):
     with zipfile.ZipFile(next(output.glob('*.whl'))) as wheel:
         assert relative.as_posix() in wheel.namelist()
         assert 'server/extensions/amadeus-extension.v0.schema.json' in wheel.namelist()
+        assert 'server/extensions/amadeus-extension.v1.schema.json' in wheel.namelist()
         assert 'server/extensions/theme-tokens.v0.json' in wheel.namelist()
         for file in (root / 'config/catalog').rglob('*.json'):
             assert file.relative_to(root).as_posix() in wheel.namelist()
@@ -49,5 +50,6 @@ from config.catalog import read_catalog_environment
 from config.environment import EnvironmentReader
 assert read_catalog_environment(EnvironmentReader({}))['PACKAGE_FIXTURE'] == 'loaded'
 from server.extensions.manifest import _validator
-assert _validator().is_valid({}) is False
+for schema in ('amadeus.extension/v0', 'amadeus.extension/v1'):
+    assert _validator(schema).is_valid({}) is False
 ''', str(installed)], cwd=tmp_path, check=True, capture_output=True, text=True)

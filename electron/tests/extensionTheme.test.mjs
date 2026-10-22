@@ -73,7 +73,8 @@ test('image validation bounds canvas and bytes before native decoding, and expor
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-theme-images-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   let calls = 0
-  const { ExtensionThemeResources, imageDimensions } = loadTypeScript(new URL('../src/main/extensionThemes.ts', import.meta.url), {
+  const { imageDimensions } = loadTypeScript(new URL('../src/main/extensionImages.ts', import.meta.url), { electron: {} })
+  const { ExtensionThemeResources } = loadTypeScript(new URL('../src/main/extensionThemes.ts', import.meta.url), {
     electron: { nativeImage: { createFromBuffer: () => { calls++; return { isEmpty: () => false, getSize: () => ({ width: 64, height: 64 }) } } } },
   })
   const resources = new ExtensionThemeResources()

@@ -316,7 +316,8 @@ test('failed stop restores the running Wallpaper button after the pending off ch
   assert.equal(app.host(), true)
 })
 
-function appProjectionProps(component, state) {
+// Evaluates the named App props of a component from the production JSX against a projection snapshot.
+function appProjectionProps(component, state, names = Object.keys(state)) {
   const file = '../src/renderer/App.tsx'
   const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8')
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
@@ -327,19 +328,20 @@ function appProjectionProps(component, state) {
   }
   visit(ast)
   assert.ok(attributes, component)
-  return Object.fromEntries(attributes.filter(node => ts.isJsxAttribute(node) && node.name.text in state).map(node => {
+  return Object.fromEntries(attributes.filter(node => ts.isJsxAttribute(node) && names.includes(node.name.text)).map(node => {
     const expression = node.initializer.expression.getText(ast)
     return [node.name.text, new Function(...Object.keys(state), `return (${expression})`)(...Object.values(state))]
   }))
 }
 
-test('production App exposes pending intent to Sidebar but gives Chat a surface only after a valid URL', async () => {
+test('production App gives the chat render toggle the pending intent but mounts a surface only after a valid URL', async () => {
   const start = deferred(), app = desktop({ renders: [start.promise] })
+  const names = ['renderRequested', 'renderActive', 'renderAssetUrl']
   const opening = app.start('render'); await flush()
-  assert.equal(appProjectionProps('Sidebar', app.state()).renderActive, true)
-  assert.deepEqual(appProjectionProps('ChatPage', app.state()), { renderActive: false, renderAssetUrl: '' })
+  assert.deepEqual(appProjectionProps('ChatPage', app.state(), names), { renderRequested: true, renderActive: false, renderAssetUrl: '' })
   start.resolve({ url: 'render.html' }); await opening
-  assert.deepEqual(appProjectionProps('ChatPage', app.state()), { renderActive: true, renderAssetUrl: 'render.html' })
+  assert.deepEqual(appProjectionProps('ChatPage', app.state(), names), { renderRequested: true, renderActive: true, renderAssetUrl: 'render.html' })
+  assert.deepEqual(Object.keys(appProjectionProps('Sidebar', app.state())), ['wallpaperActive'], 'the sidebar no longer carries Render')
 })
 
 test('Backend Stop Wallpaper stops a Host that survived a renderer reload without starting it first', async () => {

@@ -1,3 +1,4 @@
+import previewBackground from './extension-preview.png'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import SettingsPage from '../../src/renderer/components/SettingsPage'
@@ -23,11 +24,11 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
 window.confirm = () => true
 localStorage.setItem('amadeus.ui.locale', locale)
 localStorage.setItem('amadeus.ui.theme', theme)
-localStorage.setItem('amadeus.settings.section', query.get('section') || 'extensions')
+localStorage.setItem('amadeus.settings.section', query.get('section') || 'general')
 const voice: ExtensionSummary = {
   id: 'org.example.voice', version: '1.0.0', revision: 1, appliedRevision: 1, appliedVersion: '1.0.0', digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
   values: { voice: 'sample-english', model: 'standard', speed: 1, normalize: true }, secretConfigured: { api_key: true }, providers: [], status: 'enabled', restartRequired: false,
-  manifest: { schema: 'amadeus.extension/v0', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' },
+  manifest: { schema: 'amadeus.extension/v1', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' }, icon: 'icon.png',
     description: { en: 'Synthetic remote speech package for UI verification.', 'zh-CN': '用于界面验证的模拟远程语音包。' },
     author: { name: 'Example author' }, runtime: { kind: 'python' }, engines: { amadeus_host_api: '>=0.1,<0.2' },
     contributes: { voice_backend: [{ id: 'speech', contract: 'amadeus.voice.tts/v0', role: 'tts', deployment: 'remote', languages: ['en'], streaming: true }] },
@@ -94,10 +95,11 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
   throw new Error('Unexpected synthetic RPC: ' + method)
 }
 host.amadeus = {
+  getExtensionIcon: async () => 'data:image/png;base64,' + btoa(String.fromCharCode(...new Uint8Array(await (await fetch(previewBackground)).arrayBuffer()))),
   getDesktopTheme: async () => {
     if (!palette) return { selected: theme, base: theme, reason: '' }
     const normalized = validateThemePalette(palette)
-    const image = 'background' in palette ? { mime: 'image/png', base64: btoa(String.fromCharCode(...new Uint8Array(await (await fetch('/fixture-theme-background.png')).arrayBuffer()))) } : undefined
+    const image = 'background' in palette ? { mime: 'image/png', base64: btoa(String.fromCharCode(...new Uint8Array(await (await fetch(previewBackground)).arrayBuffer()))) } : undefined
     return { selected: desktop.values.AMADEUS_UI_THEME, base: palette.base, reason: '',
       theme: { ...normalized, id: desktop.values.AMADEUS_UI_THEME, version: themeManifest.version, revision: 2, image } }
   },
@@ -140,13 +142,17 @@ host.amadeus = {
   },
 }
 host.extensionFixture = { calls, errors, snapshot, setFailSave: (value: boolean) => { failSave = value },
-  refreshRuntime: () => { emit() } }
+  refreshRuntime: () => { emit() },
+  setContributionHealth: (health: string, detail: string) => { Object.assign(runtime[0].contributions[0], { health, detail }); emit() } }
 document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
 function FixtureApp() {
-  const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'plugins' ? 'plugins' : 'settings')
+  // The package manager is the Plugins page; a section in the URL opens Settings there instead.
+  const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'settings' || (!query.get('presentation') && query.get('section')) ? 'settings' : 'plugins')
   const openSettings = (section: string) => { localStorage.setItem('amadeus.settings.section', section); setPage('settings') }
+  // The App sidebar's Settings entry: the smoke uses it once no package card links back.
+  host.extensionFixture.openSettings = openSettings
   return <ThemeProvider><I18nProvider>
     <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
   </I18nProvider></ThemeProvider>

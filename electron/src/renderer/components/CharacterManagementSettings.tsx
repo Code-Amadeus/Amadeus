@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
-import { CardShell } from './SettingsPrimitives'
+import { CardShell, SettingsButton } from './SettingsPrimitives'
 import { characterDraftLengths, characterCatalog, nextStartupCharacter, saveCharacterDraft, saveStartupCharacter, type CharacterLimits, type CharacterDraft, type CharacterRecord, type ActiveCharacter, type CharacterDesktopSettings } from './characterManagement'
 
 interface Props {
@@ -22,7 +22,7 @@ export function CharacterRoleLabel({ character, active, nextStart }: {
       {active ? ` · ${t('Active')}` : ''}
       {nextStart ? ` · ${t('Next start')}` : ''}
     </div>
-    <div className="settings-field-description"><code style={{ overflowWrap: 'anywhere' }}>{character.character_id}</code></div>
+    <div className="settings-field-description"><code className="wrap-anywhere">{character.character_id}</code></div>
     {active && character.valid && character.pending_restart
       ? <div role="status" className="settings-field-description">{t('Modified. Restart the backend to apply.')}</div> : null}
   </>
@@ -108,20 +108,20 @@ export default function CharacterManagementSettings({ send, connected, restartin
         : t('Selecting a startup role or editing a user role takes effect after a backend restart.')}</div>
       {!connected ? <div className="settings-field-description">{t('Connect the backend to list, create or edit roles.')}</div> : null}
       <div className="character-prompt-actions">
-        <button type="button" disabled={disabled} onClick={() => { setError(''); setNotice(''); setEditor({ characterId: null, name: '', persona: '' }) }}>{t('New role')}</button>
-        <button type="button" disabled={disabled} onClick={() => void perform(refresh)}>{t('Refresh roles')}</button>
+        <SettingsButton disabled={disabled} onClick={() => { setError(''); setNotice(''); setEditor({ characterId: null, name: '', persona: '' }) }}>{t('New role')}</SettingsButton>
+        <SettingsButton disabled={disabled} onClick={() => void perform(refresh)}>{t('Refresh roles')}</SettingsButton>
       </div>
-      <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0' }} aria-label={t('Character roles')}>
-        {characters.map(character => <li key={character.character_id} data-character-id={character.character_id} style={{ padding: '10px 0', borderTop: '1px solid var(--card-border)' }}>
+      <ul className="character-role-list" aria-label={t('Character roles')}>
+        {characters.map(character => <li key={character.character_id} data-character-id={character.character_id} className="character-role-item">
           <CharacterRoleLabel character={character} active={runtimeActive?.character_id === character.character_id}
             nextStart={selection.characterId === character.character_id} />
           {!character.valid ? <div role="alert" className="settings-field-description">{t('Invalid role')}: {character.error || t('Validation failed.')}</div> : null}
           {character.edit_error ? <div className="settings-field-description">{t(character.edit_error)}</div> : null}
           <div className="character-prompt-actions">
-            <button type="button" disabled={disabled || !character.valid || selection.locked || !desktop}
-              onClick={() => void select(character.character_id)}>{t('Use at next start')}</button>
-            {!character.builtin ? <button type="button" disabled={disabled || !character.valid || !character.editable}
-              onClick={() => { setError(''); setNotice(''); setEditor({ characterId: character.character_id, name: character.name, persona: character.persona }) }}>{t('Edit role')}</button> : null}
+            <SettingsButton disabled={disabled || !character.valid || selection.locked || !desktop}
+              onClick={() => void select(character.character_id)}>{t('Use at next start')}</SettingsButton>
+            {!character.builtin ? <SettingsButton disabled={disabled || !character.valid || !character.editable}
+              onClick={() => { setError(''); setNotice(''); setEditor({ characterId: character.character_id, name: character.name, persona: character.persona }) }}>{t('Edit role')}</SettingsButton> : null}
           </div>
         </li>)}
       </ul>
@@ -130,8 +130,7 @@ export default function CharacterManagementSettings({ send, connected, restartin
         <label className="settings-field-label" htmlFor="character-role-name">{t('Role name')}</label>
         <input id="character-role-name" type="text" aria-describedby="character-name-limits" aria-invalid={nameTooLong} value={editor.name} disabled={disabled}
           onChange={event => setEditor({ ...editor, name: event.target.value })}
-          className="w-full min-w-0 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
-          style={{ height: 34, marginBottom: 8 }} />
+          className="settings-form-input mb-2" />
         {limits && lengths ? <div id="character-name-limits" className="settings-field-description">
           {t('Name: {count}/{limit} characters. Use a single line.', { count: lengths.name, limit: limits.name_max_chars })}
         </div> : null}
@@ -144,12 +143,12 @@ export default function CharacterManagementSettings({ send, connected, restartin
         </div> : null}
         {nameTooLong || personaTooLong ? <div role="alert" className="settings-field-description">{t('Shorten the highlighted field before saving.')}</div> : null}
         {!editor.characterId ? <div className="character-prompt-actions">
-          <button type="button" disabled={disabled || !kurisuPersona} onClick={() => setEditor({ ...editor, persona: kurisuPersona })}>{t('Prefill from current Kurisu Japanese persona')}</button>
+          <SettingsButton disabled={disabled || !kurisuPersona} onClick={() => setEditor({ ...editor, persona: kurisuPersona })}>{t('Prefill from current Kurisu Japanese persona')}</SettingsButton>
           <span className="settings-field-description">{t('This text may contain Kurisu’s name. Review and edit the visible text before saving your new role.')}</span>
         </div> : null}
         <div className="character-prompt-actions">
-          <button type="button" disabled={disabled || !limits || !editor.name.trim() || nameTooLong || personaTooLong} onClick={() => void save()}>{t(busy ? 'Saving…' : 'Save role')}</button>
-          <button type="button" disabled={busy} onClick={() => setEditor(null)}>{t('Cancel')}</button>
+          <SettingsButton tone="primary" disabled={disabled || !limits || !editor.name.trim() || nameTooLong || personaTooLong} onClick={() => void save()}>{t(busy ? 'Saving…' : 'Save role')}</SettingsButton>
+          <SettingsButton tone="quiet" disabled={busy} onClick={() => setEditor(null)}>{t('Cancel')}</SettingsButton>
         </div>
       </div> : null}
       {error ? <div role="alert" className="settings-field-description">{t(error)}</div> : null}

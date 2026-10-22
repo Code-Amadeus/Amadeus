@@ -51,7 +51,7 @@ export default function VNAbilities({ preset, states, compact = false }: {
       const status = !included ? 'Not included' : state ? state.enabled ? 'Available now' : 'Waiting' : 'Included'
       const detail = !included ? 'Not used for this game type.' : state ? capabilityReason(state.reason, state.enabled) : ability.detail
       return <li key={ability.key} className={!included ? 'excluded' : state?.enabled ? 'available' : 'included'}>
-        <FluentIcon name={icons[ability.key]} size={compact ? 13 : 16} aria-hidden="true" />
+        <FluentIcon name={icons[ability.key]} size={compact ? 14 : 16} aria-hidden="true" />
         <div><strong className={compact ? undefined : 'settings-card-title'}>{t(ability.title)}</strong>{!compact && <small className="settings-card-description">{t(detail)}</small>}</div>
         {!compact && <StatusPill ok={!!state?.enabled} tone={!included || !state ? 'neutral' : undefined}>{t(status)}</StatusPill>}
       </li>

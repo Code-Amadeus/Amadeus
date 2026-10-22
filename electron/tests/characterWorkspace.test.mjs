@@ -81,7 +81,7 @@ function settingsMarkup(section, characterTab = null, connected = false) {
     if (path.endsWith('/i18n.tsx')) return { useI18n: () => ({ locale: 'en-US', t: value => value, setLocale() {} }) }
     if (path.endsWith('/theme.tsx')) return { useTheme: () => ({ theme: 'classic', setTheme() {} }) }
     if (path.endsWith('/FluentIcon.tsx')) return { default: () => null }
-    if (path.endsWith('/activeCharacter.tsx')) return { useActiveCharacter: () => null }
+    if (path.endsWith('/activeCharacter.tsx')) return { useActiveCharacter: () => null, characterInitial: () => 'A' }
     if (path.endsWith('.css')) return {}
     if (cache.has(url.href)) return cache.get(url.href)
     const source = fs.readFileSync(url, 'utf8')

@@ -156,8 +156,10 @@ def test_sdk_failed_initialization_runs_shutdown_once(record):
     assert Path(record["data_path"], "shutdown.txt").read_text() == "closed\n"
 
 
-def test_manifest_subset_and_semantics():
+@pytest.mark.parametrize("schema", ["amadeus.extension/v0", "amadeus.extension/v1"])
+def test_manifest_subset_and_semantics(schema):
     good = manifest()
+    good["schema"] = schema
     assert validate_manifest(good) is good
     bad = copy.deepcopy(good)
     bad["permissions"] = {"host": [{"capability": "conversation.current:read", "reason": "test"}]}

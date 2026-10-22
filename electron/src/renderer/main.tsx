@@ -4,6 +4,7 @@ import App from './App'
 import { I18nProvider } from './i18n'
 import { ThemeProvider } from './theme'
 import './styles/index.css'
+import './styles/workSurface.css'
 
 const workPreviewWindow = new URLSearchParams(window.location.search).get('previewWindow') === '1'
 const nativeTitlebarWindow = new URLSearchParams(window.location.search).get('mainWindow') === '1'

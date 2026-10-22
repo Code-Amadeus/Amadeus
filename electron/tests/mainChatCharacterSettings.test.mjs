@@ -71,9 +71,14 @@ test('launch environment keeps authority and invalid persona values do not persi
 
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
+// SettingsPrimitives stand-ins: a card is a div and a SettingsButton is a plain button.
+const settingsPrimitives = {
+  CardShell: ({ children }) => React.createElement('div', null, children),
+  SettingsButton: ({ tone: _tone, size: _size, ...props }) => React.createElement('button', { type: 'button', ...props }),
+}
 const { default: CharacterEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
   if (name === '../i18n') return { useI18n: () => ({ t: value => value }) }
-  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  if (name === './SettingsPrimitives') return settingsPrimitives
   return createSourceRequire(new URL('../src/renderer/components/MainChatCharacterSettings.tsx', import.meta.url))(name)
 })
 
@@ -111,7 +116,7 @@ test('Chinese editor preserves Kurisu ownership and inactive applicability', () 
   const i18n = compile('../src/renderer/i18n.tsx')
   const { default: LocalizedEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
     if (name === '../i18n') return i18n
-    if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+    if (name === './SettingsPrimitives') return settingsPrimitives
     return createSourceRequire(new URL('../src/renderer/components/MainChatCharacterSettings.tsx', import.meta.url))(name)
   })
   const previous = globalThis.localStorage

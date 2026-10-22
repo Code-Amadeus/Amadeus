@@ -25,6 +25,10 @@ from jsonschema.exceptions import best_match
 SCHEMA_PATH = Path(__file__).with_name("amadeus-extension.v0.schema.json")
 THEME_TOKENS = json.loads(SCHEMA_PATH.with_name("theme-tokens.v0.json").read_text(encoding="utf-8"))
 MANIFEST_NAME = "amadeus-extension.json"
+SCHEMA_PATHS = {
+    "amadeus.extension/v0": SCHEMA_PATH,
+    "amadeus.extension/v1": SCHEMA_PATH.with_name("amadeus-extension.v1.schema.json"),
+}
 MANIFEST_LIMIT_BYTES = 256 * 1024
 SKILL_LIMIT_BYTES = 16 * 1024 * 1024
 
@@ -50,9 +54,9 @@ class Issue:
         return f"{self.code} {self.path}: {self.message}"
 
 
-@lru_cache(maxsize=1)
-def _validator() -> Draft202012Validator:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+@lru_cache(maxsize=2)
+def _validator(schema_name: str) -> Draft202012Validator:
+    schema = json.loads(SCHEMA_PATHS[schema_name].read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
@@ -70,8 +74,11 @@ def _message(error: Any) -> str:
 
 
 def schema_issues(manifest: Any) -> list[Issue]:
+    schema_name = manifest.get("schema") if isinstance(manifest, dict) else None
+    if not isinstance(schema_name, str) or schema_name not in SCHEMA_PATHS:
+        return [Issue("schema", "/schema", "supported manifest schemas: " + ", ".join(SCHEMA_PATHS))]
     issues = []
-    for error in _validator().iter_errors(manifest):
+    for error in _validator(schema_name).iter_errors(manifest):
         # oneOf failures carry the useful explanation in their sub-errors.
         detail = best_match(error.context) if error.context else error
         issues.append(Issue("schema", _pointer(detail.absolute_path), _message(detail)))
@@ -162,6 +169,8 @@ def semantic_issues(manifest: dict[str, Any]) -> list[Issue]:
             "an entry is allowed only when the package contributes a runner kind",
         ))
 
+    if 'icon' in manifest and Path(manifest['icon']).suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
+        issues.append(Issue('P5.package_icon', '/icon', 'Package icons must be PNG/JPEG'))
     for index, theme in enumerate(contributes.get('theme', [])):
         background = theme.get('background')
         if background and Path(background['image']).suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
@@ -346,23 +355,13 @@ def package_issues(manifest: dict[str, Any], package_dir: Path) -> list[Issue]:
     issues = []
     for index, skill in enumerate(manifest["contributes"].get("skill", [])):
         issues.extend(_skill_issues(f"/contributes/skill/{index}/path", package_dir, skill["path"]))
+    if 'icon' in manifest:
+        issues.extend(_package_image_issues('/icon', package_dir, manifest['icon'], 1024 * 1024, 'P5.package_icon'))
     for index, theme in enumerate(manifest['contributes'].get('theme', [])):
         background = theme.get('background')
         if background:
             pointer = f'/contributes/theme/{index}/background/image'
-            found = _package_file_issues(pointer, package_dir, background['image'])
-            issues.extend(found)
-            if not found:
-                image = package_dir / background['image']
-                if image.suffix.lower() not in {'.png', '.jpg', '.jpeg'} or image.stat().st_size > 8 * 1024 * 1024:
-                    issues.append(Issue('P4.theme_image', pointer, 'Theme images must be PNG/JPEG, at most 8 MiB'))
-                else:
-                    with image.open('rb') as stream:
-                        header = stream.read(16)
-                    matches = (image.suffix.lower() == '.png' and header.startswith(b'\x89PNG\r\n\x1a\n')
-                               or image.suffix.lower() in {'.jpg', '.jpeg'} and header.startswith(b'\xff\xd8\xff'))
-                    if not matches:
-                        issues.append(Issue('P4.theme_image', pointer, 'Theme image signature does not match its file type'))
+            issues.extend(_package_image_issues(pointer, package_dir, background['image'], 8 * 1024 * 1024, 'P4.theme_image'))
     for index, server in enumerate(manifest["contributes"].get("mcp_server", [])):
         command = server.get("command", "")
         if server["transport"] != "stdio" or not command.startswith(_PACKAGE_PREFIX):
@@ -371,6 +370,20 @@ def package_issues(manifest: dict[str, Any], package_dir: Path) -> list[Issue]:
         pointer = f"/contributes/mcp_server/{index}/command"
         issues.extend(_package_file_issues(pointer, package_dir, relative))
     return issues
+
+
+def _package_image_issues(pointer: str, package_dir: Path, relative: str, limit: int, code: str) -> list[Issue]:
+    issues = _package_file_issues(pointer, package_dir, relative, missing_code=code)
+    if issues:
+        return issues
+    image = package_dir / relative
+    if image.suffix.lower() not in {'.png', '.jpg', '.jpeg'} or image.stat().st_size > limit:
+        return [Issue(code, pointer, f'Image must be PNG/JPEG, at most {limit // (1024 * 1024)} MiB')]
+    with image.open('rb') as stream:
+        header = stream.read(16)
+    matches = (image.suffix.lower() == '.png' and header.startswith(b'\x89PNG\r\n\x1a\n')
+               or image.suffix.lower() in {'.jpg', '.jpeg'} and header.startswith(b'\xff\xd8\xff'))
+    return [] if matches else [Issue(code, pointer, 'Image signature does not match its file type')]
 
 
 def _walk_to(pointer: str, package_dir: Path, relative: str) -> tuple[Path | None, list[Issue]]:
@@ -403,12 +416,12 @@ def _skill_issues(pointer: str, package_dir: Path, relative: str) -> list[Issue]
     return []
 
 
-def _package_file_issues(pointer: str, package_dir: Path, relative: str) -> list[Issue]:
+def _package_file_issues(pointer: str, package_dir: Path, relative: str, *, missing_code: str = "P3.missing_file") -> list[Issue]:
     target, issues = _walk_to(pointer, package_dir, relative)
     if target is None:
         return issues
     if not target.is_file():
-        return [Issue("P3.missing_file", pointer, f"{relative} does not exist in the package")]
+        return [Issue(missing_code, pointer, f"{relative} does not exist in the package")]
     return []
 
 

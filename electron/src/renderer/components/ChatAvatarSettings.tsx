@@ -1,29 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useI18n } from '../i18n'
 import FluentIcon from './FluentIcon'
-import { useActiveCharacter } from '../activeCharacter'
+import { characterInitial, useActiveCharacter } from '../activeCharacter'
 
 type ChatAvatarRole = 'user' | 'assistant'
 type ChatAvatars = { user: string; assistant: string }
 
 function AvatarPreview({ src, fallback }: { src: string; fallback: string }) {
-  return (
-    <div
-      className="shrink-0 flex items-center justify-center overflow-hidden select-none"
-      style={{
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        color: 'var(--accent)',
-        background: 'var(--surface-alt)',
-        border: '1px solid var(--border)',
-        fontSize: 12,
-        fontWeight: 650,
-      }}
-    >
-      {src ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : fallback}
-    </div>
-  )
+  return <div className="avatar-preview">{src ? <img src={src} alt="" /> : fallback}</div>
 }
 
 export default function ChatAvatarSettings() {
@@ -73,16 +57,16 @@ export default function ChatAvatarSettings() {
     { role: 'user', title: t('Your avatar'), detail: 'Shown beside your messages', fallback: 'U' },
     { role: 'assistant', title: activeCharacter
       ? t('{name} avatar', { name: activeCharacter.short_name }) : t('Assistant avatar'),
-      detail: 'Shown beside Amadeus responses', fallback: Array.from(activeCharacter?.short_name || '')[0] || 'A' },
+      detail: 'Shown beside Amadeus responses', fallback: characterInitial(activeCharacter) },
   ]
 
   return (
-    <div className="setting-card" style={{ background: 'var(--surface)', border: '1px solid var(--card-border)', borderRadius: 11, padding: '4px 12px', boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)' }}>
-      {rows.map((item, index) => {
+    <div className="setting-card settings-list-card">
+      {rows.map(item => {
         const src = avatars[item.role]
         const uploadLabel = busy === item.role ? 'Opening…' : src ? 'Replace image' : 'Upload image'
         return (
-          <div key={item.role} className="flex items-center gap-3" style={{ minHeight: 66, borderTop: index ? '1px solid var(--divider)' : 'none' }}>
+          <div key={item.role} className="avatar-row">
             <AvatarPreview src={src} fallback={item.fallback} />
             <div className="flex-1 min-w-0">
               <div className="settings-card-title">{item.title}</div>
@@ -96,14 +80,14 @@ export default function ChatAvatarSettings() {
               aria-busy={busy === item.role}
               className="avatar-upload-button flex items-center justify-center rounded-md disabled:opacity-40"
             >
-              <FluentIcon name="PhotoUpload" size={18} className={busy === item.role ? 'animate-pulse' : undefined} />
+              <FluentIcon name="PhotoUpload" size={16} className={busy === item.role ? 'animate-pulse' : undefined} />
             </button>
-            {src ? <button onClick={() => void clear(item.role)} disabled={Boolean(busy)} title={`${t('Restore default')} ${item.title}`} aria-label={`${t('Restore default')} ${item.title}`} className="text-[18px] rounded-md disabled:opacity-35" style={{ width: 28, height: 28, color: 'var(--muted)', background: 'transparent', border: 0, lineHeight: 1 }}>×</button> : null}
+            {src ? <button onClick={() => void clear(item.role)} disabled={Boolean(busy)} title={`${t('Restore default')} ${item.title}`} aria-label={`${t('Restore default')} ${item.title}`} className="icon-button"><FluentIcon name="Dismiss" size={14} /></button> : null}
           </div>
         )
       })}
-      <div className="text-[10px] pb-2" style={{ color: 'var(--muted)', lineHeight: '15px' }}>{t("A centered PNG copy is stored in the app's local assets. The original file is never modified.")}</div>
-      {error ? <div className="text-[10.5px] pb-2" style={{ color: 'var(--danger)' }}>{error}</div> : null}
+      <div className="settings-list-card-note">{t("A centered PNG copy is stored in the app's local assets. The original file is never modified.")}</div>
+      {error ? <div className="settings-list-card-error">{error}</div> : null}
     </div>
   )
 }
