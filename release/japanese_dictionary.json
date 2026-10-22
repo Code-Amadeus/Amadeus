@@ -5,7 +5,7 @@
   "archive": "amadeus-japanese-pronunciation-2026.10.22.1-rc2.zip",
   "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
   "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
-  "download_url": null,
+  "download_url": "https://github.com/Code-Amadeus/Amadeus/releases/download/v0.17.1-alpha.1/amadeus-japanese-pronunciation-2026.10.22.1-rc2.zip",
   "files": [
     {
       "path": "assets/text/ja/english/Amadeus-AGPL-3.0.txt",

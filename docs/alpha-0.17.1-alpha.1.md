@@ -90,8 +90,11 @@ The final release gates are:
    [the dictionary guide](japanese_pronunciation_dictionary.md). Code/build success
    does not resolve that product decision.
 5. Explicit publication approval, immutable new-version assets and checksums,
-   plus an accepted HTTPS resource URL for the full tag/manual workflow. No tag,
-   public resource URL or Release publication is created by these notes.
+   plus the pinned HTTPS resource URL for the full tag/manual workflow. The candidate
+   pin nominates the Alpha 1 Release asset URL; it is not live while unpublished.
+   Upload matching assets to the draft Release before publication, then publish the
+   new tag/Release so the full workflow can fetch those exact bytes. This proposed
+   URL is not approval to upload/publish data, and these notes create no tag or Release.
 
 Retain the rc2 designation and all reviewed/unverified distinctions. Do not call
 this an exhaustive pronunciation or voice-quality validation. Follow the
