@@ -1,4 +1,4 @@
-import { chatProviderSupportsImages } from './chatModelCapabilities'
+import { chatProfileConnections, chatProviderSupportsImages } from './chatModelCapabilities'
 
 export type SceneCapabilityState = 'ready' | 'attention' | 'inactive' | 'unknown'
 export type SceneCapabilityImportance = 'core' | 'expected' | 'optional'
@@ -91,17 +91,6 @@ const MODEL_LABELS: Record<string, string> = {
   hybrid3: 'Hybrid local + OpenAI',
 }
 
-const ACTIVE_MODEL_CONNECTIONS: Record<string, string[]> = {
-  deepseek: ['deepseek'],
-  openai: ['openai'],
-  gemini: ['gemini'],
-  bedrock: ['bedrock'],
-  local: ['local'],
-  hybrid: ['hybrid_local', 'bedrock'],
-  hybrid2: ['hybrid_local', 'deepseek'],
-  hybrid3: ['hybrid_local', 'openai'],
-}
-
 function groups(value: unknown): ConfigurationGroup[] {
   return Array.isArray(value) ? value as ConfigurationGroup[] : []
 }
@@ -154,7 +143,7 @@ function mainModelCapability(
   label: string,
 ): SceneCapabilityItem {
   const provider = String(settings.llm_provider || 'deepseek').trim().toLowerCase()
-  const requiredConnections = ACTIVE_MODEL_CONNECTIONS[provider] || [provider]
+  const requiredConnections = chatProfileConnections(provider)
   const runtimeFactsAvailable = Array.isArray(settings.model_connections)
   const available = requiredConnections.length > 0
     && requiredConnections.every(id => groupAvailable(findGroup(modelConnections, id)))
@@ -332,7 +321,7 @@ function sceneVisualCapability(
   const backendFactsAvailable = groups(settings.model_connections).length > 0
   const provider = String(settings.llm_provider || 'deepseek').trim().toLowerCase()
   const modelConnections = groups(settings.model_connections)
-  const requiredConnections = ACTIVE_MODEL_CONNECTIONS[provider] || [provider]
+  const requiredConnections = chatProfileConnections(provider)
   const imageModel = provider === 'deepseek' || provider === 'hybrid2'
     ? fieldValue(findGroup(modelConnections, 'deepseek'), 'DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash')
     : ''

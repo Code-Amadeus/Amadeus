@@ -20,7 +20,7 @@ import CapabilitiesPanel, { RuntimePackages, type RuntimePackageStatus } from '.
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
 import { useI18n, type UiLocale } from '../i18n'
 import { useTheme, type UiTheme } from '../theme'
-import { chatProviderSupportsImages } from './chatModelCapabilities'
+import { chatProfileConnections, chatProviderSupportsImages } from './chatModelCapabilities'
 import {
   buildLocalModelConnectionCatalog,
   buildOptionalModelServiceCatalog,
@@ -45,9 +45,22 @@ interface Props {
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
   connected: boolean
   reconnectBackend: () => Promise<void>
+  /** Settings › Diagnostics content (runtime status, server log and controls), owned by the App. */
+  diagnostics?: ReactNode
 }
 
-type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'extensions' | SceneConfigureSection
+// 'extensions' is the Plugins presentation; Settings itself lists the sections below.
+type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'diagnostics' | 'extensions' | SceneConfigureSection
+const SETTINGS_SECTIONS: Array<[SettingsSection, string, FluentIconName]> = [
+  ['capabilities', 'Capabilities', 'Tiles'],
+  ['general', 'General', 'Setting'],
+  ['characters', 'Characters', 'People'],
+  ['graphics', 'Graphics', 'Video'],
+  ['models', 'Models', 'Robot'],
+  ['voice', 'Voice', 'Microphone'],
+  ['providers', 'Providers', 'Work'],
+  ['diagnostics', 'Diagnostics', 'CommandPrompt'],
+]
 type ModelsPage = 'roles' | 'connections'
 
 type StartupOption = string | { value: string; label: string; disabled?: boolean; unavailable?: boolean }
@@ -302,13 +315,29 @@ function InlineFieldAction({ label, icon, busy = false, tone = 'accent', disable
   )
 }
 
+/**
+ * What a settings row says about its value: only facts that change what the user can do or expect. The
+ * value's source shows when it is .env or locks editing, and a restart note only while a saved value waits
+ * for the next backend start. The strings are i18n keys.
+ */
+export function startupFieldNotes(field: StartupField, desktop: DesktopSettingsSnapshot | null): string[] {
+  const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
+  const environmentLocked = field.key ? Boolean(desktop?.locked?.[field.key]) : true
+  return [
+    field.description || '',
+    source === 'dotenv' ? settingSourceLabel(source) : '',
+    !desktop ? 'editable in Electron app' : environmentLocked ? 'locked' : '',
+    field.restart_required && field.key && desktop?.pendingKeys?.includes(field.key) ? 'Applies after restart' : '',
+    field.type !== 'secret' && field.value === undefined ? 'Value unavailable until backend connects' : '',
+  ].filter(Boolean)
+}
+
 function StartupFieldRow({ field, desktop, onSave }: {
   field: StartupField
   desktop: DesktopSettingsSnapshot | null
   onSave: (field: StartupField, value: string | boolean | null, secret: boolean) => Promise<void>
 }) {
   const { t } = useI18n()
-  const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
   const initial = field.value ?? ''
   const unknown = field.type !== 'secret' && field.value === undefined
   const [draft, setDraft] = useState<string | boolean>(initial)
@@ -342,7 +371,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}{unknown ? ` · ${t('Value unavailable until backend connects')}` : ''}
+          {startupFieldNotes(field, desktop).map(note => t(note)).join(' · ')}
         </div>
       </div>
       <div className="settings-field-control flex items-center gap-1.5 shrink-0">
@@ -607,16 +636,15 @@ function ThemePicker({ value, onChange, disabled, extensions }: { value: string;
   )
 }
 
-export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange, presentation = 'settings', onOpenSettings, onOpenPlugins }: Props) {
+export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange, presentation = 'settings', onOpenSettings, onOpenPlugins, diagnostics }: Props) {
   const { locale, setLocale, t } = useI18n()
   const { selection: selectedTheme, reason: themeReason, appliedVersion: themeVersion, setTheme } = useTheme()
   const [section, setSectionState] = useState<SettingsSection>(() => {
     if (presentation === 'plugins') return 'extensions'
     const saved = window.localStorage.getItem('amadeus.settings.section')
     if (saved === 'visuals') return 'characters'
-    return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers', 'extensions'].includes(String(saved))
-      ? saved as SettingsSection
-      : 'capabilities'
+    // Opens on General unless a section is remembered; a remembered Extensions section now lives in Plugins.
+    return SETTINGS_SECTIONS.some(([id]) => id === saved) ? saved as SettingsSection : 'general'
   })
   const scrollArea = useRef<HTMLDivElement>(null)
   const editors = useRef<Record<string, SettingsEditorState>>({})
@@ -1041,11 +1069,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     const group = modelConnections.find(item => item.id === id)
     return Boolean(group && (typeof group.status_ok === 'boolean' ? group.status_ok : group.configured))
   }
-  const mainModelReady = ({
-    hybrid: ['hybrid_local', 'bedrock'],
-    hybrid2: ['hybrid_local', 'deepseek'],
-    hybrid3: ['hybrid_local', 'openai'],
-  }[mainModelProvider] || [mainModelProvider]).every(modelGroupReady)
+  const mainModelReady = chatProfileConnections(mainModelProvider).every(modelGroupReady)
   const mainModelLabel = modelProviderLabels[mainModelProvider] || mainModelProvider
   const imageModel = mainModelProvider === 'deepseek' || mainModelProvider === 'hybrid2'
     ? String(modelConnections.find(group => group.id === 'deepseek')?.fields
@@ -1250,7 +1274,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           <div>
             <h2 className="settings-page-title">{t(presentation === 'plugins' ? 'Plugins' : 'Settings')}</h2>
             <div className="settings-page-context">
-              {t(presentation === 'plugins' ? 'Install once. Manage contributions and their application state here.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
+              {t(presentation === 'plugins' ? 'Install once. Manage contributions and their application state here.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.' : section === 'diagnostics' ? 'Live runtime status and server diagnostics.'
                 : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
@@ -1277,16 +1301,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
         <div className="settings-layout">
           {presentation !== 'plugins' && <nav className="settings-section-nav" aria-label={t('Settings sections')}>
-            {([
-              ['capabilities', 'Capabilities', 'Tiles'],
-              ['general', 'General', 'Setting'],
-              ['characters', 'Characters', 'People'],
-              ['graphics', 'Graphics', 'Video'],
-              ['models', 'Models', 'Robot'],
-              ['voice', 'Voice', 'Microphone'],
-              ['providers', 'Providers', 'Work'],
-              ['extensions', 'Extensions', 'Tiles'],
-            ] as Array<[SettingsSection, string, FluentIconName]>).map(([id, label, icon]) => (
+            {SETTINGS_SECTIONS.map(([id, label, icon]) => (
               <button key={id} onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined}>
                 <FluentIcon name={icon} size={14} />{t(label)}
               </button>
@@ -1304,6 +1319,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
                 onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
             </SettingsGroup> : null}
+            {section === 'diagnostics' ? diagnostics : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
             ) : null}
@@ -1339,18 +1355,17 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       }} /> : <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
                   </SettingsGroup>
                 ) : null}
-                <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend.">
+                <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend."
+                  action={<SettingsButton onClick={() => onOpenPlugins?.()}>{t('Manage plugins')}</SettingsButton>}>
                   <ThemePicker
                     value={selectedTheme} extensions={desktop?.extensions || []}
                     disabled={Boolean(desktop?.locked?.AMADEUS_UI_THEME)}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
                   {themeReason ? <div role="status" className="settings-field-description">{t(themeReason)}<br />{selectedTheme}{themeVersion ? ` - ${t('Running version')}: ${themeVersion}` : ''}</div> : null}
-                  <button className="settings-button" type="button" onClick={() => onOpenPlugins ? onOpenPlugins() : setSection('extensions')}>{t('Manage plugins')}</button>
                 </SettingsGroup>
-                <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together.">
-                  <button className="character-secondary-button" onClick={() => openCharacters('overview')}>{t('Open Characters')}</button>
-                </SettingsGroup>
+                <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together."
+                  action={<SettingsButton onClick={() => openCharacters('overview')}>{t('Open Characters')}</SettingsButton>} />
                 <div id="settings-language"><SettingsGroup title={catalogGroups.find(group => group.id === 'presentation')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'presentation')!.description['en-US']}>
                   {interfaceConfiguration.fields.filter(field => field.key !== 'AMADEUS_UI_THEME').map(field => field.key === 'AMADEUS_UI_LOCALE'
                     ? <ComboCard key={field.key} icon="Language" title={field.label} content={field.description || ''} value={locale}
@@ -1467,9 +1482,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     <SettingsGroup title="Local model runtimes" detail="Local and hybrid endpoints are configured independently from remote API credentials.">
                       {localModelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
                     </SettingsGroup>
-                    <SettingsGroup title="Character knowledge" detail="Reference knowledge and history boundaries are managed in Characters.">
-                      <button className="character-secondary-button" onClick={() => openCharacters('knowledge')}>{t('Open character knowledge')}</button>
-                    </SettingsGroup>
+                    <SettingsGroup title="Character knowledge" detail="Reference knowledge and history boundaries are managed in Characters."
+                      action={<SettingsButton onClick={() => openCharacters('knowledge')}>{t('Open character knowledge')}</SettingsButton>} />
                   </div>
                 )}
                 </div>
@@ -1484,9 +1498,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <BoundaryNote title="Shared voice setup">
                   {t('All roles use this voice setup. Model weights, voice profiles, reference audio and speech services are configured here. Changing personality does not change the voice.')}
                 </BoundaryNote>
-                <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings.">
+                <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings."
+                  action={<SettingsButton onClick={() => onOpenPlugins?.()}>{t('Manage community voices')}</SettingsButton>}>
                   {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Play" collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
-                  <div className="settings-form-actions-end"><button className="settings-button" type="button" onClick={() => setSection('extensions')}>{t('Manage community voices')}</button></div>
                   {typeof speechBackendOption === 'object' && speechBackendOption.unavailable ? <BoundaryNote title="Unavailable voice">{t('The saved speech engine is unavailable. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</BoundaryNote> : null}
                   {selectedExtensionVoice ? <BoundaryNote title="Extension voice compatibility">
                     <div>{t('Declared languages')}: {(selectedExtensionVoice.voice.languages || []).join(', ')}</div>

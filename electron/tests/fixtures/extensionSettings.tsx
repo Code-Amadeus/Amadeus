@@ -23,7 +23,7 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
 window.confirm = () => true
 localStorage.setItem('amadeus.ui.locale', locale)
 localStorage.setItem('amadeus.ui.theme', theme)
-localStorage.setItem('amadeus.settings.section', query.get('section') || 'extensions')
+localStorage.setItem('amadeus.settings.section', query.get('section') || 'general')
 const voice: ExtensionSummary = {
   id: 'org.example.voice', version: '1.0.0', revision: 1, appliedRevision: 1, appliedVersion: '1.0.0', digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
   values: { voice: 'sample-english', model: 'standard', speed: 1, normalize: true }, secretConfigured: { api_key: true }, providers: [], status: 'enabled', restartRequired: false,
@@ -145,8 +145,11 @@ document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
 function FixtureApp() {
-  const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'plugins' ? 'plugins' : 'settings')
+  // The package manager is the Plugins page; a section in the URL opens Settings there instead.
+  const [page, setPage] = React.useState<'plugins' | 'settings'>(query.get('presentation') === 'settings' || (!query.get('presentation') && query.get('section')) ? 'settings' : 'plugins')
   const openSettings = (section: string) => { localStorage.setItem('amadeus.settings.section', section); setPage('settings') }
+  // The App sidebar's Settings entry: the smoke uses it once no package card links back.
+  host.extensionFixture.openSettings = openSettings
   return <ThemeProvider><I18nProvider>
     <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
   </I18nProvider></ThemeProvider>

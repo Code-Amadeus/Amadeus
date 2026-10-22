@@ -13,6 +13,7 @@ interface Props {
   wallpaperActive: boolean
 }
 
+/** Settings › Diagnostics: runtime status, the server log and explicit projection controls. */
 export default function BackendPage({ projections, send, subscribe, connected, renderActive, wallpaperActive }: Props) {
   const { t } = useI18n()
   const [status, setStatus] = useState<Record<string, unknown>>({})
@@ -80,19 +81,8 @@ export default function BackendPage({ projections, send, subscribe, connected, r
 
   return (
     <div className="backend-page">
-      <header className="backend-header">
-        <div className="min-w-0 flex-1">
-          <h2 className="settings-page-title">{t('Backend')}</h2>
-          <p className="settings-page-context">
-            {t('Live runtime status and server diagnostics.')}
-          </p>
-        </div>
-        <span className="backend-connection" data-state={connected ? 'ok' : 'error'}>
-          {dot(connected)} {t(connected ? 'Connected' : 'Offline')}
-        </span>
-      </header>
-
       <div className="backend-chips">
+        {statusChip('Backend', connected, t(connected ? 'Connected' : 'Offline'))}
         {statusChip('VTS', status.vts_connected)}
         {statusChip('TTS', status.tts_ready)}
         {statusChip('ASR', status.asr_ready)}

@@ -4,8 +4,6 @@
 .character-workspace-title p { margin:0; color:var(--muted); font-size:var(--font-caption); line-height:1.6; }
 .character-active-label { display:flex; flex-direction:column; gap:3px; color:var(--muted); font-size:var(--font-caption); }
 .character-active-label strong { color:var(--text); font-size:var(--font-small); font-weight:var(--weight-strong); max-width:240px; overflow-wrap:anywhere; }
-.character-secondary-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:8px 11px; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--text); font-size:var(--font-caption); cursor:pointer; }
-.character-secondary-button:hover { background:var(--hover); }
 .character-workspace-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--border); margin:0 0 22px; padding-bottom:8px; }
 .character-workspace-tabs button { display:flex; align-items:center; gap:7px; border:0; border-radius:var(--radius-control); padding:9px 11px; color:var(--muted); background:transparent; cursor:pointer; font-size:var(--font-caption); }
 .character-workspace-tabs button:hover { background:var(--hover); }

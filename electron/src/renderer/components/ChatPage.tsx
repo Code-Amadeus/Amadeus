@@ -44,7 +44,10 @@ import {
   chatTranslationKey,
 } from './chatTranslationState'
 import { useI18n } from '../i18n'
+import { useActiveCharacter } from '../activeCharacter'
 import { startupCharacterSelection } from '../../shared/characterStartup'
+import { catalogOptionValues, desktopCatalogFields } from '../../shared/configCatalog.js'
+import { configuredChatProfiles } from './chatModelCapabilities'
 import { characterCatalog, type CharacterRecord } from './characterManagement'
 import { visualStatusFromFrame, type VisualSurfaceStatus } from './characterVisuals'
 
@@ -54,7 +57,12 @@ interface Props {
   connected: boolean
   renderActive: boolean       // visibility of the embedded character surface
   renderAssetUrl: string      // URL served by backend AssetServer
+  renderRequested: boolean    // projection intent: on while the render surface is starting or shown
+  onToggleRender: () => void
 }
+
+// Every main-chat model profile the backend accepts, in catalog order.
+const CHAT_PROFILES = catalogOptionValues(desktopCatalogFields.LLM_PROVIDER) || []
 
 interface VisualAttachment {
   name: string
@@ -138,7 +146,7 @@ function clampChatWidth(width: number, totalWidth = Number.POSITIVE_INFINITY): n
 }
 
 
-export default function ChatPage({ send, subscribe, connected, renderActive, renderAssetUrl }: Props) {
+export default function ChatPage({ send, subscribe, connected, renderActive, renderAssetUrl, renderRequested, onToggleRender }: Props) {
   const { t } = useI18n()
   const [messages, setMessages] = useState<Message[]>([])
   const [chatTranslationEnabled, setChatTranslationEnabled] = useState(false)
@@ -152,6 +160,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [streaming, setStreaming] = useState(false)
   const [input, setInput] = useState('')
   const [provider, setProvider] = useState('deepseek')
+  // Configured model connection groups from the backend; null until the first config arrives.
+  const [modelConnections, setModelConnections] = useState<Array<{ id: string; configured?: boolean }> | null>(null)
+  const activeCharacter = useActiveCharacter()
   const [canUseMultimodal, setCanUseMultimodal] = useState(false)
   const [chatAvatars, setChatAvatars] = useState({ user: '', assistant: '' })
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
@@ -598,6 +609,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     if (!connected) return
     send('system.get_config', {}).then(res => {
       if (res?.llm_provider) setProvider(String(res.llm_provider))
+      if (Array.isArray(res?.model_connections)) setModelConnections(res.model_connections)
       setCanUseMultimodal(res?.chat_supports_images === true)
       // The selected mode survives disabling vision; it is not the enabled state.
       setVisionVideoMode(res?.vision_enabled === true && res?.vision_mode === 'watching')
@@ -606,6 +618,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     const unsub = subscribe('system.config', (p) => {
       const values = (p.values ?? p) as Record<string, unknown>
       if (values.llm_provider !== undefined) setProvider(String(values.llm_provider))
+      const connections = p.model_connections ?? values.model_connections
+      if (Array.isArray(connections)) setModelConnections(connections)
       if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
       setVisionVideoMode(values.vision_enabled === true && values.vision_mode === 'watching')
     })
@@ -1295,6 +1309,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         ? t('{name} will be sent with the next message. Click to choose another image; hold for watching; right-click for window.', { name: pendingVisualAttachment.name })
         : t('Choose an image for the next message. Hold for watching; right-click for window.')
 
+  // The composer lists configured model profiles by their raw IDs; the current one always stays listed.
+  const chatProfiles = useMemo(() => configuredChatProfiles(CHAT_PROFILES, modelConnections, provider), [modelConnections, provider])
+
   const activitiesByTurn = useMemo(() => {
     const grouped = new Map<string, ChatWorkActivityRun[]>()
     for (const activity of workActivities) {
@@ -1442,6 +1459,15 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             )}
           </div>
         )}
+        <SettingsButton
+          size="small"
+          aria-pressed={renderRequested}
+          disabled={!connected}
+          onClick={onToggleRender}
+          title={t('Character render')}
+        >
+          <FluentIcon name={renderRequested ? 'Movie' : 'Video'} size={14} /> {t('Render')}
+        </SettingsButton>
         <button
           type="button"
           onClick={() => { void handleNewSession() }}
@@ -1456,9 +1482,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       {/* Chat messages */}
       <div className="chat-scroll-area chat-messages">
         <div className="chat-message-list">
-          {messages.length === 0 && !streaming && (
-            <p className="chat-empty">{t('Type a message to start.')}</p>
-          )}
+          {messages.length === 0 && !streaming && (activeCharacter
+            ? <p className="chat-empty chat-empty-title">{t('Start a conversation with {name}', { name: activeCharacter.short_name })}</p>
+            : <p className="chat-empty">{t('Type a message to start.')}</p>)}
           {messages.map((msg, i) => {
             const key = msg.messageId || `${msg.role}-${msg.turnId || 'local'}-${i}`
             const attached = msg.role === 'assistant' && msg.turnId && activityAnchors.get(msg.turnId) === i
@@ -1484,41 +1510,46 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               </Fragment>
             )
           })}
-          {attentionRequests[0] && (
-            <div
-              role="dialog"
-              aria-label={attentionRequests[0].title}
-              className="chat-attention"
-            >
-              <strong className="chat-attention-title">{attentionRequests[0].title}</strong>
-              {attentionRequests[0].prompt && (
-                <p className="chat-attention-prompt">
-                  {attentionRequests[0].prompt}
-                </p>
-              )}
-              <div className="chat-attention-options">
-                {attentionRequests[0].options.map(option => (
-                  <SettingsButton
-                    key={option.id}
-                    disabled={Boolean(attentionResolving)}
-                    onClick={() => { void resolveAttention(attentionRequests[0].id, option.id) }}
-                    title={option.description}
-                  >
-                    {option.label}{attentionResolving === option.id ? '…' : ''}
-                  </SettingsButton>
-                ))}
-              </div>
-              {attentionError && (
-                <p className="chat-attention-error">{attentionError}</p>
-              )}
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input bar */}
+      {/* Input bar. A pending approval stays pinned above the composer instead of scrolling away. */}
       <div className="chat-composer-bar">
+        {attentionRequests[0] && (
+          <div
+            role="dialog"
+            aria-label={attentionRequests[0].title}
+            className="chat-attention"
+          >
+            <div className="chat-attention-header">
+              <strong className="chat-attention-title">{attentionRequests[0].title}</strong>
+              {attentionRequests.length > 1 && (
+                <span className="chat-attention-more">{t('{count} more waiting', { count: attentionRequests.length - 1 })}</span>
+              )}
+            </div>
+            {attentionRequests[0].prompt && (
+              <p className="chat-attention-prompt">
+                {attentionRequests[0].prompt}
+              </p>
+            )}
+            <div className="chat-attention-options">
+              {attentionRequests[0].options.map(option => (
+                <SettingsButton
+                  key={option.id}
+                  disabled={Boolean(attentionResolving)}
+                  onClick={() => { void resolveAttention(attentionRequests[0].id, option.id) }}
+                  title={option.description}
+                >
+                  {option.label}{attentionResolving === option.id ? '…' : ''}
+                </SettingsButton>
+              ))}
+            </div>
+            {attentionError && (
+              <p className="chat-attention-error">{attentionError}</p>
+            )}
+          </div>
+        )}
         <div className="chat-composer">
           <div className="chat-composer-body">
             {artifactContext && (
@@ -1571,7 +1602,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
             <div className="chat-composer-tools">
               <select value={provider} onChange={e => { void handleProviderChange(e.target.value) }} className="chat-select chat-select-model">
-                {['local', 'deepseek', 'openai', 'gemini', 'bedrock', 'hybrid', 'hybrid2', 'hybrid3'].map(p => <option key={p} value={p}>{p}</option>)}
+                {chatProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <div className="flex-1" />
 

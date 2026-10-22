@@ -24,11 +24,16 @@ export function StatusPill({ ok, tone, children }: { ok: boolean; tone?: 'succes
   return <span className="settings-status-pill" data-tone={tone || (ok ? 'success' : 'warning')}>{children}</span>
 }
 
-export function SettingsGroup({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
+/**
+ * A titled settings group. `action` (a SettingsButton) sits right of the title and description, like the
+ * page header's restart button; a group that only links elsewhere has an action and no body.
+ */
+export function SettingsGroup({ title, detail, action, children }: { title: string; detail?: string; action?: ReactNode; children?: ReactNode }) {
   return (
     <section>
-      <GroupTitle detail={detail}>{title}</GroupTitle>
-      <div className="settings-group-body">{children}</div>
+      {action ? <div className="settings-group-header"><GroupTitle detail={detail}>{title}</GroupTitle>{action}</div>
+        : <GroupTitle detail={detail}>{title}</GroupTitle>}
+      {children ? <div className="settings-group-body">{children}</div> : null}
     </section>
   )
 }

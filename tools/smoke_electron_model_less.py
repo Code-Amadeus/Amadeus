@@ -187,26 +187,32 @@ async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, insp
     await _wait_enabled(chat_input, timeout=timeout)
     checks["chat_connected"] = True
 
-    await page.get_by_role("button", name="Backend", exact=True).click()
-    await page.get_by_role("heading", name="Backend", exact=True).wait_for(
+    # Backend status lives in Settings › Diagnostics.
+    await page.get_by_role("button", name="Settings", exact=True).click()
+    await page.get_by_role("button", name="Diagnostics", exact=True).click()
+    await page.get_by_role("heading", name="Server log", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
     await page.get_by_text("Connected", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    checks["backend_page_connected"] = True
+    checks["backend_diagnostics_connected"] = True
 
-    await expect(page.get_by_role('button', name='Plugins', exact=True)).to_have_count(0)
+    # Plugins is a sidebar page whether the sidebar is expanded or collapsed; General still links to it.
+    plugins = page.get_by_role('button', name='Plugins', exact=True)
+    await expect(plugins).to_have_count(1)
     await page.get_by_role('button', name='Collapse navigation', exact=True).click()
-    await expect(page.get_by_role('button', name='Plugins', exact=True)).to_have_count(0)
+    await expect(plugins).to_have_count(1)
     await page.get_by_role('button', name='Expand navigation', exact=True).click()
-    checks['experimental_plugins_hidden_from_sidebar'] = True
+    await plugins.click()
+    await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    checks['plugins_in_sidebar'] = True
     await page.get_by_role('button', name='Settings', exact=True).click()
     await page.get_by_role('button', name='General', exact=True).click()
     await page.get_by_role('button', name='Manage plugins', exact=True).click()
     await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
-    await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
-    checks['plugin_management_retained_in_settings'] = True
+    checks['settings_links_to_plugins'] = True
 
     # Establish an actual transition, checking IPC results before any native key.
     for theme in ('classic', 'wallpaper-slice'):

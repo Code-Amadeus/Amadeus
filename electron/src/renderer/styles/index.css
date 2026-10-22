@@ -479,7 +479,9 @@ b, strong { font-weight: var(--weight-strong); }
   background-clip: content-box;
 }
 
+/* Settings measure their own width: the main sidebar takes 220px of the window when expanded. */
 .settings-scroll-area {
+  container: settings-area / inline-size;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--muted) 22%, transparent) transparent;
 }
@@ -512,7 +514,7 @@ b, strong { font-weight: var(--weight-strong); }
 .settings-page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .settings-saving { color: var(--accent); font-size: var(--font-caption); }
 .settings-layout { display: flex; align-items: flex-start; gap: 24px; width: 100%; }
-.settings-main { flex: 1; min-width: 0; max-width: 760px; }
+.settings-main { container: settings-main / inline-size; flex: 1; min-width: 0; max-width: 760px; }
 .settings-main[data-wide] { max-width: none; }
 .settings-section-nav { position: sticky; top: 16px; display: flex; flex-shrink: 0; flex-direction: column; gap: 2px; width: 138px; }
 .settings-section-nav > button {
@@ -620,6 +622,11 @@ html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-page-
   font-size: var(--font-small);
   line-height: 17px;
 }
+
+/* A group's own action (Manage plugins, Open Characters…) sits beside its title, like the page header button. */
+.settings-group-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.settings-group-header > :first-child { flex: 1; min-width: 0; }
+.settings-group-header > .settings-button { flex-shrink: 0; white-space: nowrap; }
 
 .settings-group-body {
   display: flex;
@@ -1755,6 +1762,8 @@ textarea.settings-form-input { display: block; resize: vertical; }
 .settings-form-input:disabled, .settings-row-control:disabled, fieldset:disabled .settings-form-input { opacity: .55; }
 .settings-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: inherit; font-size: var(--font-body); line-height: 18px; cursor: pointer; }
 .settings-button[data-size='small'] { gap: 4px; min-height: 26px; padding: 3px 8px; font-size: var(--font-caption); line-height: 16px; }
+/* A toggle button (render in the chat header) shows its on state with the accent. */
+.settings-button[aria-pressed='true'] { border-color: var(--accent); background: var(--selected-fill); color: var(--accent); }
 .settings-button:hover:not(:disabled) { background: var(--focus-fill); border-color: var(--border-strong); }
 .settings-button[data-tone='primary'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent, white); font-weight: var(--weight-strong); }
 .settings-button[data-tone='primary']:hover:not(:disabled) { filter: brightness(1.08); }
@@ -1783,6 +1792,11 @@ textarea.settings-form-input { display: block; resize: vertical; }
 .settings-connection-editor-heading { padding: 16px; border-bottom: 1px solid var(--divider); }
 .settings-connection-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0; padding-top: 12px; font-size: var(--font-caption); overflow-wrap: anywhere; }
 .extension-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.extension-card-controls { display: flex; flex-shrink: 0; align-items: center; gap: 10px; }
+/* The package editor opens inside its card: the card is the frame, the form adds a divider. */
+.extension-card-editor { margin-top: 8px; border-top: 1px solid var(--divider); }
+.extension-card-editor .settings-form-body { padding: 0; }
+.extension-card-editor .settings-form-footer { padding: 12px 0 0; border-radius: 0; }
 .extension-package-identity, .extension-detail { overflow-wrap: anywhere; }
 .extension-contributions { margin: 0 0 12px; padding: 0; list-style: none; color: var(--muted); font-size: var(--font-caption); line-height: 18px; }
 .extension-contributions li { padding: 10px 0; border-top: 1px solid var(--divider); overflow-wrap: anywhere; }
@@ -1800,31 +1814,42 @@ textarea.settings-form-input { display: block; resize: vertical; }
   .settings-form-advanced > summary .settings-meta-text { display: block; margin-left: 0; }
 }
 
-@media (max-width: 980px) {
+/* Below nav 138 + gap 24 + content 760 + padding 48 = 970px the content column would shrink, so the sections
+   become tabs above it, kept visible while the page scrolls. They fit one row at the default window and wrap
+   when narrower, so every section stays in view without sideways scrolling. */
+@container settings-area (max-width: 969px) {
   .settings-layout {
     flex-direction: column;
-    gap: 22px;
+    gap: 16px;
   }
 
   .settings-section-nav {
-    position: static;
-    width: 100% !important;
+    top: 0;
+    z-index: 5;
+    width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 2px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--divider);
+    background: var(--bg);
   }
 
   .settings-section-nav > button {
-    flex: 1 1 110px;
+    flex: 0 0 auto;
     justify-content: center;
+    padding: 0 12px;
+    white-space: nowrap;
   }
 
   .settings-main {
     width: 100%;
-    max-width: none !important;
+    max-width: none;
   }
 }
 
-@media (max-width: 720px) {
+/* A narrow content column stacks field rows and runs card grids in one column. */
+@container settings-main (max-width: 560px) {
   .settings-theme-picker {
     grid-template-columns: 1fr;
   }
@@ -1871,12 +1896,12 @@ textarea.settings-form-input { display: block; resize: vertical; }
   }
 
   .settings-field-control {
-    width: 100% !important;
-    max-width: none !important;
+    width: 100%;
+    max-width: none;
   }
 }
 
-@media (max-width: 520px) {
+@container settings-main (max-width: 360px) {
   .capability-scene-grid {
     grid-template-columns: 1fr;
   }
@@ -2058,14 +2083,18 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--focus-fill);
 .chat-messages { flex: 1; overflow-y: auto; background: var(--bg); }
 .chat-message-list { display: flex; flex-direction: column; padding: 14px 0 12px; }
 .chat-empty { margin-top: 80px; color: var(--faint); font-size: var(--font-body); text-align: center; }
+.chat-empty-title { color: var(--text); font-size: var(--font-subtitle); font-weight: var(--weight-strong); }
+/* A pending approval is pinned above the composer. */
 .chat-attention {
-  margin: 8px clamp(24px, 2.5vw, 34px);
+  margin: 0 0 8px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-container);
   background: var(--surface-alt);
 }
-.chat-attention-title { display: block; color: var(--text); font-size: var(--font-small); font-weight: var(--weight-strong); }
+.chat-attention-header { display: flex; align-items: baseline; gap: 8px; }
+.chat-attention-title { color: var(--text); font-size: var(--font-small); font-weight: var(--weight-strong); }
+.chat-attention-more { flex-shrink: 0; margin-left: auto; color: var(--muted); font-size: var(--font-caption); }
 .chat-attention-prompt { margin-top: 5px; color: var(--muted); font-size: var(--font-small); }
 .chat-attention-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chat-attention-error { margin-top: 7px; color: var(--danger); font-size: var(--font-caption); }
@@ -2295,16 +2324,14 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--focus-fill);
 .status-chip-detail { color: var(--faint); }
 
 /* ── Backend diagnostics (BackendPage.tsx) ── */
-.backend-page { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 16px 18px 18px; background: var(--bg); }
-.backend-header { display: flex; flex-shrink: 0; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
-.backend-connection { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; height: 29px; font-size: var(--font-caption); font-weight: var(--weight-strong); }
-.backend-connection[data-state='ok'] { color: var(--success); }
-.backend-connection[data-state='error'] { color: var(--danger); }
+.backend-page { display: flex; flex-direction: column; }
 .backend-chips { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
-.backend-log { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-container); background: var(--surface); }
-.backend-log-header { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-height: 43px; padding: 6px 10px 6px 13px; border-bottom: 1px solid var(--border); }
-.backend-log-title { color: var(--text); font-size: var(--font-body); font-weight: var(--weight-strong); }
-.backend-log-meta { color: var(--faint); font-size: var(--font-caption); }
+.backend-log { display: flex; flex-direction: column; height: min(60vh, 460px); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-container); background: var(--surface); }
+/* A narrow settings column wraps the header instead of breaking its words; Refresh stays at the right edge. */
+.backend-log-header { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 43px; padding: 6px 10px 6px 13px; border-bottom: 1px solid var(--border); }
+.backend-log-header > .settings-button { margin-left: auto; }
+.backend-log-title { color: var(--text); font-size: var(--font-body); font-weight: var(--weight-strong); white-space: nowrap; }
+.backend-log-meta { color: var(--faint); font-size: var(--font-caption); white-space: nowrap; }
 /* The log viewer is the one console surface with its own (terminal) palette; it stays local to this class. */
 .backend-log-view {
   --log-background: #1E1E2E;

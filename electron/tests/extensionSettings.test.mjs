@@ -238,15 +238,38 @@ test('removal requests data deletion only when explicitly selected', async t => 
   assert.deepEqual(options, { deleteData: true })
 })
 
-test('disable and removal warn about the selected voice while preserving its identity', t => {
-  const page = harness({}, { selectedVoiceBackend: 'org.example.voice/speech' })
+const SELECTED_VOICE_WARNING = 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'
+const cardSwitch = (page, id = 'org.example.voice') => page.find(node => node.props?.id === `extension-enabled-${id}` && node.props.onChange)
+
+test('turning off the package that holds the saved voice asks first, and removal warns too', async t => {
+  const updates = []
+  const page = harness({ updateExtension: async update => { updates.push(update); return { ok: true, settings: {} } } },
+    { selectedVoiceBackend: 'org.example.voice/speech' })
   t.after(() => page.restore())
-  page.button('Configure extension').props.onClick(); page.render()
-  page.find(node => node.props?.id === 'extension-enabled' && node.props.onChange).props.onChange(false); page.render()
-  assert.ok(page.find(node => node.props?.children === 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'))
-  page.button('Cancel').props.onClick(); page.render()
+  cardSwitch(page).props.onChange(false); page.render()
+  assert.ok(page.find(node => node.props?.children === SELECTED_VOICE_WARNING))
+  assert.deepEqual(updates, [], 'nothing is saved before confirming')
+  page.button('Keep enabled').props.onClick(); page.render()
+  assert.equal(page.find(node => node.props?.children === SELECTED_VOICE_WARNING), undefined)
+  cardSwitch(page).props.onChange(false); page.render()
+  page.button('Disable').props.onClick(); await flush(); page.render()
+  assert.deepEqual(updates, [{ id: 'org.example.voice', enabled: false, values: {}, secrets: {}, providers: ['pi'] }])
   page.button('Remove').props.onClick(); page.render()
-  assert.ok(page.find(node => node.props?.children === 'This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.'))
+  assert.ok(page.find(node => node.props?.children === SELECTED_VOICE_WARNING))
+})
+
+test('the card switch changes only enabled, and a form save never sends enabled', async t => {
+  const updates = []
+  const page = harness({ updateExtension: async update => { updates.push(update); return { ok: true, settings: {} } } })
+  t.after(() => page.restore())
+  cardSwitch(page).props.onChange(false); await flush(); page.render()
+  assert.deepEqual(updates, [{ id: 'org.example.voice', enabled: false, values: {}, secrets: {}, providers: ['pi'] }])
+  page.button('Configure extension').props.onClick(); page.render()
+  assert.ok(page.find(node => node.type === 'form'), 'the editor opens inside the package card')
+  page.find(node => node.props?.id === 'extension-config-speed' && node.type === 'input').props.onChange({ target: { value: '1.75' } }); page.render()
+  page.find(node => node.type === 'form').props.onSubmit({ preventDefault() {} }); await flush(); page.render()
+  assert.equal('enabled' in updates[1], false, 'a switch flipped while the form was open stays as saved')
+  assert.deepEqual(updates[1].values, { speed: 1.75 })
 })
 
 test('pending installation reports a busy navigation guard; failed installation leaves saved packages intact', async t => {

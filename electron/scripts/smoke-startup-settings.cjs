@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
     ['AEC_REALTIME_BARGE_IN', 'Allow microphone interruption'],
   ]) {
     const expected = store.backendEnvironment(environment)[key] === 'true'
-    assert.equal(await win.webContents.executeJavaScript(`document.querySelector('select[aria-label="${label}"]').value`), String(expected))
+    assert.equal(await win.webContents.executeJavaScript(`document.querySelector('button[role="switch"][aria-label="${label}"]').getAttribute('aria-checked')`), String(expected))
   }
   assert.equal(store.backendEnvironment(environment).AEC_REALTIME_DELAY_MS, undefined)
   console.log('PASS offline Wake/AEC controls agree with desktop launch defaults and preserve automatic delay selection')
@@ -168,15 +168,14 @@ app.whenReady().then(async () => {
     assert.equal(new DesktopSettingsStore(file, '').backendEnvironment({})[key], value)
   }
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Graphics').click(); true`)
-  await until(`document.querySelector('select[aria-label="Sample animation textures"]')?.value === 'true'`)
+  await until(`document.querySelector('button[role="switch"][aria-label="Sample animation textures"]')?.getAttribute('aria-checked') === 'true'`)
   await win.webContents.executeJavaScript(`(() => {
     const select = document.querySelector('select[aria-label="Graphics profile"]'); select.value = 'power_saving';
     select.dispatchEvent(new Event('change', { bubbles: true })); return true;
   })()`)
-  await until(`document.querySelector('select[aria-label="Sample animation textures"]')?.value === 'false'`)
+  await until(`document.querySelector('button[role="switch"][aria-label="Sample animation textures"]')?.getAttribute('aria-checked') === 'false'`)
   await win.webContents.executeJavaScript(`(() => {
-    const select = document.querySelector('select[aria-label="Sample animation textures"]'); select.value = 'true';
-    select.dispatchEvent(new Event('change', { bubbles: true })); return true;
+    document.querySelector('button[role="switch"][aria-label="Sample animation textures"]').click(); return true;
   })()`)
   await until(`(async () => (await window.amadeus.getDesktopSettings()).values.RENDER_TEXTURE_SAMPLING === 'true')()`)
   await win.webContents.executeJavaScript(`(() => {
@@ -184,7 +183,7 @@ app.whenReady().then(async () => {
     select.dispatchEvent(new Event('change', { bubbles: true })); return true;
   })()`)
   await until(`Boolean(document.querySelector('input[aria-label="Frame-rate limit"]'))`)
-  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('select[aria-label="Sample animation textures"]').value`), 'true')
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('button[role="switch"][aria-label="Sample animation textures"]').getAttribute('aria-checked')`), 'true')
   console.log('PASS packaged MiMo/OpenAI controls and graphics automatic/explicit settings work offline')
   environment.FISH_TTS_MODEL = 'locked-environment-model'
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim().endsWith('Chat')).click(); true`)

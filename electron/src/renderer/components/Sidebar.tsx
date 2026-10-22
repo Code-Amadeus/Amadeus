@@ -6,25 +6,21 @@ import { useI18n } from '../i18n'
 interface Props {
   page: Page
   onNavigate: (p: Page) => void
-  renderActive: boolean
   wallpaperActive: boolean
-  onToggleRender: () => void
   onToggleWallpaper: () => void
 }
 
+// Pages, plus Wallpaper: a full interaction mode that is switched on and off rather than navigated to.
+// Render lives in the chat header and backend diagnostics in Settings.
 type NavItem =
-  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' | 'Tiles' }
-  | { kind: 'toggle'; label: string; icon: 'Video'; iconActive: 'Movie'; active: boolean; onClick: () => void }
-  | { kind: 'toggle-simple'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
+  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'Movie' | 'PuzzlePiece' }
+  | { kind: 'toggle'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
 
 function CollapseGlyph({ collapsed }: { collapsed: boolean }) {
   return <span className={`nav-collapse-glyph ${collapsed ? 'collapsed' : 'expanded'}`} />
 }
 
-export default function Sidebar({
-  page, onNavigate,
-  renderActive, wallpaperActive, onToggleRender, onToggleWallpaper,
-}: Props) {
+export default function Sidebar({ page, onNavigate, wallpaperActive, onToggleWallpaper }: Props) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('amadeus.sidebar.collapsed') === '1')
 
@@ -36,27 +32,12 @@ export default function Sidebar({
 
   const topItems: NavItem[] = [
     { kind: 'page', page: 'chat', label: 'Chat', icon: 'Edit' },
-    {
-      kind: 'toggle',
-      label: 'Render',
-      icon: 'Video',
-      iconActive: 'Movie',
-      active: renderActive,
-      onClick: onToggleRender,
-    },
-    {
-      kind: 'toggle-simple',
-      label: 'Wallpaper',
-      icon: 'Tiles',
-      active: wallpaperActive,
-      onClick: onToggleWallpaper,
-    },
+    { kind: 'toggle', label: 'Wallpaper', icon: 'Tiles', active: wallpaperActive, onClick: onToggleWallpaper },
     { kind: 'page', page: 'vn', label: 'VN Player', icon: 'Movie' },
-    // Keep experimental plugin management in Settings until integration is ready.
+    { kind: 'page', page: 'plugins', label: 'Plugins', icon: 'PuzzlePiece' },
   ]
 
   const bottomItems: NavItem[] = [
-    { kind: 'page', page: 'backend', label: 'Backend', icon: 'CommandPrompt' },
     { kind: 'page', page: 'settings', label: 'Settings', icon: 'Setting' },
   ]
 
@@ -77,8 +58,7 @@ export default function Sidebar({
         </button>
       )
     }
-    // toggle items — selectable=false, show active state
-    const iconName = item.kind === 'toggle' && item.active ? item.iconActive : item.icon
+    // Wallpaper is switched on and off; it shows its running state instead of being the current page.
     return (
       <button
         key={item.label}
@@ -88,7 +68,7 @@ export default function Sidebar({
         data-active={item.active || undefined}
         aria-pressed={item.active}
       >
-        <FluentIcon name={iconName} size={16} />
+        <FluentIcon name={item.icon} size={16} />
         {!collapsed && <span>{t(item.label)}</span>}
       </button>
     )
