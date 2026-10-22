@@ -1,5 +1,10 @@
 # 0.17.1 Alpha: checked Japanese dictionary and desktop fixes
 
+> Historical Alpha 0 preparation from [PR #245](https://github.com/Code-Amadeus/Amadeus/pull/245).
+> The tag remains fixed at fd17e707. Current bundled-resource correction and
+> qualification are documented in [Alpha 1](alpha-0.17.1-alpha.1.md); the old
+> small-dictionary payload and acceptance figures below do not describe it.
+
 Release tag: `v0.17.1-alpha.0`; Python `0.17.1a0`; Electron `0.17.1-alpha.0`.
 Baseline: `v0.17.0-alpha.0`. This remains a **source Alpha release**.
 Desktop installers, voice/model weights, character media, reference recordings
