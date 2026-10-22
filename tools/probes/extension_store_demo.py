@@ -71,7 +71,8 @@ class Publisher:
         self.generator = self.git(self.repo, "rev-parse", "HEAD")
         if json.loads((self.repo / "catalog/index.json").read_text())["entries"]:
             raise ValueError("Demo expects the experimental empty bootstrap")
-        self.current = self.repo / "catalog/index.json"
+        self.current = root / "bootstrap.json"
+        shutil.copyfile(self.repo / "catalog/index.json", self.current)
         publisher = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -80,6 +81,8 @@ class Publisher:
                 file = None
                 if route == "/index.json":
                     file = publisher.current
+                elif route == "/candidate-index.json":
+                    file = publisher.repo / "catalog/index.json"
                 elif route.startswith(("/artifacts/", "/mirror/")):
                     candidate = publisher.wheels.get(route.rsplit("/", 1)[-1])
                     if candidate and route in (
@@ -174,6 +177,10 @@ class Publisher:
                 path = self.repo / "catalog/packages" / f"{name}-{version}.json"
                 path.parent.mkdir(exist_ok=True)
                 path.write_text(json.dumps(self.facts(name, version), indent=2), encoding="utf-8")
+                self.tool(base, "preflight_submission.py", "--wheel",
+                          self.wheels[f"amadeus_example_{name}-{version}-py3-none-any.whl"],
+                          "--host", self.config["checker_host"], "--python", self.config["checker_python"],
+                          "--output", phase / f"{name}-preflight.json")
                 args = ["--wheel", self.wheels[f"amadeus_example_{name}-{version}-py3-none-any.whl"],
                         "--output", phase / f"{name}-review.json"]
                 if version == "0.2.0":
@@ -197,11 +204,24 @@ class Publisher:
                 for name in PACKAGES
             ]
             (self.repo / "catalog/security.json").write_text(json.dumps(safety, indent=2), encoding="utf-8")
-        input_commit = self.commit(f"DEMO ONLY: {label} input and simulated review")
         common = [
             "--host", self.config["checker_host"], "--python", self.config["checker_python"],
             "--artifacts", self.artifacts,
         ]
+        revision = None
+        if number == 1:
+            path = self.repo / "catalog/packages/notes_mcp-0.1.0.json"
+            correct = path.read_bytes()
+            wrong = json.loads(correct)
+            wrong["wheel"]["sha256"] = "0" * 64
+            path.write_text(json.dumps(wrong), encoding="utf-8")
+            rejected_head = self.commit("DEMO ONLY: submission with incorrect artifact digest")
+            self.tool(base, "check_catalog_ci.py", "--proposal", self.repo, "--base", previous_commit,
+                      "--evidence", phase / "rejected-input-evidence", *common, expected=1)
+            path.write_bytes(correct)
+            revision = {"rejected_head": rejected_head, "reason": "wrong wheel digest",
+                        "same_submission": True, "approval_was_not_granted": True}
+        input_commit = self.commit(f"DEMO ONLY: {label} input and simulated review")
         self.tool(base, "check_catalog_ci.py", "--proposal", self.repo, "--base", previous_commit,
                   "--evidence", phase / "input-evidence", *common)
         # Simulate reviewed-input merge locally; never alter any public branch.
@@ -223,17 +243,24 @@ class Publisher:
         publication = self.commit(f"DEMO ONLY: publish catalog sequence {number}")
         self.tool(base, "check_catalog_ci.py", "--proposal", self.repo, "--base", input_commit,
                   "--evidence", phase / "publication-evidence", *common)
+        self.tool(generator, "verify_publication.py", "--index-url", self.origin + "/candidate-index.json",
+                  "--expected", self.repo / "catalog/index.json", "--previous", previous,
+                  "--output", phase / "candidate-delivery.json")
         snapshot = phase / "index.json"
         shutil.copyfile(self.repo / "catalog/index.json", snapshot)
         self.current = snapshot
         self.sequence = number
+        self.tool(generator, "verify_publication.py", "--index-url", self.origin + "/index.json",
+                  "--expected", snapshot, "--previous", previous,
+                  "--output", phase / "live-delivery.json")
         data = json.loads(snapshot.read_text())
         evidence = {
             "label": label, "sequence": number, "input_commit": input_commit,
             "publication_commit": publication, "generator_commit": data["generator_commit"],
             "index_sha256": sha256(snapshot), "entries": len(data["entries"]),
             "input_ci": True, "publication_ci": True, "exact_rebuild": True,
-            "simulated_review_only": True,
+            "simulated_review_only": True, "submission_revision": revision,
+            "candidate_delivery": True, "live_delivery": True,
         }
         self.phases.append(evidence)
         (phase / "publication.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")

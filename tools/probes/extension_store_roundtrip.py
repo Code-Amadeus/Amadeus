@@ -340,6 +340,11 @@ async def exercise_publication(product, invocation):
               not list((cache.parent / "staging").iterdir()))
         await asyncio.to_thread(publisher.verify_rejections)
         check("publication tools reject tampered generated output and missing safety facts")
+        check("submission revision precedes approval without a second author submission",
+              publisher.phases[0]["submission_revision"]["same_submission"]
+              and publisher.phases[0]["submission_revision"]["approval_was_not_granted"])
+        check("all six publications verify candidate and live distribution with fresh assets",
+              all(p["candidate_delivery"] and p["live_delivery"] for p in publisher.phases))
         report["blocked_identities"] = blocked["security"]
         report["ok"] = True
         return report
