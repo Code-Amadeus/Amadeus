@@ -420,28 +420,20 @@ export default function ChatSessionRail({
           }
         }}
       >
-      <div className="rail-header">
-        {railOpen ? (
-          <>
-            {(['chats', 'artifacts'] as RailMode[]).map(mode => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setRailMode(mode)}
-                aria-pressed={railMode === mode}
-                className="rail-mode"
-              >
-                <FluentIcon name={mode === 'chats' ? 'Chat' : 'Tiles'} size={14} />
-                <span className="truncate">{t(mode === 'chats' ? 'Chats' : 'Artifacts')}</span>
-              </button>
-            ))}
-          </>
-        ) : (
-          <span className="rail-mode-icon">
-            <FluentIcon name={railMode === 'chats' ? 'Chat' : 'Tiles'} size={16} />
-          </span>
-        )}
-        {railOpen && railMode === 'chats' && (
+      {railOpen && <div className="rail-header">
+        {(['chats', 'artifacts'] as RailMode[]).map(mode => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setRailMode(mode)}
+            aria-pressed={railMode === mode}
+            className="rail-mode"
+          >
+            <FluentIcon name={mode === 'chats' ? 'Chat' : 'Tiles'} size={14} />
+            <span className="truncate">{t(mode === 'chats' ? 'Chats' : 'Artifacts')}</span>
+          </button>
+        ))}
+        {railMode === 'chats' && (
           <button
             type="button"
             onClick={onNew}
@@ -452,7 +444,7 @@ export default function ChatSessionRail({
             <FluentIcon name="Edit" size={16} />
           </button>
         )}
-      </div>
+      </div>}
 
       {railOpen && railMode === 'chats' && (
         <div className="rail-body">

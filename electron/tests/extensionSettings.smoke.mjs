@@ -15,14 +15,9 @@ await fs.mkdir(output, { recursive: true })
 await app.whenReady()
 const { createServer } = await import('vite')
 const server = await createServer({ configFile: path.join(electronRoot, 'vite.config.ts'), configLoader: 'runner', root: electronRoot,
-  cacheDir: path.join(output, 'vite-cache'), server: { host: '127.0.0.1', port: 0, strictPort: false },
+  cacheDir: path.join(output, 'vite-cache'), server: { host: '127.0.0.1', port: 0, strictPort: false, origin: '' },
   plugins: [{ name: 'extension-settings-smoke', configureServer(server) {
     server.middlewares.use(async (request, response, next) => {
-      if (request.url === '/fixture-theme-background.png') {
-        response.setHeader('Content-Type', 'image/png')
-        response.end(await fs.readFile(path.join(electronRoot, '../examples/extensions/desktop-theme/src/amadeus_example_theme/background.png')))
-        return
-      }
       if (request.url?.split('?')[0] !== '/extension-settings-smoke.html') return next()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
       response.end(await server.transformIndexHtml('/extension-settings-smoke.html', '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/extensionSettings.tsx"></script></body></html>'))
@@ -49,7 +44,20 @@ const report = { passed: false, checks: [], screenshots: [] }
 try {
   await window.loadURL(url)
   await until("document.body.textContent.includes('Example Work tools')", 'Installed packages did not render')
+  await until("document.querySelector('.extension-icon img')?.naturalWidth > 0", 'Custom package icon did not load')
+  assert.equal(await ui("document.querySelectorAll('.extension-icon')[1].textContent"), 'E')
+  assert.equal(await ui("document.querySelector('.extension-details').open"), false)
+  assert.equal(await ui("document.querySelector('.extension-install-help').open"), false)
+  assert.equal(await ui("document.querySelector('.extension-card-heading').closest('.setting-card').innerText.includes('Saved revision')"), false)
+  assert.equal(await ui("document.querySelectorAll('.extension-card-controls .settings-status-pill')[1].dataset.tone"), 'neutral')
+  await ui("window.extensionFixture.setContributionHealth('error', 'Synthetic speech failure')")
+  await until("[...document.querySelectorAll('[role=status]')].some(node => node.innerText.includes('Synthetic speech failure') && !node.closest('details'))", 'Contribution failure was hidden in collapsed details')
+  await ui("window.extensionFixture.setContributionHealth('ready', '')")
+  await until("!document.querySelector('.extension-attention')", 'Recovered contribution still shows an alert')
   await capture('packages-desktop-en.png'); report.screenshots.push('packages-desktop-en.png')
+  await ui("document.querySelector('.extension-icon img').src = 'data:image/png;base64,invalid'")
+  await until("!document.querySelector('.extension-icon img') && document.querySelector('.extension-icon').textContent === 'E'", 'Broken icon did not fall back to the name initial')
+  report.checks.push('Custom package image paints; older packages and failed images use the name initial')
   await click('Configure extension')
   assert.equal(await ui("document.querySelector('#extension-config-api_key').value"), '')
   assert.equal(await ui("document.querySelector('#extension-config-api_key').type"), 'password')
@@ -103,6 +111,7 @@ try {
   await until("window.extensionFixture.snapshot().values.TTS_BACKEND === 'org.example.voice/speech'", 'Extension voice selection did not save')
   assert.equal(await ui("window.extensionFixture.calls.some(call => call.method==='system.set_config')"), false)
   await click('Manage community voices')
+  await ui("document.querySelector('.extension-details').open = true")
   await click('Remove')
   await until("document.body.textContent.includes('This package contains the saved speech engine.')", 'Selected voice removal warning missing')
   assert.equal(await ui("document.querySelector('.extension-removal-data input').checked"), false)
@@ -153,7 +162,7 @@ try {
   assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'voice')
   await click('General')
   await click('Manage plugins')
-  await until("document.body.textContent.includes('Community extensions')", 'Could not return to Plugins')
+  await until("document.body.textContent.includes('Installed plugins')", 'Could not return to Plugins')
   assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'general')
   report.checks.push('Plugin voice link opens Voice settings; General Manage plugins returns to the manager and preserves General')
   report.passed = true

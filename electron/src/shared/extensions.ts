@@ -42,6 +42,7 @@ export type ExtensionManifest = {
   version: string
   display_name: ExtensionText
   description: ExtensionText
+  icon?: string
   author: { name: string; email?: string; url?: string }
   license?: string
   homepage?: string

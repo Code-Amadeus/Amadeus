@@ -1274,7 +1274,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           <div>
             <h2 className="settings-page-title">{t(presentation === 'plugins' ? 'Plugins' : 'Settings')}</h2>
             <div className="settings-page-context">
-              {t(presentation === 'plugins' ? 'Install once. Manage contributions and their application state here.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.' : section === 'diagnostics' ? 'Live runtime status and server diagnostics.'
+              {t(presentation === 'plugins' ? 'Install plugins and manage their settings.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.' : section === 'diagnostics' ? 'Live runtime status and server diagnostics.'
                 : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
@@ -1310,7 +1310,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
           <main className="settings-main" data-wide={wideSection || undefined}>
             {section === 'characters' ? characterWorkspace : null}
-            {section === 'extensions' ? <SettingsGroup title="Community extensions" detail="Manage installed packages, their contributions and application state.">
+            {section === 'extensions' ? <>
               {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
               <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
                 providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
@@ -1318,7 +1318,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
                 onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
-            </SettingsGroup> : null}
+            </> : null}
             {section === 'diagnostics' ? diagnostics : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />

@@ -2218,6 +2218,10 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
     }
   }
 })
+ipcMain.handle('extensions.icon', (event, id: string) => {
+  if (!isTrustedBackendRenderer(event.sender) || typeof id !== 'string') return null
+  return extensionInstaller.icon(id)
+})
 ipcMain.handle('extensions.install', async (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
   const options: Electron.OpenDialogOptions = { title: 'Install Amadeus extension', properties: ['openFile'], filters: [{ name: 'Python wheel', extensions: ['whl'] }] }

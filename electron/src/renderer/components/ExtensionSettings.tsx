@@ -3,11 +3,14 @@ import type { ExtensionSummary, ExtensionMutationResult } from '../../shared/ext
 import { extensionDisclosure } from '../../shared/extensions.js'
 import { extensionNeedsAgent } from '../../shared/extensionProfile.js'
 import { useI18n } from '../i18n'
-import { CardShell, SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import { CardShell, SettingsButton, SettingsField, SettingsGroup, StatusPill } from './SettingsPrimitives'
 import Switch from './Switch'
+import ExtensionIcon from './ExtensionIcon'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 import { compatibleExtensionProviders, extensionDraft, extensionLanguageSupported, extensionRuntimeLabel, extensionText, extensionUpdate,
   type ExtensionDraft, type ExtensionProvider, type ExtensionRuntimeStatus } from './extensionSettingsCatalog'
+
+const ATTENTION_STATES = new Set(['error', 'degraded', 'needs_config', 'incompatible'])
 
 interface Props {
   extensions: ExtensionSummary[]
@@ -166,20 +169,21 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       </div>
     </form>
 
-  return <div className="settings-embedded-stack extension-settings">
-    <CardShell vertical>
-      <div className="settings-note-title">{t('Local community packages')}</div>
+  return <SettingsGroup title="Installed plugins"
+    action={<SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install plugin…')}</SettingsButton>}>
+    <div className="settings-embedded-stack extension-settings">
+    <details className="extension-install-help">
+      <summary>{t('About plugin installation')}</summary>
       <div className="settings-note-description">{t('Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
-      <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
-    </CardShell>
+    </details>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
     {error ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
     {notice ? <div role="status" className="settings-form-save-hint">{t(notice)}</div> : null}
     {available && !extensions.length ? <div className="settings-field-description">{t('No community extensions installed.')}</div> : null}
     {extensions.map(extension => {
       if (!extension.manifest) return <CardShell vertical key={extension.id}>
-        <div className="extension-card-heading"><div className="settings-card-title extension-package-identity">{extension.id} · {extension.version}</div>
+        <div className="extension-card-heading"><div className="extension-card-identity"><ExtensionIcon id={extension.id} name={extension.id} /><div className="settings-card-title extension-package-identity">{extension.id} · {extension.version}</div></div>
           <StatusPill ok={false}>{t(extension.status === 'incompatible' ? 'Incompatible' : 'Extension unavailable')}</StatusPill></div>
         <div role="alert" className="settings-field-description">{t(extension.validationError || 'Extension metadata is unavailable.')}</div>
         {!extension.pendingRemoval && <div className="settings-form-actions-end">
@@ -200,53 +204,83 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       const savedState = extension.pendingRemoval ? (frontend ? 'Cleanup pending' : 'Removal pending restart') : extension.enabled ? (frontend ? 'Enabled' : 'Enabled on startup') : 'Disabled'
       const name = extensionText(extension.manifest.display_name, locale, extension.id)
       const editing = selected?.id === extension.id && draft !== null
+      const pending = extension.restartRequired || extension.pendingRemoval
+      const currentState = frontend
+        ? extension.applicationError ? 'Unavailable' : extension.enabled && extension.appliedRevision === extension.revision ? 'Applied' : 'Disabled'
+        : extensionRuntimeLabel(observed?.state)
+      const needsAttention = Boolean(observed && ATTENTION_STATES.has(observed.state))
+      const currentTone = extension.applicationError || needsAttention ? 'warning'
+        : currentState === 'Applied' || observed?.state === 'active' || observed?.state === 'ready' ? 'success' : 'neutral'
       return <CardShell vertical key={extension.id}>
         <div className="extension-card-heading">
-          <div className="min-w-0"><h4 className="settings-card-title">{name}</h4>
-            <div className="settings-card-description extension-package-identity">{extension.id} · {extension.version}</div></div>
+          <div className="extension-card-identity">
+            <ExtensionIcon key={extension.digest} id={extension.id} name={name} icon={extension.manifest.icon} />
+            <div className="min-w-0"><h4 className="settings-card-title">{name}</h4>
+              <div className="settings-card-description extension-package-identity">{extension.manifest.author.name} · {extension.version}</div></div>
+          </div>
           <div className="extension-card-controls">
-            <StatusPill ok={false} tone={extension.restartRequired || extension.pendingRemoval ? 'warning' : 'neutral'}>{t(extension.restartRequired ? 'Restart required' : savedState)}</StatusPill>
+            <StatusPill ok={false} tone={pending ? 'warning' : currentTone}>{t(pending ? extension.restartRequired ? 'Restart required' : savedState : currentState)}</StatusPill>
             <Switch id={`extension-enabled-${extension.id}`} label={t('Enable {name}', { name })} stateText={false} checked={extension.enabled}
               disabled={!available || busy || extension.pendingRemoval}
               onChange={enabled => { if (!enabled && selectedVoice) setDisableCandidate(extension.id); else void setEnabled(extension, enabled) }} />
           </div>
         </div>
-        <div className="settings-card-description">{extensionText(extension.manifest.description, locale)}</div>
-        <details className="settings-field-description"><summary>{t('Declared access and commands')}</summary>
-          <pre className="whitespace-pre-wrap wrap-anywhere">{extensionDisclosure(extension.manifest)}</pre>
-        </details>
-        <div className="settings-connection-facts">
-          <span><strong>{t('Saved state')}:</strong> {t(savedState)}</span>
-          {frontend ? <span><strong>{t('Current appearance')}:</strong> {t(extension.applicationError ? 'Unavailable' : extension.enabled && extension.appliedRevision === extension.revision ? 'Applied' : 'Disabled')}</span>
-            : <span><strong>{t('Current backend')}:</strong> <StatusPill ok={observed?.state === 'active'} tone={!observed ? 'neutral' : undefined}>{t(extensionRuntimeLabel(observed?.state))}</StatusPill></span>}
-          {extension.revision !== undefined ? <span>{t('Saved revision')}: {extension.revision} · {t('Loaded revision')}: {extension.appliedRevision ?? '—'}</span> : null}
-          {observed && observed.version !== extension.version ? <span>{t('Running version')}: {observed.version}</span> : null}
-        </div>
+        <div className="settings-card-description extension-card-description">{extensionText(extension.manifest.description, locale)}</div>
+        {pending ? <div className="extension-status-note" role="status">
+          <span>{t('Saved state')}: {t(savedState)}</span>
+          <span>{t(frontend ? 'Current appearance' : 'Current backend')}: {t(currentState)}</span>
+        </div> : null}
         {extension.frontendSuppressed && extension.backendStillRunning ? <div role="status" className="settings-field-description">{t('Frontend access is closed; the previous backend still runs until restart.')}</div> : null}
         {extension.applicationError ? <div role="alert" className="settings-form-error">{extension.applicationError}</div> : null}
-        {observed?.detail ? <div className="settings-field-description extension-detail">{t(observed.detail)}</div> : null}
+        {needsAttention && observed?.detail ? <div role="status" className="extension-attention">{t(observed.detail)}</div> : null}
+        {observed?.contributions.filter(item => ATTENTION_STATES.has(item.health)).map(item => (
+          <div key={`${item.kind}-${item.id}`} role="status" className="extension-attention">
+            {extensionText(extension.manifest!.contributes[item.kind]?.find(contribution => contribution.id === item.id)?.title, locale, item.id)} · {t(extensionRuntimeLabel(item.health))}{item.detail ? ` · ${t(item.detail)}` : ''}
+          </div>
+        ))}
         <ul className="extension-contributions" aria-label={t('Contributions')}>
           {themes.map(theme => <li key={`theme-${theme.id}`}>
-            <strong>{t('Theme')} · {extensionText(theme.title, locale, theme.id)}</strong>
-            <div>{t('Base theme')}: {t(theme.base === 'classic' ? 'Classic light' : 'Wallpaper slice')}</div>
-            {selectedTheme === `${extension.id}/${theme.id}` ? <div>{t('Saved theme')}{appliedThemeVersion ? ` · ${t('Running version')}: ${appliedThemeVersion}` : ` · ${t('Unavailable')}`}</div> : null}
+            <div className="extension-contribution-heading"><strong>{t('Theme')}{theme.title ? ` · ${extensionText(theme.title, locale)}` : ''}</strong>
+              <span>{t(theme.base === 'classic' ? 'Classic light' : 'Wallpaper slice')}</span>
+              {selectedTheme === `${extension.id}/${theme.id}` ? <span className="settings-tag" data-tone="accent">{t('Saved theme')}</span> : null}
+            </div>
           </li>)}
           {voices.map(voice => <li key={`voice-${voice.id}`}>
-            <strong>{t('Speech synthesis')} · {extensionText(voice.title, locale, voice.id)}</strong>
-            <div>{t(voice.deployment === 'remote' ? 'Remote speech service' : 'Local speech engine')} · {t('Declared languages')}: {(voice.languages || []).join(', ')}</div>
-            <div>{t('Amadeus speech languages: Japanese and English.')}</div>
-            {!extensionLanguageSupported(voice.languages || [], 'ja') ? <div>{t('Japanese support is not declared. Select English for this voice; Japanese output has not been verified.')}</div> : null}
-            {!extensionLanguageSupported(voice.languages || [], 'en') ? <div>{t('English support is not declared for this voice.')}</div> : null}
-            {(() => { const status = observed?.contributions.find(item => item.kind === 'voice_backend' && item.id === voice.id)
-              return status ? <div>{t('Current backend')}: {t(extensionRuntimeLabel(status.health))}{status.detail ? ` · ${t(status.detail)}` : ''}</div> : null })()}
+            <div className="extension-contribution-heading"><strong>{t('Speech synthesis')}{voice.title ? ` · ${extensionText(voice.title, locale)}` : ''}</strong>
+              <span>{t(voice.deployment === 'remote' ? 'Remote speech service' : 'Local speech engine')} · {(voice.languages || []).join(', ')}</span>
+            </div>
+            {!extensionLanguageSupported(voice.languages || [], 'ja') ? <div className="extension-compatibility">{t('Japanese support is not declared. Select English for this voice; Japanese output has not been verified.')}</div> : null}
+            {!extensionLanguageSupported(voice.languages || [], 'en') ? <div className="extension-compatibility">{t('English support is not declared for this voice.')}</div> : null}
           </li>)}
-          {nativeContributions.map(server => <li key={`${server.kind}-${server.id}`}>
-            <strong>{server.label} · {extensionText(server.title, locale, server.id)}</strong>
-            <div>{t('Providers')}: {extension.providers.length ? extension.providers.join(', ') : t('Not bound')} · {t('Main Chat')}: {t('No access')}</div>
-            {(() => { const status = observed?.contributions.find(item => item.kind === server.kind && item.id === server.id)
-              return status ? <div>{t('Current backend')}: {t(extensionRuntimeLabel(status.health))}{status.detail ? ` · ${t(status.detail)}` : ''}</div> : null })()}
+          {nativeContributions.map(item => <li key={`${item.kind}-${item.id}`}>
+            <div className="extension-contribution-heading"><strong>{item.label}{item.title ? ` · ${extensionText(item.title, locale)}` : ''}</strong>
+              <span>{t('Work Agents')}: {extension.providers.length ? extension.providers.map(id => providers.find(provider => provider.provider_id === id)?.display_name || id).join(', ') : t('Not bound')}</span>
+            </div>
           </li>)}
         </ul>
+        <div className="extension-card-bottom">
+          <details className="extension-details">
+            <summary>{t('Plugin details')}</summary>
+            <div className="extension-details-body">
+              <dl className="extension-facts">
+                <div><dt>{t('Package ID')}</dt><dd>{extension.id}</dd></div>
+                <div><dt>{t('Saved state')}</dt><dd>{t(savedState)}</dd></div>
+                <div><dt>{t(frontend ? 'Current appearance' : 'Current backend')}</dt><dd>{t(currentState)}</dd></div>
+                {extension.revision !== undefined ? <div><dt>{t('Saved revision')} · {t('Loaded revision')}</dt><dd>{extension.revision} · {extension.appliedRevision ?? '—'}</dd></div> : null}
+                {observed && observed.version !== extension.version ? <div><dt>{t('Running version')}</dt><dd>{observed.version}</dd></div> : null}
+                {themes.length && appliedThemeVersion ? <div><dt>{t('Running theme version')}</dt><dd>{appliedThemeVersion}</dd></div> : null}
+              </dl>
+              {observed?.detail && !needsAttention ? <div className="settings-field-description extension-detail">{t(observed.detail)}</div> : null}
+              {observed?.contributions.length ? <ul className="extension-diagnostics">
+                {observed.contributions.map(item => <li key={`${item.kind}-${item.id}`}><strong>{item.id}</strong> · {t(extensionRuntimeLabel(item.health))}{item.detail ? ` · ${t(item.detail)}` : ''}</li>)}
+              </ul> : null}
+              {nativeContributions.length ? <div className="settings-field-description">{t('Main Chat')}: {t('No access')}</div> : null}
+              <div><div className="settings-field-label">{t('Declared access and commands')}</div>
+                <pre className="extension-disclosure">{extensionDisclosure(extension.manifest)}</pre>
+              </div>
+              <SettingsButton tone="danger" size="small" disabled={!available || busy || extension.pendingRemoval} onClick={() => { if (canLeave()) { close(); setRemoveCandidate(extension.id) } }}>{t('Remove')}</SettingsButton>
+            </div>
+          </details>
         {editing ? (selected?.manifest && draft && selectedMetadataAvailable ? editorForm(extension) : null)
         : disableCandidate === extension.id ? <div className="settings-form-remove" role="group" aria-label={t('Disable extension')}>
           <span>{t(frontend ? 'Disable this package now?' : 'Disable this package after the backend restarts?')}</span>
@@ -265,10 +299,11 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           {themes.length ? <SettingsButton tone="quiet" disabled={busy} onClick={onOpenAppearance}>{t('Open appearance settings')}</SettingsButton> : null}
           {voices.length ? <SettingsButton tone="quiet" disabled={busy} onClick={onOpenVoice}>{t('Open voice settings')}</SettingsButton> : null}
           <SettingsButton disabled={!available || busy || extension.pendingRemoval} onClick={() => edit(extension)}>{t('Configure extension')}</SettingsButton>
-          <SettingsButton tone="danger" disabled={!available || busy || extension.pendingRemoval} onClick={() => { if (canLeave()) { close(); setRemoveCandidate(extension.id) } }}>{t('Remove')}</SettingsButton>
         </div>}
+        </div>
       </CardShell>
     })}
     {selected && draft && !selectedMetadataAvailable ? <div role="status" className="settings-field-description">{t('Extension metadata is unavailable. Your unsaved changes are retained until validation recovers.')}</div> : null}
-  </div>
+    </div>
+  </SettingsGroup>
 }

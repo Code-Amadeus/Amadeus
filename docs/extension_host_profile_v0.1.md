@@ -264,6 +264,33 @@ checks the copies offline. To verify the source as well, run
 Updating the protocol requires updating the reviewed pin and matching copies;
 an upstream draft change does not silently change the Host's accepted subset.
 
+## Package icons
+
+Packages may declare an optional top-level `icon` in `amadeus-extension.json`:
+
+```json
+"icon": "assets/icon.png"
+```
+
+Include that file in the wheel's package data. Icons must be package-relative
+PNG/JPEG files with matching signatures, at most 1 MiB and 1024×1024 pixels.
+A square 256×256 image is recommended. Installation checks package containment,
+file type and native decoding; no network URL or executable image format is accepted.
+The UI displays the image in a 36 px tile without cropping. Existing packages
+need no change: absent or unavailable images use the first displayed name
+grapheme, uppercase for Latin names. A damaged image can fall back without hiding
+the package's name or actions. Updates and uninstall resolve through the current
+Host-owned installation; the renderer never supplies a path or reads package files.
+
+This optional metadata does not change runtime permissions, configuration or the
+Host API version. Older Hosts that predate this field reject it as unknown, so
+authors should declare an icon-capable minimum application version in distribution
+notes once this Host update is released. The canonical contract is proposed in
+[Amadeus-Extensions #4](https://github.com/Code-Amadeus/Amadeus-Extensions/pull/4)
+with [design issue #3](https://github.com/Code-Amadeus/Amadeus-Extensions/issues/3).
+Review and merge that protocol change before the dependent Host change; if its
+accepted commit changes, update the Host source pin and recheck provenance.
+
 ## Evidence and explicit limits
 
 Windows local source builds are the tested runtime target. MiMo English live acceptance
