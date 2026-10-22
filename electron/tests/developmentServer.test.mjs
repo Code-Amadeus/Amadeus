@@ -26,6 +26,15 @@ function fixture(t, dotenv) {
   return root
 }
 
+async function availablePort() {
+  const reservation = net.createServer()
+  reservation.listen(0, 'localhost')
+  await once(reservation, 'listening')
+  const port = reservation.address().port
+  await new Promise(resolve => reservation.close(resolve))
+  return port
+}
+
 test('missing port defaults to 5173; only the root .env supplies file configuration', t => {
   const root = fixture(t)
   fs.writeFileSync(path.join(root, 'electron', '.env'), 'AMADEUS_DEV_PORT=15173')
@@ -137,9 +146,10 @@ test('actual Electron auxiliary windows and trust checks share the port; product
   }
 })
 
-for (const [label, dotenv, port] of [['default', undefined, 5173], ['custom root .env', 'AMADEUS_DEV_PORT=15173', 15173]]) {
+for (const label of ['default', 'custom root .env']) {
   test(`real Vite serves the ${label} port before the child starts, then closes on child exit`, { timeout: 20000 }, async t => {
-    const root = fixture(t, dotenv)
+    const port = label === 'default' ? 5173 : await availablePort()
+    const root = fixture(t, label === 'default' ? undefined : `AMADEUS_DEV_PORT=${port}`)
     let childPort
     const session = await startDevelopment({
       projectRoot: root, environment: { ...process.env, AMADEUS_DEV_PORT: undefined }, withElectron: true,
@@ -197,7 +207,7 @@ test('EACCES from the listening socket closes startup and retains Windows diagno
 })
 
 test('Electron spawn failure releases the Vite listener', { timeout: 20000 }, async t => {
-  const root = fixture(t, 'AMADEUS_DEV_PORT=15173')
+  const root = fixture(t, `AMADEUS_DEV_PORT=${await availablePort()}`)
   await assert.rejects(startDevelopment({ projectRoot: root, environment: {}, withElectron: true,
     startElectron() { return spawn(path.join(root, 'missing-electron'), [], { windowsHide: true }) },
   }), /ENOENT/)
@@ -207,7 +217,7 @@ test('Electron spawn failure releases the Vite listener', { timeout: 20000 }, as
 })
 
 test('explicit shutdown requests child-owned cleanup before releasing the listening port', { timeout: 20000 }, async t => {
-  const root = fixture(t, 'AMADEUS_DEV_PORT=15173')
+  const root = fixture(t, `AMADEUS_DEV_PORT=${await availablePort()}`)
   const cleaned = path.join(root, 'child-cleaned')
   const session = await startDevelopment({ projectRoot: root, environment: {}, withElectron: true,
     startElectron() { return spawn(process.execPath, ['-e', `process.on('message', message => {
@@ -225,7 +235,7 @@ test('explicit shutdown requests child-owned cleanup before releasing the listen
 test('real Windows Electron is visible on its first show through the development launcher', {
   skip: process.platform !== 'win32', timeout: 30000,
 }, async t => {
-  const root = fixture(t, 'AMADEUS_DEV_PORT=15173')
+  const root = fixture(t, `AMADEUS_DEV_PORT=${await availablePort()}`)
   fs.writeFileSync(path.join(root, 'electron', 'package.json'), JSON.stringify({ type: 'module', main: 'main.cjs' }))
   fs.writeFileSync(path.join(root, 'electron', 'main.cjs'), `
     const { app, BrowserWindow } = require('electron')

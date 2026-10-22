@@ -317,7 +317,8 @@
     "docs/verification/extensions/community-preview-batch7-2026-10-21.md",
     "docs/verification/extensions/community-preview-batch8-2026-10-22.md",
     "docs/verification/extensions/external-review-handoff-2026-10-21.md",
-    "docs/verification/extensions/community-preview-batch9-2026-10-23.md"
+    "docs/verification/extensions/community-preview-batch9-2026-10-23.md",
+    "docs/verification/extensions/community-preview-batch10-2026-10-23.md"
   ],
   "exclude_globs": [
     "docs/reports/**",
