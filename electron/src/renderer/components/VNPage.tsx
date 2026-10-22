@@ -4,6 +4,7 @@ import VNProfileEditor, { type VNProfileSettings } from './VNProfileEditor'
 import VNAbilities, { capabilityReason, type CapabilityState, type VNCapabilities, type VNCapabilityPresets } from './VNAbilities'
 import FluentIcon from './FluentIcon'
 import { StatusPill } from './SettingsPrimitives'
+import Switch from './Switch'
 import { activityFromEvent, mergeActivity, sessionBanner, type VNActivity } from './vnPresentation'
 
 type BackendSend = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -106,34 +107,22 @@ type VisualAttachment = {
   [key: string]: unknown
 }
 
-function statusColor(status: string): string {
+function statusTone(status: string): 'ok' | 'warning' | 'error' | undefined {
   const key = status.toLowerCase()
-  if (key === 'active' || key === 'running') return '#107C10'
-  if (key === 'starting' || key === 'stopping' || key === 'manual_required' || key === 'connecting' || key === 'waiting') return '#D83B01'
-  if (key === 'error' || key === 'exited') return '#C42B1C'
-  return 'var(--muted)'
+  if (key === 'active' || key === 'running') return 'ok'
+  if (key === 'starting' || key === 'stopping' || key === 'manual_required' || key === 'connecting' || key === 'waiting') return 'warning'
+  if (key === 'error' || key === 'exited') return 'error'
+  return undefined
 }
 
 function RuntimeChip({ label, status, detail }: { label: string; status: string; detail?: string }) {
   const { t } = useI18n()
   return (
-    <span
-      className="inline-flex items-center gap-1.5 shrink-0"
-      title={detail || status}
-      style={{
-        height: 28,
-        padding: '0 9px',
-        border: '1px solid var(--border)',
-        borderRadius: 999,
-        background: 'var(--surface)',
-        color: 'var(--muted)',
-        fontSize: 10.5,
-      }}
-    >
-      <span className="rounded-full" style={{ width: 7, height: 7, background: statusColor(status) }} />
-      <span style={{ color: 'var(--text)', fontWeight: 650 }}>{t(label)}</span>
+    <span className="status-chip" title={detail || status}>
+      <span className="status-dot" data-state={statusTone(status)} />
+      <span className="status-chip-label">{t(label)}</span>
       <span>{t(status.replaceAll('_', ' '))}</span>
-      {detail ? <span style={{ color: 'var(--faint)' }}>{detail}</span> : null}
+      {detail ? <span className="status-chip-detail">{detail}</span> : null}
     </span>
   )
 }
@@ -502,15 +491,14 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           <button disabled={inputsBusy} aria-pressed={preferences?.commentary_paused === true} onClick={() => void setPreferences({ commentary_paused: !preferences?.commentary_paused })}>{t(preferences?.commentary_paused ? 'Resume comments' : 'Pause comments')}</button>
         </div>
         <div className="vn-input-option">
-          <FluentIcon name="Microphone" size={18} aria-hidden="true" />
+          <FluentIcon name="Microphone" size={16} aria-hidden="true" />
           <div><strong>{t('Voice input (ASR)')}</strong><p>{t(inputs?.voice.starting ? 'Starting microphone…' : voiceEnabled ? 'Speak to ask your companion.' : 'Microphone off')}
             {!inputs?.voice.available && ` · ${reasonText(inputs?.voice.reason)}`}</p></div>
-          <button type="button" role="switch" aria-label={t('Voice input (ASR)')} aria-checked={voiceEnabled} className="vn-input-switch"
-            disabled={inputsBusy || (!inputs?.voice.available && !voiceEnabled)} onClick={() => void setInputs({ voice: !voiceEnabled })}><span aria-hidden="true" /></button>
-          <span className="vn-input-value">{t(voiceEnabled ? 'On' : 'Off')}</span>
+          <Switch label={t('Voice input (ASR)')} checked={voiceEnabled}
+            disabled={inputsBusy || (!inputs?.voice.available && !voiceEnabled)} onChange={voice => void setInputs({ voice })} />
         </div>
         <div className="vn-input-option">
-          <FluentIcon name="Camera" size={18} aria-hidden="true" />
+          <FluentIcon name="Camera" size={16} aria-hidden="true" />
           <div><label htmlFor="vn-vision-mode">{t('VN vision')}</label><p>{t('Only the bound game window. Separate from General vision settings.')}</p></div>
           <select id="vn-vision-mode" value={inputs?.vision.mode || 'off'} disabled={inputsBusy || (!inputs?.vision.available && inputs?.vision.mode !== 'on_question')}
             onChange={e => void setInputs({ vision_mode: e.target.value as 'off' | 'on_question' })}>

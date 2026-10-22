@@ -27,6 +27,11 @@ import PhotoSvg from '@assets/icons/ui/Photo.svg?raw'
 import PhotoUploadSvg from '@assets/icons/ui/PhotoUpload.svg?raw'
 import EditSvg from '@assets/icons/ui/Edit.svg?raw'
 import WorkSvg from '@assets/icons/ui/Work.svg?raw'
+import DismissSvg from '@assets/icons/ui/Dismiss.svg?raw'
+import AddSvg from '@assets/icons/ui/Add.svg?raw'
+import ChevronRightSvg from '@assets/icons/ui/ChevronRight.svg?raw'
+import CheckmarkSvg from '@assets/icons/ui/Checkmark.svg?raw'
+import PuzzlePieceSvg from '@assets/icons/ui/PuzzlePiece.svg?raw'
 
 export type FluentIconName =
   | 'Chat' | 'Video' | 'Movie' | 'Tiles' | 'CommandPrompt'
@@ -34,7 +39,7 @@ export type FluentIconName =
   | 'SpeedHigh' | 'Font' | 'Language' | 'Microphone'
   | 'Play' | 'Sync' | 'Send' | 'Pin'
   | 'LeftArrow' | 'RightArrow' | 'Album' | 'People' | 'Photo' | 'PhotoUpload'
-  | 'Edit' | 'Work'
+  | 'Edit' | 'Work' | 'Dismiss' | 'Add' | 'ChevronRight' | 'Checkmark' | 'PuzzlePiece'
 
 const ICONS: Record<FluentIconName, string> = {
   Chat: ChatSvg, Video: VideoSvg, Movie: MovieSvg, Tiles: TilesSvg,
@@ -45,31 +50,32 @@ const ICONS: Record<FluentIconName, string> = {
   Send: SendSvg, Pin: PinSvg, LeftArrow: LeftArrowSvg,
   RightArrow: RightArrowSvg, Album: AlbumSvg, People: PeopleSvg,
   Photo: PhotoSvg, PhotoUpload: PhotoUploadSvg, Edit: EditSvg,
-  Work: WorkSvg,
+  Work: WorkSvg, Dismiss: DismissSvg, Add: AddSvg, ChevronRight: ChevronRightSvg,
+  Checkmark: CheckmarkSvg, PuzzlePiece: PuzzlePieceSvg,
 }
 
-interface Props extends Omit<HTMLAttributes<HTMLSpanElement>, 'color'> {
+/** Icon sizes follow the type scale: 14 beside small text, 16 for controls, 20 and 24 for tiles. */
+export type FluentIconSize = 14 | 16 | 20 | 24
+
+/** Icons take their color from the surrounding text (currentColor). */
+interface Props extends HTMLAttributes<HTMLSpanElement> {
   name: FluentIconName
-  size?: number
-  color?: string
+  size?: FluentIconSize
 }
 
-export default function FluentIcon({ name, size = 18, color, style, ...rest }: Props) {
+export default function FluentIcon({ name, size = 16, className, ...rest }: Props) {
   const svg = ICONS[name]
 
-  // inject width/height into the SVG string
-  const sized = useMemo(() => {
-    if (!svg) return ''
-    return svg.replace(
-      /<svg([^>]*)>/,
-      `<svg$1 width="${size}" height="${size}" style="flex-shrink:0" >`
-    )
-  }, [svg, size])
+  // Icon files declare their own width, height and style; replace them so every icon renders at `size`.
+  const sized = useMemo(() => svg
+    ? svg.replace(/^[\s\S]*?<svg\b([^>]*)>/, (_, attributes: string) =>
+      `<svg${attributes.replace(/\s(?:width|height|style)="[^"]*"/g, '')} width="${size}" height="${size}">`)
+    : '', [svg, size])
 
   return (
     <span
       {...rest}
-      style={{ display: 'inline-flex', alignItems: 'center', color: color || 'inherit', ...style }}
+      className={className ? `fluent-icon ${className}` : 'fluent-icon'}
       dangerouslySetInnerHTML={{ __html: sized }}
     />
   )

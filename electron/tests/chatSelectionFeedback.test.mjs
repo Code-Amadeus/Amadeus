@@ -38,7 +38,7 @@ function harness(request) {
     streaming: true, streamingText: 'In progress', activities: ['current-work'],
     translations: { current: 'translation' }, attention: ['current-attention'],
     attentionResolving: 'approve', attentionError: 'Current attention error', artifactContext: { workItemId: 'current-work' },
-    pending: false, hydrated: [], requests: [], prompts: [], projects: [],
+    pending: false, hydrated: [], requests: [], projects: [],
   }
   Object.defineProperty(state, 'context', { enumerable: true,
     get: () => state.sessions.find(session => session.id === state.session)?.context || null })
@@ -75,7 +75,6 @@ function harness(request) {
     setProjectViewId: value => { state.projectView = value },
     send: (method, params) => { state.requests.push({ method, params }); return request(method, params) },
     hydrateWorkActivities: async id => { state.hydrated.push(id) },
-    window: { prompt: (...args) => { state.prompts.push(args); return 'Renamed chat' } },
   })
   vm.runInContext(compiled, context)
   return { state, refs, refresh: vm.runInContext('refreshSessions', context),
@@ -307,9 +306,14 @@ test('same-named foreign roles retain full stable IDs in their tooltips and name
   for (const id of ids) {
     const row = rowMarkup(markup, id)
     assert.ok(row.includes(`Character: &lt;Same &amp; very long name&gt; (${id})`))
-    assert.match(row, /class="truncate" style="max-width:90px"/)
+    assert.match(row, /class="rail-session-character"/)
     assert.match(row, />&lt;Same &amp; very long name&gt;<\/span>/)
   }
+  // The role name gets a bounded width and an ellipsis instead of pushing the time out of the row.
+  const css = fs.readFileSync(new URL('../src/renderer/styles/index.css', import.meta.url), 'utf8')
+  const rule = css.match(/\.rail-session-character \{([^}]*)\}/)?.[1] || ''
+  assert.match(rule, /max-width: 90px/)
+  assert.match(rule, /text-overflow: ellipsis/)
 })
 
 test('missing and invalid roles are explicitly unavailable and never inherit the current role name', () => {
@@ -366,10 +370,88 @@ test('the actual rail callbacks deny foreign and unknown-owner access while same
       assert.match(remove.props.title, /identity is unavailable/)
     }
   }
-  assert.deepEqual(calls.rename, [['own', 'Own chat']])
+  // Double-clicking an own chat opens the inline editor; renaming happens only on commit.
+  assert.deepEqual(calls.rename, [])
   assert.deepEqual(calls.delete, ['own'])
   assert.deepEqual(calls.select, ['own'])
   assert.equal(calls.notice.length, 6)
+})
+
+// Minimal stateful hooks so the inline editor can be driven through real re-renders.
+function statefulRail(sessions, overrides = {}) {
+  const calls = { rename: [], notice: [] }
+  const store = []
+  let cursor = 0
+  const context = vm.createContext({ exports: {}, require: name => {
+    if (name === 'react') return { useMemo: fn => fn(), useEffect() {}, useRef: value => ({ current: value }),
+      useState: initial => {
+        const index = cursor++
+        // Hook 0 is the rail's hover state; keep the rail open like the stateless harness does.
+        if (!(index in store)) store[index] = index === 0 ? true : initial
+        return [store[index], next => { store[index] = typeof next === 'function' ? next(store[index]) : next }]
+      } }
+    if (name === './FluentIcon') return { default: () => null }
+    if (name === '../i18n') return { useI18n: () => ({ t: translate }) }
+    if (name === './chatSessionCharacter') return { foreignSessionCharacter, sessionCharacterNotice }
+    return require(name)
+  }, props: { sessions, projects: [], activeId: sessions[0]?.id, currentCharacterId: 'mira', artifactViewId: '',
+    characters: [], connected: true, startupCharacterLocked: false, onSelect() {},
+    onRename: (id, title) => calls.rename.push([id, title]),
+    onDelete() {}, onNotice: notice => calls.notice.push(notice), ...overrides } })
+  vm.runInContext(railCode, context)
+  const render = () => {
+    cursor = 0
+    const found = { buttons: [], inputs: [] }
+    const visit = node => {
+      if (Array.isArray(node)) { node.forEach(visit); return }
+      if (!node || typeof node !== 'object' || !node.props) return
+      if (typeof node.type === 'function') { visit(node.type(node.props)); return }
+      if (node.type === 'button') found.buttons.push(node)
+      if (node.type === 'input') found.inputs.push(node)
+      visit(node.props.children)
+    }
+    visit(vm.runInContext('exports.default(props)', context))
+    return found
+  }
+  return { calls, render }
+}
+
+test('a chat title is renamed inline: Enter commits a changed title once, Escape and blank titles cancel', () => {
+  const { calls, render } = statefulRail([{ id: 'own', title: 'Own chat', character_id: 'mira' }])
+  const editor = () => render().inputs.find(input => input.props['aria-label'] === 'Rename chat')
+  const start = () => render().buttons.find(button => button.props['data-chat-session-id'] === 'own').props.onDoubleClick()
+  const key = name => ({ key: name, preventDefault() {} })
+
+  assert.equal(editor(), undefined)
+  start()
+  assert.equal(editor().props.value, 'Own chat')
+  editor().props.onChange({ target: { value: '  Lab notes ' } })
+  const committing = editor()
+  committing.props.onKeyDown(key('Enter'))
+  committing.props.onBlur()
+  assert.deepEqual(calls.rename, [['own', 'Lab notes']])
+  assert.equal(editor(), undefined)
+
+  start()
+  editor().props.onChange({ target: { value: 'Discarded' } })
+  editor().props.onKeyDown(key('Escape'))
+  assert.equal(editor(), undefined)
+
+  start()
+  editor().props.onChange({ target: { value: '   ' } })
+  editor().props.onKeyDown(key('Enter'))
+  start()
+  editor().props.onBlur()
+  assert.deepEqual(calls.rename, [['own', 'Lab notes']])
+  assert.deepEqual(calls.notice, [])
+})
+
+test('renderer code never relies on native prompt or alert dialogs, which Electron does not provide', () => {
+  const root = new URL('../src/renderer/', import.meta.url)
+  const offenders = fs.readdirSync(root, { recursive: true })
+    .filter(name => /\.(ts|tsx)$/.test(name))
+    .filter(name => /(^|[^.\w])(window\.)?(prompt|alert)\(/.test(fs.readFileSync(new URL(name.replaceAll('\\', '/'), root), 'utf8')))
+  assert.deepEqual(offenders, [])
 })
 
 test('offline rail keeps known foreign names, omits current-role labels and denies all session actions', () => {
@@ -559,7 +641,7 @@ test('successful rename applies updated titles and projects without replacing hi
   const page = harness(async () => ({ ok: true, current_session_id: 'current', sessions, projects }))
   const before = structuredClone(page.state)
   page.state.notice = 'Earlier failure'
-  await page.rename('current', 'Original title')
+  await page.rename('current', '  Renamed chat ')
   assert.deepEqual(page.state.sessions, sessions)
   assert.deepEqual(page.state.projects, projects)
   assert.equal(page.state.notice, '')

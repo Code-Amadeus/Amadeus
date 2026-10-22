@@ -1390,7 +1390,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
               title={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
               aria-label={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
             >
-              <FluentIcon name="Pin" size={15} />
+              <FluentIcon name="Pin" size={16} />
             </button>
           </div>
 
@@ -1751,7 +1751,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
 
           <footer className="crt-command-bar">
             <div className="crt-command-input">
-              <FluentIcon name="CommandPrompt" size={15} />
+              <FluentIcon name="CommandPrompt" size={16} />
               <textarea
                 value={task}
                 onChange={event => setTask(event.target.value)}

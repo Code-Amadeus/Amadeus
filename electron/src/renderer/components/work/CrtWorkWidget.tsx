@@ -351,16 +351,16 @@ export default function CrtWorkWidget() {
 
           <div className="crt-canvas-hover-actions">
             <button type="button" onClick={cycleMode} aria-label={`Switch canvas mode: ${modeLabel(mode)}`}>
-              <FluentIcon name={modeIcon(mode)} size={12} />
+              <FluentIcon name={modeIcon(mode)} size={14} />
             </button>
             <button type="button" onClick={toggleCanvasPreset} aria-label="Toggle canvas size">
               []
             </button>
             <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'work' }))} aria-label="Open work page">
-              <FluentIcon name="Work" size={12} />
+              <FluentIcon name="Work" size={14} />
             </button>
             <button type="button" onClick={() => setExpanded(false)} aria-label="Fold canvas">
-              <FluentIcon name="RightArrow" size={12} />
+              <FluentIcon name="RightArrow" size={14} />
             </button>
           </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { settingSourceLabel, type BackendStartupFailure } from '../../shared/characterStartup'
 import { useI18n } from '../i18n'
-import { CardShell } from './SettingsPrimitives'
+import { CardShell, SettingsButton } from './SettingsPrimitives'
 
 interface Props {
   connected: boolean
@@ -23,7 +23,7 @@ export function StartupFailureCard({ failure, recovering, error, notice, onRecov
         <div className="settings-field-description">{t('Startup selection source: {source}', { source: t(settingSourceLabel(failure.selection.source)) })}
           {failure.selection.characterId ? ` · ${failure.selection.characterId}` : ''}</div>
         {failure.selection.locked ? <div className="settings-field-description">{t('Change AMADEUS_CHARACTER_ID in the parent process environment, then reopen Amadeus. Desktop recovery is locked by that source.')}</div> : null}
-        <div className="character-prompt-actions"><button type="button" disabled={recovering || failure.selection.locked} onClick={onRecover}>{t(recovering ? 'Restarting…' : 'Use built-in Kurisu and restart')}</button></div>
+        <div className="character-prompt-actions"><SettingsButton tone="primary" disabled={recovering || failure.selection.locked} onClick={onRecover}>{t(recovering ? 'Restarting…' : 'Use built-in Kurisu and restart')}</SettingsButton></div>
       </> : null}
       {notice ? <div role="status" className="settings-field-description">{t(notice)}</div> : null}
       {error ? <div className="settings-field-description">{t(error)}</div> : null}

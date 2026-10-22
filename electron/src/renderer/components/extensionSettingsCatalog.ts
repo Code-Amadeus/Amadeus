@@ -15,8 +15,8 @@ export interface ExtensionProvider {
   capabilities?: { capability_projections?: string[] }
 }
 
+/** What the configuration form edits. Enabled state is not part of it: the package card switch owns it. */
 export interface ExtensionDraft {
-  enabled: boolean
   values: Record<string, string | boolean>
   secrets: Record<string, string | null>
   providers: string[]
@@ -34,7 +34,7 @@ export function extensionDraft(extension: ExtensionSummary): ExtensionDraft {
     const value = extension.values[key] ?? field.default ?? ''
     values[key] = field.type === 'boolean' ? value === true : String(value)
   }
-  return { enabled: extension.enabled, values, secrets: {}, providers: [...extension.providers] }
+  return { values, secrets: {}, providers: [...extension.providers] }
 }
 
 function typedValue(value: string | boolean, field: ExtensionConfigField): ExtensionConfigValue | null {
@@ -43,8 +43,11 @@ function typedValue(value: string | boolean, field: ExtensionConfigField): Exten
   return value === '' && !field.required ? null : String(value)
 }
 
-/** Only explicit edits cross the persistence boundary; saved secrets are never read. */
-export function extensionUpdate(extension: ExtensionSummary, draft: ExtensionDraft): ExtensionUpdate {
+/**
+ * Only explicit edits cross the persistence boundary; saved secrets are never read. `enabled` is sent only
+ * when the card switch changes it, so a form save never reverts a switch flipped while the form was open.
+ */
+export function extensionUpdate(extension: ExtensionSummary, draft: ExtensionDraft, enabled?: boolean): ExtensionUpdate {
   if (!extension.manifest) throw new Error('Extension metadata is unavailable.')
   const initial = extensionDraft(extension)
   const values: Record<string, ExtensionConfigValue | null> = {}
@@ -52,7 +55,7 @@ export function extensionUpdate(extension: ExtensionSummary, draft: ExtensionDra
     if (value !== initial.values[key]) values[key] = typedValue(value, extension.manifest.config![key])
   }
   const secrets = Object.fromEntries(Object.entries(draft.secrets).filter(([, value]) => value === null || value !== ''))
-  return { id: extension.id, enabled: draft.enabled, values, secrets, providers: [...draft.providers] }
+  return { id: extension.id, ...(enabled === undefined ? {} : { enabled }), values, secrets, providers: [...draft.providers] }
 }
 
 export function compatibleExtensionProviders(providers: ExtensionProvider[], extension?: ExtensionSummary | null): ExtensionProvider[] {

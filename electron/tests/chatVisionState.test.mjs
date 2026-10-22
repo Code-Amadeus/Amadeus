@@ -25,7 +25,7 @@ const compiled = ts.transpileModule(`const configEffect = ${configEffect}; confi
 }).outputText
 
 async function harness(config) {
-  const state = { watching: false, requests: [] }
+  const state = { watching: false, requests: [], connections: null }
   let notify
   const context = vm.createContext({
     connected: true,
@@ -42,6 +42,7 @@ async function harness(config) {
     setProvider: () => {},
     setCanUseMultimodal: () => {},
     setVisionVideoMode: value => { state.watching = value },
+    setModelConnections: value => { state.connections = value },
   })
   vm.runInContext(compiled, context)
   await Promise.resolve()
@@ -75,4 +76,18 @@ test('config notifications keep disabled vision off while retaining the mode for
     }
   }
   assert.equal(page.state.requests.length, 1, 'display synchronization never changes backend settings')
+})
+
+test('config loading and notifications keep the model connection facts that filter the model menu', async () => {
+  const loaded = [{ id: 'deepseek', configured: true }]
+  const page = await harness({ model_connections: loaded })
+  await Promise.resolve()
+  assert.deepEqual(page.state.connections, loaded)
+  const updated = [{ id: 'openai', configured: true }]
+  for (const envelope of [connections => ({ values: {}, model_connections: connections }), connections => ({ values: { model_connections: connections } })]) {
+    page.notify(envelope(updated))
+    assert.deepEqual(page.state.connections, updated)
+  }
+  page.notify({ values: { vision_enabled: false } })
+  assert.deepEqual(page.state.connections, updated, 'a notification without connection facts keeps the last ones')
 })

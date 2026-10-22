@@ -22,6 +22,7 @@ try {
   const resources = new ExtensionThemeResources()
   const png = fs.readFileSync(path.join(root, 'examples/extensions/desktop-theme/src/amadeus_example_theme/background.png'))
   const { nativeImage } = await import('electron')
+  const { readExtensionImage } = await import('../dist/main/extensionImages.js')
   fs.writeFileSync(path.join(output, 'sample.png'), png)
   fs.writeFileSync(path.join(output, 'sample.jpg'), nativeImage.createFromBuffer(png).toJPEG(90))
   for (const name of ['sample.png', 'sample.jpg']) {
@@ -37,6 +38,14 @@ try {
     await assert.rejects(resources.validate(definition, output), /background.image|background/)
   }
   report.checks.push('Real PNG/JPEG decoding succeeds; WebP declarations and disguised bytes are rejected')
+  const iconLimits = { label: 'Package icon', maxMiB: 1, maxDimension: 1024 }
+  for (const name of ['sample.png', 'sample.jpg']) assert.ok(readExtensionImage(output, name, iconLimits).base64)
+  const hugeIcon = Buffer.from(png); hugeIcon.writeUInt32BE(1025, 16)
+  fs.writeFileSync(path.join(output, 'huge-icon.png'), hugeIcon)
+  assert.throws(() => readExtensionImage(output, 'huge-icon.png', iconLimits), /dimensions/)
+  fs.writeFileSync(path.join(output, 'broken-icon.png'), png.subarray(0, 24))
+  assert.throws(() => readExtensionImage(output, 'broken-icon.png', iconLimits), /decoded dimensions/)
+  report.checks.push('Package icons use the native PNG/JPEG decoder with smaller canvas bounds and reject undecodable payloads')
   window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } })
   await window.loadURL('data:text/html,<html><head></head><body><main id="root"><article class="setting-card" style="background:var(--surface)"><p>Text</p><p style="color:var(--muted)">Muted</p><div class="visuals-page"><header class="visuals-header">Header</header><input type="text" value="Input"><select><option>Option</option></select></div></article><div class="capability-scene-item">Scene</div><div class="capability-page-tabs"><button aria-selected="true">Tab</button></div></main></body></html>')
   const ui = expression => window.webContents.executeJavaScript(expression)

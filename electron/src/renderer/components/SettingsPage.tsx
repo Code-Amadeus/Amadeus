@@ -3,7 +3,8 @@ import { catalogApplication, catalogConfiguration, catalogGroups, desktopCatalog
 import { settingSourceLabel } from '../../shared/characterStartup'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
-import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
+import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsButton, SettingsGroup } from './SettingsPrimitives'
+import Switch from './Switch'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import CharacterVisualsPage from './CharacterVisualsPage'
@@ -19,7 +20,7 @@ import CapabilitiesPanel, { RuntimePackages, type RuntimePackageStatus } from '.
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
 import { useI18n, type UiLocale } from '../i18n'
 import { useTheme, type UiTheme } from '../theme'
-import { chatProviderSupportsImages } from './chatModelCapabilities'
+import { chatProfileConnections, chatProviderSupportsImages } from './chatModelCapabilities'
 import {
   buildLocalModelConnectionCatalog,
   buildOptionalModelServiceCatalog,
@@ -44,9 +45,22 @@ interface Props {
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
   connected: boolean
   reconnectBackend: () => Promise<void>
+  /** Settings › Diagnostics content (runtime status, server log and controls), owned by the App. */
+  diagnostics?: ReactNode
 }
 
-type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'extensions' | SceneConfigureSection
+// 'extensions' is the Plugins presentation; Settings itself lists the sections below.
+type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'diagnostics' | 'extensions' | SceneConfigureSection
+const SETTINGS_SECTIONS: Array<[SettingsSection, string, FluentIconName]> = [
+  ['capabilities', 'Capabilities', 'Tiles'],
+  ['general', 'General', 'Setting'],
+  ['characters', 'Characters', 'People'],
+  ['graphics', 'Graphics', 'Video'],
+  ['models', 'Models', 'Robot'],
+  ['voice', 'Voice', 'Microphone'],
+  ['providers', 'Providers', 'Work'],
+  ['diagnostics', 'Diagnostics', 'CommandPrompt'],
+]
 type ModelsPage = 'roles' | 'connections'
 
 type StartupOption = string | { value: string; label: string; disabled?: boolean; unavailable?: boolean }
@@ -193,7 +207,7 @@ function ComboCard({ icon, title, content, value, onChange, options, disabled }:
   return (
     <CardShell>
       <CardIcon name={icon} />
-      <div className="flex-1 min-w-0" style={{ paddingRight: 16 }}>
+      <div className="settings-row-card-copy">
         <div className="settings-card-title">{t(title)}</div>
         {content ? <div className="settings-card-description">{t(content)}</div> : null}
       </div>
@@ -202,8 +216,7 @@ function ComboCard({ icon, title, content, value, onChange, options, disabled }:
         value={value}
         onChange={event => onChange(event.target.value)}
         disabled={disabled}
-        className="text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 text-[var(--text)] outline-none hover:border-[var(--border-strong)] focus:border-[var(--accent)] disabled:opacity-40 shrink-0"
-        style={{ minWidth: 145, height: 35 }}
+        className="settings-row-control settings-row-select"
       >
         {optionsWithCurrentValue(options, value).map(option => {
           const optionValue = typeof option === 'string' ? option : option.value
@@ -222,21 +235,11 @@ function SwitchCard({ icon, title, content, checked, onChange, disabled }: {
   return (
     <CardShell>
       <CardIcon name={icon} />
-      <div className="flex-1 min-w-0" style={{ paddingRight: 16 }}>
+      <div className="settings-row-card-copy">
         <div className="settings-card-title">{t(title)}</div>
         {content ? <div className="settings-card-description">{t(content)}</div> : null}
       </div>
-      <button
-        onClick={() => onChange(!checked)}
-        disabled={disabled}
-        className="relative shrink-0 transition-colors cursor-pointer"
-        style={{ width: 38, height: 22, borderRadius: 11, backgroundColor: checked ? 'var(--accent)' : 'var(--border-strong)', border: 'none' }}
-        aria-pressed={checked}
-        aria-label={t(title)}
-      >
-        <span className="absolute top-[3px] left-0 w-4 h-4 rounded-full bg-white shadow transition-transform" style={{ transform: checked ? 'translateX(19px)' : 'translateX(3px)' }} />
-      </button>
-      <span className="text-[11px] shrink-0 ml-2" style={{ color: 'var(--muted)', width: 28 }}>{t(checked ? 'On' : 'Off')}</span>
+      <Switch checked={checked} onChange={onChange} disabled={disabled} label={t(title)} />
     </CardShell>
   )
 }
@@ -265,7 +268,7 @@ function RoleAssignmentCard({
   const { t } = useI18n()
   return (
     <div className="setting-card model-role-card">
-      <span className="model-role-icon" aria-hidden="true"><FluentIcon name={icon} size={17} /></span>
+      <span className="model-role-icon" aria-hidden="true"><FluentIcon name={icon} size={16} /></span>
       <div className="model-role-copy">
         <div className="settings-card-title">{t(title)}</div>
         <div className="settings-card-description">{t(description)}</div>
@@ -288,29 +291,45 @@ function RoleAssignmentCard({
   )
 }
 
-function InlineFieldAction({ label, glyph, busy = false, tone = 'normal', disabled, onClick }: {
+function InlineFieldAction({ label, icon, busy = false, tone = 'accent', disabled, onClick }: {
   label: string
-  glyph: string
+  icon: FluentIconName
   busy?: boolean
-  tone?: 'normal' | 'danger'
+  tone?: 'accent' | 'danger'
   disabled?: boolean
   onClick: () => void
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       title={label}
       aria-label={label}
       data-tone={tone}
-      className="settings-inline-action flex items-center justify-center rounded-md disabled:opacity-30"
-      style={{ width: 27, height: 27, border: 0, background: 'transparent' }}
+      data-size="small"
+      className="icon-button"
     >
-      {busy
-        ? <FluentIcon name="Sync" size={13} className="animate-spin" />
-        : <span aria-hidden="true" style={{ fontSize: glyph === '×' ? 18 : 15, lineHeight: 1 }}>{glyph}</span>}
+      <FluentIcon name={busy ? 'Sync' : icon} size={14} className={busy ? 'animate-spin' : undefined} />
     </button>
   )
+}
+
+/**
+ * What a settings row says about its value: only facts that change what the user can do or expect. The
+ * value's source shows when it is .env or locks editing, and a restart note only while a saved value waits
+ * for the next backend start. The strings are i18n keys.
+ */
+export function startupFieldNotes(field: StartupField, desktop: DesktopSettingsSnapshot | null): string[] {
+  const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
+  const environmentLocked = field.key ? Boolean(desktop?.locked?.[field.key]) : true
+  return [
+    field.description || '',
+    source === 'dotenv' ? settingSourceLabel(source) : '',
+    !desktop ? 'editable in Electron app' : environmentLocked ? 'locked' : '',
+    field.restart_required && field.key && desktop?.pendingKeys?.includes(field.key) ? 'Applies after restart' : '',
+    field.type !== 'secret' && field.value === undefined ? 'Value unavailable until backend connects' : '',
+  ].filter(Boolean)
 }
 
 function StartupFieldRow({ field, desktop, onSave }: {
@@ -319,7 +338,6 @@ function StartupFieldRow({ field, desktop, onSave }: {
   onSave: (field: StartupField, value: string | boolean | null, secret: boolean) => Promise<void>
 }) {
   const { t } = useI18n()
-  const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
   const initial = field.value ?? ''
   const unknown = field.type !== 'secret' && field.value === undefined
   const [draft, setDraft] = useState<string | boolean>(initial)
@@ -349,16 +367,16 @@ function StartupFieldRow({ field, desktop, onSave }: {
   }
 
   return (
-    <div className="settings-field-row flex items-start gap-5" style={{ padding: '10px 0', borderTop: '1px solid var(--divider)' }}>
+    <div className="settings-field-row flex items-start gap-5">
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}{unknown ? ` · ${t('Value unavailable until backend connects')}` : ''}
+          {startupFieldNotes(field, desktop).map(note => t(note)).join(' · ')}
         </div>
       </div>
-      <div className="settings-field-control flex items-center gap-1.5 shrink-0" style={{ width: 320, maxWidth: '43%' }}>
+      <div className="settings-field-control flex items-center gap-1.5 shrink-0">
         {!field.editable || !field.key ? (
-          <span className="text-[13px] truncate ml-auto" style={{ color: 'var(--text)' }}>{String(field.value ?? '')}</span>
+          <span className="settings-field-value">{String(field.value ?? '')}</span>
         ) : field.type === 'secret' ? (
           <div className="relative min-w-0 flex-1">
             <input
@@ -379,9 +397,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
                 if (next && event.currentTarget.parentElement?.contains(next)) return
                 if (secretDraft && !locked && !busy) void save(secretDraft, true)
               }}
-              className="w-full min-w-0 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg pl-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
+              className="settings-row-control w-full"
               style={{
-                height: 34,
                 paddingRight: secretDraft && secretConfigured
                   ? 65
                   : secretDraft || secretConfigured ? 36 : 12,
@@ -392,7 +409,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
                 {secretDraft ? (
                   <InlineFieldAction
                     label={`${t('Save')} ${t(field.label)}`}
-                    glyph="✓"
+                    icon="Checkmark"
                     busy={busy}
                     disabled={locked || busy}
                     onClick={() => void save(secretDraft, true)}
@@ -401,7 +418,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
                 {secretConfigured ? (
                   <InlineFieldAction
                     label={`${t('Clear')} ${t(field.label)}`}
-                    glyph="×"
+                    icon="Dismiss"
                     tone="danger"
                     disabled={locked || busy}
                     onClick={() => void save(null, true)}
@@ -420,8 +437,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
               if (value !== String(initial)) void save(value, false)
             }}
             disabled={locked || busy}
-            className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
-            style={{ height: 34 }}
+            className="settings-row-control flex-1"
           >
             {unknown ? <option value="">{t('Unknown')}</option> : null}
             {(unknown ? field.options || [] : optionsWithCurrentValue(field.options || [], String(draft))).map(option => {
@@ -431,22 +447,15 @@ function StartupFieldRow({ field, desktop, onSave }: {
             })}
           </select>
         ) : field.type === 'boolean' ? (
-          <select
-            aria-label={t(field.label)}
-            value={String(draft)}
-            onChange={event => {
-              const value = event.target.value === 'true'
+          <Switch
+            label={t(field.label)}
+            checked={unknown ? 'mixed' : String(draft) === 'true'}
+            disabled={locked || busy}
+            onChange={value => {
               setDraft(value)
               if (String(value) !== String(initial)) void save(value, false)
             }}
-            disabled={locked || busy}
-            className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
-            style={{ height: 34 }}
-          >
-            {unknown ? <option value="">{t('Unknown')}</option> : null}
-            <option value="true">{t('On')}</option>
-            <option value="false">{t('Off')}</option>
-          </select>
+          />
         ) : (
           <input
             aria-label={t(field.label)}
@@ -464,11 +473,10 @@ function StartupFieldRow({ field, desktop, onSave }: {
               if (event.key === 'Enter') event.currentTarget.blur()
             }}
             disabled={locked || busy}
-            className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
-            style={{ height: 34 }}
+            className="settings-row-control flex-1"
           />
         )}
-        {busy && field.type !== 'secret' ? <span className="text-[10px] shrink-0" style={{ color: 'var(--muted)' }}>{t('Saving…')}</span> : null}
+        {busy && field.type !== 'secret' ? <span className="settings-field-saving">{t('Saving…')}</span> : null}
       </div>
     </div>
   )
@@ -501,13 +509,13 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
   const neutralStatus = ['Optional', 'Off', 'Disabled', 'Inactive', 'Backend status unavailable'].includes(statusText)
   const header = (
       <div className="configuration-card-header flex items-start gap-2.5">
-        <div className="flex items-center justify-center mt-0.5" style={{ width: 24, color: 'var(--muted)' }}>
-          <FluentIcon name={icon || (group.id === 'local' ? 'CommandPrompt' : 'Robot')} size={17} />
+        <div className="settings-leading-icon">
+          <FluentIcon name={icon || (group.id === 'local' ? 'CommandPrompt' : 'Robot')} size={16} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="settings-card-title">{t(group.label)}</div>
-            {group.active ? <span className="text-[9px] font-[700]" style={{ color: 'var(--accent)' }}>{t('ACTIVE')}</span> : null}
+            {group.active ? <span className="settings-tag" data-tone="accent">{t('ACTIVE')}</span> : null}
           </div>
           {group.description ? <div className="settings-card-description">{t(group.description)}</div> : null}
           {group.status_detail ? <div className="settings-meta-text">{t(group.status_detail)}</div> : null}
@@ -519,13 +527,13 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
   const fields = (
     <>
       {group.fields.map(field => <StartupFieldRow key={`${group.id}-${field.key || field.label}`} field={field} desktop={desktop} onSave={onSave} />)}
-      {group.fields.length === 0 ? <div className="text-[11px] pt-2" style={{ color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{t('No user-managed connection settings.')}</div> : null}
+      {group.fields.length === 0 ? <div className="configuration-card-empty">{t('No user-managed connection settings.')}</div> : null}
     </>
   )
   if (collapsible) {
     return (
       <details className="setting-card configuration-card-details" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-        <summary>{header}</summary>
+        <summary>{header}<FluentIcon name="ChevronRight" size={16} className="configuration-card-chevron" aria-hidden="true" /></summary>
         <div className="configuration-card-fields">{fields}</div>
       </details>
     )
@@ -548,23 +556,23 @@ function CapabilityCard({ contribution, packageInfo, consumers }: {
   return (
     <CardShell vertical>
       <div className="flex items-start gap-2.5">
-        <div className="flex items-center justify-center mt-0.5" style={{ width: 22, color: 'var(--muted)' }}>
-          <FluentIcon name={contribution.kind === 'skill' ? 'Work' : 'CommandPrompt'} size={15} />
+        <div className="settings-leading-icon">
+          <FluentIcon name={contribution.kind === 'skill' ? 'Work' : 'CommandPrompt'} size={16} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="settings-card-title">{contribution.id}</span>
-            <span className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{contribution.kind === 'mcp_server' ? 'MCP' : 'Skill'}</span>
+            <span className="settings-tag">{contribution.kind === 'mcp_server' ? 'MCP' : 'Skill'}</span>
           </div>
           <div className="settings-card-description">{contribution.summary}</div>
         </div>
         <StatusPill ok={contribution.available}>{t(contribution.available ? 'Available' : contribution.health)}</StatusPill>
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 pt-2.5 text-[9.5px]" style={{ borderTop: '1px solid var(--divider)', color: 'var(--muted)' }}>
-        <div><span className="font-[600]">{t('Consumers')}:</span> {consumers.length ? consumers.join(', ') : t('No active Provider binding')}</div>
-        <div><span className="font-[600]">{t('Scope')}:</span> {t('Work Providers only')}</div>
-        <div><span className="font-[600]">{t('Projection')}:</span> {bindings.map(item => item.projection).join(', ') || t('None')}</div>
-        <div><span className="font-[600]">{t('Source')}:</span> {packageInfo.source} · {packageInfo.trust}</div>
+      <div className="capability-card-facts">
+        <div><strong>{t('Consumers')}:</strong> {consumers.length ? consumers.join(', ') : t('No active Provider binding')}</div>
+        <div><strong>{t('Scope')}:</strong> {t('Work Providers only')}</div>
+        <div><strong>{t('Projection')}:</strong> {bindings.map(item => item.projection).join(', ') || t('None')}</div>
+        <div><strong>{t('Source')}:</strong> {packageInfo.source} · {packageInfo.trust}</div>
       </div>
     </CardShell>
   )
@@ -573,14 +581,7 @@ function CapabilityCard({ contribution, packageInfo, consumers }: {
 function BoundaryNote({ title, children }: { title: string; children: ReactNode }) {
   const { t } = useI18n()
   return (
-    <div
-      className="rounded-lg"
-      style={{
-        padding: '10px 12px',
-        border: '1px solid var(--border)',
-        background: 'var(--focus-fill)',
-      }}
-    >
+    <div className="settings-note">
       <div className="settings-note-title">{t(title)}</div>
       <div className="settings-note-description">{typeof children === 'string' ? t(children) : children}</div>
     </div>
@@ -635,16 +636,15 @@ function ThemePicker({ value, onChange, disabled, extensions }: { value: string;
   )
 }
 
-export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange, presentation = 'settings', onOpenSettings, onOpenPlugins }: Props) {
+export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange, presentation = 'settings', onOpenSettings, onOpenPlugins, diagnostics }: Props) {
   const { locale, setLocale, t } = useI18n()
   const { selection: selectedTheme, reason: themeReason, appliedVersion: themeVersion, setTheme } = useTheme()
   const [section, setSectionState] = useState<SettingsSection>(() => {
     if (presentation === 'plugins') return 'extensions'
     const saved = window.localStorage.getItem('amadeus.settings.section')
     if (saved === 'visuals') return 'characters'
-    return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers', 'extensions'].includes(String(saved))
-      ? saved as SettingsSection
-      : 'capabilities'
+    // Opens on General unless a section is remembered; a remembered Extensions section now lives in Plugins.
+    return SETTINGS_SECTIONS.some(([id]) => id === saved) ? saved as SettingsSection : 'general'
   })
   const scrollArea = useRef<HTMLDivElement>(null)
   const editors = useRef<Record<string, SettingsEditorState>>({})
@@ -1069,11 +1069,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     const group = modelConnections.find(item => item.id === id)
     return Boolean(group && (typeof group.status_ok === 'boolean' ? group.status_ok : group.configured))
   }
-  const mainModelReady = ({
-    hybrid: ['hybrid_local', 'bedrock'],
-    hybrid2: ['hybrid_local', 'deepseek'],
-    hybrid3: ['hybrid_local', 'openai'],
-  }[mainModelProvider] || [mainModelProvider]).every(modelGroupReady)
+  const mainModelReady = chatProfileConnections(mainModelProvider).every(modelGroupReady)
   const mainModelLabel = modelProviderLabels[mainModelProvider] || mainModelProvider
   const imageModel = mainModelProvider === 'deepseek' || mainModelProvider === 'hybrid2'
     ? String(modelConnections.find(group => group.id === 'deepseek')?.fields
@@ -1270,29 +1266,30 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       </>,
     }} />
 
+  const wideSection = section === 'characters' && characterTab === 'appearance'
   return (
     <div ref={scrollArea} className="settings-scroll-area flex-1 overflow-y-auto">
-      <div style={{ width: section === 'characters' && characterTab === 'appearance' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
-        <div className="flex items-center justify-between gap-4" style={{ marginBottom: 16 }}>
+      <div className="settings-content" data-wide={wideSection || undefined}>
+        <div className="settings-page-header">
           <div>
             <h2 className="settings-page-title">{t(presentation === 'plugins' ? 'Plugins' : 'Settings')}</h2>
             <div className="settings-page-context">
-              {t(presentation === 'plugins' ? 'Install once. Manage contributions and their application state here.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
+              {t(presentation === 'plugins' ? 'Install plugins and manage their settings.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.' : section === 'diagnostics' ? 'Live runtime status and server diagnostics.'
                 : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
           {restartPending || (section === 'characters' && desktop) ? (
-            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'var(--on-accent, white)', background: 'var(--accent)', border: 0 }}>
+            <SettingsButton tone="primary" className="shrink-0 whitespace-nowrap" onClick={() => void restartBackend()} disabled={restarting}>
               {t(restarting ? 'Restarting…' : restartPending ? 'Restart backend to apply' : 'Restart backend')}
-            </button>
+            </SettingsButton>
           ) : null}
         </div>
 
         {(saving || notice || error) ? (
           <div className="settings-feedback" aria-live="polite">
-            {saving ? <div className="text-[11px] animate-pulse" style={{ color: 'var(--accent)' }}>{t('Saving {name}…', { name: saving })}</div> : null}
-            {notice ? <div className="text-[11px] rounded-md p-3" style={{ color: 'var(--warning)', background: 'var(--warning-bg)' }}>{t(notice)}</div> : null}
-            {error ? <div role="alert" className="text-[11px] rounded-md p-3" style={{ color: 'var(--danger)', background: 'var(--danger-bg)' }}>{error}</div> : null}
+            {saving ? <div className="settings-saving animate-pulse">{t('Saving {name}…', { name: saving })}</div> : null}
+            {notice ? <div className="settings-note" data-tone="warning">{t(notice)}</div> : null}
+            {error ? <div role="alert" className="settings-note" data-tone="danger">{error}</div> : null}
           </div>
         ) : null}
 
@@ -1302,27 +1299,18 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         <RetiredRouteSetting migration={retiredRouteMigration(desktop, config.retired_settings)}
           saving={saving === RETIRED_ROUTE_KEY} onConfirm={confirmRetiredRoute} />
 
-        <div className="settings-layout flex gap-6 items-start" style={{ width: '100%' }}>
-          {presentation !== 'plugins' && <nav className="settings-section-nav shrink-0 flex flex-col gap-0.5 sticky" style={{ width: 138, top: 16 }} aria-label={t('Settings sections')}>
-            {([
-              ['capabilities', 'Capabilities', 'Tiles'],
-              ['general', 'General', 'Setting'],
-              ['characters', 'Characters', 'People'],
-              ['graphics', 'Graphics', 'Video'],
-              ['models', 'Models', 'Robot'],
-              ['voice', 'Voice', 'Microphone'],
-              ['providers', 'Providers', 'Work'],
-              ['extensions', 'Extensions', 'Tiles'],
-            ] as Array<[SettingsSection, string, FluentIconName]>).map(([id, label, icon]) => (
-              <button key={id} onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined} className="flex items-center gap-2 text-[11.5px] text-left rounded-md px-2.5" style={{ height: 32, color: section === id ? 'var(--text)' : 'var(--muted)', background: section === id ? 'var(--selected-fill)' : 'transparent', border: 0, fontWeight: section === id ? 650 : 500 }}>
+        <div className="settings-layout">
+          {presentation !== 'plugins' && <nav className="settings-section-nav" aria-label={t('Settings sections')}>
+            {SETTINGS_SECTIONS.map(([id, label, icon]) => (
+              <button key={id} onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined}>
                 <FluentIcon name={icon} size={14} />{t(label)}
               </button>
             ))}
           </nav>}
 
-          <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'characters' && characterTab === 'appearance' ? undefined : 760 }}>
+          <main className="settings-main" data-wide={wideSection || undefined}>
             {section === 'characters' ? characterWorkspace : null}
-            {section === 'extensions' ? <SettingsGroup title="Community extensions" detail="Manage installed packages, their contributions and application state.">
+            {section === 'extensions' ? <>
               {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
               <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
                 providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
@@ -1330,7 +1318,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
                 onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
-            </SettingsGroup> : null}
+            </> : null}
+            {section === 'diagnostics' ? diagnostics : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
             ) : null}
@@ -1366,18 +1355,17 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       }} /> : <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
                   </SettingsGroup>
                 ) : null}
-                <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend.">
+                <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend."
+                  action={<SettingsButton onClick={() => onOpenPlugins?.()}>{t('Manage plugins')}</SettingsButton>}>
                   <ThemePicker
                     value={selectedTheme} extensions={desktop?.extensions || []}
                     disabled={Boolean(desktop?.locked?.AMADEUS_UI_THEME)}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
                   {themeReason ? <div role="status" className="settings-field-description">{t(themeReason)}<br />{selectedTheme}{themeVersion ? ` - ${t('Running version')}: ${themeVersion}` : ''}</div> : null}
-                  <button className="settings-button" type="button" onClick={() => onOpenPlugins ? onOpenPlugins() : setSection('extensions')}>{t('Manage plugins')}</button>
                 </SettingsGroup>
-                <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together.">
-                  <button className="character-secondary-button" onClick={() => openCharacters('overview')}>{t('Open Characters')}</button>
-                </SettingsGroup>
+                <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together."
+                  action={<SettingsButton onClick={() => openCharacters('overview')}>{t('Open Characters')}</SettingsButton>} />
                 <div id="settings-language"><SettingsGroup title={catalogGroups.find(group => group.id === 'presentation')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'presentation')!.description['en-US']}>
                   {interfaceConfiguration.fields.filter(field => field.key !== 'AMADEUS_UI_THEME').map(field => field.key === 'AMADEUS_UI_LOCALE'
                     ? <ComboCard key={field.key} icon="Language" title={field.label} content={field.description || ''} value={locale}
@@ -1404,14 +1392,14 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       <BoundaryNote title="Vision target required">
                         <span>{t(visionWindowsLoading ? 'Finding open windows…' : 'No selectable window is available. Open the target window, then refresh the list.')}</span>
                         {!visionWindowsLoading ? (
-                          <button type="button" className="settings-inline-link" onClick={() => void loadVisionWindows()}>{t('Refresh windows')}</button>
+                          <button type="button" className="text-button ml-2" onClick={() => void loadVisionWindows()}>{t('Refresh windows')}</button>
                         ) : null}
                       </BoundaryNote>
                     )
                   ) : null}
                 </SettingsGroup></div>
                 <SettingsGroup title="Avatar compatibility" detail="Optional output paths are disabled unless explicitly enabled.">
-                  {avatarConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
+                  {avatarConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="People" />)}
                 </SettingsGroup>
               </div>
             ) : null}
@@ -1442,7 +1430,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     </SettingsGroup>
 
                     <SettingsGroup title="Work & application roles" detail="Assign coding and everyday execution separately. Each Provider keeps its own model and tools; connections and registration are managed in Providers.">
-                      <ConfigurationCard group={providerCatalog.routing} desktop={desktop} onSave={handleStartupSave} />
+                      <ConfigurationCard group={providerCatalog.routing} desktop={desktop} onSave={handleStartupSave} icon="Work" />
                     </SettingsGroup>
 
                     <SettingsGroup title="Presentation roles">
@@ -1465,19 +1453,19 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       </summary>
                       <div className="flex flex-col gap-5">
                         <SettingsGroup title="Routing & observation">
-                          <ConfigurationCard group={roleGroups.work_planner} desktop={desktop} onSave={handleStartupSave} collapsible />
-                          <ConfigurationCard group={roleGroups.work_observer} desktop={desktop} onSave={handleStartupSave} collapsible />
-                          <ConfigurationCard group={roleGroups.browser_branch_planner} desktop={desktop} onSave={handleStartupSave} collapsible />
+                          <ConfigurationCard group={roleGroups.work_planner} desktop={desktop} onSave={handleStartupSave} icon="Work" collapsible />
+                          <ConfigurationCard group={roleGroups.work_observer} desktop={desktop} onSave={handleStartupSave} icon="Work" collapsible />
+                          <ConfigurationCard group={roleGroups.browser_branch_planner} desktop={desktop} onSave={handleStartupSave} icon="Work" collapsible />
                         </SettingsGroup>
 
                         <div id="settings-auip-pipeline"><SettingsGroup title="AUIP pipeline">
-                          <ConfigurationCard group={roleGroups.auip_action} desktop={desktop} onSave={handleStartupSave} collapsible />
-                          <ConfigurationCard group={roleGroups.auip_narration} desktop={desktop} onSave={handleStartupSave} collapsible />
+                          <ConfigurationCard group={roleGroups.auip_action} desktop={desktop} onSave={handleStartupSave} icon="Work" collapsible />
+                          <ConfigurationCard group={roleGroups.auip_narration} desktop={desktop} onSave={handleStartupSave} icon="Work" collapsible />
                         </SettingsGroup></div>
 
                         <SettingsGroup title="VN translation pipeline">
-                          <ConfigurationCard group={roleGroups.vn_subtitle_translation} desktop={desktop} onSave={handleStartupSave} collapsible />
-                          <ConfigurationCard group={roleGroups.vn_speech_translation} desktop={desktop} onSave={handleStartupSave} collapsible />
+                          <ConfigurationCard group={roleGroups.vn_subtitle_translation} desktop={desktop} onSave={handleStartupSave} icon="Language" collapsible />
+                          <ConfigurationCard group={roleGroups.vn_speech_translation} desktop={desktop} onSave={handleStartupSave} icon="Language" collapsible />
                         </SettingsGroup>
 
                         <BoundaryNote title="Internal runtime roles">
@@ -1494,9 +1482,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     <SettingsGroup title="Local model runtimes" detail="Local and hybrid endpoints are configured independently from remote API credentials.">
                       {localModelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
                     </SettingsGroup>
-                    <SettingsGroup title="Character knowledge" detail="Reference knowledge and history boundaries are managed in Characters.">
-                      <button className="character-secondary-button" onClick={() => openCharacters('knowledge')}>{t('Open character knowledge')}</button>
-                    </SettingsGroup>
+                    <SettingsGroup title="Character knowledge" detail="Reference knowledge and history boundaries are managed in Characters."
+                      action={<SettingsButton onClick={() => openCharacters('knowledge')}>{t('Open character knowledge')}</SettingsButton>} />
                   </div>
                 )}
                 </div>
@@ -1511,9 +1498,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <BoundaryNote title="Shared voice setup">
                   {t('All roles use this voice setup. Model weights, voice profiles, reference audio and speech services are configured here. Changing personality does not change the voice.')}
                 </BoundaryNote>
-                <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings.">
-                  {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
-                  <div className="settings-form-actions-end"><button className="settings-button" type="button" onClick={() => setSection('extensions')}>{t('Manage community voices')}</button></div>
+                <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings."
+                  action={<SettingsButton onClick={() => onOpenPlugins?.()}>{t('Manage community voices')}</SettingsButton>}>
+                  {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Play" collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
                   {typeof speechBackendOption === 'object' && speechBackendOption.unavailable ? <BoundaryNote title="Unavailable voice">{t('The saved speech engine is unavailable. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</BoundaryNote> : null}
                   {selectedExtensionVoice ? <BoundaryNote title="Extension voice compatibility">
                     <div>{t('Declared languages')}: {(selectedExtensionVoice.voice.languages || []).join(', ')}</div>
@@ -1526,10 +1513,10 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <ComboCard icon="Language" title={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.title['en-US']} content={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.description?.['en-US'] || ''} value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.options!.map(option => ({ value: String(runtimeSettingFromDesktopValues('tts_output_language', { TTS_OUTPUT_LANGUAGE: typeof option === 'string' ? option : option.value })), label: typeof option === 'string' ? option : option.label['en-US'] }))} />
                 </SettingsGroup>
                 <SettingsGroup title="Listening & recognition" detail="Configure conversation transcription, wake listening and microphone processing.">
-                  {inputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
+                  {inputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Microphone" collapsible optionalWhenInactive />)}
                 </SettingsGroup>
                 <SettingsGroup title="Remote voice services" detail="Configure credentials and endpoints for remote transcription and speech synthesis.">
-                  {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
+                  {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Microphone" collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
                 </SettingsGroup>
                 {connected ? <SettingsGroup title="Installed voice resources">
                   <RuntimePackages runtimePackages={runtimePackages.filter(item => item.id === 'emotion_reference_pack')} />
@@ -1544,7 +1531,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       <ComboCard icon="Tiles" title="Local TTS inference mode" content="Automatically use CUDA Graph on NVIDIA speech devices, or choose a manual mode while speech is idle." value={val('tts_mode', 'auto')} onChange={value => handleChange('tts_mode', value)} options={[{ value: 'auto', label: 'Automatic (recommended)' }, { value: 'parallel', label: 'Standard ×1' }, { value: 'cuda_graph', label: 'CUDA Graph ×1' }, { value: 'parallel2', label: 'Parallel ×2' }]} disabled={val('tts_backend', 'gpt_sovits') !== 'gpt_sovits'} />
                     </SettingsGroup>
                     {advancedVoiceConfiguration.length > 0 ? <SettingsGroup title="Voice implementation details" detail="Engine paths, performance and additional voice services.">
-                      {advancedVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
+                      {advancedVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Microphone" collapsible optionalWhenInactive />)}
                     </SettingsGroup> : null}
                   </div>
                 </details>
@@ -1564,7 +1551,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <button className="settings-action" onClick={() => { if (setSection('models')) setModelsPage('roles') }}>{t('Configure roles')}</button>
                 </BoundaryNote>
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
-                  {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
+                  {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} icon="Work" availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
                 </SettingsGroup>
                 <SettingsGroup title="ACP agents — Experimental" detail="Try DeepSeek Harness, Claude or another ACP v1 agent. This integration has not been used in production.">
                   <AcpProviders
@@ -1586,7 +1573,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave}/>)}
                 </SettingsGroup>
                 <SettingsGroup title="Artifact appearance" detail="Generation preferences for new interactive apps. Save and restart the backend to apply.">
-                  {artifactConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
+                  {artifactConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Palette" />)}
                 </SettingsGroup>
                 <SettingsGroup title="MCP connections" detail="Host-managed connections are projected only into explicitly compatible Work Providers.">
                   <McpConnections
@@ -1602,7 +1589,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </SettingsGroup>
                 <SettingsGroup title="Shared Provider capabilities" detail="Installed once by the Host, then projected only to Providers that explicitly support the capability shape.">
                   {sharedCapabilities.map(({ packageInfo, contribution }) => <CapabilityCard key={`${packageInfo.id}-${contribution.kind}-${contribution.id}`} contribution={contribution} packageInfo={packageInfo} consumers={capabilityConsumers(contribution)} />)}
-                  {!sharedCapabilities.length ? <div className="text-[10.5px]" style={{ color: 'var(--muted)' }}>{t('No shared Provider capability is active in this backend process.')}</div> : null}
+                  {!sharedCapabilities.length ? <div className="settings-field-description">{t('No shared Provider capability is active in this backend process.')}</div> : null}
                 </SettingsGroup>
               </div>
             ) : null}
