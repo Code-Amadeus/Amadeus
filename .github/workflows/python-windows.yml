@@ -116,7 +116,7 @@ jobs:
         working-directory: electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win --x64 --dir --publish never
+        run: npx electron-builder --config electron-builder-code-only.cjs --win --x64 --dir --publish never
 
       - name: Launch packaged frontend with supplied Python runtime
         run: >-

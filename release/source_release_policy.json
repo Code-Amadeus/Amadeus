@@ -113,7 +113,12 @@
     "tests/fixtures/extension_theme_colors.json",
     "docs/japanese_context_reading.md",
     "LICENSES/TSQYOMI.md",
-    "LICENSES/TSQYOMI-MIT.txt"
+    "LICENSES/TSQYOMI-MIT.txt",
+    "release/japanese_dictionary.json",
+    "tools/stage_japanese_dictionary.py",
+    "electron/scripts/build-runtime-resources.cjs",
+    "electron/electron-builder-code-only.cjs",
+    "electron/src/main/bundledDictionary.ts"
   ],
   "include_roots": [
     "characters",

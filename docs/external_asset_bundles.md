@@ -137,16 +137,16 @@ reviewed before publishing either voice archive.
 
 ## Archive contract
 
-The independent optional `japanese-pronunciation` pack contains a pinned,
-corrected Japanese word/name CSV and its provenance/license notices. Build,
-verify and install use the existing commands; compiled and personal dictionaries
-are excluded. This requires an application version with the new catalog entry.
-See [Japanese pronunciation dictionary](japanese_pronunciation_dictionary.md).
-Publish it alongside the compatible application source ZIP in the same GitHub
-Release, with checksums and the tested version pair. It remains optional and
-does not require rebuilding other runtime archives. Later format changes ship
-updated resources with the new application; old pack contracts need not be
-retained indefinitely. Keep published filenames and bytes unchanged.
+Application releases include the independently versioned `japanese-pronunciation`
+resource as a bundled default; consumers do not install it separately. Maintainers
+pin and validate its archive and all nine files before building either source or
+Electron application distributions. Explicit independent installs under
+`assets/text/ja/english` take precedence, preserving data-only updates and rollback
+across application upgrades. Personal `assets/text/ja/user.csv` stays separate.
+See [Japanese pronunciation dictionary](japanese_pronunciation_dictionary.md)
+for staging, release gates, actual loading checks and returning to the default.
+The same immutable independent ZIP may be supplied with the application Release
+for data-only updates; other voice/model/media archives remain unchanged.
 
 The optional `voice-kurisu-emotions` pack adds paired Japanese semantic references
 to an existing Windows CUDA V3 installation. It uses the same bundle contract
