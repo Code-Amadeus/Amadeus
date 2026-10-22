@@ -22,7 +22,6 @@
     "version": { "$ref": "#/$defs/semver" },
     "display_name": { "$ref": "#/$defs/text80" },
     "description": { "$ref": "#/$defs/text500" },
-    "icon": { "$ref": "#/$defs/relativePath", "description": "Optional package-local PNG or JPEG icon, at most 1 MiB. Hosts may show the name initial when absent or unavailable." },
     "author": { "$ref": "#/$defs/author" },
     "license": { "type": "string", "minLength": 1, "maxLength": 200 },
     "homepage": { "$ref": "#/$defs/httpsUrl" },

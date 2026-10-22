@@ -37,12 +37,10 @@ export type ExtensionContribution = {
   path?: string
 }
 export type ExtensionManifest = {
-  schema: 'amadeus.extension/v0'
   id: string
   version: string
   display_name: ExtensionText
   description: ExtensionText
-  icon?: string
   author: { name: string; email?: string; url?: string }
   license?: string
   homepage?: string
@@ -52,7 +50,7 @@ export type ExtensionManifest = {
   contributes: Record<string, ExtensionContribution[]>
   config?: Record<string, ExtensionConfigField>
   permissions?: { host?: unknown[]; os?: Record<string, unknown> }
-}
+} & ({ schema: 'amadeus.extension/v0'; icon?: never } | { schema: 'amadeus.extension/v1'; icon?: string })
 export type InstalledExtensionSummary = {
   revision?: number
   appliedRevision?: number

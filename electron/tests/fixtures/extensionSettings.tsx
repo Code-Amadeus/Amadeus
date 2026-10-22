@@ -28,7 +28,7 @@ localStorage.setItem('amadeus.settings.section', query.get('section') || 'genera
 const voice: ExtensionSummary = {
   id: 'org.example.voice', version: '1.0.0', revision: 1, appliedRevision: 1, appliedVersion: '1.0.0', digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
   values: { voice: 'sample-english', model: 'standard', speed: 1, normalize: true }, secretConfigured: { api_key: true }, providers: [], status: 'enabled', restartRequired: false,
-  manifest: { schema: 'amadeus.extension/v0', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' }, icon: 'icon.png',
+  manifest: { schema: 'amadeus.extension/v1', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' }, icon: 'icon.png',
     description: { en: 'Synthetic remote speech package for UI verification.', 'zh-CN': '用于界面验证的模拟远程语音包。' },
     author: { name: 'Example author' }, runtime: { kind: 'python' }, engines: { amadeus_host_api: '>=0.1,<0.2' },
     contributes: { voice_backend: [{ id: 'speech', contract: 'amadeus.voice.tts/v0', role: 'tts', deployment: 'remote', languages: ['en'], streaming: true }] },
