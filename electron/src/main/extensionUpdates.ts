@@ -47,14 +47,14 @@ export class ExtensionUpdateJournal {
   readonly owner = randomBytes(16).toString('hex')
   constructor(private readonly root: string, private readonly validate: (raw: unknown) => StoredExtension) {}
   private get file(): string { return path.join(this.root, 'update-rollback.json') }
-  read(): ExtensionUpdateRecord | undefined {
+  read(validate = this.validate): ExtensionUpdateRecord | undefined {
     assertExtensionPath(this.root, this.file)
     if (!fs.existsSync(this.file)) return
     if (fs.statSync(this.file).size > 2 * 1024 * 1024) throw new Error('Plugin recovery record is too large; installation is blocked.')
     const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as ExtensionUpdateRecord
     if (raw?.format !== 'amadeus.extension-update/v1' || !/^[a-f0-9]{32}$/.test(raw.owner)
       || !['pending', 'startup_confirmed', 'recovery_required'].includes(raw.phase)) throw new Error('Plugin recovery record is invalid; installation is blocked.')
-    const previous = this.validate(raw.previous), target = this.validate(raw.target)
+    const previous = validate(raw.previous), target = validate(raw.target)
     if (previous.id !== target.id || previous.installId === target.installId) throw new Error('Plugin recovery identities do not match.')
     return { format: raw.format, owner: raw.owner, phase: raw.phase, previous, target }
   }

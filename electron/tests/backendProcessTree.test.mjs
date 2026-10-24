@@ -8,7 +8,29 @@ import test from 'node:test'
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
 const { forceStopBackendTree, stopOwnedBackend, waitForProcessExit, prepareBackendCleanup,
-  verifyPreviousBackendCleanup, markBackendCleanupUnconfirmed } = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+  verifyPreviousBackendCleanup, markBackendCleanupUnconfirmed, resolveBackendProjectRoot } = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+
+test('packaged cleanup resolves the supplied Python module root with the actual launch environment', async () => {
+  const resources = path.resolve('packaged/resources'), backend = path.resolve('external/backend')
+  const environment = { PYTHONPATH: backend }
+  const root = await resolveBackendProjectRoot('supplied-python', resources, environment, (python, args, options, done) => {
+    assert.equal(python, 'supplied-python')
+    assert.equal(args[0], '-c')
+    assert.ok(args[1].includes("find_spec('server')"))
+    assert.equal(options.cwd, resources)
+    assert.equal(options.env, environment)
+    assert.equal(options.windowsHide, true)
+    done(null, JSON.stringify(backend), '')
+  })
+  assert.equal(root, backend)
+})
+
+test('an unresolved backend root never falls back to the frontend resource directory', async () => {
+  for (const output of ['null', '"relative"', 'not JSON']) {
+    await assert.rejects(resolveBackendProjectRoot('python', process.cwd(), {}, (_python, _args, _options, done) => done(null, output, '')))
+  }
+  await assert.rejects(resolveBackendProjectRoot('python', process.cwd(), {}, (_python, _args, _options, done) => done(Error('missing backend'))), /missing backend/)
+})
 
 test('forced Windows backend stop targets only its owned PID and whole descendant tree without Host secrets', async () => {
   const invocations = []

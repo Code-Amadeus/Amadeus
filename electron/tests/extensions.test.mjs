@@ -1186,6 +1186,38 @@ async function catalogUpdateFixture(t) {
   return f
 }
 
+test('cold startup validates both retained versions before reading recovery authority', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const validated = new Set()
+  const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform,
+    metadata => validated.has(metadata.version) ? true : 'unavailable')
+  const seen = []
+  const helper = { ...f.helper, refreshRecords: async records => {
+    for (const record of records) { seen.push(record.version); validated.add(record.version) }
+  } }
+  const reopened = new ExtensionInstaller(f.root, f.directory, store, helper, () => 'trusted-python', {}, f.run, async () => true)
+  assert.throws(() => reopened.pendingUpdate(), /Invalid plugin recovery package record/)
+  await reopened.prepareStartup()
+  assert.deepEqual([...new Set(seen)].sort(), ['0.1.0', '0.2.0'])
+  assert.equal(reopened.pendingUpdate().recoveryRequired, true)
+  assert.throws(() => reopened.assertUpdateCanLaunch(), /rollback/)
+  await reopened.rollbackPendingUpdate()
+  assert.equal(store.storedExtensionRecords()[0].version, '0.1.0')
+})
+
+test('cold recovery never treats missing or rejected semantic validation as startup authority', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  for (const result of ['unavailable', false]) {
+    const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform, () => result)
+    const reopened = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true)
+    await assert.rejects(reopened.prepareStartup(), /Invalid plugin recovery package record/)
+    assert.throws(() => reopened.assertUpdateCanLaunch(), /Invalid plugin recovery package record/)
+    assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
+  }
+})
+
 test('catalog update retains last-good wheel and encrypted config across process restart and explicit rollback',async t=>{
   const f=await catalogUpdateFixture(t)
   delete f.metadata.config.token

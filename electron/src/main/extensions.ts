@@ -206,6 +206,16 @@ export class ExtensionInstaller {
     this.updates = new ExtensionUpdateJournal(root, raw => store.validateExtensionRollbackRecord(raw))
   }
 
+  async prepareStartup(): Promise<void> {
+    // Structural validation permits loading records for the asynchronous Python
+    // validator. It grants no activation or rollback authority: re-read with the
+    // strict validator before the app can apply a queued change or launch Host.
+    const update = this.updates.read(raw => this.store.validateExtensionRollbackRecord(raw, () => true))
+    await this.helper.refreshRecords([...this.store.storedExtensionRecords(),
+      ...(update ? [update.previous, update.target] : [])])
+    if (update) this.updates.read()
+  }
+
   pendingUpdate(): { id: string; version: string; previousVersion: string; canConfirm: boolean; recoveryRequired: boolean } | undefined {
     const update = this.updates.read()
     if (!update) return

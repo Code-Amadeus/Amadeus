@@ -29,7 +29,7 @@ import { isWallpaperStartup } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
-import { markBackendCleanupUnconfirmed, prepareBackendCleanup, stopOwnedBackend, verifyPreviousBackendCleanup } from './backendProcessTree.js'
+import { markBackendCleanupUnconfirmed, prepareBackendCleanup, resolveBackendProjectRoot, stopOwnedBackend, verifyPreviousBackendCleanup } from './backendProcessTree.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
@@ -482,7 +482,8 @@ async function launchBackend(): Promise<void> {
   delete backendProcessEnvironment[EXTENSIONS_ENV]
   backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
   const cleanupLaunch = await prepareBackendCleanup(BACKEND_CLEANUP_STATE, {
-    nonce: BACKEND_INSTANCE_NONCE, projectRoot: PROJECT_ROOT, pythonCommand: python,
+    nonce: BACKEND_INSTANCE_NONCE,
+    projectRoot: await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment), pythonCommand: python,
   })
   extensionCleanupConfirmed = false
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
@@ -2854,7 +2855,10 @@ app.whenReady().then(async () => {
     ensureWindowsWallpaperTray()
   }
   let backendStartFailed = false
-  try { if (extensionCatalog.hasScheduled()) await extensionUpdateBoundary.run(() => extensionCatalog.applyScheduled()) }
+  try {
+    await extensionInstaller.prepareStartup()
+    if (extensionCatalog.hasScheduled()) await extensionUpdateBoundary.run(() => extensionCatalog.applyScheduled())
+  }
   catch (error) { desktopSettings.reportExtensionWarning(error instanceof Error ? error.message : 'Scheduled plugin installation failed; review Manage plugins.') }
   try {
     await startBackend()

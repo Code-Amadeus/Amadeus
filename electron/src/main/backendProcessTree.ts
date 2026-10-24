@@ -4,6 +4,20 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const CLEANUP_SCHEMA = 'amadeus.backend-cleanup.v1'
+
+/** The packaged frontend and an explicitly supplied Python backend may live
+ * in different directories. Bind cleanup to the code that Python will load. */
+export async function resolveBackendProjectRoot(python: string, cwd: string, environment: NodeJS.ProcessEnv,
+  execute: typeof execFile = execFile): Promise<string> {
+  const source = "import importlib.util,json,pathlib; s=importlib.util.find_spec('server'); assert s and s.origin; print(json.dumps(str(pathlib.Path(s.origin).resolve().parent.parent)))"
+  const output = await new Promise<string>((resolve, reject) => {
+    execute(python, ['-c', source], { cwd, env: environment, windowsHide: true, timeout: 10000, maxBuffer: 32 * 1024 },
+      (error, stdout) => error ? reject(error) : resolve(String(stdout).trim()))
+  })
+  const root: unknown = JSON.parse(output)
+  if (typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0')) throw Error('Python backend code root is unavailable')
+  return root
+}
 type CleanupOwner = { id: string; nonce: string; project_root: string; python_command: string }
 type CleanupIndex = { schema: string; unknown: boolean; owners: CleanupOwner[] }
 type ProcessIdentity = { pid: number; created: string }

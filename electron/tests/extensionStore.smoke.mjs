@@ -11,6 +11,7 @@ import { DesktopSettingsStore } from '../dist/main/desktopSettings.js'
 import { ExtensionInstaller, ExtensionPackageHelper } from '../dist/main/extensions.js'
 import { ExtensionCatalog, OFFICIAL_EXTENSION_INDEX } from '../dist/main/extensionCatalog.js'
 import { downloadExtension } from '../dist/main/extensionDownloads.js'
+import { ExtensionUpdateBoundary } from '../dist/main/extensionUpdates.js'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const base = path.resolve(process.env.AMADEUS_CATALOG_JOURNEY_ROOT)
 assert.ok(path.relative(path.join(root,'build/extension-catalog-journey'),base) && !path.relative(path.join(root,'build/extension-catalog-journey'),base).startsWith('..'))
@@ -30,7 +31,8 @@ const report={ok:false, checks:[], artifacts:fixture.index.entries.map(e=>({id:e
 const check = (name, value=true)=>{assert.ok(value,name);report.checks.push(name);console.log('store-check:',name)}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const notify=()=>{if(window&&!window.isDestroyed())window.webContents.send('store.theme.changed')}
-const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,environment,undefined,async()=>{confirms++;await pause(450);return true},undefined,undefined,notify)
+const boundary = new ExtensionUpdateBoundary(async()=>true) // This fixture has no backend.
+const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,environment,undefined,async()=>{confirms++;await pause(450);return true},undefined,undefined,notify,boundary.assertHeld)
 const network=[];const opened=[]
 const server=https.createServer({key:fs.readFileSync(path.join(base,'key.pem')),cert:fs.readFileSync(path.join(base,'cert.pem'))},(request,response)=>{
  network.push(request.url)
@@ -65,6 +67,9 @@ try {
  session.fromPartition('amadeus-extension-downloads',{cache:false}).setCertificateVerifyProc((r,done)=>done(r.hostname==='localhost'&&new X509Certificate(r.certificate.data).fingerprint256===fingerprint?0:-3))
  const download=(url,target,limit,signal,progress)=>downloadExtension(url===OFFICIAL_EXTENSION_INDEX?origin+'/index.json':url.startsWith('https://artifact.test/')?origin+'/wheels/'+new URL(url).pathname.split('/').at(-1):url,target,limit,signal,progress)
  const catalog=new ExtensionCatalog(path.join(base,'catalog'),store,helper,installer,()=>String(store.snapshot({}).values.AMADEUS_EXTENSION_ARTIFACT_MIRROR||''),notify,download)
+ const scheduleLabel='Schedule this version for next app start…'
+ async function scheduled(){await until("document.body.innerText.includes('Scheduled for the next app start. Installed packages have not changed.')&&!document.querySelector('.extension-download-progress')",'Selection was not scheduled');assert.ok(catalog.hasScheduled())}
+ async function applyScheduled(){await boundary.run(()=>catalog.applyScheduled());await installer.refreshUpdateHealth([]);notify();await click('Installed')}
  const reply=async fn=>{try{return {ok:true,settings:await fn()}}catch(e){return {ok:false,error:e.message}}}
  const bind=(name,fn)=>ipcMain.handle(name,(event,...args)=>{assert.equal(event.sender,window.webContents);return fn(...args)})
  bind('store.catalog',request=>catalog.dispatch(request,{},async url=>{opened.push(url)}))
@@ -89,15 +94,16 @@ try {
  await click('Open homepage');await until("document.querySelector('[role=alert]')",'Unsafe homepage was not rejected');check('unsafe homepage rejected in production dispatcher',opened.length===0)
  await click('Open source repository');check('HTTPS source link resolved in main',opened[0]==='https://example.test/source')
  await capture('store-details-en')
- await click('Install plugin…');await until("document.querySelector('progress')?.value>0",'Download progress not shown')
- await click('Installed');check('switching views retains active download',await ui("Boolean(document.querySelector('.extension-download-progress'))"))
- await capture('store-download-en')
- await click('Cancel installation');await until("document.body.innerText.includes('No new package was saved.')",'Cancellation not acknowledged')
- check('cancellation leaves no saved install',store.storedExtensionRecords().length===0)
+ await click(scheduleLabel);await scheduled()
+ check('scheduling leaves installed records and wheel downloads untouched',store.storedExtensionRecords().length===0&&!network.some(url=>url.startsWith('/wheels/')))
+ await click('Installed');await capture('store-scheduled-en')
+ await click('Cancel scheduled change');await until("!document.body.innerText.includes('Cancel scheduled change')",'Cancellation not acknowledged')
+ check('cancellation leaves no saved install or queued intent',store.storedExtensionRecords().length===0&&!catalog.hasScheduled())
  await click('Browse');await until("!document.querySelector('.extension-catalog-toolbar button').disabled",'Refresh not finished')
  const before=confirms
- await ui("(()=>{const b=Array.from(document.querySelectorAll('button')).find(n=>n.getClientRects().length&&n.textContent==='Install plugin…');b.click();b.click()})()")
- await installed(themeId,'0.1.0');check('double click commits one install',confirms===before+1)
+ await ui(`(()=>{const b=Array.from(document.querySelectorAll('button')).find(n=>n.getClientRects().length&&n.textContent===${JSON.stringify(scheduleLabel)});b.click();b.click()})()`)
+ await scheduled();check('double click schedules without native confirmation',confirms===before)
+ await applyScheduled();await installed(themeId,'0.1.0');check('stopped startup commits one confirmed install',confirms===before+1)
  check('new install stays disabled',store.storedExtensionRecords()[0].enabled===false)
  await configure(true)
  await click('Open appearance settings');await until("Array.from(document.querySelectorAll('[role=radio]')).some(n=>n.textContent.includes('Quiet day'))",'Installed theme absent in Appearance')
@@ -112,7 +118,7 @@ try {
  await click('Review update details')
  await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.10.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()")
  await until("document.body.innerText.includes('unsupported contribution contract')",'Future contract explanation missing')
- check('future mixed package details remain visible but installation is disabled',await ui("Array.from(document.querySelectorAll('button')).some(n=>n.textContent==='Install selected version…'&&n.disabled)"))
+ check('future mixed package details remain visible but installation is disabled',await ui(`Array.from(document.querySelectorAll('button')).some(n=>n.textContent===${JSON.stringify(scheduleLabel)}&&n.disabled)`))
  const futureResult=await ui("window.amadeus.extensionCatalog({action:'install',id:'com.example.desktop-theme',version:'0.10.0'})")
  check('main rejects forced future-version installation',futureResult.ok===false)
  await capture('store-future-version-en')
@@ -120,10 +126,13 @@ try {
  check('keyboard switches manager views',await ui("document.querySelector('#extension-tab-installed').getAttribute('aria-selected')==='true'"))
  store.update({}, {values:{AMADEUS_EXTENSION_ARTIFACT_MIRROR:origin+'/mirror'}})
  badWheel=true;slow=false
- await click('Update plugin…');await until("document.querySelector('[role=alert]')&&!document.querySelector('.extension-download-progress')",'Bad update did not fail')
+ await click('Schedule update for next app start…');await scheduled()
+ await assert.rejects(boundary.run(()=>catalog.applyScheduled()),/digest|SHA-256|package validation failed/i)
+ check('failed startup consumes the scheduled intent',!catalog.hasScheduled())
  check('failed update preserves saved and applied old theme',store.storedExtensionRecords()[0].version==='0.1.0'&&(await installer.themeState()).theme.version==='0.1.0')
- badWheel=false;await click('Update plugin…');await installed(themeId,'0.2.0')
+ badWheel=false;await click('Schedule update for next app start…');await scheduled();await applyScheduled();await installed(themeId,'0.2.0')
  check('manual update preserves enable intent and applies resource package',store.storedExtensionRecords()[0].enabled&&(await installer.themeState()).theme.version==='0.2.0')
+ await click('I checked this version; keep it');await until("!document.body.innerText.includes('I checked this version; keep it')",'Update was not confirmed');check('explicit keep clears rollback receipt',!installer.pendingUpdate())
  await capture('store-updated-en')
  // Offline refresh preserves the installed version and enabled state.
  offline=true;await click('Check updates and security status');await until("document.querySelector('[role=alert]')",'Offline refresh failure absent')
@@ -133,12 +142,12 @@ try {
  const data=path.join(base,'extension-data',createHash('sha256').update(themeId).digest('hex'));fs.writeFileSync(path.join(data,'retained.txt'),'fixture')
  await remove();await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Uninstall failed')
  check('uninstall retains data by default',fs.existsSync(path.join(data,'retained.txt')))
- await click('Browse');await input('input[type=search]',themeId);await click('View plugin details');await click('Install plugin…');await installed(themeId,'0.2.0')
+ await click('Browse');await input('input[type=search]',themeId);await click('View plugin details');await click(scheduleLabel);await scheduled();await applyScheduled();await installed(themeId,'0.2.0')
  await remove();await ui("Array.from(document.querySelectorAll('input[type=checkbox]')).find(n=>n.closest('.extension-removal-data')).click()");await click('Confirm remove');await until("document.body.innerText.includes('No community extensions installed.')",'Explicit deletion failed')
  check('explicit uninstall data deletion',!fs.existsSync(data))
  // A process package uses the same UI and real offline pip transaction, then its actual Runner.
  index={...index,sequence:3}
- await click('Browse');await input('input[type=search]',toneId);await click('View plugin details');await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.1.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()");await click('Install plugin…');await installed(toneId,'0.1.0');await configure(true)
+ await click('Browse');await input('input[type=search]',toneId);await click('View plugin details');await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.1.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()");await click(scheduleLabel);await scheduled();await applyScheduled();await installed(toneId,'0.1.0');await configure(true)
  const record=JSON.parse(await installer.launchSnapshot()).find(r=>r.id===toneId);assert.ok(record&&!record.startup_error)
  fs.writeFileSync(path.join(base,'tone-record.json'),JSON.stringify(record))
  const tone=fixture.index.entries.find(e=>e.id===toneId&&e.version==='0.1.0')
@@ -151,7 +160,7 @@ try {
  await window.loadURL(url+'&locale=zh-CN&theme=wallpaper-slice');window.setSize(560,950)
  await until("document.body.innerText.includes('浏览')",'Chinese manager missing');await click('浏览');await input('input[type=search]',themeId);await click('查看插件详情');await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.2.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()");await pause(80)
  check('Chinese security block is visible',await ui("document.body.innerText.includes('安全原因被封禁')"))
- check('blocked install control is disabled',await ui("Array.from(document.querySelectorAll('button')).some(n=>n.textContent==='安装插件…'&&n.disabled)"))
+ check('blocked install control is disabled',await ui("document.querySelector('.extension-catalog-detail .settings-form-actions-end button:last-child').disabled"))
  await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.1.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()")
  await until("document.body.innerText.includes('因版权原因下架')",'Copyright distinction missing')
  check('copyright is distinguished from security ban',true)

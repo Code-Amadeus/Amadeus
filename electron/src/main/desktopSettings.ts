@@ -662,10 +662,10 @@ export class DesktopSettingsStore {
   }
 
   /** Called only by the installation owner after canonical validation. */
-  validateExtensionRollbackRecord(raw: unknown): StoredExtension {
+  validateExtensionRollbackRecord(raw: unknown, validate: ExtensionRecordValidator = this.validateExtensionRecord): StoredExtension {
     if (!raw || typeof raw !== 'object' || typeof (raw as StoredExtension).id !== 'string') throw new Error('Invalid plugin recovery record')
     const id = (raw as StoredExtension).id
-    const clean = cleanStoredExtensions({ [id]: raw }, this.validateExtensionRecord)
+    const clean = cleanStoredExtensions({ [id]: raw }, validate)
     if (clean.errors.length || !clean.records[id]) throw new Error('Invalid plugin recovery package record')
     return clean.records[id]
   }

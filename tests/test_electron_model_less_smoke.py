@@ -170,6 +170,19 @@ async def test_launcher_owns_the_installed_native_process(tmp_path, monkeypatch,
     assert "." in command
 
 
+async def test_startup_fixture_refuses_an_existing_inspector_before_launch(tmp_path, monkeypatch):
+    from tools import e2e_live_product_journey as journey
+
+    monkeypatch.setattr(journey, '_windows_launch_identity', lambda: None)
+    monkeypatch.setattr(journey, '_require_windows_electron_profile', lambda identity: None)
+    monkeypatch.setattr(journey, '_port_is_open', lambda port: port == 9224)
+    product = journey.ElectronProduct(run_root=tmp_path, debug_port=9223, main_debug_port=9224,
+                                     no_tts=True, identity={})
+    with pytest.raises(RuntimeError, match='main inspector port 9224 is already in use'):
+        await product.start(startup_timeout=1, main_startup_script='throw Error("must not execute")')
+    assert product.process is None
+
+
 async def test_packaged_launcher_does_not_require_an_npm_install(tmp_path, monkeypatch):
     from tools import e2e_live_product_journey as journey
 
