@@ -8,9 +8,12 @@ License: Apache-2.0; original LICENSE, copyright headers, README and manifest re
 Amadeus packaging modifications (2026-10-22), all in `pyproject.toml`:
 
 - Move mandatory `gradio` to the `demo` extra (`gradio>=6.16.0,<7`).
-- Pin the package-local isolated build requirements to `setuptools==83.0.0` and
+- Pin the package-local isolated build requirements to `setuptools==84.2.1` and
   `wheel==0.47.0`, retaining `setuptools.build_meta`. No global build constraint
   is imposed on AEC or other source dependencies.
+- Update the isolated setuptools pin on 2026-10-24 to include the archive and
+  namespace-path security fixes from 84.1.0 and the wheel-tag fixes from 84.2.1.
+  The inference implementation and original-source hashes remain unchanged.
 - Replace the deprecated license table with SPDX `Apache-2.0` and explicitly
   retain the original notice using `license-files = ["LICENSE"]`.
 
