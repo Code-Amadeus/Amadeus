@@ -102,13 +102,17 @@ async def exercise_failures(product, fixture):
         previous = json.loads(state_path.read_text())['extensions'].get(package_id)
         response = await catalog({"action": "schedule", "id": package_id, "version": version})
         if not response['ok']:
+            report.setdefault('installation_attempts', []).append({
+                'id': package_id, 'version': version, 'ok': False, 'error': response.get('error')})
             return response
         assert response.get('scheduled')
         assert json.loads(state_path.read_text())['extensions'].get(package_id) == previous
         await restart()
         current = json.loads(state_path.read_text())['extensions'].get(package_id)
         snapshot = await product.page.evaluate('window.amadeus.getDesktopSettings()')
-        return {'ok': bool(current and current['version'] == version), 'error': '; '.join(snapshot['extensionErrors'])}
+        result = {'ok': bool(current and current['version'] == version), 'error': '; '.join(snapshot['extensionErrors'])}
+        report.setdefault('installation_attempts', []).append({'id': package_id, 'version': version, **result})
+        return result
 
     async def restart(damage=None, offline=False):
         old_pid = product.process.pid
@@ -174,6 +178,7 @@ async def exercise_failures(product, fixture):
         check(
             "wrong digest update preserves previous installed and applied version",
             not rejected["ok"]
+            and 'package validation failed' in rejected['error']
             and json.loads(state_path.read_text())["extensions"][theme]["version"] == "0.1.0"
             and (await product.page.evaluate("window.amadeus.getDesktopTheme()"))["theme"][
                 "version"

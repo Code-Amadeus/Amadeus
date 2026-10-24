@@ -118,3 +118,11 @@ async def prepare_startup_fixture(product, script: str, *, timeout: float):
         if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
             raise RuntimeError('Could not install startup fixture: ' + str(result))
         await command('Debugger.resume')
+        # Detach debugger instrumentation explicitly after resuming. Closing the
+        # socket while startup callbacks are running can crash packaged Electron.
+        await command('Debugger.disable')
+        ready = await command('Runtime.evaluate', dict(
+            expression="process.getBuiltinModule('module').createRequire(process.execPath)('electron').app.whenReady().then(()=>true)",
+            awaitPromise=True, returnByValue=True))
+        if ready.get('exceptionDetails') or ready.get('result', {}).get('value') is not True:
+            raise RuntimeError('Startup fixture did not become ready: ' + str(ready))
