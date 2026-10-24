@@ -60,7 +60,7 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
         <div className="settings-form-actions-end">
           {typeof selected.display.homepage === 'string' ? <SettingsButton disabled={busy} onClick={() => onLink(selected, 'homepage')}>{t('Open homepage')}</SettingsButton> : null}
           {typeof selected.display.repository === 'string' ? <SettingsButton disabled={busy} onClick={() => onLink(selected, 'repository')}>{t('Open source repository')}</SettingsButton> : null}
-          <SettingsButton tone="primary" disabled={busy || unavailable.length > 0} onClick={() => onInstall(selected)}>{t(prior ? 'Install selected version…' : 'Install plugin…')}</SettingsButton>
+          <SettingsButton tone="primary" disabled={busy || unavailable.length > 0} onClick={() => onInstall(selected)}>{t('Schedule this version for next app start…')}</SettingsButton>
         </div>
       </CardShell>
     </section> : selection ? <p role="status">{t('This version is no longer in the catalog. Refresh or choose another version.')}</p> : null}

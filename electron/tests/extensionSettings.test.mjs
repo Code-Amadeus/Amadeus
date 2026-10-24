@@ -319,3 +319,49 @@ test('opening Browse cannot implicitly recover damaged safety state', async t =>
   page.button('Recover official extension security state').props.onClick();await flush();page.render()
   assert.equal(requests.filter(r=>r.action==='recover').length,1)
 })
+
+
+test('update switch changes only checking preference and exact version scheduling never requests hot installation',async t=>{
+  const requests=[]
+  const candidate={id:'org.example.voice',version:'1.1.0',sha256:'b'.repeat(64),size:1,url:'https://example.org/plugin.whl',display:{},compatibility:{contributions:[]},review:{},withdrawal:null,incompatible:[]}
+  const view={entries:[candidate],cached:false,autoCheck:false}
+  const page=harness({extensionCatalog:async request=>{
+    requests.push(request)
+    if(request.action==='auto-check')view.autoCheck=request.enabled
+    return {ok:true,scheduled:request.action==='schedule',catalog:{...view}}
+  }})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  page.find(node=>node.props?.label==='Automatic plugin update checks'&&node.props.onChange).props.onChange(true)
+  await flush();page.render()
+  assert.deepEqual(requests.find(request=>request.action==='auto-check'),{action:'auto-check',enabled:true})
+  page.button('Schedule update for next app start…').props.onClick()
+  await flush();page.render()
+  assert.deepEqual(requests.find(request=>request.action==='schedule'),{action:'schedule',id:'org.example.voice',version:'1.1.0'})
+  assert.equal(requests.some(request=>request.action==='install'),false)
+  assert.ok(page.find(node=>node.props?.role==='status'&&String(node.props.children).includes('Installed packages have not changed')))
+})
+
+test('unconfirmed update exposes rollback and status refresh while keep remains blocked',async t=>{
+  const requests=[]
+  const page=harness({extensionCatalog:async request=>{requests.push(request);return {ok:true,scheduled:request.action==='rollback',catalog:{entries:[],cached:true,pendingUpdate:{id:'org.example.voice',version:'1.1.0',previousVersion:'1.0.0',canConfirm:false,recoveryRequired:true}}}}})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  assert.equal(page.button('I checked this version; keep it').props.disabled,true)
+  page.button('Check loaded plugin status').props.onClick();await flush();page.render()
+  page.button('Roll back on next app start…').props.onClick();await flush();page.render()
+  assert.ok(requests.some(request=>request.action==='health'))
+  assert.ok(requests.some(request=>request.action==='rollback'))
+  assert.equal(requests.some(request=>request.action==='install'||request.action==='confirm-update'),false)
+})
+
+
+test('native local import reports a queued change instead of claiming an installed package', async t => {
+  let writes = 0
+  const page = harness({installExtension: async () => ({ok:true,scheduled:true})}, {onSettingsChanged: () => { writes++ }})
+  t.after(() => page.restore())
+  page.button('Install plugin…').props.onClick()
+  await flush();page.render()
+  assert.equal(writes, 0)
+  assert.ok(page.find(node => node.props?.role === 'status' && String(node.props.children).includes('Scheduled for the next app start')))
+})

@@ -662,6 +662,27 @@ export class DesktopSettingsStore {
   }
 
   /** Called only by the installation owner after canonical validation. */
+  validateExtensionRollbackRecord(raw: unknown): StoredExtension {
+    if (!raw || typeof raw !== 'object' || typeof (raw as StoredExtension).id !== 'string') throw new Error('Invalid plugin recovery record')
+    const id = (raw as StoredExtension).id
+    const clean = cleanStoredExtensions({ [id]: raw }, this.validateExtensionRecord)
+    if (clean.errors.length || !clean.records[id]) throw new Error('Invalid plugin recovery package record')
+    return clean.records[id]
+  }
+
+  /** Restore one installation only; never rewind global settings or security facts. */
+  restoreExtension(previous: StoredExtension, failedInstallId: string): void {
+    const restored = this.validateExtensionRollbackRecord(previous)
+    const stored = this.read()
+    const current = stored.extensions[restored.id]
+    if (current && ![failedInstallId, restored.installId].includes(current.installId)) throw new Error('Plugin state changed; recovery will not overwrite another installation')
+    stored.extensions[restored.id] = structuredClone(restored)
+    if (this.extensionChangeNeedsRestart(restored, current)) markPending(stored, [EXTENSIONS_ENV])
+    this.write(stored)
+    this.appliedExtensions.delete(restored.id)
+  }
+
+  /** Called only by the installation owner after canonical validation. */
   saveExtension(environment: NodeJS.ProcessEnv, record: StoredExtension, secrets: Record<string, string | null> = {}): Record<string, unknown> {
     const stored = this.read()
     const previous = stored.extensions[record.id]

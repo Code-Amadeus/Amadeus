@@ -121,6 +121,7 @@ export function extensionDisclosure(manifest: ExtensionManifest, previous?: Exte
 }
 
 export type ExtensionMutationResult = {
+  scheduled?: boolean
   ok: boolean
   cancelled?: boolean
   error?: string
