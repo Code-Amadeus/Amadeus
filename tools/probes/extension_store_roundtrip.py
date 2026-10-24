@@ -16,6 +16,7 @@ async def exercise_publication(product, invocation):
     from playwright.async_api import expect
     from tools.probes.extension_store_demo import Publisher, sha256
     from tools.probes.extension_release_shell import evaluate_main
+    from tools.probes.extension_startup import confirm_update
     from tools.smoke_electron_model_less import _wait_enabled
     from config.process_tree import ProcessTree
 
@@ -51,11 +52,12 @@ async def exercise_publication(product, invocation):
         return await evaluate_main(product, expression)
 
     async def transport():
+        assert await main(f'(async()=>{{{transport_script()};return true}})()')
+
+    def transport_script():
         code = (ROOT / "electron/tests/fixtures/extensionPublication.cjs").read_text()
-        assert await main(
-            f"(async()=>{{{code};return setupPublicationTransport("
-            f"{json.dumps(publisher.origin)},{json.dumps(str(publisher.root / 'cert.pem'))})}})()"
-        )
+        return (code + f';await setupPublicationTransport({json.dumps(publisher.origin)},'
+                f'{json.dumps(str(publisher.root / "cert.pem"))});')
 
     async def catalog(request):
         return await asyncio.wait_for(
@@ -90,7 +92,8 @@ async def exercise_publication(product, invocation):
         selection = product.page.locator(".extension-catalog-detail select")
         if await selection.count():
             await selection.select_option(version)
-        await button("Install selected version…" if package_id in settings()["extensions"] else "Install plugin…")
+        await button("Schedule this version for next app start…")
+        await apply_scheduled(package_id, version)
         await expect(product.page.locator("#extension-panel-installed")).to_be_visible(timeout=120000)
         await expect(product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(timeout=120000)
         await expect(product.page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
@@ -105,12 +108,27 @@ async def exercise_publication(product, invocation):
         old = settings()["extensions"][package_id]["version"]
         text = product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{old}"]')
         card = product.page.locator("#extension-panel-installed .setting-card").filter(has=text)
-        await card.get_by_role("button", name="Update plugin…", exact=True).click()
+        await card.get_by_role("button", name="Schedule update for next app start…", exact=True).click()
+        await apply_scheduled(package_id, version)
         await expect(product.page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(timeout=120000)
         await expect(product.page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
         entry = next(e for e in json.loads(publisher.current.read_text())["entries"]
                      if e["id"] == package_id and e["version"] == version)
         assert settings()["extensions"][package_id]["digest"] == entry["sha256"]
+        if package_id == notes:
+            await notes_contract('updated-before-keep')
+        else:
+            assert (await product.page.evaluate('window.amadeus.getDesktopTheme()'))['theme']['version'] == version
+        await confirm_update(product, package_id, version)
+
+    async def apply_scheduled(package_id, version):
+        await expect(product.page.get_by_text('Scheduled for the next app start. Installed packages have not changed. Review the native confirmation before installation.', exact=True)).to_be_visible(timeout=30000)
+        previous = settings()['extensions'].get(package_id)
+        assert previous is None or previous['version'] != version
+        await restart()
+        await open_manager()
+        await product.page.get_by_role('tab', name='Installed', exact=True).click()
+        assert not (await catalog({'action':'get'}))['catalog'].get('scheduledInstall')
 
     async def configure(package_id):
         await product.page.get_by_role("tab", name="Installed", exact=True).click()
@@ -136,6 +154,8 @@ async def exercise_publication(product, invocation):
 
     async def restart(*, damage=(), offline=False):
         previous_pid = product.process.pid
+        await main("(()=>{setImmediate(()=>process.getBuiltinModule('module').createRequire(process.execPath)('electron').app.quit());return true})()")
+        await asyncio.to_thread(product.process.wait, 30)
         await product.stop()
         assert product.process.poll() is not None
         report["app_restarts"] += 1
@@ -145,10 +165,9 @@ async def exercise_publication(product, invocation):
             assert not path.is_symlink()
             path.write_bytes(b"\0" * 1536)
         publisher.offline = offline
-        await product.start(startup_timeout=120)
+        await product.start(startup_timeout=180, main_startup_script=transport_script())
         await _wait_enabled(product.page.locator('textarea[placeholder*="Type a message"]'), timeout=60)
         assert product.process.pid != previous_pid
-        await transport()
 
     async def notes_contract(label):
         record = settings()["extensions"][notes]
@@ -191,7 +210,7 @@ async def exercise_publication(product, invocation):
         save()
 
     async def rejects_install(package_id):
-        response = await catalog({"action": "install", "id": package_id, "version": "0.2.0"})
+        response = await catalog({"action": "schedule", "id": package_id, "version": "0.2.0"})
         assert not response["ok"], "Rejected artifact unexpectedly installed"
         return response
 
@@ -267,8 +286,14 @@ async def exercise_publication(product, invocation):
             "e.dialog.showOpenDialog=async()=>({canceled:false,filePaths:[" + json.dumps(str(wheel)) + "]});return true})()"
         )
         local = await product.page.evaluate("window.amadeus.installExtension()")
-        check("known ban rejects same bytes through local picker offline",
-              not local["ok"] and "blocked" in local["error"])
+        assert local['ok'] and local['scheduled']
+        previous = settings()['extensions'][theme]['installId']
+        await restart(offline=True)
+        local_state = await product.page.evaluate('window.amadeus.getDesktopSettings()')
+        check("known ban rejects scheduled local bytes at offline startup",
+              settings()['extensions'][theme]['installId'] == previous
+              and any('blocked' in error for error in local_state['extensionErrors'])
+              and not (await catalog({'action':'get'}))['catalog'].get('scheduledInstall'))
 
         await restart(damage=[state_path, state_path.with_suffix(".json.bak")], offline=True)
         check("double NUL damage persists safety unavailable after restart",
@@ -348,8 +373,12 @@ async def exercise_publication(product, invocation):
         report["blocked_identities"] = blocked["security"]
         report["ok"] = True
         return report
-    except Exception:
-        await product.screenshot("publication-failure")
+    except Exception as error:
+        report['error'] = f'{type(error).__name__}: {error}'
+        try:
+            await product.screenshot("publication-failure")
+        except Exception as capture_error:
+            report['capture_error'] = str(capture_error)
         raise
     finally:
         await asyncio.to_thread(publisher.close)

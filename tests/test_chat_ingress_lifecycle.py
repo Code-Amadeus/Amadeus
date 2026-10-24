@@ -477,6 +477,7 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
 
         vts_worker_stop = threading.Event()
         extension_close = Mock()
+        cleanup_record = Mock()
         loop = asyncio.get_running_loop()
         vts_workers = [loop.run_in_executor(None, vts_worker_stop.wait) for _ in range(2)]
         async def provider_close():
@@ -488,6 +489,7 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
             order.append("provider")
             release.set()
             await asyncio.sleep(0)
+            return {"settled": True}
         async def drain_inputs():
             assert order == ["cooperative_begin", "provider", "cooperative_finish", "cooperative_ledger"]
             order.append("inputs")
@@ -523,9 +525,12 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
             openclaw_gateway_start_task=None,
             provider_activity_h=SimpleNamespace(close=AsyncMock()),
             work_h=SimpleNamespace(drain_inputs=drain_inputs),
-            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=lambda: order.append("ledger")),
+            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=lambda: order.append("ledger"),
+                store=SimpleNamespace(list_unresolved_provider_attempts=Mock(return_value=[]),
+                    list_writer_leases=Mock(return_value=[]))),
             work_observer=SimpleNamespace(close=AsyncMock()), work_preview=SimpleNamespace(close_all=AsyncMock()),
-            _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None)
+            _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
+            _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
         exec(compile(module, str(path), "exec"), namespace)
         caller = asyncio.create_task(namespace["run_cleanup"]())
         if cancel_count:
@@ -543,4 +548,6 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
         assert order == ["cooperative_begin", "provider", "cooperative_finish",
             "cooperative_ledger", "inputs", "ledger"]
         assert logger.exception.call_count == int(fence_fails)
+        cleanup_record.assert_called_once_with(providers_settled=True, work_settled=True,
+            teardown_succeeded=not fence_fails)
     asyncio.run(run())

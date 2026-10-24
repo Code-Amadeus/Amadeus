@@ -1,4 +1,4 @@
-import type { CatalogEntry, CatalogReply, CatalogView, CatalogProgress } from '../../shared/extensionCatalog.js'
+import type { CatalogEntry, CatalogReply, CatalogView, CatalogProgress, CatalogRequest } from '../../shared/extensionCatalog.js'
 import ExtensionCatalog from './ExtensionCatalog'
 import { catalogBytes, recommendedUpdate } from './extensionCatalogModel'
 import { useEffect, useRef, useState } from 'react'
@@ -62,7 +62,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     void window.amadeus?.extensionCatalog?.({ action: 'get' }).then(result => {
       if (!closed && request === metadataRequest.current) { receiveCatalog(result); setProgress(result.catalog?.downloading) }
     }).catch(() => { if (!closed) setError('Catalog state could not be loaded.') })
-    return () => { closed = true }
+    const unsubscribe = window.amadeus?.onDesktopThemeChanged?.(() => {
+      void window.amadeus?.extensionCatalog?.({ action: 'get' }).then(result => { if (!closed) receiveCatalog(result) }).catch(() => {})
+    })
+    return () => { closed = true; unsubscribe?.() }
   }, [])
   useEffect(() => {
     const api = window.amadeus
@@ -114,6 +117,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   const complete = (result: ExtensionMutationResult, failure: string) => {
     if (result.cancelled) return false
     if (!result.ok) throw new Error(result.error || failure)
+    if (result.scheduled) {
+      setNotice('Scheduled for the next app start. Installed packages have not changed. Review the native confirmation before installation.')
+      return true
+    }
     if (result.settings) onSettingsChanged(result.settings)
     if (result.settings?.restartRequired) onRestartRequired()
     // This is an operation receipt. Package cards own the changing applied state.
@@ -150,15 +157,27 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     setBusy(true); setError(''); setNotice('')
     setProgress({ id: entry.id, version: entry.version, received: 0, total: 0, stage: 'checking' })
     try {
-      const result = await window.amadeus.extensionCatalog({ action: 'install', id: entry.id, version: entry.version })
+      const result = await window.amadeus.extensionCatalog({ action: 'schedule', id: entry.id, version: entry.version })
       receiveCatalog(result)
       if (result.cancelled) { setNotice('Catalog installation cancelled. No new package was saved.'); return }
       if (!result.ok) throw new Error(result.error || 'Could not install extension')
+      if (result.scheduled) { setNotice('Scheduled for the next app start. Installed packages have not changed. Review the native confirmation before installation.'); return }
       close(); setTab('installed')
       setNotice('Package saved. Configure and enable it in Installed, then choose its Agents, voice or appearance. Saved updates may require a backend restart.')
       if (result.settings?.restartRequired) onRestartRequired()
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not install extension') }
     finally { catalogBusy.current = false; setProgress(undefined); setBusy(false) }
+  }
+  const updateControl = async (request: CatalogRequest) => {
+    if (!window.amadeus || busy || catalogBusy.current) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await window.amadeus.extensionCatalog(request)
+      receiveCatalog(result)
+      if (!result.ok) throw new Error(result.error || 'Plugin update settings could not be saved.')
+      if (result.scheduled) setNotice('Scheduled for the next app start. Installed packages have not changed. Review the native confirmation before installation.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Plugin update settings could not be saved.') }
+    finally { setBusy(false) }
   }
   const cancelCatalog = async () => {
     if (!window.amadeus) return
@@ -268,9 +287,23 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         onClick={() => switchTab(value)}>{t(value === 'installed' ? 'Installed' : 'Browse')}</button>)}
     </div>
     <div className="extension-catalog-toolbar">
+      <label>{t('Check the official catalog daily and notify me; never install automatically.')}</label>
+      <Switch checked={catalog.autoCheck ?? false} disabled={!available || busy} label={t('Automatic plugin update checks')} onChange={enabled => void updateControl({ action: 'auto-check', enabled })} />
       <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity(security.status === 'unavailable')}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
       <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
     </div>
+    <p className="settings-field-description">{t('Catalog and local-wheel installations wait for the next app start, before the backend or any Work/MCP session starts. Local wheels are copied now; installed packages change only after native confirmation.')}</p>
+    {catalog.scheduledInstall || catalog.rollbackScheduled ? <div role="status">
+      {catalog.scheduledInstall ? `${catalog.scheduledInstall.id} → ${catalog.scheduledInstall.version} · ${catalog.scheduledInstall.digest}` : t('Rollback scheduled for the next app start.')}
+      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'cancel-scheduled' })}>{t('Cancel scheduled change')}</SettingsButton>
+    </div> : null}
+    {catalog.pendingUpdate ? <div role="status">
+      <strong>{catalog.pendingUpdate.id}: {catalog.pendingUpdate.previousVersion} → {catalog.pendingUpdate.version}</strong>
+      <p>{t(catalog.pendingUpdate.recoveryRequired ? 'Plugin update is unconfirmed or failed. Roll back before starting the backend.' : 'The previous package and encrypted credentials are retained. Check this version before keeping it; Host startup health alone does not verify a remote MCP call.')}</p>
+      <SettingsButton disabled={busy || !catalog.pendingUpdate.canConfirm} onClick={() => void updateControl({ action: 'confirm-update' })}>{t('I checked this version; keep it')}</SettingsButton>
+      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'health' })}>{t('Check loaded plugin status')}</SettingsButton>
+      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'rollback' })}>{t('Roll back on next app start…')}</SettingsButton>
+    </div> : null}
     {error || catalog.error ? <div role="alert" className="settings-form-error">{t(error || catalog.error!)}</div> : null}
     {notice ? <div role="status" className="settings-form-save-hint">{t(notice)}</div> : null}
     {progress ? <div className="extension-download-progress" role="status" aria-live="polite">
@@ -285,7 +318,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     <div className="settings-embedded-stack">
     <details className="extension-install-help">
       <summary>{t('About plugin installation')}</summary>
-      <div className="settings-note-description">{t('Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.')}</div>
+      <div className="settings-note-description">{t('Select a local wheel from an author you trust. The selected bytes are saved for installation at the next app start, with native confirmation.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
     </details>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
@@ -340,7 +373,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         </div>
         <div className="settings-card-description extension-card-description">{extensionText(extension.manifest.description, locale)}</div>
         <div className="settings-field-description">{t(listing?.catalogState === 'matched' ? catalog.cached ? 'Reviewed artifact in the cached catalog' : 'Reviewed artifact in the checked catalog' : listing?.catalogState === 'unlisted' ? 'Not listed in the checked catalog' : 'Catalog review status is unknown')}{listing?.withdrawal ? ` · ${t(listing.withdrawal.reason === 'copyright' ? 'Withdrawn for copyright reasons' : 'Withdrawn by the maintainer')}` : ''}{listing?.blocked ? ` · ${t('Blocked by security policy')}` : ''}</div>
-        {update ? <div className="extension-catalog-update"><span>{t('Compatible update available')}: {extension.version} → {update.version}</span><SettingsButton disabled={busy || Boolean(progress)} onClick={() => void installCatalog(update)}>{t('Update plugin…')}</SettingsButton><SettingsButton tone="quiet" onClick={() => showCatalog(update.id, update.version)}>{t('Review update details')}</SettingsButton></div> : null}
+        {update ? <div className="extension-catalog-update"><span>{t('Compatible update available')}: {extension.version} → {update.version}</span><SettingsButton disabled={busy || Boolean(progress)} onClick={() => void installCatalog(update)}>{t('Schedule update for next app start…')}</SettingsButton><SettingsButton tone="quiet" onClick={() => showCatalog(update.id, update.version)}>{t('Review update details')}</SettingsButton></div> : null}
 
         {pending ? <div className="extension-status-note" role="status">
           <span>{t('Saved state')}: {t(savedState)}</span>

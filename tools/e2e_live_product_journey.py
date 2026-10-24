@@ -1162,14 +1162,18 @@ class ElectronProduct:
             env.pop("AMADEUS_E2E_NO_TTS", None)
         return env
 
-    async def start(self, *, startup_timeout: float) -> None:
+    async def start(self, *, startup_timeout: float, main_startup_script: str | None = None) -> None:
         _require_windows_electron_profile(_windows_launch_identity())
+        if main_startup_script and not self.main_debug_port:
+            raise ValueError('A startup fixture requires the owned main inspector')
         if _port_is_open(BACKEND_PORT):
             raise RuntimeError(
                 f"port {BACKEND_PORT} is already in use; refuse to replace a live runtime"
             )
         if _port_is_open(self.debug_port):
             raise RuntimeError(f"debug port {self.debug_port} is already in use")
+        if self.main_debug_port and _port_is_open(self.main_debug_port):
+            raise RuntimeError(f"main inspector port {self.main_debug_port} is already in use")
         state = self.run_root / "state"
         for name in ("sessions", "desktop", "scratch", "worktrees"):
             (state / name).mkdir(parents=True, exist_ok=True)
@@ -1190,7 +1194,7 @@ class ElectronProduct:
         self.process = subprocess.Popen(
             [
                 str(electron),
-                *([f"--inspect=127.0.0.1:{self.main_debug_port}"] if self.main_debug_port else []),
+                *([f"--{'inspect-brk' if main_startup_script else 'inspect'}=127.0.0.1:{self.main_debug_port}"] if self.main_debug_port else []),
                 *([] if self.packaged_executable else ["."]),
                 f"--remote-debugging-port={self.debug_port}",
             ],
@@ -1202,6 +1206,9 @@ class ElectronProduct:
             creationflags=creationflags,
         )
         deadline = time.monotonic() + max(1.0, startup_timeout)
+        if main_startup_script:
+            from tools.probes.extension_startup import prepare_startup_fixture
+            await prepare_startup_fixture(self, main_startup_script, timeout=startup_timeout)
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 raise RuntimeError(
