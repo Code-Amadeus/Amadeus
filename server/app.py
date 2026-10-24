@@ -24,17 +24,17 @@ from pathlib import Path
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
-# Contain descendants before any eager runtime import can create a child. This
-# Job only tracks lifetime; it has no kill-on-close or breakaway policy flags.
-from server.backend_cleanup import begin_from_environment
-_BACKEND_CLEANUP = begin_from_environment() if __name__ == "__main__" else None
-
 # Intel OpenMP, which torch uses for CPU work, keeps each worker thread spinning
 # for 200 ms after a parallel region. Silero VAD runs every 32 ms on the wake
 # and listening threads, so one worker never slept and the idle backend used a
 # whole CPU core. 1 ms still keeps workers warm across back-to-back CPU
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
+
+# Contain descendants before any eager runtime import can create a child. This
+# Job only tracks lifetime; it has no kill-on-close or breakaway policy flags.
+from server.backend_cleanup import begin_from_environment
+_BACKEND_CLEANUP = begin_from_environment() if __name__ == "__main__" else None
 
 # The launch snapshot contains package-scoped credentials. Remove it before
 # eager model/runtime imports can create any child process.

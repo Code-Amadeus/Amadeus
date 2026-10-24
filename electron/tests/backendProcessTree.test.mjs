@@ -108,7 +108,9 @@ test('exit observation releases its listener on success and timeout', async () =
 })
 
 function cleanupFixture(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-cleanup-'))
+  // macOS exposes its temporary directory through /var -> /private/var.
+  // Exercise cleanup's canonical-path contract without weakening its link guard.
+  const directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-cleanup-')))
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   return path.join(directory, 'backend-cleanup.json')
 }
@@ -132,6 +134,32 @@ test('new-protocol fresh state differs from a persisted unknown reused backend',
   assert.equal(await verifyPreviousBackendCleanup(file), true)
   await markBackendCleanupUnconfirmed(file)
   assert.equal(await verifyPreviousBackendCleanup(file, goneAndDrained), false)
+})
+
+test('cleanup refuses linked state paths without changing the target index', async t => {
+  const file = cleanupFixture(t)
+  await markBackendCleanupUnconfirmed(file)
+  const before = fs.readFileSync(file, 'utf8')
+  const link = path.join(path.dirname(file), 'linked')
+  fs.symlinkSync(path.dirname(file), link, process.platform === 'win32' ? 'junction' : 'dir')
+  const linkedFile = path.join(link, path.basename(file))
+  await assert.rejects(prepareBackendCleanup(linkedFile, launchIdentity), /cannot traverse a link/)
+  await assert.rejects(markBackendCleanupUnconfirmed(linkedFile), /cannot traverse a link/)
+  assert.equal(await verifyPreviousBackendCleanup(linkedFile, goneAndDrained), false)
+  assert.equal(fs.readFileSync(file, 'utf8'), before)
+})
+
+test('a failed durable Windows replacement preserves the original index', { skip: process.platform !== 'win32' }, async t => {
+  const file = cleanupFixture(t)
+  await markBackendCleanupUnconfirmed(file)
+  const before = fs.readFileSync(file, 'utf8')
+  // A read-only destination permits the index read but denies MoveFileExW.
+  fs.chmodSync(file, 0o444)
+  try {
+    await assert.rejects(prepareBackendCleanup(file, launchIdentity), error => error.code === 3)
+    assert.equal(fs.readFileSync(file, 'utf8'), before)
+    assert.equal(fs.existsSync(`${file}.receipts`), false)
+  } finally { fs.chmodSync(file, 0o600) }
 })
 
 test('registration survives crash and a later clean launch cannot erase it', async t => {
@@ -265,11 +293,22 @@ test('corrupt and missing-index receipt state never become fresh', async t => {
   await assert.rejects(prepareBackendCleanup(file, launchIdentity))
 })
 
+function existingPython(root) {
+  const local = path.join(root, '.venv', 'Scripts', 'python.exe')
+  const command = process.env.AMADEUS_TEST_PYTHON || (fs.existsSync(local) ? local : 'python')
+  // These probes import only the standard-library cleanup module. CI can use
+  // its installed Python without creating the application's virtualenv.
+  const result = spawnSync(command, ['-I', '-c', 'import sys; print(sys.executable)'], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true,
+  })
+  assert.equal(result.status, 0, result.error?.message || result.stderr)
+  return result.stdout.trim()
+}
+
 test('real Windows tracking Job detects a child surviving its parent without killing it', { skip: process.platform !== 'win32' }, async t => {
   const file = cleanupFixture(t)
   const root = path.resolve('..')
-  const python = path.join(root, '.venv', 'Scripts', 'python.exe')
-  assert.equal(fs.existsSync(python), true, 'use the existing project Python, never install dependencies')
+  const python = existingPython(root)
   const { environment } = await prepareBackendCleanup(file, { ...launchIdentity, projectRoot: root, pythonCommand: python })
   const release = path.join(path.dirname(file), 'release-child')
   const started = path.join(path.dirname(file), 'child-started')
@@ -293,7 +332,7 @@ test('real Windows tracking Job detects a child surviving its parent without kil
 test('a real backend exit without cleanup approval leaves diagnostic pending evidence', { skip: process.platform !== 'win32' }, async t => {
   const file = cleanupFixture(t)
   const root = path.resolve('..')
-  const python = path.join(root, '.venv', 'Scripts', 'python.exe')
+  const python = existingPython(root)
   const { environment } = await prepareBackendCleanup(file, { ...launchIdentity, projectRoot: root, pythonCommand: python })
   const launch = JSON.parse(environment.AMADEUS_BACKEND_CLEANUP_LAUNCH)
   const helper = path.join(path.dirname(file), 'unsettled-helper.py')

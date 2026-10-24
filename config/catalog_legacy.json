@@ -241,6 +241,9 @@
       "AMADEUS_VISUAL_PROFILES_PATH",
       "AMADEUS_WORK_LEDGER_PATH"
     ],
+    "server/backend_cleanup.py": [
+      "AMADEUS_BACKEND_INSTANCE_NONCE"
+    ],
     "server/browser_branch_planner.py": [
       "AMADEUS_BROWSER_BRANCH_LLM_ENABLED",
       "BROWSER_BRANCH_DOM_CHARS",

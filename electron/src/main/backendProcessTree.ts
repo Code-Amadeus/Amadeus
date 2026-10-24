@@ -89,7 +89,19 @@ async function atomicIndex(file: string, value: CleanupIndex): Promise<void> {
   ordinaryPath(file)
   if (process.platform === 'win32') {
     const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'"
-    await powershell(`$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class BackendCleanupMove { [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool MoveFileEx(string a,string b,int flags); }'; if(-not [BackendCleanupMove]::MoveFileEx(${quote(temporary)},${quote(file)},9)){exit 3}`)
+    // Declare the native call in memory. Add-Type starts a C# compiler for each
+    // write, adding an avoidable process and cold-start cost to this deadline.
+    await powershell(`$ErrorActionPreference='Stop'
+$assembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly([Reflection.AssemblyName]::new('BackendCleanupMove'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
+$module=$assembly.DefineDynamicModule('Native')
+$type=$module.DefineType('BackendCleanupMove',[Reflection.TypeAttributes]'Public,Abstract,Sealed')
+$method=$type.DefinePInvokeMethod(
+  'MoveFileExW','kernel32.dll',[Reflection.MethodAttributes]'Public,Static,PinvokeImpl',
+  [Reflection.CallingConventions]::Standard,[bool],[Type[]]@([string],[string],[int]),
+  [Runtime.InteropServices.CallingConvention]::Winapi,[Runtime.InteropServices.CharSet]::Unicode)
+$method.SetImplementationFlags($method.GetMethodImplementationFlags() -bor [Reflection.MethodImplAttributes]::PreserveSig)
+$native=$type.CreateType()
+if(-not $native::MoveFileExW(${quote(temporary)},${quote(file)},9)){exit 3}`)
   } else {
     fs.renameSync(temporary, file)
     const directory = fs.openSync(path.dirname(file), 'r')
