@@ -316,7 +316,7 @@ test('opening Browse cannot implicitly recover damaged safety state', async t =>
   await flush();page.render()
   page.button('Browse').props.onClick();await flush();page.render()
   assert.equal(requests.filter(r=>r.action==='recover'||r.action==='refresh').length,0)
-  page.button('Recover official extension security state').props.onClick();await flush();page.render()
+  page.button('Recover security state').props.onClick();await flush();page.render()
   assert.equal(requests.filter(r=>r.action==='recover').length,1)
 })
 
@@ -347,9 +347,9 @@ test('unconfirmed update exposes rollback and status refresh while keep remains 
   const page=harness({extensionCatalog:async request=>{requests.push(request);return {ok:true,scheduled:request.action==='rollback',catalog:{entries:[],cached:true,pendingUpdate:{id:'org.example.voice',version:'1.1.0',previousVersion:'1.0.0',canConfirm:false,recoveryRequired:true}}}}})
   t.after(()=>page.restore())
   await flush();page.render()
-  assert.equal(page.button('I checked this version; keep it').props.disabled,true)
-  page.button('Check loaded plugin status').props.onClick();await flush();page.render()
-  page.button('Roll back on next app start…').props.onClick();await flush();page.render()
+  assert.equal(page.button('Keep this version').props.disabled,true)
+  page.button('Check status').props.onClick();await flush();page.render()
+  page.button('Schedule rollback…').props.onClick();await flush();page.render()
   assert.ok(requests.some(request=>request.action==='health'))
   assert.ok(requests.some(request=>request.action==='rollback'))
   assert.equal(requests.some(request=>request.action==='install'||request.action==='confirm-update'),false)
@@ -364,6 +364,57 @@ test('native local import reports a queued change instead of claiming an install
   await flush();page.render()
   assert.equal(writes, 0)
   assert.ok(page.find(node => node.props?.role === 'status' && String(node.props.children).includes('Scheduled for the next app start')))
+})
+
+test('update checking has an associated label and description, with manual checking kept independent', async t => {
+  const requests = []
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,autoCheck:false},settings:{extensionSecurity:{status:'ready'}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  const toggle = page.find(node => node.props?.label === 'Automatic plugin update checks' && node.props.onChange)
+  assert.ok(page.find(node => node.type === 'label' && node.props.htmlFor === toggle.props.id))
+  assert.ok(page.find(node => node.props?.id === toggle.props.describedBy))
+  page.button('Check now').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'refresh').length, 1)
+  assert.equal(requests.some(request => request.action === 'auto-check'), false)
+})
+
+test('scheduled installation keeps the full digest in closed details and cancellation remains available', async t => {
+  const requests = []
+  const digest = 'b'.repeat(64)
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,scheduledInstall:{id:'org.example.voice',version:'1.1.0',digest}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  const details = page.find(node => node.type === 'details' && node.props.children?.[0]?.props.children === 'Package details')
+  assert.ok(details)
+  assert.ok(!details.props.open)
+  assert.ok(JSON.stringify(details.props.children).includes(digest))
+  page.button('Cancel scheduled change').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'cancel-scheduled').length, 1)
+  assert.equal(requests.some(request => request.action === 'install' || request.action === 'confirm-update'), false)
+})
+
+test('a verified update still requires the explicit keep action', async t => {
+  const requests = []
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,pendingUpdate:{id:'org.example.voice',version:'1.1.0',previousVersion:'1.0.0',canConfirm:true,recoveryRequired:false}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  assert.equal(requests.some(request => request.action === 'confirm-update'), false)
+  assert.equal(page.button('Keep this version').props.disabled, false)
+  page.button('Keep this version').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'confirm-update').length, 1)
 })
 
 for (const platform of ['linux', 'darwin']) {

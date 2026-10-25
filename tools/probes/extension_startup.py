@@ -51,9 +51,9 @@ async def confirm_update(product, package_id: str, version: str):
     else:
         raise AssertionError('Updated plugin did not become ready for explicit confirmation')
     await product.page.get_by_role('button', name='Plugins', exact=True).click()
-    await product.page.get_by_role('button', name='I checked this version; keep it', exact=True).click()
+    await product.page.get_by_role('button', name='Keep this version', exact=True).click()
     from playwright.async_api import expect
-    await expect(product.page.get_by_role('button', name='I checked this version; keep it', exact=True)).to_have_count(0, timeout=30000)
+    await expect(product.page.get_by_role('button', name='Keep this version', exact=True)).to_have_count(0, timeout=30000)
     result = await product.page.evaluate("window.amadeus.extensionCatalog({action:'get'})")
     assert not result['catalog'].get('pendingUpdate')
 

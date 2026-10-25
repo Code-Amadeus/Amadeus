@@ -2611,7 +2611,11 @@ html[data-theme-extension] .settings-inline-action[data-tone='danger']:is(:hover
 
 /* Catalog shares the existing plugin manager and theme tokens. Third-party copy is text only. */
 .extension-settings [hidden] { display: none !important; }
-.extension-catalog-toolbar, .extension-download-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.extension-update-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.extension-update-status { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.extension-update-status + .extension-update-status { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--divider); }
+.extension-update-status .settings-form-actions-end { justify-content: flex-start; }
+.extension-download-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .extension-download-progress { padding: 12px; border: 1px solid var(--card-border); border-radius: var(--radius-container); }
 .extension-download-progress strong, .extension-download-progress > div { flex-basis: 100%; overflow-wrap: anywhere; }
 .extension-download-progress progress { flex: 1; min-width: 100px; accent-color: var(--text); }

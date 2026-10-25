@@ -249,7 +249,7 @@ async def exercise(product, fixture: Path):
             product,
             "(()=>{const s=extensionReleaseFixture;s.index={...s.index,sequence:2,entries:s.fixture.index.entries};return true})()",
         )
-        await button("Check updates and security status")
+        await button("Check now")
         await button("Schedule update for next app start…")
         await apply_scheduled()
         await expect(page.locator(f'[data-extension-id="{theme}"][data-extension-version="0.2.0"]')).to_be_visible(timeout=120000)

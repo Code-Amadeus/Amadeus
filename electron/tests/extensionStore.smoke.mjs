@@ -99,7 +99,7 @@ try {
  await click('Installed');await capture('store-scheduled-en')
  await click('Cancel scheduled change');await until("!document.body.innerText.includes('Cancel scheduled change')",'Cancellation not acknowledged')
  check('cancellation leaves no saved install or queued intent',store.storedExtensionRecords().length===0&&!catalog.hasScheduled())
- await click('Browse');await until("!document.querySelector('.extension-catalog-toolbar button').disabled",'Refresh not finished')
+ await click('Browse');await until("[...document.querySelectorAll('button')].some(node=>node.textContent.trim()==='Check now'&&!node.disabled)",'Refresh not finished')
  const before=confirms
  await ui(`(()=>{const b=Array.from(document.querySelectorAll('button')).find(n=>n.getClientRects().length&&n.textContent===${JSON.stringify(scheduleLabel)});b.click();b.click()})()`)
  await scheduled();check('double click schedules without native confirmation',confirms===before)
@@ -113,7 +113,7 @@ try {
  await click('Manage plugins');await until("document.body.innerText.includes('Quiet desktop')",'Manager return failed')
  index={...index,sequence:2,entries:structuredClone(fixture.index.entries)}
  const future=structuredClone(index.entries.find(e=>e.id===themeId&&e.version==='0.2.0'));future.version='0.10.0';future.compatibility.contributions.push({kind:'future',role:'',contract:'future/v1'});index.entries.push(future)
- await click('Check updates and security status');await until("document.body.innerText.includes('Compatible update available')",'Update recommendation absent')
+ await click('Check now');await until("document.body.innerText.includes('Compatible update available')",'Update recommendation absent')
  check('newer incompatible version is skipped',await ui("document.body.innerText.includes('0.1.0 → 0.2.0')&&!document.body.innerText.includes('0.1.0 → 0.10.0')"))
  await click('Review update details')
  await ui("(()=>{const n=document.querySelector('.extension-catalog-detail select');n.value='0.10.0';n.dispatchEvent(new Event('change',{bubbles:true}))})()")
@@ -132,10 +132,10 @@ try {
  check('failed update preserves saved and applied old theme',store.storedExtensionRecords()[0].version==='0.1.0'&&(await installer.themeState()).theme.version==='0.1.0')
  badWheel=false;await click('Schedule update for next app start…');await scheduled();await applyScheduled();await installed(themeId,'0.2.0')
  check('manual update preserves enable intent and applies resource package',store.storedExtensionRecords()[0].enabled&&(await installer.themeState()).theme.version==='0.2.0')
- await click('I checked this version; keep it');await until("!document.body.innerText.includes('I checked this version; keep it')",'Update was not confirmed');check('explicit keep clears rollback receipt',!installer.pendingUpdate())
+ await click('Keep this version');await until("!document.body.innerText.includes('Keep this version')",'Update was not confirmed');check('explicit keep clears rollback receipt',!installer.pendingUpdate())
  await capture('store-updated-en')
  // Offline refresh preserves the installed version and enabled state.
- offline=true;await click('Check updates and security status');await until("document.querySelector('[role=alert]')",'Offline refresh failure absent')
+ offline=true;await click('Check now');await until("document.querySelector('[role=alert]')",'Offline refresh failure absent')
  check('offline refresh preserves saved version and enable intent',store.storedExtensionRecords()[0].version==='0.2.0'&&store.storedExtensionRecords()[0].enabled)
  offline=false;await configure(false)
  check('disable restores builtin appearance',!(await installer.themeState()).theme)

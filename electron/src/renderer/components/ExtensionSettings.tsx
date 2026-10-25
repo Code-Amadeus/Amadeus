@@ -289,26 +289,50 @@ export default function ExtensionSettings({ platform, extensions, runtime, provi
         onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'installed' : event.key === 'End' ? 'browse' : tab === 'installed' ? 'browse' : 'installed'; switchTab(next); document.getElementById(`extension-tab-${next}`)?.focus() } }}
         onClick={() => switchTab(value)}>{t(value === 'installed' ? 'Installed' : 'Browse')}</button>)}
     </div>
-    <div className="extension-catalog-toolbar">
-      <label>{t('Check the official catalog daily and notify me; never install automatically.')}</label>
-      <Switch checked={catalog.autoCheck ?? false} disabled={!available || busy} label={t('Automatic plugin update checks')} onChange={enabled => void updateControl({ action: 'auto-check', enabled })} />
-      <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity(security.status === 'unavailable')}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
-      <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
-    </div>
-    <p className="settings-field-description">{t(scheduledUpdates
-      ? 'Catalog and local-wheel installations wait for the next app start, before the backend or any Work/MCP session starts. Local wheels are copied now; installed packages change only after native confirmation.'
-      : 'Review and install packages now. Backend plugins apply after a backend restart; standalone themes apply immediately. Scheduled updates and retained-version recovery are currently available on Windows only.')}</p>
-    {catalog.scheduledInstall || catalog.rollbackScheduled ? <div role="status">
-      {catalog.scheduledInstall ? `${catalog.scheduledInstall.id} → ${catalog.scheduledInstall.version} · ${catalog.scheduledInstall.digest}` : t('Rollback scheduled for the next app start.')}
-      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'cancel-scheduled' })}>{t('Cancel scheduled change')}</SettingsButton>
-    </div> : null}
-    {catalog.pendingUpdate ? <div role="status">
-      <strong>{catalog.pendingUpdate.id}: {catalog.pendingUpdate.previousVersion} → {catalog.pendingUpdate.version}</strong>
-      <p>{t(catalog.pendingUpdate.recoveryRequired ? 'Plugin update is unconfirmed or failed. Roll back before starting the backend.' : 'The previous package and encrypted credentials are retained. Check this version before keeping it; Host startup health alone does not verify a remote MCP call.')}</p>
-      <SettingsButton disabled={busy || !catalog.pendingUpdate.canConfirm} onClick={() => void updateControl({ action: 'confirm-update' })}>{t('I checked this version; keep it')}</SettingsButton>
-      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'health' })}>{t('Check loaded plugin status')}</SettingsButton>
-      <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'rollback' })}>{t('Roll back on next app start…')}</SettingsButton>
-    </div> : null}
+    <SettingsGroup title="Plugin updates">
+      <CardShell>
+        <div className="settings-row-card-copy">
+          <label className="settings-card-title" htmlFor="extension-auto-check">{t('Automatic plugin update checks')}</label>
+          <div id="extension-auto-check-hint" className="settings-card-description">{t('Check the official catalog daily and notify me; never install automatically.')}</div>
+        </div>
+        <Switch id="extension-auto-check" describedBy="extension-auto-check-hint" checked={catalog.autoCheck ?? false} disabled={!available || busy} label={t('Automatic plugin update checks')} onChange={enabled => void updateControl({ action: 'auto-check', enabled })} />
+      </CardShell>
+      <CardShell>
+        <div className="settings-row-card-copy">
+          <div className="settings-card-title">{t('Updates and security')}</div>
+          <div id="extension-security-hint" className="settings-card-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
+        </div>
+        <SettingsButton aria-describedby="extension-security-hint" disabled={!available || busy} onClick={() => void checkSecurity(security.status === 'unavailable')}>{t(security.status === 'unavailable' ? 'Recover security state' : 'Check now')}</SettingsButton>
+      </CardShell>
+      {catalog.scheduledInstall || catalog.rollbackScheduled || catalog.pendingUpdate ? <CardShell vertical>
+        {catalog.scheduledInstall || catalog.rollbackScheduled ? <div className="extension-update-status" role="status">
+          <div className="extension-update-heading">
+            <h4 className="settings-card-title">{t(catalog.rollbackScheduled ? 'Rollback scheduled' : 'Scheduled installation')}</h4>
+            <StatusPill ok={false} tone="neutral">{t('Next app start')}</StatusPill>
+          </div>
+          {catalog.scheduledInstall ? <>
+            <div className="extension-package-identity">{catalog.scheduledInstall.id} · {catalog.scheduledInstall.version}</div>
+            <div className="settings-field-description">{t('Review the installation confirmation when you next open Amadeus.')}</div>
+            <details className="settings-field-description"><summary>{t('Package details')}</summary><div className="extension-package-identity">{t('SHA-256')}: {catalog.scheduledInstall.digest}</div></details>
+          </> : <div className="settings-field-description">{t('Rollback scheduled for the next app start.')}</div>}
+          <div className="settings-form-actions-end"><SettingsButton tone="quiet" size="small" disabled={busy} onClick={() => void updateControl({ action: 'cancel-scheduled' })}>{t('Cancel scheduled change')}</SettingsButton></div>
+        </div> : null}
+        {catalog.pendingUpdate ? <div className="extension-update-status" role="status">
+          <div className="extension-update-heading">
+            <h4 className="settings-card-title">{t(catalog.pendingUpdate.recoveryRequired ? 'Recovery required' : 'Update awaiting confirmation')}</h4>
+            {!catalog.pendingUpdate.recoveryRequired ? <StatusPill ok={catalog.pendingUpdate.canConfirm} tone={catalog.pendingUpdate.canConfirm ? 'success' : 'neutral'}>{t(catalog.pendingUpdate.canConfirm ? 'Ready to confirm' : 'Pending verification')}</StatusPill> : null}
+          </div>
+          <div className="extension-package-identity">{catalog.pendingUpdate.id} · {catalog.pendingUpdate.previousVersion} → {catalog.pendingUpdate.version}</div>
+          <div className="settings-field-description">{t(catalog.pendingUpdate.recoveryRequired ? 'Plugin update is unconfirmed or failed. Roll back before starting the backend.' : 'Complete setup and test this update before keeping it.')}</div>
+          <details className="settings-field-description"><summary>{t('Update details')}</summary><p>{t('The previous package and encrypted credentials are retained. Check this version before keeping it; Host startup health alone does not verify a remote MCP call.')}</p></details>
+          <div className="settings-form-actions-end">
+            <SettingsButton tone="primary" disabled={busy || !catalog.pendingUpdate.canConfirm} onClick={() => void updateControl({ action: 'confirm-update' })}>{t('Keep this version')}</SettingsButton>
+            <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'health' })}>{t('Check status')}</SettingsButton>
+            <SettingsButton tone="quiet" disabled={busy} onClick={() => void updateControl({ action: 'rollback' })}>{t('Schedule rollback…')}</SettingsButton>
+          </div>
+        </div> : null}
+      </CardShell> : null}
+    </SettingsGroup>
     {error || catalog.error ? <div role="alert" className="settings-form-error">{t(error || catalog.error!)}</div> : null}
     {notice ? <div role="status" className="settings-form-save-hint">{t(notice)}</div> : null}
     {progress ? <div className="extension-download-progress" role="status" aria-live="polite">
@@ -326,6 +350,9 @@ export default function ExtensionSettings({ platform, extensions, runtime, provi
       <div className="settings-note-description">{t(scheduledUpdates
         ? 'Select a local wheel from an author you trust. The selected bytes are saved for installation at the next app start, with native confirmation.'
         : 'Select a local wheel from an author you trust. Review the native confirmation before installation.')}</div>
+      <div className="settings-note-description">{t(scheduledUpdates
+        ? 'Catalog and local-wheel installations wait for the next app start, before the backend or any Work/MCP session starts. Local wheels are copied now; installed packages change only after native confirmation.'
+        : 'Review and install packages now. Backend plugins apply after a backend restart; standalone themes apply immediately. Scheduled updates and retained-version recovery are currently available on Windows only.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
     </details>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}

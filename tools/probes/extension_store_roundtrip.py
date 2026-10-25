@@ -235,7 +235,7 @@ async def exercise_publication(product, invocation):
             publisher.origin + "/mirror",
         ))["ok"]
         await refresh()
-        await button("Check updates and security status")
+        await button("Check now")
         # Exercise the actual Installed-view manual update controls.
         await update_ui(theme, "0.2.0")
         await update_ui(notes, "0.2.0")
