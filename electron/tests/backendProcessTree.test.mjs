@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
+import { EventEmitter, once } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import test from 'node:test'
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
@@ -65,6 +65,30 @@ test('failed process-tree shutdown is observable and cannot authorize uninstall 
   }
   await assert.rejects(forceStopBackendTree({ pid: 12345 }, 'win32', spawn), /could not be confirmed.*retained/)
   await assert.rejects(forceStopBackendTree({ pid: 0 }, 'win32', spawn), /identity/)
+})
+
+test('an unavailable registered Job falls back only to the owned process tree', async () => {
+  const {forceStopBackendTree: force} = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url), {
+    'node:child_process': {execFile: (_python, args, options, done) => {
+      assert.equal(args[3], '--terminate')
+      assert.deepEqual(Object.keys(options.env).sort(), ['SystemRoot', 'WINDIR'])
+      queueMicrotask(() => done(Error('Job unavailable')))
+    }},
+  })
+  let fallback = 0
+  const create = (command, args) => {
+    fallback++
+    assert.equal(path.basename(command), 'taskkill.exe')
+    assert.deepEqual(args, ['/PID', '12345', '/T', '/F'])
+    const child = Object.assign(new EventEmitter(), {kill() {}})
+    queueMicrotask(() => child.emit('close', 0))
+    return child
+  }
+  await force({pid: 12345, exitCode: null, signalCode: null}, 'win32', create, JSON.stringify({
+    schema: 'amadeus.backend-cleanup.v1', owner: {id: 'a'.repeat(32), nonce: 'synthetic-launch-nonce',
+      project_root: path.resolve('..'), python_command: 'python'},
+  }))
+  assert.equal(fallback, 1)
 })
 
 function processFixture() {
@@ -190,15 +214,30 @@ test('cleanup refuses linked state paths without changing the target index', asy
   const link = path.join(path.dirname(file), 'linked')
   fs.symlinkSync(path.dirname(file), link, process.platform === 'win32' ? 'junction' : 'dir')
   const linkedFile = path.join(link, path.basename(file))
-  await assert.rejects(prepareBackendCleanup(linkedFile, launchIdentity), /cannot traverse a link/)
-  await assert.rejects(markBackendCleanupUnconfirmed(linkedFile), /cannot traverse a link/)
-  assert.equal(await verifyPreviousBackendCleanup(linkedFile, goneAndDrained), false)
-  assert.equal(fs.readFileSync(file, 'utf8'), before)
+  try {
+    await assert.rejects(prepareBackendCleanup(linkedFile, launchIdentity), /cannot traverse a link/)
+    await assert.rejects(markBackendCleanupUnconfirmed(linkedFile), /cannot traverse a link/)
+    assert.equal(await verifyPreviousBackendCleanup(linkedFile, goneAndDrained), false)
+    assert.equal(fs.readFileSync(file, 'utf8'), before)
+  } finally { fs.unlinkSync(link) }
+})
+
+test('cleanup refuses a linked receipt directory within an ordinary data root', async t => {
+  const file = cleanupFixture(t)
+  const target = path.join(path.dirname(file), 'outside-receipts')
+  fs.mkdirSync(target)
+  const link = `${file}.receipts`
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
+  try {
+    await assert.rejects(prepareBackendCleanup(file, launchIdentity))
+    assert.equal(await verifyPreviousBackendCleanup(file), false)
+    assert.deepEqual(fs.readdirSync(target), [])
+  } finally { fs.unlinkSync(link) }
 })
 
 test('a failed durable Windows replacement preserves the original index', { skip: process.platform !== 'win32' }, async t => {
   const file = cleanupFixture(t)
-  await markBackendCleanupUnconfirmed(file)
+  fs.writeFileSync(file, JSON.stringify({schema: 'amadeus.backend-cleanup.v1', bootId: 10, unknown: false, owners: []}))
   const before = fs.readFileSync(file, 'utf8')
   // A read-only destination permits the index read but denies MoveFileExW.
   fs.chmodSync(file, 0o444)
@@ -207,6 +246,9 @@ test('a failed durable Windows replacement preserves the original index', { skip
     assert.equal(fs.readFileSync(file, 'utf8'), before)
     assert.equal(fs.existsSync(`${file}.receipts`), false)
   } finally { fs.chmodSync(file, 0o600) }
+  const fresh = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+  assert.equal(await fresh.verifyPreviousBackendCleanup(file, {getBootId: fixtureBoot}), false,
+    'an interrupted registration must fence a later desktop even when the old empty index is readable')
 })
 
 test('a later clean launch cannot erase unresolved containment from the same boot', async t => {
@@ -491,3 +533,70 @@ for (const outcome of ['crash', 'unsettled-work']) test(`real ${outcome} is reco
   assert.equal(JSON.parse(fs.readFileSync(receipt, 'utf8')).state, 'exited')
   assert.equal(fs.existsSync(path.join(`${file}.receipts`, `${launch.owner.id}.approval.json`)), false)
 })
+
+for (const scenario of ['failed-request', 'graceful-timeout', 'ancestor-junction']) {
+  test(`native owned Job stop preserves its observer: ${scenario}`, {skip: process.platform !== 'win32', timeout: 60000}, async t => {
+    let file = cleanupFixture(t)
+    let link
+    if (scenario === 'ancestor-junction') {
+      const base = path.dirname(file)
+      const target = path.join(base, 'relocated-profile')
+      fs.mkdirSync(path.join(target, 'user-data'), {recursive: true})
+      link = path.join(base, 'profile-link')
+      fs.symlinkSync(target, link, 'junction')
+      file = path.join(link, 'user-data', 'backend-cleanup.json')
+    }
+    const root = path.resolve('..'), python = existingPython(root)
+    let proc, unrelated
+    try {
+      const {environment} = await prepareBackendCleanup(file, {...launchIdentity, projectRoot: root, pythonCommand: python})
+      const rawLaunch = environment.AMADEUS_BACKEND_CLEANUP_LAUNCH
+      const launch = JSON.parse(rawLaunch)
+      const helper = path.join(path.dirname(file), 'hung-backend.py')
+      fs.writeFileSync(helper, `import json,os,subprocess,sys,time\nsys.path.insert(0,${JSON.stringify(root)})\nfrom server.backend_cleanup import begin_from_environment\nproof=begin_from_environment()\nassert proof and proof.failure is None, proof.failure if proof else 'no launch'\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\nassert not proof.job.only_backend_remains()\nprint(json.dumps({'pid':os.getpid(),'child':child.pid}),flush=True)\ntime.sleep(60)\n`)
+      const env = {...process.env, ...environment}
+      delete env.AMADEUS_BACKEND_INSTANCE_NONCE
+      proc = spawn(python, ['-B', helper], {cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']})
+      let errors = ''
+      proc.stderr.on('data', data => {errors += data})
+      const output = await Promise.race([
+        once(proc.stdout, 'data'),
+        once(proc, 'exit').then(() => {throw Error(`backend exited before readiness: ${errors}`)}),
+      ])
+      assert.ok(JSON.parse(String(output[0])).child > 0)
+      assert.equal(await verifyPreviousBackendCleanup(file), false, 'live Job must fence maintenance')
+      unrelated = spawn(python, ['-c', 'import time; time.sleep(60)'], {windowsHide: true, stdio: 'ignore'})
+      await once(unrelated, 'spawn')
+      // A different creation identity must never authorize Job termination.
+      const trackingFile = path.join(`${file}.receipts`, `${launch.owner.id}.tracking.json`)
+      const bytes = fs.readFileSync(trackingFile)
+      const tracking = JSON.parse(bytes)
+      tracking.process.created = String(BigInt(tracking.process.created) + 1n)
+      fs.writeFileSync(trackingFile, JSON.stringify(tracking))
+      const denied = spawnSync(python, ['-I', '-B', path.join(root, 'server/backend_cleanup.py'), '--terminate', rawLaunch], {windowsHide: true, encoding: 'utf8', timeout: 10000})
+      assert.notEqual(denied.status, 0)
+      assert.match(denied.stderr, /does not match/)
+      assert.equal(proc.exitCode, null)
+      fs.writeFileSync(trackingFile, bytes)
+      assert.equal(await stopOwnedBackend(proc, async () => scenario === 'graceful-timeout', {
+        cleanupLaunch: rawLaunch, verifyCleanup: () => verifyPreviousBackendCleanup(file),
+      }), false, 'termination itself must not grant maintenance authority')
+      assert.notEqual(proc.exitCode ?? proc.signalCode, null)
+      let clean = false
+      for (let i = 0; i < 40 && !clean; i++) {
+        clean = await verifyPreviousBackendCleanup(file)
+        if (!clean) await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      assert.equal(clean, true, 'observer must survive Electron escalation and certify the drained Job')
+      assert.equal(JSON.parse(fs.readFileSync(path.join(`${file}.receipts`, `${launch.owner.id}.json`))).state, 'exited')
+      assert.equal(unrelated.exitCode, null, 'unrelated process must remain alive')
+    } finally {
+      if (proc && proc.exitCode === null && proc.signalCode === null) {
+        await forceStopBackendTree(proc)
+        await waitForProcessExit(proc, 5000)
+      }
+      if (unrelated) {unrelated.kill(); await waitForProcessExit(unrelated, 5000)}
+      if (link) fs.unlinkSync(link)
+    }
+  })
+}

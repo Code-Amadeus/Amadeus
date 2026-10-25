@@ -36,10 +36,23 @@ Explicitly disabling a package is preserved by rollback.
 Retained-version recovery restores only package records, configuration and
 encrypted credentials while the current backend is stopped. It does not delete
 either installation or require a graceful-exit receipt. File deletion and new
-installation still require physical process-exit evidence. The Windows Job
-observer can supply that evidence after a crash or forced exit once every owned
-descendant has stopped; unresolved Work outcomes remain in the Work ledger and
+installation still require physical process-exit evidence. Electron escalates a
+failed or timed-out shutdown by terminating the registered Windows Job, after
+checking the backend's creation identity and Job membership. Its outside
+observer survives and can supply exit evidence once every owned descendant has
+stopped. If the Job cannot be verified/opened, the fallback stops the owned
+process tree and may also kill the observer; that case still needs later-boot
+recovery. Unresolved Work outcomes remain in the Work ledger and
 are never marked successful or replayed by plugin recovery.
+
+Cleanup registration and its Python-root probe are maintenance prerequisites,
+not prerequisites for core backend startup. If they fail, Electron reports a
+warning, starts without cleanup credentials, and fences installation/deletion
+for that app session. It also attempts to persist unknown ownership; corrupt or
+missing-index evidence is preserved, not reset. Authenticated backend reuse has
+the same isolation. The data root and its contents cannot be links/junctions;
+links above that root (for example, a relocated user profile) are supported by
+both desktop and backend checks.
 
 If containment or observer evidence was lost, a positively observed later
 Windows boot retires the old process owners. This uses the OS boot counter,
@@ -47,7 +60,9 @@ not the clock, a closed port or an absent root PID. Sleep, an unavailable boot
 identity, and a later clean app launch do not clear unknown evidence. Existing
 PR profiles without a boot binding first acquire one conservatively; if their
 old exit evidence is missing, restart Windows after opening the updated app.
-Windows shutdown/session-end cleanup is best effort; recovery does not depend
+Use Windows **Restart**, rather than relying on shutdown/fast startup or resume,
+when recovering lost evidence. Fast-startup and hibernation transitions have
+not been qualified by this change. Windows shutdown/session-end cleanup is best effort; recovery does not depend
 on shutdown callbacks running to completion.
 
 Linux and macOS retain the existing version-isolated installation path, with

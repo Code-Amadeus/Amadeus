@@ -259,6 +259,8 @@ let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
+const backendCleanupLaunches = new WeakMap<ChildProcess, string>()
+let backendCleanupUnavailable = false
 let extensionCleanupConfirmed = true
 let backendStopping: Promise<void> | null = null
 const applicationLifecycle = new ApplicationLifecycle()
@@ -443,18 +445,35 @@ function startBackend(): Promise<void> {
   return backendStarting
 }
 
+async function retainUnknownBackendCleanup(error: unknown): Promise<void> {
+  // Maintenance evidence must not take down chat/TTS. Keep this session fenced
+  // even if the damaged/unwritable index cannot persist the unknown marker.
+  backendCleanupUnavailable = true
+  extensionCleanupConfirmed = false
+  console.warn('[electron] backend cleanup evidence unavailable:', error)
+  desktopSettings.reportExtensionWarning('Backend cleanup tracking is unavailable; the backend can run, but extension installation and file deletion remain blocked.')
+  try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+  catch (markError) { console.warn('[electron] could not persist unknown backend cleanup:', markError) }
+}
+
 async function launchBackend(): Promise<void> {
   const health = await backendHealthStatus()
   if (applicationLifecycle.isQuitting) return
   if (health === 'ready') {
-    if (scheduledExtensionUpdates) await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
+    if (scheduledExtensionUpdates) {
+      try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+      catch (error) { await retainUnknownBackendCleanup(error) }
+    }
     extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend already available on ${BACKEND_WS}; reusing it`)
     return
   }
   if (health === 'starting') {
-    if (scheduledExtensionUpdates) await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
+    if (scheduledExtensionUpdates) {
+      try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+      catch (error) { await retainUnknownBackendCleanup(error) }
+    }
     extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend is assembling on ${BACKEND_WS}; waiting for readiness`)
@@ -470,7 +489,7 @@ async function launchBackend(): Promise<void> {
 
   // Windows maintenance requires the persisted descendant receipt, not merely
   // a closed port. Other platforms retain their existing cleanup contract.
-  if (scheduledExtensionUpdates) extensionCleanupConfirmed = await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE)
+  if (scheduledExtensionUpdates) extensionCleanupConfirmed = !backendCleanupUnavailable && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE)
   if (extensionCleanupConfirmed) await extensionInstaller.cleanupStoppedBackend()
 
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
@@ -487,10 +506,15 @@ async function launchBackend(): Promise<void> {
   delete backendProcessEnvironment[EXTENSIONS_ENV]
   delete backendProcessEnvironment.AMADEUS_BACKEND_CLEANUP_LAUNCH
   backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
-  const cleanupLaunch = await prepareBackendCleanup(BACKEND_CLEANUP_STATE, {
-    nonce: BACKEND_INSTANCE_NONCE,
-    projectRoot: scheduledExtensionUpdates ? await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment) : PROJECT_ROOT, pythonCommand: python,
-  })
+  let cleanupLaunch: { environment: Record<string, string> } = { environment: {} }
+  if (scheduledExtensionUpdates) {
+    try {
+      cleanupLaunch = await prepareBackendCleanup(BACKEND_CLEANUP_STATE, {
+        nonce: BACKEND_INSTANCE_NONCE,
+        projectRoot: await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment), pythonCommand: python,
+      })
+    } catch (error) { await retainUnknownBackendCleanup(error) }
+  }
   extensionCleanupConfirmed = false
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
     cwd: PROJECT_ROOT,
@@ -511,6 +535,8 @@ async function launchBackend(): Promise<void> {
   })
 
   const proc = pythonProcess
+  const cleanupIdentity = cleanupLaunch.environment.AMADEUS_BACKEND_CLEANUP_LAUNCH
+  if (cleanupIdentity) backendCleanupLaunches.set(proc, cleanupIdentity)
   proc.stdout?.on('data', (data: Buffer) => {
     console.log(`[backend] ${data.toString('utf8').trim()}`)
   })
@@ -539,7 +565,8 @@ async function stopBackend(): Promise<void> {
   backendStopping = (async () => {
     extensionCleanupConfirmed = false
     extensionCleanupConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900), {
-      verifyCleanup: () => verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE),
+      verifyCleanup: async () => !backendCleanupUnavailable && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE),
+      cleanupLaunch: backendCleanupLaunches.get(proc),
     })
     if (pythonProcess === proc) pythonProcess = null
     backendOwned = false

@@ -42,17 +42,21 @@ async function serializeCleanup<T>(statePath: string, action: () => Promise<T>):
   }
 }
 
-function ordinaryPath(file: string): void {
+function ordinaryPath(file: string, root = path.dirname(file)): void {
   if (!path.isAbsolute(file) || path.normalize(file) !== file) throw Error('Cleanup path must be canonical and absolute')
+  const relative = path.relative(root, file)
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw Error('Cleanup path is outside its data root')
+  // Match extension storage: the data root and its contents must be ordinary,
+  // but a relocated user profile may have a junction above that root.
   for (let item = file; ; item = path.dirname(item)) {
     try { if (fs.lstatSync(item).isSymbolicLink()) throw Error('Cleanup path cannot traverse a link') }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    if (path.dirname(item) === item) break
+    if (item === root) break
   }
 }
 
-function readJson(file: string): unknown {
-  ordinaryPath(file)
+function readJson(file: string, root = path.dirname(file)): unknown {
+  ordinaryPath(file, root)
   const info = fs.lstatSync(file)
   if (!info.isFile() || info.size > 2 * 1024 * 1024) throw Error('Invalid cleanup record')
   return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -70,6 +74,13 @@ function validOwner(value: unknown): value is CleanupOwner {
 
 function readIndex(file: string): CleanupIndex | null {
   try {
+    // A failed write-through replacement can leave the previous (even empty)
+    // index readable. Its uncommitted transaction is missing ownership evidence,
+    // not permission to install on the next desktop launch.
+    ordinaryPath(file)
+    const prefix = `${path.basename(file)}.`
+    if (fs.readdirSync(path.dirname(file)).some(name => name.startsWith(prefix) && name.endsWith('.tmp')
+      && /^[a-f0-9]{32}$/.test(name.slice(prefix.length, -4)))) throw Error('Cleanup index has an interrupted update')
     const value = readJson(file) as CleanupIndex
     if (!value || value.schema !== CLEANUP_SCHEMA || typeof value.unknown !== 'boolean'
       || value.bootId !== undefined && !validBootId(value.bootId)
@@ -220,7 +231,7 @@ export async function verifyPreviousBackendCleanup(statePath: string,
       if (index !== saved) await atomicIndex(statePath, index)
       if (index.unknown) return false
       for (const owner of index.owners) {
-        const receipt = readJson(path.join(`${statePath}.receipts`, `${owner.id}.json`)) as {
+        const receipt = readJson(path.join(`${statePath}.receipts`, `${owner.id}.json`), path.dirname(statePath)) as {
           schema: string; state: string; owner: CleanupOwner; process: ProcessIdentity; observer: ProcessIdentity;
           proof: string; job_name: string; providers_settled: boolean; work_settled: boolean;
         }
@@ -245,11 +256,32 @@ export async function verifyPreviousBackendCleanup(statePath: string,
 
 /** Force-stop only the backend process created by this Electron instance. */
 export async function forceStopBackendTree(proc: ChildProcess, platform: string = process.platform,
-  createProcess: typeof spawn = spawn): Promise<void> {
+  createProcess: typeof spawn = spawn, cleanupLaunch?: string): Promise<void> {
   if (!Number.isSafeInteger(proc.pid) || Number(proc.pid) <= 0) throw new Error('Owned backend process identity is unavailable')
   if (platform !== 'win32') {
     proc.kill()
     return
+  }
+  if (cleanupLaunch) {
+    try {
+      const launch = JSON.parse(cleanupLaunch)
+      if (launch.schema !== CLEANUP_SCHEMA || !validOwner(launch.owner)) throw Error('Invalid cleanup launch')
+      // Terminate only the Job registered for this launch. The independent
+      // observer is outside it and can still certify the resulting exit.
+      await new Promise<void>((resolve, reject) => {
+        execFile(launch.owner.python_command,
+          ['-I', '-B', path.join(launch.owner.project_root, 'server', 'backend_cleanup.py'), '--terminate', cleanupLaunch],
+          { windowsHide: true, timeout: 10000, maxBuffer: 32 * 1024,
+            env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR } },
+          error => error ? reject(error) : resolve())
+      })
+      return
+    } catch {
+      // Missing/invalid Job evidence cannot authorize another Job. Preserve the
+      // old owned-tree stop as a fallback; it may also kill the observer.
+      if (hasExited(proc)) return
+      console.warn('[electron] registered backend Job could not be terminated; falling back to owned process-tree shutdown')
+    }
   }
   const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows'
   await new Promise<void>((resolve, reject) => {
@@ -282,9 +314,10 @@ export function waitForProcessExit(proc: ChildProcess, timeoutMs: number): Promi
 /** Returns whether child lifetime was confirmed, after the owned backend exits. */
 export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () => Promise<boolean>,
   { platform = process.platform, forceStop = forceStopBackendTree, waitForExit = waitForProcessExit,
-    verifyCleanup }: {
+    verifyCleanup, cleanupLaunch }: {
     platform?: string; forceStop?: typeof forceStopBackendTree; waitForExit?: typeof waitForProcessExit;
     verifyCleanup?: () => Promise<boolean>;
+    cleanupLaunch?: string;
   } = {}): Promise<boolean> {
   const requested = await requestShutdown()
   if (requested && await waitForExit(proc, usesScheduledExtensionUpdates(platform) ? 15000 : 2500)) {
@@ -304,7 +337,7 @@ export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () =
   // The process may have exited between the request/timeout and escalation.
   // That proves the backend stopped, but not that a forced tree cleanup ran.
   if (hasExited(proc)) return false
-  try { await forceStop(proc, platform) }
+  try { await forceStop(proc, platform, spawn, cleanupLaunch) }
   catch (error) {
     if (hasExited(proc)) return false
     throw error
@@ -312,7 +345,7 @@ export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () =
   if (!await waitForExit(proc, 1200) && !hasExited(proc)) {
     throw new Error('Owned backend shutdown did not complete')
   }
-  // This stop call does not infer child exit from taskkill. The independent Job
-  // observer may subsequently publish physical exit proof, even after a crash.
+  // Neither Job termination nor taskkill is itself cleanup proof. A surviving
+  // observer can publish a receipt; the taskkill fallback may kill it too.
   return false
 }

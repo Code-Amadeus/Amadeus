@@ -1,4 +1,4 @@
-"""Desktop-owned cleanup evidence; this module never terminates a process.
+"""Desktop-owned cleanup evidence and explicit owned-Job termination.
 
 Install the tracking Job before eager runtime imports. The outside observer
 certifies physical exit independently of graceful teardown or Work outcomes.
@@ -22,10 +22,13 @@ LAUNCH_ENV = "AMADEUS_BACKEND_CLEANUP_LAUNCH"
 SCHEMA = "amadeus.backend-cleanup.v1"
 
 
-def _ordinary_path(path: Path) -> None:
+def _ordinary_path(path: Path, root: Path) -> None:
     if not path.is_absolute() or ".." in path.parts:
         raise ValueError("cleanup path must be absolute")
-    for item in (*reversed(path.parents), path):
+    relative = path.relative_to(root)
+    # The data root itself and its descendants cannot be reparse points. A
+    # junction above the root is a supported relocated user profile.
+    for item in (root, *(root.joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1))):
         try:
             info = item.lstat()
         except FileNotFoundError:
@@ -34,8 +37,8 @@ def _ordinary_path(path: Path) -> None:
             raise ValueError("cleanup path cannot traverse a reparse point")
 
 
-def _atomic_json(path: Path, value: dict) -> None:
-    _ordinary_path(path)
+def _atomic_json(path: Path, value: dict, root: Path) -> None:
+    _ordinary_path(path, root)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     # The desktop creates the receipt directory before registering the launch.
     with temporary.open("x", encoding="utf-8", newline="\n") as stream:
@@ -43,7 +46,7 @@ def _atomic_json(path: Path, value: dict) -> None:
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
-    _ordinary_path(path)
+    _ordinary_path(path, root)
     if os.name == "nt":
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.MoveFileExW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
@@ -161,10 +164,11 @@ class BackendCleanup:
             if Path(command).resolve() != Path(sys.executable).resolve():
                 raise ValueError("cleanup launch Python executable does not match")
             state_path = Path(launch["state_path"])
-            _ordinary_path(state_path)
+            self.data_root = state_path.parent
+            _ordinary_path(state_path, self.data_root)
             self.receipt = Path(str(state_path) + ".receipts") / f"{owner['id']}.json"
             self.approval = self.receipt.with_suffix(".approval.json")
-            _ordinary_path(self.receipt)
+            _ordinary_path(self.receipt, self.data_root)
             index = json.loads(state_path.read_text(encoding="utf-8"))
             if index.get("schema") != SCHEMA or owner not in index.get("owners", []):
                 raise ValueError("cleanup launch is not registered by desktop")
@@ -182,7 +186,7 @@ class BackendCleanup:
                 "schema": SCHEMA, "owner": owner,
                 "process": {"pid": os.getpid(), "created": self.creation},
                 "job_name": self.job_name,
-            })
+            }, self.data_root)
         except Exception as exc:
             # Ordinary backend startup may continue; unknown containment never
             # authorizes package replacement and is visible in its pending owner.
@@ -205,7 +209,7 @@ class BackendCleanup:
             "job_name": self.job_name,
             "proof": "windows-job-drained", "providers_settled": True,
             "work_settled": True,
-        })
+        }, self.data_root)
         # Keep the non-inheritable tracking handle open until process exit.
         # Nothing after this call may launch another child.
         return True
@@ -234,7 +238,7 @@ def _start_observer(proof: BackendCleanup) -> None:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         if ready.exists():
-            _ordinary_path(ready)
+            _ordinary_path(ready, proof.data_root)
             identity = json.loads(ready.read_text(encoding="utf-8"))
             if identity.get("job_name") != proof.job_name or identity.get("owner") != proof.launch["owner"]:
                 raise ValueError("cleanup observer identity mismatch")
@@ -261,7 +265,8 @@ def _observe(request: dict) -> None:
     process = request["process"]
     owner = request["launch"]["owner"]
     receipt = Path(str(request["launch"]["state_path"]) + ".receipts") / f"{owner['id']}.json"
-    _ordinary_path(receipt)
+    data_root = Path(request["launch"]["state_path"]).parent
+    _ordinary_path(receipt, data_root)
     job = TrackingJob.__new__(TrackingJob)
     job.kernel = kernel
     job.handle = kernel.OpenJobObjectW(4, False, request["job_name"])  # QUERY only
@@ -277,11 +282,11 @@ def _observe(request: dict) -> None:
             raise ValueError("cleanup observer backend creation identity mismatch")
         _atomic_json(receipt.with_suffix(".observer-ready.json"), {
             "owner": owner, "job_name": request["job_name"],
-        })
+        }, data_root)
         if kernel.WaitForSingleObject(root, 0xFFFFFFFF) != 0:
             raise OSError("cleanup observer could not observe backend exit")
         tracking_path = receipt.with_suffix(".tracking.json")
-        _ordinary_path(tracking_path)
+        _ordinary_path(tracking_path, data_root)
         tracking = json.loads(tracking_path.read_text(encoding="utf-8"))
         if tracking != {"schema": SCHEMA, "owner": owner, "process": process,
                         "job_name": request["job_name"]}:
@@ -294,10 +299,10 @@ def _observe(request: dict) -> None:
                               "process": process, "job_name": request["job_name"],
                               "proof": "windows-job-drained", "observer": {
             "pid": os.getpid(), "created": _creation_identity(),
-        }})
+        }}, data_root)
     except Exception as exc:
         _atomic_json(receipt.with_suffix(".failed.json"), {"schema": SCHEMA, "owner": owner,
-                                                       "reason": type(exc).__name__})
+                                                       "reason": type(exc).__name__}, data_root)
         raise
     finally:
         job.close()
@@ -305,7 +310,61 @@ def _observe(request: dict) -> None:
             kernel.CloseHandle(root)
 
 
+def _terminate(launch: dict) -> None:
+    """Explicit desktop escalation; never called by the outside observer."""
+    owner = launch["owner"]
+    if launch.get("schema") != SCHEMA or not re.fullmatch(r"[0-9a-f]{32}", owner["id"]):
+        raise ValueError("invalid cleanup launch")
+    state_path = Path(launch["state_path"])
+    data_root = state_path.parent
+    _ordinary_path(state_path, data_root)
+    index = json.loads(state_path.read_text(encoding="utf-8"))
+    if index.get("schema") != SCHEMA or owner not in index.get("owners", []):
+        raise ValueError("cleanup launch is not registered")
+    tracking_path = Path(str(state_path) + ".receipts") / f"{owner['id']}.tracking.json"
+    _ordinary_path(tracking_path, data_root)
+    tracking = json.loads(tracking_path.read_text(encoding="utf-8"))
+    job_name = f"Global\\AmadeusBackendCleanup-{owner['id']}"
+    if (tracking.get("schema") != SCHEMA or tracking.get("owner") != owner
+            or tracking.get("job_name") != job_name):
+        raise ValueError("cleanup containment identity mismatch")
+    process = tracking["process"]
+    if (type(process.get("pid")) is not int or process["pid"] <= 0
+            or not isinstance(process.get("created"), str)
+            or not re.fullmatch(r"[1-9]\d{10,20}", process["created"])):
+        raise ValueError("invalid backend process identity")
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenJobObjectW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.OpenJobObjectW.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+    kernel.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    job = kernel.OpenJobObjectW(4 | 8, False, job_name)  # QUERY | TERMINATE
+    root = kernel.OpenProcess(0x1000, False, process["pid"])  # identity only
+    try:
+        if not job or not root:
+            raise OSError("backend Job termination handles unavailable")
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(root, *(ctypes.byref(item) for item in times)):
+            raise OSError("backend process identity unavailable")
+        created = str(times[0].dwLowDateTime | times[0].dwHighDateTime << 32)
+        member = wintypes.BOOL()
+        if (created != process["created"] or not kernel.IsProcessInJob(root, job, ctypes.byref(member))
+                or not member.value):
+            raise ValueError("backend does not match the registered Job")
+        if not kernel.TerminateJobObject(job, 1):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        if root:
+            kernel.CloseHandle(root)
+        if job:
+            kernel.CloseHandle(job)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] != "--observe" or os.name != "nt":
+    if len(sys.argv) != 3 or sys.argv[1] not in {"--observe", "--terminate"} or os.name != "nt":
         raise SystemExit(2)
-    _observe(json.loads(sys.argv[2]))
+    (_observe if sys.argv[1] == "--observe" else _terminate)(json.loads(sys.argv[2]))
