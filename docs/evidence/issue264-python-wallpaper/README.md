@@ -72,10 +72,20 @@ model or microphone was used by the desktop probes.
 - Fresh-settings cold start: no first-run UI, WebView2 selected, independent
   autostart disabled, newly owned host exited, original profile/layout/running
   state restored in finally.
+- Real Settings RPC: sending the unchanged **539-byte** raw Settings payload back
+  produced byte-identical readback. No setting values were changed by this check.
+- Clean source/provenance gate at `5a279b8439f24b124c1205abb7bbaade54062bc0`:
+  **4,285 selected files, 161 excluded, 0 errors, 0 warnings**; code-only ZIP
+  created. Its helper bytes matched the checkout and old .NET sources were absent.
+- Independently extracted sources: `npm ci`, build and Windows code-only
+  packaging passed with dotnet removed from PATH. The resulting package passed
+  the native tray/helper smoke and all **15** real model-less application checks.
+  This used the supplied external Python runtime and locked Node dependencies;
+  it does not prove that no modern .NET runtime is installed on this machine.
 - Changed Python lint and diff whitespace checks passed.
 
-The full Python suite and final source-archive checks are recorded below once
-complete. Individual totals above overlap and must not be added together.
+The full Python suite is recorded below once complete. Individual totals above
+overlap and must not be added together.
 
 Reproducible commands (use the existing project Python environment):
 
@@ -123,6 +133,14 @@ Python/model/asset provisioning remains external, as before.
 
 ## Remaining release gates
 
+- Dependency audit is not green: the unchanged Electron lock reports **2 high,
+  1 moderate** findings (Electron, undici, fast-uri); the unchanged Pi lock reports
+  **1 high, 1 moderate** (undici and its dependent agent package).
+  `npm audit --audit-level=high` exits 1 in both directories. Both lockfiles are
+  byte-for-byte unchanged from the checked main baseline; this migration adds no
+  dependency version, audit exemption or relaxed gate. Relevant high advisories:
+  [Electron GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9),
+  [undici GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c).
 - The installed Lively 2.2.1.0 has the local null-display-name repair documented
   in #233. Its binary was not certified as an unmodified official release here.
   These real-desktop results are supplemental, not stock-Lively acceptance.
