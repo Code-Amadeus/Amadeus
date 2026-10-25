@@ -88,3 +88,29 @@ publication journey were not rerun locally. The cancelled-shutdown query behavio
 startup catalog networking, performance observations and pre-existing dependency
 changes are outside this focused follow-up. No dependency, CI workflow, timeout,
 test skip, review approval or merge policy was changed.
+
+## CI follow-up on 2026-10-26
+
+The first hosted run of `3413e883` exposed a test-fixture integration mistake:
+`backendLaunch.test.mjs` simulated Windows in the extracted desktop functions,
+but omitted the platform argument when calling the real cleanup module. On a
+Linux runner that module correctly chose its POSIX no-op route, so the zeroed
+index, missing index and successful-registration tests failed. The fixture now
+explicitly supplies `win32`, as the existing cleanup protocol tests do. The
+assertions and separate Linux/macOS routing cases are retained. The focused
+startup suite passes locally (10 tests, 0 skipped); native Linux validation is
+performed by fresh hosted CI.
+
+Two Windows jobs also failed before project tests at `actions/setup-dotnet@v5`.
+The `8.0.x` lookup resolved SDK **8.0.427**, but its `aka.ms` redirect targeted
+`dotnetorigin.blob.core.windows.net`, which returned **409: public access is not
+permitted**. Retrying reproduced the failure. Microsoft's release metadata and
+the public `builds.dotnet.microsoft.com` URL confirm the same SDK is available.
+The three Windows setup steps now pin **8.0.427**, rather than changing SDK
+generation or using another distributor. The official action installer's
+`-Version 8.0.427 -DryRun` resolves the public URL, whose HEAD request returns
+200. No project test, assertion, timeout or failure gate is removed.
+
+Sources checked: [setup-dotnet installer](https://github.com/actions/setup-dotnet/blob/v5/src/installer.ts),
+[bundled installation script](https://github.com/actions/setup-dotnet/blob/v5/externals/install-dotnet.ps1),
+[Microsoft .NET 8 release metadata](https://builds.dotnet.microsoft.com/dotnet/release-metadata/8.0/releases.json).

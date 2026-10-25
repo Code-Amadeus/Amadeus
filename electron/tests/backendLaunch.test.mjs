@@ -21,6 +21,9 @@ function fixture(t, overrides = {}) {
   const calls = {spawn: [], warnings: [], applied: 0, removed: 0, ready: 0}
   const deps = {
     ...cleanup,
+    // These fixtures exercise Windows maintenance on every CI host. The mocked
+    // index.ts process does not change the real cleanup module's host platform.
+    prepareBackendCleanup: (statePath, launch) => cleanup.prepareBackendCleanup(statePath, launch, 'win32'),
     BACKEND_CLEANUP_STATE: file, BACKEND_INSTANCE_NONCE: 'synthetic-launch-nonce',
     PROJECT_ROOT: root, BACKEND_WS: 'ws://fixture', BACKEND_PORT: 12345, BACKEND_TOKEN: 'synthetic-token',
     scheduledExtensionUpdates: true, EXTENSIONS_ENV: 'AMADEUS_EXTENSION_LAUNCH',

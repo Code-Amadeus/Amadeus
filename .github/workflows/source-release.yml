@@ -104,7 +104,8 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          # Pin the same SDK resolved by 8.0.x; avoid its broken aka.ms blob redirect.
+          dotnet-version: '8.0.427'
 
       - name: Install pinned uv
         run: python -m pip install uv==0.12.8

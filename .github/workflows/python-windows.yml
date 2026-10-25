@@ -155,7 +155,8 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          # Pin the same SDK resolved by 8.0.x; avoid its broken aka.ms blob redirect.
+          dotnet-version: '8.0.427'
 
       - name: Build actual Windows executable
         working-directory: electron
