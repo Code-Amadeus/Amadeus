@@ -84,8 +84,24 @@ model or microphone was used by the desktop probes.
   it does not prove that no modern .NET runtime is installed on this machine.
 - Changed Python lint and diff whitespace checks passed.
 
-The full Python suite is recorded below once complete. Individual totals above
-overlap and must not be added together.
+Full Python coverage: **503 distinct test files, 6,703 passed, 19 skipped,
+5 expected failures, 0 unexpected failures**. This was a split run, not a single
+uninterrupted green command. The original per-file runner completed 289 files
+before online `uv export --locked` stalled in `test_profile_contract.py`.
+The owned runner tree was interrupted and its original log retained. An offline
+locked export resolved in 4 ms; the profile's original 55 assertions then passed
+in 5.53 seconds with `UV_OFFLINE=1`.
+
+The task-local `build/resume_wallpaper_regressions.py` recollected the full tree,
+checked test discovery and used the unchanged `tools.run_tests._run_suite` for
+the 214 unfinished files. Only the profile-contract file received the offline
+environment; it retained its original `--locked` arguments. The resumed runner
+returned 0, and its wallpaper module ran the final **87** cases. Reconciling the
+two logs confirmed 503 unique completed files with no gap or duplicate completion.
+No test assertion, timeout or skip rule was relaxed for the run. The online uv
+wait is an environment limitation; no upstream uv defect is claimed.
+
+Individual totals above overlap and must not be added together.
 
 Reproducible commands (use the existing project Python environment):
 
