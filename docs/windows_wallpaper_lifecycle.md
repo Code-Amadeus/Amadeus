@@ -115,23 +115,35 @@ does not transfer ownership of the new host to Amadeus or authorize stopping a
 host showing a user's new wallpaper. A failed identity query retains the journal
 and reports the failure instead of assuming the old process exited.
 
-The Set adapter is coupled to the locked GrpcDotNetNamedPipes 3.1.0 transport. Its
-single internal `PipeCallback` binding captures the actual request stream; the
-request marshaller reads `GetNamedPipeServerProcessId` after that stream connects
-and persists the identity before any request bytes are written. The adapter does
-not probe a second connection, retry, or substitute a process-name guess. If the
-binding, identity read, or journal write fails, no Set is dispatched and settings
-preparation can roll back. A library upgrade must rerun the real synthetic-pipe
-contracts before accepting this boundary.
+The standard-library Python helper implements the bounded Windows message-pipe
+protocol from GrpcDotNetNamedPipes 3.1.0, pinned at
+`da307b551a9d56b62f5780e91a2d95a699f32430`. It uses overlapped native IO with a
+single call thread and no background connector or serializer. On the actual Set
+connection, `GetNamedPipeServerProcessId` identifies the receiver and the Session
+flushes its Pending journal before any request bytes are written. An identity or
+persistence failure sends no request. No second connection or process-name guess
+substitutes for receiver identity.
 
-The library's response deadline can expire while its background connection or
-serializer is still running. A single dispatch gate closes before `Send` returns
-and waits for an already entered identity/persistence boundary to finish. A
-connection arriving after that closure cannot identify a receiver, save a journal
-or write the Set request, so an unstarted request can finish settings-only rollback.
-If persistence already began, the caller waits for it and retains `Pending` on a
-deadline error. The transport write may still follow that persisted boundary;
-this is uncertain dispatch protected by the journal, not proof of cancellation.
+Connect/read/write waits honor the call deadline and cancellation. Pending native
+IO is cancelled and drained before its buffers are released. The call cannot
+return while an entered persistence callback is running. Once that callback
+returns, a deadline/cancellation check precedes the first write; a persisted
+Pending journal still conservatively fences recovery even when this check stops
+the write. No late task can recreate the journal after cleanup. A timeout after
+dispatch sends best-effort Cancel and closes the pipe, but neither cancellation
+nor an empty reply proves that Lively stopped loading the scene.
+
+Journal fields retain PascalCase and string phases. Process `Started` is exactly
+the Windows creation FILETIME plus `504911232000000000` (.NET UTC ticks), computed
+with integers. The native regression compiles the original C# expression and
+compares it with Python for the same live process, then verifies that an old
+Pending record still blocks recovery. A failed identity read remains an error.
+
+Settings retain their raw protobuf field sequence. Only scalars 28 (browser),
+48 (lock image), and 49 (desktop image) are rewritten; all other field bytes,
+including unknown encodings, duplicates, groups and order, survive unchanged.
+Proto3 false/default writes omit the scalar. Restoration reads current settings
+first and preserves newer user choices rather than constructing a Settings model.
 
 Old published journals without `Phase` retain their original semantics. A
 `Pending` journal without `RequestProcess` is invalid: recovery reports an error
@@ -166,17 +178,17 @@ Session 已接管某个进程的清理（包括旧日志恢复），即记录其
 Lively；这不转移新宿主的所有权，也不授权停止承载用户新壁纸的宿主。身份查询失败
 时保留日志并明确报错，不臆测原进程已退出。
 
-Set 适配器耦合锁定的 GrpcDotNetNamedPipes 3.1.0：仅一处内部 `PipeCallback` 绑定
-取得实际请求流，marshaller 在该流连接后读取 `GetNamedPipeServerProcessId`，并在
-写入任何请求字节前持久保存身份。不另开探测连接，不重试，也不以进程名称猜测替代。
-钩子、身份读取或日志保存失败时不派发 Set，设置准备可正常回滚。升级传输库前必须
-重新通过真实合成管道契约，才能接受该边界。
+Python helper 仅用标准库，实现上述锁定版本的 Windows 消息管道协议，以原生 overlapped
+IO 配合同一调用线程执行；没有后台连接器或序列化任务。在实际 Set 连接上先读取
+`GetNamedPipeServerProcessId`，持久保存 Pending 后才允许写请求。身份或日志失败不派发。
+连接、读、写遵守 deadline/取消；取消原生 IO 后等待其完成再释放缓冲区。已进入的持久化
+回调结束前调用不能返回，回调后写入前再次核验 deadline/取消。已保存 Pending 时仍保守
+保留恢复栅栏；迟到任务不能在清理后重建日志。派发后的 Cancel 是尽力而为，不能证明
+Lively 不会继续迟到挂载。
 
-传输库的响应 deadline 可能先于后台连接或序列化结束。单一派发门在 `Send` 返回前
-关闭，并等待已进入的身份读取／持久化边界完成。关闭后迟到的连接不得再识别进程、
-保存日志或写入 Set 请求，因此尚未开始派发的请求可完成仅恢复设置的回滚。
-若持久化边界已开始，调用方须等待其结束，deadline 错误保留 `Pending`。传输写入
-仍可能随后发生；这是由日志保护的不确定派发，不能据此声称取消成功。
+日志保留 PascalCase、字符串 Phase；Started 必须以整数精确等于 FILETIME 加
+`504911232000000000`，真实进程回归与原 C# 表达式逐值比较。Settings 保留原始字段序列，
+仅改 28/48/49，其他字段按原字节写回；false/default 写入省略字段，保留用户新选择。
 
 已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的 `Pending` 日志
 视为无效：恢复明确报错，不改写日志或改变桌面。该格式和 `MountUnconfirmed` 仅
@@ -228,7 +240,7 @@ snapshot. The `recover` command also handles an interrupted launch preparation.
 Manual recovery, after closing Amadeus:
 
 ```powershell
-build\windows-wallpaper\host\Amadeus.Wallpaper.exe recover
+.venv\Scripts\python.exe -I electron\resources\windows-wallpaper\helper.py recover
 ```
 
 `recover` is an operator diagnostic/recovery command, also used by the desktop
@@ -245,12 +257,21 @@ cancellation/time-budget policy remains a release-acceptance item.
 
 ## Build and distribution
 
-Source runs need .NET 8 SDK on the build machine to build the helper once.
-The published Windows x64 helper includes .NET 8.0.31, so end users do not need
-an SDK. The Electron Windows packaging hook builds and includes the helper and
-its dependency notices. It runs no Windows setup for macOS/Linux targets.
-Experimental logs, profile backups and screenshots live outside the published
-`host` directory and are not included in the application package.
+The helper is `electron/resources/windows-wallpaper/helper.py`, shipped with
+Electron under `resources/windows-wallpaper`, together with setup and protocol
+notices. Source runs use that same checked-in resource. Electron passes its
+backend interpreter selected by `pythonRuntime.ts` and invokes `python -I`;
+no additional Python package, .NET SDK, NuGet build or bundled .NET runtime is
+required. The helper remains an independent child of Electron, outside the
+backend's process-tree/Job cleanup. macOS/Linux and external-host paths do not
+run Windows setup. Experimental logs, backups and screenshots stay under build/,
+outside the explicitly selected packaged resource files.
+
+[.NET 8 support ends on 2026-11-10](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
+This motivates #264. If replacement cannot be qualified before that date,
+the release branch must first retarget the old helper and CI to net10.0 as a
+separate change. The migration branch contains the replacement; it does not
+claim clean-machine or unmodified-Lively release qualification.
 
 Electron packaging writes to `electron/build`, separate from compiled input
 in `electron/dist`; otherwise electron-builder excludes its own output folder
@@ -260,9 +281,8 @@ does not abort startup, and the main window remains visible if the tray lacks
 an icon.
 
 ```powershell
-powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly -Rebuild
-# Also prepare/install the host when required:
-powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1
+# Prepare/install Lively when required, using the existing backend interpreter:
+powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -Python .venv\Scripts\python.exe
 ```
 
 Lively remains a separate unmodified GPL-3.0 application acquired from the
@@ -377,7 +397,7 @@ the policy; changing these values does not require re-encoding character assets.
 ## Verification
 
 ```powershell
-dotnet run --project wallpaper\windows\Amadeus.Wallpaper.Tests
+.venv\Scripts\python.exe -m pytest tests\test_windows_wallpaper_helper.py
 cd electron
 npm test
 npm run build
@@ -387,10 +407,10 @@ The separate protocol counterexample diagnostic is not an acceptance check:
 独立协议反例诊断不计为验收通过：
 
 ```powershell
-dotnet run --no-restore --project wallpaper\windows\Amadeus.Wallpaper.Tests -- --false-empty-counterexample
+.venv\Scripts\python.exe tools\probes\windows_wallpaper_counterexample.py
 ```
 
-The Windows Electron CI job also runs the C# contract executable, builds an
+The Windows Electron CI job also runs the Python lifecycle/wire contracts, builds an
 unpacked Windows application with electron-builder (including `beforePack`),
 and runs `electron/scripts/smoke-windows-wallpaper.cjs` against that package.
 This smoke imports the packaged startup policy and tray component, creates a
@@ -403,7 +423,7 @@ it in cleanup):
 
 ```powershell
 .venv\Scripts\python.exe tools\probes\windows_wallpaper_lifecycle.py
-dotnet run --project wallpaper\windows\Amadeus.Wallpaper.Tests -- --cold-start-probe build\windows-wallpaper
+.venv\Scripts\python.exe tools\probes\windows_wallpaper_cold_start.py
 ```
 
 The lifecycle probe requires a real renderer connection, then verifies the

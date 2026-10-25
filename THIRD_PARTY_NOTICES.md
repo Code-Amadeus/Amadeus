@@ -1,5 +1,13 @@
 # Third-party notices and pre-release provenance status
 
+The Windows wallpaper helper uses the existing Python runtime and ships no .NET
+or NuGet binaries. Its bounded wire adapter references GrpcDotNetNamedPipes 3.1.0
+at `da307b551a9d56b62f5780e91a2d95a699f32430` (Copyright 2020 Google LLC,
+Apache-2.0); attribution and license are included in
+`electron/resources/windows-wallpaper/NOTICE.md` and `Apache-2.0.txt`, with a
+matching provenance record. Lively remains an optional separately distributed
+GPL-3.0 application with its own prerequisites and notices.
+
 Status: **pre-release inventory — no known unresolved provenance component is
 selected as a release blocker under the stated immediate-upstream policy**.
 

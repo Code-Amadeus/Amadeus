@@ -3,7 +3,38 @@ import test from 'node:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
+
+const { projectPythonCommand } = loadTypeScript(new URL('../src/main/pythonRuntime.ts', import.meta.url))
+
+for (const packaged of [false, true]) {
+  test(`helper follows Electron resources and the backend interpreter in isolated mode (packaged=${packaged})`, async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'amadeus-python-wallpaper-'))
+    try {
+      const resources = path.join(root, 'resources')
+      const helperDir = packaged ? path.join(resources, 'windows-wallpaper') : path.join(root, 'electron/resources/windows-wallpaper')
+      await fs.mkdir(helperDir, { recursive: true })
+      const trace = path.join(root, 'trace.json')
+      await fs.writeFile(path.join(helperDir, 'helper.py'), `import json, sys
+from pathlib import Path
+Path(${JSON.stringify(trace)}).write_text(json.dumps(dict(isolated=sys.flags.isolated, executable=sys.executable, file=__file__, args=sys.argv[1:])))
+print('{"status":"mounted"}', flush=True)
+sys.stdin.readline()
+`)
+      const python = projectPythonCommand(path.resolve(import.meta.dirname, '../..'))
+      const helper = windowsWallpaperDependencies(root, resources, packaged, python).launch('http://127.0.0.1:1234/wallpaper/lively/index.html')
+      await helper.ready
+      helper.process.stdin.end()
+      await helper.done
+      const observed = JSON.parse(await fs.readFile(trace, 'utf8'))
+      assert.equal(observed.isolated, 1)
+      assert.equal(path.resolve(observed.executable), path.resolve(python))
+      assert.equal(path.resolve(observed.file), path.join(helperDir, 'helper.py'))
+      assert.deepEqual(observed.args, ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html'])
+    } finally { await fs.rm(root, { recursive: true, force: true }) }
+  })
+}
 
 test('managed host is Windows-only; external hosts remain selectable', () => {
   assert.equal(managesWindowsWallpaper('win32', {}), true)
@@ -155,7 +186,7 @@ Set-Content -LiteralPath $marker -Value 'attempted'
 Write-Error 'fixture installation unavailable'
 exit 1
 `)
-    const dependencies = windowsWallpaperDependencies(root, '', false)
+    const dependencies = windowsWallpaperDependencies(root, '', false, 'python')
     await assert.rejects(dependencies.prepare())
     await dependencies.prepare()
   } finally {

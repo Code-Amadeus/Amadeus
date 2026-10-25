@@ -17,11 +17,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-HELPER = ROOT / "build/windows-wallpaper/host/Amadeus.Wallpaper.exe"
+HELPER = [sys.executable, "-I", str(ROOT / "electron/resources/windows-wallpaper/helper.py")]
 
 
 def inspect() -> dict:
-    result = subprocess.run([str(HELPER), "inspect"], capture_output=True, text=True, check=True)
+    result = subprocess.run([*HELPER, "inspect"], capture_output=True, text=True, check=True)
     return json.loads(result.stdout.splitlines()[-1])
 
 
@@ -55,6 +55,7 @@ def main() -> int:
     animator = SpriteForgeAnimator(bridge)
     report = {"before": baseline, "experiments": []}
     output = ROOT / "build/windows-wallpaper/lifecycle-experiment.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
     process = None
     bridge.start()
     animator.start()
@@ -62,7 +63,7 @@ def main() -> int:
         for scenario in ("normal-exit", "parent-pipe-loss", "helper-crash-recovery"):
             previous_clients = {id(client) for client in bridge._state.clients}
             process = subprocess.Popen(
-                [str(HELPER), "run", bridge.lively_url], stdin=subprocess.PIPE,
+                [*HELPER, "run", bridge.lively_url], stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -79,7 +80,7 @@ def main() -> int:
             if scenario == "helper-crash-recovery":
                 process.kill()  # Deliberately kill ONLY this probe's helper.
                 process.wait(timeout=10)
-                recovered = subprocess.run([str(HELPER), "recover"], capture_output=True, text=True, timeout=75)
+                recovered = subprocess.run([*HELPER, "recover"], capture_output=True, text=True, timeout=75)
                 assert recovered.returncode == 0, recovered.stdout + recovered.stderr
             else:
                 if scenario == "normal-exit":
@@ -111,7 +112,7 @@ for line in child.stdout:
         os._exit(0)
 sys.exit(1)
 '''
-        parent = subprocess.run([sys.executable, "-c", parent_script, str(HELPER), "run", bridge.lively_url],
+        parent = subprocess.run([sys.executable, "-c", parent_script, *HELPER, "run", bridge.lively_url],
                                 capture_output=True, text=True, timeout=75)
         assert parent.returncode == 0, parent.stdout + parent.stderr
         deadline = time.monotonic() + 45
@@ -129,7 +130,7 @@ sys.exit(1)
         if process is not None and process.poll() is None:
             process.stdin.close()
             process.wait(timeout=75)
-        recovery = subprocess.run([str(HELPER), "recover"], capture_output=True, text=True, timeout=75)
+        recovery = subprocess.run([*HELPER, "recover"], capture_output=True, text=True, timeout=75)
         if recovery.returncode:
             print("RECOVERY FAILED: " + recovery.stdout + recovery.stderr, file=sys.stderr)
         animator.stop()

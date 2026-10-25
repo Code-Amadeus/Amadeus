@@ -147,18 +147,20 @@ export async function recoverWindowsWallpaperHostExit(error: unknown, actions: {
   return cleanupConfirmed
 }
 
-export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean): WallpaperDependencies {
-  const directory = packaged ? path.join(resourcesPath, 'windows-wallpaper') : path.join(projectRoot, 'build', 'windows-wallpaper', 'host')
-  const executable = path.join(directory, 'Amadeus.Wallpaper.exe')
+export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean,
+  python: string): WallpaperDependencies {
+  const directory = packaged ? path.join(resourcesPath, 'windows-wallpaper') : path.join(projectRoot, 'electron', 'resources', 'windows-wallpaper')
+  const helper = path.join(directory, 'helper.py')
   return {
     // Recheck on each new session: installation state is external, and failed
     // setup must be retryable without restarting Amadeus.
     prepare: () => new Promise<void>((resolve, reject) => {
-      // Packaged builds contain the published helper. Source runs build it once.
+      // The helper ships with Electron; setup only checks/provisions Lively.
       const script = packaged
         ? path.join(directory, 'setup_windows_wallpaper.ps1')
         : path.join(projectRoot, 'scripts', 'setup_windows_wallpaper.ps1')
-      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], {
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
+        '-Python', python], {
         windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       })
       let detail = ''
@@ -168,7 +170,7 @@ export function windowsWallpaperDependencies(projectRoot: string, resourcesPath:
       child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Windows wallpaper setup failed: ${detail}`)))
     }),
     launch: url => {
-      const child = spawn(executable, ['run', url], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(python, ['-I', helper, 'run', url], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
       let resolveReady: () => void
       let rejectReady: (error: Error) => void
       const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })

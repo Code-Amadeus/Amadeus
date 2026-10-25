@@ -2,6 +2,7 @@
   "schema": "amadeus.third-party-provenance.v1",
   "last_reviewed": "2026-09-21",
   "inventory_roots": [
+    "electron/resources/windows-wallpaper",
     "GPT_SoVITS",
     "tools/AP_BWE_main",
     "tools/asr",
@@ -15,6 +16,20 @@
     "vendor/qwen-asr"
   ],
   "components": [
+    {
+      "id": "windows-wallpaper-wire-adapter",
+      "name": "Amadeus Windows wallpaper wire adapter",
+      "category": "adapted-source",
+      "paths": ["electron/resources/windows-wallpaper/**"],
+      "source_url": "https://github.com/cyanfish/grpc-dotnet-namedpipes",
+      "source_revision": "da307b551a9d56b62f5780e91a2d95a699f32430 (3.1.0 transport.proto and Windows message framing reference)",
+      "license_expression": "AGPL-3.0 AND Apache-2.0",
+      "license_evidence": ["LICENSE", "electron/resources/windows-wallpaper/NOTICE.md", "electron/resources/windows-wallpaper/Apache-2.0.txt"],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "First-party standard-library Python helper implementing the bounded external Lively 2.2.1.0 IPC subset, with protocol/framing reference attribution preserved. No upstream .NET client, protobuf runtime, NuGet package, or .NET runtime binary is included. Lively remains separately supplied by its publisher."
+    },
     {
       "id": "gpt-sovits",
       "name": "GPT-SoVITS",

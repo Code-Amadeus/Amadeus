@@ -54,7 +54,7 @@
       "icon": "../assets/icons/app/app_icon.ico",
       "extraResources": [
         { "from": "../assets/icons/app/app_icon.ico", "to": "assets/icons/app/app_icon.ico" },
-        { "from": "../build/windows-wallpaper/host", "to": "windows-wallpaper", "filter": ["**/*", "!*.pdb"] },
+        { "from": "resources/windows-wallpaper", "to": "windows-wallpaper", "filter": ["*.py", "NOTICE.md", "Apache-2.0.txt"] },
         { "from": "../scripts/setup_windows_wallpaper.ps1", "to": "windows-wallpaper/setup_windows_wallpaper.ps1" }
       ]
     }

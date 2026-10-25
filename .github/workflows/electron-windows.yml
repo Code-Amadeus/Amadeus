@@ -25,10 +25,13 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-python@v7
         with:
-          # Pin the same SDK resolved by 8.0.x; avoid its broken aka.ms blob redirect.
-          dotnet-version: '8.0.427'
+          python-version: '3.12.10'
+
+      - name: Select the existing Python runtime
+        shell: pwsh
+        run: '"AMADEUS_PYTHON=$((Get-Command python).Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
 
       - name: Install locked dependencies
         run: npm ci
@@ -81,7 +84,9 @@ jobs:
           if ($probe.ExitCode -ne 0) { throw "Startup settings smoke failed: $($probe.ExitCode)" }
 
       - name: Test Windows wallpaper lifecycle contracts
-        run: dotnet run --project ../wallpaper/windows/Amadeus.Wallpaper.Tests
+        run: |
+          python -m pip install pytest==8.4.2
+          python -m pytest ../tests/test_windows_wallpaper_helper.py
 
       - name: Build the unpacked Windows application including beforePack
         env:
