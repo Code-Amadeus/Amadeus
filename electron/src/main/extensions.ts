@@ -228,7 +228,7 @@ export class ExtensionInstaller {
   }
   private observeUpdateHealth(statuses: unknown): void {
     const update = this.updates.read()
-    if (!update || update.owner !== this.updates.owner || this.updateRecoveryRequired) return
+    if (!update || update.owner !== this.updates.owner || this.updateRecoveryRequired || update.phase === 'recovery_required') return
     const target = this.store.storedExtensionRecords().find(record => record.id === update.target.id
       && record.installId === update.target.installId && record.revision === update.target.revision)
     const rows = Array.isArray(statuses) ? statuses.filter(row => row?.id === update.target.id) : []
@@ -246,7 +246,10 @@ export class ExtensionInstaller {
       && record.installId === target.installId && record.revision === target.revision)
     const frontendReady = frontend?.enabled && target && !this.store.extensionFrontendClosed(target.id)
     const healthy = target && (!target.enabled || (expected.length ? backendReady : frontendReady))
-    this.updates.write({ ...update, phase: healthy ? 'startup_confirmed' : 'recovery_required' })
+    // A missing/unhealthy projection is still a pending validation in this
+    // process. Configuration can be repaired and the new revision retried;
+    // failed transactions and a later desktop process still require recovery.
+    this.updates.write({ ...update, phase: healthy ? 'startup_confirmed' : 'pending' })
   }
   refreshUpdateHealth(statuses: unknown): Promise<void> {
     return this.serialize(async () => { this.observeUpdateHealth(statuses); this.changed() })
@@ -497,7 +500,8 @@ export class ExtensionInstaller {
       const record = this.store.extensionRecords().find(item => item.id === raw?.id)
       if (!record || record.pendingRemoval) throw new Error('Extension was not found or is pending removal')
       const pending = this.updates.read()
-      if (pending?.target.id === raw?.id) {
+      const updatingPending = pending?.target.id === raw?.id
+      if (updatingPending && raw.enabled === false) {
         const unchangedConfig = Object.keys(raw.values || {}).length === 0 && Object.keys(raw.secrets || {}).length === 0
           && (raw.providers === undefined || JSON.stringify(raw.providers) === JSON.stringify(record.providers))
         if (raw.enabled !== false || !unchangedConfig || Object.keys(raw).some(key => !['id', 'enabled', 'values', 'secrets', 'providers'].includes(key))) throw new Error('Confirm or roll back this plugin update before changing its configuration.')
@@ -509,6 +513,9 @@ export class ExtensionInstaller {
         await this.applyFrontendChanges()
         this.changed()
         return this.store.snapshot(this.environment)
+      }
+      if (updatingPending && this.pendingUpdate()?.recoveryRequired) {
+        throw new Error('Roll back this plugin update before changing its configuration.')
       }
       if (raw.enabled !== undefined && typeof raw.enabled !== 'boolean') throw new Error('Invalid extension enabled value')
       const providers = raw.providers === undefined ? record.providers : raw.providers
@@ -538,8 +545,20 @@ export class ExtensionInstaller {
       const validated = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...values, ...secrets }, allow_incomplete: !enabled })
       if (enabled) await this.themes.validate(record.manifest, this.packagePath(record))
       if (enabled) this.store.assertExtensionAllowed(record)
-      this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
-        providers: [...new Set(providers)] }, changedSecrets)
+      // Invalidate health durably before settings can advance. A failed write
+      // leaves recovery fenced, while the original rollback snapshot survives.
+      if (updatingPending) this.updates.write({ ...pending, phase: 'recovery_required' })
+      try {
+        this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
+          providers: [...new Set(providers)] }, changedSecrets)
+        if (updatingPending) {
+          const target = this.store.storedExtensionRecords().find(item => item.id === record.id)!
+          this.updates.write({ ...pending, target, phase: 'pending' })
+        }
+      } catch (error) {
+        if (updatingPending) this.updateRecoveryRequired = true
+        throw error
+      }
       await this.applyFrontendChanges()
       this.changed()
       return this.store.snapshot(this.environment)

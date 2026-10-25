@@ -71,7 +71,9 @@ function fixture(t, options = {}) {
     }
     const { config, allow_incomplete } = input
     if (Object.keys(config).some(key => !metadata.config?.[key])) throw new Error('configuration contains undeclared fields')
-    if (!allow_incomplete && metadata.config?.token?.required && !config.token) throw new Error('required configuration is missing: token')
+    for (const [key, field] of Object.entries(metadata.config || {})) {
+      if (!allow_incomplete && field.required && (config[key] === undefined || config[key] === '')) throw new Error(`required configuration is missing: ${key}`)
+    }
     if (config.streaming !== undefined && typeof config.streaming !== 'boolean') throw new Error('invalid configuration type for streaming')
     return { ok: true, config: { ...Object.fromEntries(Object.entries(metadata.config || {}).filter(([, field]) => !field.secret && field.default !== undefined).map(([key, field]) => [key, field.default])),
       ...Object.fromEntries(Object.entries(config).filter(([key]) => !metadata.config[key].secret)) } }
@@ -1261,7 +1263,7 @@ test('health receipt retains rollback until explicit user keep; missing or faile
       await f.installer.confirmPendingUpdate()
       assert.equal(f.installer.pendingUpdate(),undefined)
     } else {
-      assert.throws(()=>f.installer.assertUpdateCanLaunch(),/rollback/)
+      assert.doesNotThrow(()=>f.installer.assertUpdateCanLaunch())
       await assert.rejects(f.installer.confirmPendingUpdate(),/startup has not/)
     }
   }
@@ -1424,3 +1426,99 @@ test('partial or duplicate backend contribution health cannot discard the recove
   await f.installer.refreshUpdateHealth([{...row,contributions:[ready,{...ready,id:'more-tools'}]}])
   assert.equal(f.installer.pendingUpdate().canConfirm, true)
 })
+
+function healthyUpdateRow(record) {
+  return {id: record.id, version: record.version, revision: record.revision,
+    startup: 'accepted', state: 'active', contributions: [{kind: 'mcp_server', id: 'tools', health: 'ready'}]}
+}
+
+for (const secret of [true, false]) {
+  test(`pending update can complete a new required ${secret ? 'secret' : 'value'} and validate only the resulting revision`, async t => {
+    const f = await catalogUpdateFixture(t)
+    f.metadata.config.added = {type: 'string', title: 'New required configuration', required: true, secret}
+    await f.installer.install(f.selectedWheel, f.delivery)
+    const target = f.store.storedExtensionRecords()[0]
+    const initial = await f.installer.prepareLaunch()
+    assert.ok(JSON.parse(initial.extensions)[0].startup_error)
+    await f.installer.acceptLaunch(initial, [{...healthyUpdateRow(target), startup: 'rejected', state: 'needs_config'}])
+    assert.equal(f.installer.pendingUpdate().canConfirm, false)
+    await assert.rejects(f.installer.update({id: target.id, values: {}, secrets: {}}), /required configuration/)
+    await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+    await f.installer.update({id: target.id, [secret ? 'secrets' : 'values']: {added: 'synthetic-new-value'}})
+    const configured = f.store.storedExtensionRecords()[0]
+    assert.ok(configured.revision > target.revision)
+    const journal = JSON.parse(fs.readFileSync(path.join(f.root, 'update-rollback.json'), 'utf8'))
+    assert.deepEqual(journal.previous, f.previous)
+    assert.deepEqual(journal.target, configured)
+    if (secret) assert.ok(!JSON.stringify(journal).includes('synthetic-new-value'))
+    await f.installer.refreshUpdateHealth([healthyUpdateRow(target)])
+    assert.equal(f.installer.pendingUpdate().canConfirm, false, 'previous revision cannot validate changed configuration')
+    const launch = await f.installer.prepareLaunch()
+    const sent = JSON.parse(launch.extensions)[0]
+    assert.equal(sent.startup_error, undefined)
+    assert.equal((secret ? sent.secrets : sent.config).added, 'synthetic-new-value')
+    await f.installer.acceptLaunch(launch, [healthyUpdateRow(configured)])
+    assert.equal(f.installer.pendingUpdate().canConfirm, true)
+    await f.installer.confirmPendingUpdate()
+    assert.equal(f.installer.pendingUpdate(), undefined)
+  })
+}
+
+test('editing a healthy pending update invalidates its receipt and rollback preserves the original configuration and disable', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const launch = await f.installer.prepareLaunch(), before = f.store.storedExtensionRecords()[0]
+  await f.installer.acceptLaunch(launch, [healthyUpdateRow(before)])
+  assert.equal(f.installer.pendingUpdate().canConfirm, true)
+  await f.installer.update({id: before.id, values: {streaming: true}, secrets: {token: 'replacement-token'}})
+  assert.equal(f.installer.pendingUpdate().canConfirm, false)
+  await f.installer.refreshUpdateHealth([healthyUpdateRow(before)])
+  await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+  await f.installer.update({id: before.id, enabled: false})
+  await f.installer.refreshUpdateHealth([])
+  assert.equal(f.installer.pendingUpdate().recoveryRequired, true)
+  await f.reopen().rollbackPendingUpdate()
+  const restored = f.store.storedExtensionRecords()[0]
+  assert.equal(restored.enabled, false)
+  assert.deepEqual(restored.values, f.previous.values)
+  assert.deepEqual(restored.encryptedSecrets, f.previous.encryptedSecrets)
+})
+
+test('configuration edits cannot resume an update from another desktop or a failed backend startup', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const edits = {id: f.metadata.id, values: {streaming: true}}
+  await assert.rejects(f.reopen().update(edits), /Roll back/)
+  f.installer.markUpdateFailed()
+  await assert.rejects(f.installer.update(edits), /Roll back/)
+  assert.deepEqual(f.store.storedExtensionRecords()[0].values, f.previous.values)
+})
+
+for (const fault of ['settings', 'journal']) {
+  test(`pending configuration ${fault} persistence failure retains rollback and cannot reuse health`, async t => {
+    const f = await catalogUpdateFixture(t)
+    await f.installer.install(f.selectedWheel, f.delivery)
+    const launch = await f.installer.prepareLaunch(), before = f.store.storedExtensionRecords()[0]
+    await f.installer.acceptLaunch(launch, [healthyUpdateRow(before)])
+    if (fault === 'settings') {
+      const save = f.store.saveExtension.bind(f.store)
+      t.mock.method(f.store, 'saveExtension', (...args) => { save(...args); throw Error('settings failure') })
+    } else {
+      const rename = fs.renameSync
+      let writes = 0
+      t.mock.method(fs, 'renameSync', (source, target) => {
+        if (String(target).endsWith('update-rollback.json') && ++writes === 2) throw Error('journal failure')
+        return rename(source, target)
+      })
+    }
+    await assert.rejects(f.installer.update({id: before.id, values: {streaming: true}}), /failure/)
+    assert.throws(() => f.installer.assertUpdateCanLaunch(), /rollback/)
+    await f.installer.refreshUpdateHealth([healthyUpdateRow(before)])
+    await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+    const reopened = f.reopen()
+    assert.throws(() => reopened.assertUpdateCanLaunch(), /rollback/)
+    await reopened.rollbackPendingUpdate()
+    assert.deepEqual(f.store.storedExtensionRecords()[0].values, f.previous.values)
+    assert.deepEqual(f.store.storedExtensionRecords()[0].encryptedSecrets, f.previous.encryptedSecrets)
+  })
+}
