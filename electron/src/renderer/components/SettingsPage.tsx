@@ -1312,7 +1312,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {section === 'characters' ? characterWorkspace : null}
             {section === 'extensions' ? <>
               {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
-              <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
+              <ExtensionSettings platform={desktop?.platform} extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
                 providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
                 selectedVoiceBackend={String(speechBackend?.value || '')} selectedTheme={selectedTheme} appliedThemeVersion={themeVersion}
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}

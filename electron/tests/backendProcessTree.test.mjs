@@ -7,8 +7,12 @@ import path from 'node:path'
 import test from 'node:test'
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
-const { forceStopBackendTree, stopOwnedBackend, waitForProcessExit, prepareBackendCleanup,
+const { forceStopBackendTree, stopOwnedBackend, waitForProcessExit, prepareBackendCleanup: preparePlatformBackendCleanup,
   verifyPreviousBackendCleanup, markBackendCleanupUnconfirmed, resolveBackendProjectRoot } = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+
+// Receipt protocol fixtures exercise Windows policy even when Node is running
+// elsewhere; the POSIX routing cases explicitly supply their own platform.
+const prepareBackendCleanup = (file, launch, platform = 'win32') => preparePlatformBackendCleanup(file, launch, platform)
 
 test('packaged cleanup resolves the supplied Python module root with the actual launch environment', async () => {
   const resources = path.resolve('packaged/resources'), backend = path.resolve('external/backend')
@@ -66,15 +70,32 @@ function processFixture() {
   return proc
 }
 
+for (const platform of ['linux', 'darwin']) {
+  test(`${platform} preserves graceful root shutdown without claiming Windows cleanup proof`, async t => {
+    const file = cleanupFixture(t)
+    assert.deepEqual(await prepareBackendCleanup(file, {nonce: 'synthetic-owner-nonce', projectRoot: path.dirname(file), pythonCommand: 'python'}, platform), {environment: {}})
+    assert.equal(fs.existsSync(file), false)
+    const proc = processFixture()
+    assert.equal(await stopOwnedBackend(proc, async () => true, {platform,
+      waitForExit: async () => {proc.exit(); return true},
+      verifyCleanup: async () => {assert.fail('POSIX must not claim a Windows receipt')},
+    }), true)
+    const forced = processFixture()
+    assert.equal(await stopOwnedBackend(forced, async () => false, {platform,
+      forceStop: async () => {forced.exit()}, waitForExit: async () => true,
+    }), false)
+  })
+}
+
 test('graceful owned shutdown requires the provider and process-tree receipt', async () => {
   const proc = processFixture()
-  assert.equal(await stopOwnedBackend(proc, async () => true, {
+  assert.equal(await stopOwnedBackend(proc, async () => true, { platform: 'win32',
     waitForExit: async () => { proc.exit(); return true },
     forceStop: async () => { assert.fail('graceful stop must not force the tree') },
     verifyCleanup: async () => true,
   }), true)
   const noReceipt = processFixture()
-  assert.equal(await stopOwnedBackend(noReceipt, async () => true, {
+  assert.equal(await stopOwnedBackend(noReceipt, async () => true, { platform: 'win32',
     waitForExit: async () => { noReceipt.exit(); return true },
   }), false)
 })

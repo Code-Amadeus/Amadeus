@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 
 const CLEANUP_SCHEMA = 'amadeus.backend-cleanup.v1'
 
@@ -125,7 +126,9 @@ if(-not $native::MoveFileExW(${quote(temporary)},${quote(file)},9)){exit 3}`)
 
 /** Register before spawn. Never replace an earlier unresolved launch with a new one. */
 export async function prepareBackendCleanup(statePath: string,
-  { nonce, projectRoot, pythonCommand }: { nonce: string; projectRoot: string; pythonCommand: string }): Promise<{ environment: Record<string, string> }> {
+  { nonce, projectRoot, pythonCommand }: { nonce: string; projectRoot: string; pythonCommand: string },
+  platform: NodeJS.Platform = process.platform): Promise<{ environment: Record<string, string> }> {
+  if (!usesScheduledExtensionUpdates(platform)) return { environment: {} }
   return serializeCleanup(statePath, async () => {
     const index = readIndex(statePath) ?? { schema: CLEANUP_SCHEMA, unknown: false, owners: [] }
     const owner: CleanupOwner = { id: randomBytes(16).toString('hex'), nonce,
@@ -237,6 +240,9 @@ export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () =
   } = {}): Promise<boolean> {
   const requested = await requestShutdown()
   if (requested && await waitForExit(proc, 15000)) {
+    // Preserve the pre-existing POSIX graceful-root shutdown contract. This is
+    // not descendant proof and is never used for the Windows update boundary.
+    if (!usesScheduledExtensionUpdates(platform)) return true
     if (!verifyCleanup) return false
     // The out-of-Job observer publishes only after root exit. Give that final
     // durable write a bounded verification grace period; never infer success.

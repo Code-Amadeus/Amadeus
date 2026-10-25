@@ -43,6 +43,7 @@ import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensi
 import { extensionDisclosure } from '../shared/extensions.js'
 import { ExtensionCatalog } from './extensionCatalog.js'
 import { ExtensionUpdateBoundary, localPortIsClosed } from './extensionUpdates.js'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 import { ExtensionThemeResources } from './extensionThemes.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
@@ -67,6 +68,7 @@ const desktopSettings = new DesktopSettingsStore(
   process.platform,
   extensionPackageHelper.validateRecord,
 )
+const scheduledExtensionUpdates = usesScheduledExtensionUpdates(process.platform)
 const extensionUpdateBoundary = new ExtensionUpdateBoundary(async () => !pythonProcess && !backendOwned && !backendStarting && !backendStopping
   && extensionCleanupConfirmed && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE) && await localPortIsClosed(BACKEND_PORT))
 const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), EXTENSION_HOST_ROOT,
@@ -84,7 +86,7 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
     const renderer = mainWindow
     if (!renderer || renderer.isDestroyed()) throw new Error('System fonts cannot be checked because the trusted renderer is unavailable')
     return renderer.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
-  }), () => notifyDesktopThemeChanged(), extensionUpdateBoundary.assertHeld)
+  }), () => notifyDesktopThemeChanged(), scheduledExtensionUpdates ? extensionUpdateBoundary.assertHeld : undefined)
 
 const extensionCatalog = new ExtensionCatalog(path.join(USER_DATA_DIR, 'extension-catalog'), desktopSettings, extensionPackageHelper, extensionInstaller,
   () => String(startupValue('AMADEUS_EXTENSION_ARTIFACT_MIRROR', desktopSettings.snapshot(process.env), '')), () => notifyDesktopThemeChanged(), undefined,
@@ -442,14 +444,14 @@ async function launchBackend(): Promise<void> {
   const health = await backendHealthStatus()
   if (applicationLifecycle.isQuitting) return
   if (health === 'ready') {
-    await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
+    if (scheduledExtensionUpdates) await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
     extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend already available on ${BACKEND_WS}; reusing it`)
     return
   }
   if (health === 'starting') {
-    await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
+    if (scheduledExtensionUpdates) await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE)
     extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend is assembling on ${BACKEND_WS}; waiting for readiness`)
@@ -463,9 +465,9 @@ async function launchBackend(): Promise<void> {
 
   const python = getPythonCommand()
 
-  // A closed port does not prove old provider descendants have stopped.
-  // Only the persisted launch/child receipt authorizes removal or installation.
-  extensionCleanupConfirmed = await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE)
+  // Windows maintenance requires the persisted descendant receipt, not merely
+  // a closed port. Other platforms retain their existing cleanup contract.
+  if (scheduledExtensionUpdates) extensionCleanupConfirmed = await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE)
   if (extensionCleanupConfirmed) await extensionInstaller.cleanupStoppedBackend()
 
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
@@ -480,10 +482,11 @@ async function launchBackend(): Promise<void> {
   }
   // An inherited string cannot replace Electron's installation authority.
   delete backendProcessEnvironment[EXTENSIONS_ENV]
+  delete backendProcessEnvironment.AMADEUS_BACKEND_CLEANUP_LAUNCH
   backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
   const cleanupLaunch = await prepareBackendCleanup(BACKEND_CLEANUP_STATE, {
     nonce: BACKEND_INSTANCE_NONCE,
-    projectRoot: await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment), pythonCommand: python,
+    projectRoot: scheduledExtensionUpdates ? await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment) : PROJECT_ROOT, pythonCommand: python,
   })
   extensionCleanupConfirmed = false
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
@@ -2260,7 +2263,7 @@ ipcMain.handle('extensions.catalog', async (event, raw: unknown) => {
   const dispatch = () => extensionCatalog.dispatch(raw, process.env, url => shell.openExternal(url))
   try {
     if (action === 'health' && backendOwned) await extensionInstaller.refreshUpdateHealth(await extensionStartupStatus())
-    return action === 'install' ? await extensionUpdateBoundary.run(dispatch) : await dispatch()
+    return action === 'install' && scheduledExtensionUpdates ? await extensionUpdateBoundary.run(dispatch) : await dispatch()
   }
   catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Plugin update boundary is unavailable' } }
 })
@@ -2273,7 +2276,11 @@ ipcMain.handle('extensions.install', async (event) => {
   const options: Electron.OpenDialogOptions = { title: 'Install Amadeus extension', properties: ['openFile'], filters: [{ name: 'Python wheel', extensions: ['whl'] }] }
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   if (selection.canceled || selection.filePaths.length !== 1) return { ok: false, cancelled: true }
-  try { await extensionCatalog.scheduleLocal(selection.filePaths[0]); return { ok: true, scheduled: true } }
+  try {
+    if (!scheduledExtensionUpdates) return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) }
+    await extensionCatalog.scheduleLocal(selection.filePaths[0])
+    return { ok: true, scheduled: true }
+  }
   catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
 })
 ipcMain.handle('extensions.update', async (event, update: ExtensionUpdate) => {

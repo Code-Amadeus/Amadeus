@@ -15,6 +15,7 @@ import { ExtensionThemeResources } from './extensionThemes.js'
 import { readExtensionImage } from './extensionImages.js'
 import { startupValue } from '../shared/startupSettings.js'
 import { ExtensionUpdateJournal } from './extensionUpdates.js'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 import type { DesktopThemeState } from '../shared/extensionTheme.js'
 import { contributionProfile, extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
@@ -202,7 +203,8 @@ export class ExtensionInstaller {
     private readonly sdkDirectory = path.join(projectRoot, 'vendor', 'extension-sdk'),
     private readonly themes = new ExtensionThemeResources(),
     private readonly changed: () => void = () => {},
-    private readonly assertInstallIdle: () => void = () => {}) {
+    private readonly assertInstallIdle: () => void = () => {},
+    private readonly platform: NodeJS.Platform = process.platform) {
     this.updates = new ExtensionUpdateJournal(root, raw => store.validateExtensionRollbackRecord(raw))
   }
 
@@ -272,6 +274,7 @@ export class ExtensionInstaller {
   }
   rollbackPendingUpdate(): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
+      if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
       this.assertInstallIdle()
       const update = this.updates.read()
       if (!update) throw new Error('No plugin update is waiting for rollback.')
@@ -451,7 +454,7 @@ export class ExtensionInstaller {
           installId, packageRoot: inspection.package_root, sitePackages, manifest, enabled: existing?.enabled || false, pendingRemoval: false,
           deleteDataOnRemoval: false,
           values: checked.config || {}, encryptedSecrets: retainedSecrets, providers: existing?.providers || [] }
-        if (delivery && existing) {
+        if (delivery && existing && usesScheduledExtensionUpdates(this.platform)) {
           record.revision = (existing.revision ?? 1) + 1
           rollback = { previous: structuredClone(existing), target: record }
           this.updates.write({ format: 'amadeus.extension-update/v1', owner: this.updates.owner, phase: 'pending', ...rollback })
@@ -504,7 +507,7 @@ export class ExtensionInstaller {
       if (updatingPending && raw.enabled === false) {
         const unchangedConfig = Object.keys(raw.values || {}).length === 0 && Object.keys(raw.secrets || {}).length === 0
           && (raw.providers === undefined || JSON.stringify(raw.providers) === JSON.stringify(record.providers))
-        if (raw.enabled !== false || !unchangedConfig || Object.keys(raw).some(key => !['id', 'enabled', 'values', 'secrets', 'providers'].includes(key))) throw new Error('Confirm or roll back this plugin update before changing its configuration.')
+        if (!unchangedConfig || Object.keys(raw).some(key => !['id', 'enabled', 'values', 'secrets', 'providers'].includes(key))) throw new Error('Confirm or roll back this plugin update before changing its configuration.')
         // Revocation remains available even during recovery. Persist it in the
         // rollback record first so recovery can never re-enable the package.
         this.updates.write({ ...pending, phase: 'recovery_required', previous: { ...pending.previous, enabled: false },

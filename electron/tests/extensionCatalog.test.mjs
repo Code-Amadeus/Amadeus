@@ -9,7 +9,7 @@ const mocks = { electron: { safeStorage: { isEncryptionAvailable: () => true } }
 const { ExtensionCatalog, catalogRequest, OFFICIAL_EXTENSION_INDEX } = loadTypeScript(new URL('../src/main/extensionCatalog.ts', import.meta.url), mocks)
 const { DesktopSettingsStore } = loadTypeScript(new URL('../src/main/desktopSettings.ts', import.meta.url), mocks)
 const entry = () => ({ id: 'org.example.demo', version: '0.1.0', sha256: 'a'.repeat(64), url: 'https://source.example/demo-0.1.0-py3-none-any.whl', size: 5, display: { homepage: 'https://example.org/' }, compatibility: {}, publisher: {}, review: {}, withdrawal: null, incompatible: [] })
-function fixture(t) {
+function fixture(t, platform = 'win32') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-catalog-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const store = new DesktopSettingsStore(path.join(root, 'settings.json'), path.join(root, '.env'))
@@ -25,14 +25,34 @@ function fixture(t) {
     fs.writeFileSync(target, url === OFFICIAL_EXTENSION_INDEX ? JSON.stringify(state.index) : 'wheel')
   }
   state.notifications = []
-  const catalog = new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, updates => state.notifications.push(updates))
-  return { root, store, helper, catalog, state, reopen: () => new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download) }
+  const catalog = new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, updates => state.notifications.push(updates), platform)
+  return { root, store, helper, catalog, state, reopen: () => new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, undefined, platform) }
 }
 test('renderer may select identity/action only, never supply URL/digest/review/source', () => {
   for (const field of ['url', 'sha256', 'digest', 'review', 'source', 'mirror']) assert.throws(() => catalogRequest({ action: 'install', id: 'p', version: '1.0.0', [field]: 'forged' }))
   for (const version of ['1.0.0-beta.1', '1.0.0+build', '01.0.0', {}, null]) assert.throws(() => catalogRequest({ action: 'install', id: 'p', version }))
   assert.deepEqual(catalogRequest({ action: 'install', id: 'p', version: '1.0.0' }), { action: 'install', id: 'p', version: '1.0.0' })
 })
+
+for (const platform of ['linux', 'darwin']) {
+  test(`${platform} catalog installs immediately and cannot queue an unsupported update`, async t => {
+    const f = fixture(t, platform)
+    const choice = {id: entry().id, version: entry().version}
+    const reply = await f.catalog.dispatch({action: 'install', ...choice}, {}, async () => {})
+    assert.equal(reply.ok, true)
+    assert.equal(reply.scheduled, undefined)
+    assert.equal(f.state.installed.length, 1)
+    assert.equal((await f.catalog.dispatch({action: 'schedule', ...choice}, {}, async () => {})).ok, false)
+    await assert.rejects(f.catalog.scheduleLocal(path.join(f.root, 'not-opened.whl')), /only available on Windows/)
+    await assert.rejects(f.catalog.applyScheduled(), /only available on Windows/)
+    assert.equal(f.catalog.hasScheduled(), false)
+    assert.equal(fs.existsSync(path.join(f.root, 'catalog/update-preferences.json')), false)
+    f.state.index.sequence++
+    f.state.index.entries[0].withdrawal = {reason: 'maintainer', evidence: 'https://example.org/withdrawn'}
+    assert.equal((await f.catalog.dispatch({action: 'install', ...choice}, {}, async () => {})).ok, false)
+    assert.equal(f.state.installed.length, 1, 'immediate delivery must retain catalog admission checks')
+  })
+}
 test('official lookup and mirror bytes keep identity, empty entry is not installable', async t => {
   const f = fixture(t); f.state.mirror = 'https://mirror.example/files/'
   await f.catalog.install('org.example.demo', '0.1.0')

@@ -20,6 +20,26 @@ closed. A new manifest type does not create an execution owner. Main Chat does
 not receive installed MCP tools or Skill bodies. Installation does not grant
 an action permission; OS declarations are disclosures, not an OS sandbox.
 
+## Desktop installation and updates
+
+Windows queues catalog and local-wheel installations for the next app start.
+Installation requires native confirmation and the owned backend cleanup receipt.
+Updates retain the previous package, configuration and OS-encrypted credentials
+until the user keeps the verified update or explicitly rolls it back. In the
+same app session, a pending update can be configured and retried: saving its
+configuration invalidates prior health results, and confirmation requires health
+for the exact new revision. Failed persistence, a failed backend startup, or an
+unconfirmed update carried into another app session still requires recovery.
+Explicitly disabling a package is preserved by rollback.
+
+Linux and macOS retain the existing version-isolated installation path, with
+native confirmation at installation time. Backend contributions apply after a
+backend restart; standalone themes apply immediately. These platforms do not
+create the Windows cleanup ledger or a pending-update rollback journal, and do
+not offer scheduled installation or retained-version recovery. Opt-in daily
+catalog checks remain notification-only on every platform. This does not claim
+POSIX descendant containment; the existing shutdown/cleanup behavior is retained.
+
 ## Minimal static checker environment
 
 From this Host checkout on Windows with CPython 3.12.10:

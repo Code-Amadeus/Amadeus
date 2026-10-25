@@ -109,7 +109,8 @@ function fixture(t, options = {}) {
     fs.renameSync(path.join(directory, 'vendor', 'extension-sdk', name), path.join(sdkDirectory, name))
   }
   const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
-    async review => { calls.push({ command: 'confirm', review }); return typeof options.confirm === 'function' ? options.confirm(review, store) : options.confirm !== false }, sdkDirectory)
+    async review => { calls.push({ command: 'confirm', review }); return typeof options.confirm === 'function' ? options.confirm(review, store) : options.confirm !== false }, sdkDirectory,
+    undefined, undefined, undefined, options.platform || 'win32')
   return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata, helper, run }
 }
 
@@ -1184,7 +1185,8 @@ async function catalogUpdateFixture(t) {
   f.metadata.version='0.2.0'
   fs.writeFileSync(f.selectedWheel,'synthetic updated wheel bytes')
   f.delivery={identity:{id:f.metadata.id,version:f.metadata.version,digest:createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')},assertCurrent(){}}
-  f.reopen=()=>new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>true)
+  f.reopen=()=>new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>true,
+    undefined,undefined,undefined,undefined,'win32')
   return f
 }
 
@@ -1198,7 +1200,8 @@ test('cold startup validates both retained versions before reading recovery auth
   const helper = { ...f.helper, refreshRecords: async records => {
     for (const record of records) { seen.push(record.version); validated.add(record.version) }
   } }
-  const reopened = new ExtensionInstaller(f.root, f.directory, store, helper, () => 'trusted-python', {}, f.run, async () => true)
+  const reopened = new ExtensionInstaller(f.root, f.directory, store, helper, () => 'trusted-python', {}, f.run, async () => true,
+    undefined, undefined, undefined, undefined, 'win32')
   assert.throws(() => reopened.pendingUpdate(), /Invalid plugin recovery package record/)
   await reopened.prepareStartup()
   assert.deepEqual([...new Set(seen)].sort(), ['0.1.0', '0.2.0'])
@@ -1213,7 +1216,8 @@ test('cold recovery never treats missing or rejected semantic validation as star
   await f.installer.install(f.selectedWheel, f.delivery)
   for (const result of ['unavailable', false]) {
     const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform, () => result)
-    const reopened = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true)
+    const reopened = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true,
+      undefined, undefined, undefined, undefined, 'win32')
     await assert.rejects(reopened.prepareStartup(), /Invalid plugin recovery package record/)
     assert.throws(() => reopened.assertUpdateCanLaunch(), /Invalid plugin recovery package record/)
     assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
@@ -1352,7 +1356,8 @@ test('late health may permit explicit keep in the same process; another process 
 test('native rollback cancellation leaves the new state and both versions intact',async t=>{
   const f=await catalogUpdateFixture(t)
   await f.installer.install(f.selectedWheel,f.delivery)
-  const rejecting=new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>false)
+  const rejecting=new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>false,
+    undefined,undefined,undefined,undefined,'win32')
   await assert.rejects(rejecting.rollbackPendingUpdate(),/cancelled/)
   assert.equal(f.store.storedExtensionRecords()[0].version,'0.2.0')
   assert.ok(rejecting.pendingUpdate())
@@ -1386,7 +1391,8 @@ test('rollback rechecks retained wheel bytes after the native confirmation', asy
   const oldDirectory = path.join(f.root, f.previous.installId)
   const wheel = fs.readdirSync(oldDirectory).find(name => name.startsWith('demo-') && name.endsWith('.whl'))
   const racing = new ExtensionInstaller(f.root, f.directory, f.store, f.helper, () => 'trusted-python', {}, f.run,
-    async () => { fs.writeFileSync(path.join(oldDirectory, wheel), 'changed during native confirmation'); return true })
+    async () => { fs.writeFileSync(path.join(oldDirectory, wheel), 'changed during native confirmation'); return true },
+    undefined, undefined, undefined, undefined, 'win32')
   await assert.rejects(racing.rollbackPendingUpdate(), /changed during confirmation/)
   assert.equal(f.store.storedExtensionRecords()[0].version, '0.2.0')
   assert.ok(racing.pendingUpdate())
@@ -1430,6 +1436,37 @@ test('partial or duplicate backend contribution health cannot discard the recove
 function healthyUpdateRow(record) {
   return {id: record.id, version: record.version, revision: record.revision,
     startup: 'accepted', state: 'active', contributions: [{kind: 'mcp_server', id: 'tools', health: 'ready'}]}
+}
+
+for (const platform of ['linux', 'darwin']) for (const source of ['local', 'catalog']) {
+  test(`${platform} ${source} install retains the running version and applies updates without Windows recovery state`, async t => {
+    const f = fixture(t, {manifest: manifest('mcp_server'), platform})
+    const {prepareBackendCleanup} = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+    const stateFile = path.join(f.directory, 'backend-cleanup.json')
+    const registration = await prepareBackendCleanup(stateFile, {nonce: 'synthetic-nonce', projectRoot: f.directory, pythonCommand: 'python'}, platform)
+    assert.deepEqual(registration.environment, {})
+    const delivery = () => source === 'catalog' ? {identity: {id: f.metadata.id, version: f.metadata.version,
+      digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')}, assertCurrent() {}} : undefined
+    await f.installer.install(f.selectedWheel, delivery())
+    await f.installer.update({id: f.metadata.id, enabled: true, providers: ['pi'], secrets: {token: 'synthetic-token'}})
+    const previous = f.store.storedExtensionRecords()[0]
+    await f.installer.acceptLaunch(await f.installer.prepareLaunch(), [healthyUpdateRow(previous)])
+    f.metadata.version = '0.2.0'
+    fs.writeFileSync(f.selectedWheel, 'synthetic next wheel')
+    await f.installer.install(f.selectedWheel, delivery())
+    const current = f.store.storedExtensionRecords()[0]
+    assert.equal(current.version, '0.2.0')
+    assert.equal(f.store.appliedExtensionRecords()[0].installId, previous.installId)
+    assert.ok(fs.existsSync(path.join(f.root, previous.installId)))
+    assert.equal(f.installer.pendingUpdate(), undefined)
+    assert.equal(fs.existsSync(path.join(f.root, 'update-rollback.json')), false)
+    assert.equal(fs.existsSync(stateFile), false)
+    assert.equal(f.calls.filter(call => call.command === 'confirm' && call.review.operation === 'update').length, 1)
+    await f.installer.cleanupStoppedBackend()
+    await f.installer.acceptLaunch(await f.installer.prepareLaunch(), [healthyUpdateRow(current)])
+    assert.equal(f.store.appliedExtensionRecords()[0].installId, current.installId)
+    await assert.rejects(f.installer.rollbackPendingUpdate(), /only available on Windows/)
+  })
 }
 
 for (const secret of [true, false]) {

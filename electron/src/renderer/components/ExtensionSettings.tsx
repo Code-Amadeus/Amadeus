@@ -1,4 +1,5 @@
 import type { CatalogEntry, CatalogReply, CatalogView, CatalogProgress, CatalogRequest } from '../../shared/extensionCatalog.js'
+import { usesScheduledExtensionUpdates } from '../../shared/extensionCatalog.js'
 import ExtensionCatalog from './ExtensionCatalog'
 import { catalogBytes, recommendedUpdate } from './extensionCatalogModel'
 import { useEffect, useRef, useState } from 'react'
@@ -16,6 +17,7 @@ import { compatibleExtensionProviders, extensionDraft, extensionLanguageSupporte
 const ATTENTION_STATES = new Set(['error', 'degraded', 'needs_config', 'incompatible'])
 
 interface Props {
+  platform?: string
   extensions: ExtensionSummary[]
   runtime: ExtensionRuntimeStatus[]
   providers: ExtensionProvider[]
@@ -32,9 +34,10 @@ interface Props {
   onEditorStateChange?: (state: SettingsEditorState) => void
 }
 
-export default function ExtensionSettings({ extensions, runtime, providers, connected, available, encryptionAvailable, selectedVoiceBackend, selectedTheme, appliedThemeVersion, onOpenAppearance,
+export default function ExtensionSettings({ platform, extensions, runtime, providers, connected, available, encryptionAvailable, selectedVoiceBackend, selectedTheme, appliedThemeVersion, onOpenAppearance,
   onSettingsChanged, onRestartRequired, onOpenVoice, onEditorStateChange }: Props) {
   const { locale, t } = useI18n()
+  const scheduledUpdates = usesScheduledExtensionUpdates(platform)
   const [selected, setSelected] = useState<ExtensionSummary | null>(null)
   const [draft, setDraft] = useState<ExtensionDraft | null>(null)
   const initial = useRef('')
@@ -157,7 +160,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     setBusy(true); setError(''); setNotice('')
     setProgress({ id: entry.id, version: entry.version, received: 0, total: 0, stage: 'checking' })
     try {
-      const result = await window.amadeus.extensionCatalog({ action: 'schedule', id: entry.id, version: entry.version })
+      const result = await window.amadeus.extensionCatalog({ action: scheduledUpdates ? 'schedule' : 'install', id: entry.id, version: entry.version })
       receiveCatalog(result)
       if (result.cancelled) { setNotice('Catalog installation cancelled. No new package was saved.'); return }
       if (!result.ok) throw new Error(result.error || 'Could not install extension')
@@ -292,7 +295,9 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       <SettingsButton disabled={!available || busy} onClick={() => void checkSecurity(security.status === 'unavailable')}>{t(security.status === 'unavailable' ? 'Recover official extension security state' : 'Check updates and security status')}</SettingsButton>
       <div className="settings-field-description">{security.status === 'unavailable' ? t('Extension security state is damaged. Installation and activation are blocked until recovery.') : security.checkedAt ? `${t('Last successful security check')}: ${new Date(security.checkedAt).toLocaleString(locale)}` : t('Official extension security state has not been checked.')}</div>
     </div>
-    <p className="settings-field-description">{t('Catalog and local-wheel installations wait for the next app start, before the backend or any Work/MCP session starts. Local wheels are copied now; installed packages change only after native confirmation.')}</p>
+    <p className="settings-field-description">{t(scheduledUpdates
+      ? 'Catalog and local-wheel installations wait for the next app start, before the backend or any Work/MCP session starts. Local wheels are copied now; installed packages change only after native confirmation.'
+      : 'Review and install packages now. Backend plugins apply after a backend restart; standalone themes apply immediately. Scheduled updates and retained-version recovery are currently available on Windows only.')}</p>
     {catalog.scheduledInstall || catalog.rollbackScheduled ? <div role="status">
       {catalog.scheduledInstall ? `${catalog.scheduledInstall.id} → ${catalog.scheduledInstall.version} · ${catalog.scheduledInstall.digest}` : t('Rollback scheduled for the next app start.')}
       <SettingsButton disabled={busy} onClick={() => void updateControl({ action: 'cancel-scheduled' })}>{t('Cancel scheduled change')}</SettingsButton>
@@ -318,7 +323,9 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     <div className="settings-embedded-stack">
     <details className="extension-install-help">
       <summary>{t('About plugin installation')}</summary>
-      <div className="settings-note-description">{t('Select a local wheel from an author you trust. The selected bytes are saved for installation at the next app start, with native confirmation.')}</div>
+      <div className="settings-note-description">{t(scheduledUpdates
+        ? 'Select a local wheel from an author you trust. The selected bytes are saved for installation at the next app start, with native confirmation.'
+        : 'Select a local wheel from an author you trust. Review the native confirmation before installation.')}</div>
       <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
     </details>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
@@ -373,7 +380,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         </div>
         <div className="settings-card-description extension-card-description">{extensionText(extension.manifest.description, locale)}</div>
         <div className="settings-field-description">{t(listing?.catalogState === 'matched' ? catalog.cached ? 'Reviewed artifact in the cached catalog' : 'Reviewed artifact in the checked catalog' : listing?.catalogState === 'unlisted' ? 'Not listed in the checked catalog' : 'Catalog review status is unknown')}{listing?.withdrawal ? ` · ${t(listing.withdrawal.reason === 'copyright' ? 'Withdrawn for copyright reasons' : 'Withdrawn by the maintainer')}` : ''}{listing?.blocked ? ` · ${t('Blocked by security policy')}` : ''}</div>
-        {update ? <div className="extension-catalog-update"><span>{t('Compatible update available')}: {extension.version} → {update.version}</span><SettingsButton disabled={busy || Boolean(progress)} onClick={() => void installCatalog(update)}>{t('Schedule update for next app start…')}</SettingsButton><SettingsButton tone="quiet" onClick={() => showCatalog(update.id, update.version)}>{t('Review update details')}</SettingsButton></div> : null}
+        {update ? <div className="extension-catalog-update"><span>{t('Compatible update available')}: {extension.version} → {update.version}</span><SettingsButton disabled={busy || Boolean(progress)} onClick={() => void installCatalog(update)}>{t(scheduledUpdates ? 'Schedule update for next app start…' : 'Review and update…')}</SettingsButton><SettingsButton tone="quiet" onClick={() => showCatalog(update.id, update.version)}>{t('Review update details')}</SettingsButton></div> : null}
 
         {pending ? <div className="extension-status-note" role="status">
           <span>{t('Saved state')}: {t(savedState)}</span>
@@ -457,7 +464,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     </SettingsGroup>
     </section>
     <section id="extension-panel-browse" role="tabpanel" aria-labelledby="extension-tab-browse" hidden={tab !== 'browse'}>
-      <ExtensionCatalog catalog={catalog} installed={extensions} busy={busy || Boolean(progress)} selection={catalogSelection} onSelect={setCatalogSelection} onInstall={entry => void installCatalog(entry)} onLink={(entry, field) => void openCatalogLink(entry, field)} />
+      <ExtensionCatalog platform={platform} catalog={catalog} installed={extensions} busy={busy || Boolean(progress)} selection={catalogSelection} onSelect={setCatalogSelection} onInstall={entry => void installCatalog(entry)} onLink={(entry, field) => void openCatalogLink(entry, field)} />
     </section>
   </div>
 }

@@ -39,7 +39,7 @@ const providers = [
   { provider_id: 'pi', display_name: 'Pi', capabilities: { capability_projections: ['mcp_connection'] } },
   { provider_id: 'unrelated', display_name: 'Incompatible agent', capabilities: { capability_projections: ['skill'] } },
 ]
-const props = overrides => ({ extensions: [extension()], runtime: [], providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
+const props = overrides => ({ platform: 'win32', extensions: [extension()], runtime: [], providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
   onSettingsChanged() {}, onRestartRequired() {}, onOpenVoice() {}, ...overrides })
 
 test('typed extension edits preserve defaults and never reconstruct saved secrets', () => {
@@ -365,3 +365,22 @@ test('native local import reports a queued change instead of claiming an install
   assert.equal(writes, 0)
   assert.ok(page.find(node => node.props?.role === 'status' && String(node.props.children).includes('Scheduled for the next app start')))
 })
+
+for (const platform of ['linux', 'darwin']) {
+  test(`${platform} update UI requests immediate installation and reports its actual settings`, async t => {
+    const requests = [], saved = []
+    const candidate = {id:'org.example.voice',version:'1.1.0',sha256:'b'.repeat(64),size:1,url:'https://example.org/plugin.whl',display:{},compatibility:{contributions:[]},review:{},withdrawal:null,incompatible:[]}
+    const page = harness({extensionCatalog: async request => {
+      requests.push(request)
+      return {ok:true,catalog:{entries:[candidate],cached:false}, ...(request.action === 'install' ? {settings:{extensions:['installed']}} : {})}
+    }}, {platform, onSettingsChanged: value => saved.push(value)})
+    t.after(() => page.restore())
+    await flush(); page.render()
+    assert.equal(page.button('Schedule update for next app start…'), undefined)
+    page.button('Review and update…').props.onClick()
+    await flush(); page.render()
+    assert.deepEqual(requests.find(request => request.action === 'install'), {action:'install',id:candidate.id,version:candidate.version})
+    assert.equal(requests.some(request => request.action === 'schedule'), false)
+    assert.ok(saved.some(value => value.extensions?.[0] === 'installed'))
+  })
+}

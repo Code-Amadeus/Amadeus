@@ -1,3 +1,9 @@
+// Persistent descendant cleanup proof currently exists only on Windows.
+// Other platforms retain version-isolated installation and restart-to-apply.
+export function usesScheduledExtensionUpdates(platform: string | undefined): boolean {
+  return platform === 'win32'
+}
+
 export type CatalogEntry = {
   id: string; version: string; sha256: string; url: string; size: number
   display: Record<string, unknown>; compatibility: Record<string, unknown>

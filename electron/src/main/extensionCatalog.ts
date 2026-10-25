@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { assertExtensionPath } from './extensionPaths.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { CatalogEntry, CatalogIndex, CatalogRequest, CatalogView, CatalogReply } from '../shared/extensionCatalog.js'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 import { DesktopSettingsStore } from './desktopSettings.js'
 import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled, removeExtensionDirectory } from './extensions.js'
 import { artifactUrl, downloadExtension, httpsUrl, MAX_INDEX_BYTES, MAX_WHEEL_BYTES, stagingDirectory, type Download } from './extensionDownloads.js'
@@ -34,10 +35,14 @@ export class ExtensionCatalog {
   constructor(private readonly root: string, private readonly store: DesktopSettingsStore, private readonly helper: ExtensionPackageHelper,
     private readonly installer: ExtensionInstaller, private readonly mirror: () => string, private readonly changed: () => void = () => {},
     private readonly download: Download = downloadExtension,
-    private readonly notifyUpdates: (updates: Array<{ id: string; version: string }>) => void = () => {}) {}
+    private readonly notifyUpdates: (updates: Array<{ id: string; version: string }>) => void = () => {},
+    private readonly platform: NodeJS.Platform = process.platform) {}
   async dispatch(raw: unknown, environment: NodeJS.ProcessEnv, openExternal: (url: string) => Promise<unknown>): Promise<CatalogReply> {
     try {
       const request = catalogRequest(raw)
+      if (['schedule', 'rollback', 'confirm-update', 'health'].includes(request.action) && !usesScheduledExtensionUpdates(this.platform)) {
+        throw new Error('Scheduled plugin updates are only available on Windows.')
+      }
       if (request.action === 'status') return { ok: true, progress: this.status() }
       if (request.action === 'install') return { ok: true, settings: await this.install(request.id, request.version), catalog: await this.view() }
       if (request.action === 'schedule') {
@@ -104,6 +109,7 @@ export class ExtensionCatalog {
   }
   /** Native file picker only; renderer and Runtime never supply a source path. */
   async scheduleLocal(wheel: string): Promise<void> {
+    if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
     if (this.installer.pendingUpdate()) throw new Error('Confirm or roll back the previous plugin update first.')
     if (!path.isAbsolute(wheel) || path.extname(wheel).toLowerCase() !== '.whl' || !fs.statSync(wheel).isFile() || fs.statSync(wheel).size > MAX_WHEEL_BYTES) throw new Error('Select a bounded local Python wheel (.whl).')
     const directory = randomBytes(16).toString('hex'), file = path.basename(wheel)
@@ -166,8 +172,13 @@ export class ExtensionCatalog {
     }
   }
   /** Only the app's stopped-backend boundary calls this before launching Host. */
-  hasScheduled(): boolean { const preferences = this.preferences(); return Boolean(preferences.pending || preferences.local || preferences.rollback) }
+  hasScheduled(): boolean {
+    if (!usesScheduledExtensionUpdates(this.platform)) return false
+    const preferences = this.preferences()
+    return Boolean(preferences.pending || preferences.local || preferences.rollback)
+  }
   async applyScheduled(): Promise<void> {
+    if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
     const preferences = this.preferences()
     if (preferences.rollback) {
       this.savePreferences({ ...preferences, rollback: false })
