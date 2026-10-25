@@ -248,7 +248,7 @@ snapshot. The `recover` command also handles an interrupted launch preparation.
 Manual recovery, after closing Amadeus:
 
 ```powershell
-.venv\Scripts\python.exe -I electron\resources\windows-wallpaper\helper.py recover
+.venv\Scripts\python.exe -I -S electron\resources\windows-wallpaper\helper.py recover
 ```
 
 `recover` is an operator diagnostic/recovery command, also used by the desktop
@@ -268,12 +268,24 @@ cancellation/time-budget policy remains a release-acceptance item.
 The helper is `electron/resources/windows-wallpaper/helper.py`, shipped with
 Electron under `resources/windows-wallpaper`, together with setup and protocol
 notices. Source runs use that same checked-in resource. Electron passes its
-backend interpreter selected by `pythonRuntime.ts` and invokes `python -I`;
+backend interpreter selected by `pythonRuntime.ts` and invokes `python -I -S`;
 no additional Python package, .NET SDK, NuGet build or bundled .NET runtime is
-required. The helper remains an independent child of Electron, outside the
-backend's process-tree/Job cleanup. macOS/Linux and external-host paths do not
+required. `-S` prevents the selected environment's site initialization and
+`.pth` hooks from running. Electron launches the helper with `detached: true`
+and retains its pipes and normal shutdown wait. This avoids libuv's
+kill-on-parent-exit Job, allowing EOF-triggered recovery after Electron alone
+is force-killed, including when the selected interpreter is a venv launcher.
+The helper is separately launched from the backend and its cleanup tree.
+This does not protect against explicit process-tree termination, logoff or
+power loss; the durable journal still supplies next-start recovery.
+macOS/Linux and external-host paths do not
 run Windows setup. Experimental logs, backups and screenshots stay under build/,
 outside the explicitly selected packaged resource files.
+
+Lively discovery reads process/session membership from the native system
+snapshot before opening current-session candidates for creation-time identity
+checks. An inaccessible foreign-session process does not block discovery;
+snapshot failures and unverified current-session identities remain errors.
 
 [.NET 8 support ends on 2026-11-10](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
 This motivates #264. If replacement cannot be qualified before that date,
@@ -431,13 +443,19 @@ it in cleanup):
 
 ```powershell
 .venv\Scripts\python.exe tools\probes\windows_wallpaper_lifecycle.py
-.venv\Scripts\python.exe tools\probes\windows_wallpaper_cold_start.py
+.venv\Scripts\python.exe -I -S tools\probes\windows_wallpaper_cold_start.py
 ```
 
 The lifecycle probe requires a real renderer connection, then verifies the
 original scene/options/running state after normal exit, parent-pipe loss, and
-helper termination plus journal recovery. It also kills an actual parent so
+helper termination plus journal recovery. It also kills a Python parent so
 both stdin and stdout readers disappear, and checks restoration still completes.
+That scenario does not exercise Electron/libuv's Job behavior.
+`electron/tests/windowsWallpaperParentExit.test.mjs` separately force-kills an
+actual Electron parent without `/T`. It uses the production launcher and Session
+with a synthetic desktop, proving journal removal and restoration after parent
+exit, normal shutdown, and a non-detached control that reproduces interrupted
+cleanup. It exercises a temporary venv launcher and never changes the desktop.
 The cold-start probe backs up the
 user's settings and layout, starts installed Lively with a fresh configuration,
 checks that no first-run UI opens, mounts a test scene, verifies release of the

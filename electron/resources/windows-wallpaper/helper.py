@@ -1,4 +1,4 @@
-"""Independent Windows wallpaper helper; standard library only, run with python -I.
+"""Independent Windows wallpaper helper; standard library only, run with python -I -S.
 
 Lively 2.2.1.0 uses GrpcDotNetNamedPipes, not HTTP/2. The bounded wire adapter
 below follows transport.proto at da307b551a9d56b62f5780e91a2d95a699f32430.
@@ -350,11 +350,17 @@ class OVERLAPPED(ctypes.Structure):
                 ("Offset", w.DWORD), ("OffsetHigh", w.DWORD), ("hEvent", w.HANDLE)]
 
 
-class PROCESSENTRY32W(ctypes.Structure):
-    _fields_ = [("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ProcessID", w.DWORD),
-                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", w.DWORD), ("cntThreads", w.DWORD),
-                ("th32ParentProcessID", w.DWORD), ("pcPriClassBase", w.LONG), ("dwFlags", w.DWORD),
-                ("szExeFile", w.WCHAR * 260)]
+class UNICODE_STRING(ctypes.Structure):
+    _fields_ = [("Length", w.USHORT), ("MaximumLength", w.USHORT), ("Buffer", w.LPVOID)]
+
+
+class SYSTEM_PROCESS_PREFIX(ctypes.Structure):
+    # Documented SystemProcessInformation prefix, through SessionId. Remaining
+    # fields/threads are skipped using NextEntryOffset, never guessed by size.
+    _fields_ = [("NextEntryOffset", w.ULONG), ("NumberOfThreads", w.ULONG),
+                ("Reserved1", w.BYTE * 48), ("ImageName", UNICODE_STRING),
+                ("BasePriority", w.LONG), ("UniqueProcessId", w.HANDLE),
+                ("InheritedFromUniqueProcessId", w.HANDLE), ("HandleCount", w.ULONG), ("SessionId", w.ULONG)]
 
 
 class Windows:
@@ -375,13 +381,13 @@ class Windows:
             "GetProcessTimes": (w.BOOL, [w.HANDLE] + [ctypes.POINTER(w.FILETIME)] * 4),
             "ProcessIdToSessionId": (w.BOOL, [w.DWORD, ctypes.POINTER(w.DWORD)]),
             "QueryFullProcessImageNameW": (w.BOOL, [w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)]),
-            "CreateToolhelp32Snapshot": (w.HANDLE, [w.DWORD, w.DWORD]),
-            "Process32FirstW": (w.BOOL, [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]),
-            "Process32NextW": (w.BOOL, [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]),
         }
         for name, (result, args) in signatures.items():
             function = getattr(self.api, name)
             function.restype, function.argtypes = result, args
+        self.process_api = ctypes.WinDLL("ntdll", use_last_error=True)
+        self.process_api.NtQuerySystemInformation.argtypes = [w.ULONG, w.LPVOID, w.ULONG, ctypes.POINTER(w.ULONG)]
+        self.process_api.NtQuerySystemInformation.restype = w.LONG
 
     def check(self, result):
         if not result:
@@ -441,31 +447,48 @@ class Windows:
         self.check(api.GetUserNameW(buffer, ctypes.byref(size)))
         return buffer.value
 
+    def processes(self):
+        size = 65536
+        while True:
+            buffer, used = ctypes.create_string_buffer(size), w.ULONG()
+            status = self.process_api.NtQuerySystemInformation(5, buffer, size, ctypes.byref(used)) & 0xFFFFFFFF
+            if status == 0xC0000004:  # STATUS_INFO_LENGTH_MISMATCH: snapshot grew.
+                size = max(size * 2, used.value)
+                continue
+            if status:
+                raise OSError(f"Windows process snapshot failed (NTSTATUS 0x{status:08x}).")
+            break
+        base, offset = ctypes.addressof(buffer), 0
+        while True:
+            if offset + ctypes.sizeof(SYSTEM_PROCESS_PREFIX) > used.value or used.value > size:
+                raise OSError("Invalid Windows process snapshot bounds.")
+            entry = SYSTEM_PROCESS_PREFIX.from_buffer(buffer, offset)
+            name = entry.ImageName
+            if name.Length:
+                if not name.Buffer or name.Buffer < base or name.Buffer + name.Length > base + used.value:
+                    raise OSError("Invalid Windows process image-name bounds.")
+                image = ctypes.wstring_at(name.Buffer, name.Length // ctypes.sizeof(w.WCHAR))
+            else:
+                image = ""
+            yield entry.UniqueProcessId, entry.SessionId, image
+            if not entry.NextEntryOffset:
+                return
+            if entry.NextEntryOffset < ctypes.sizeof(SYSTEM_PROCESS_PREFIX):
+                raise OSError("Invalid Windows process snapshot offset.")
+            offset += entry.NextEntryOffset
+
     def running(self) -> ProcessIdentity | None:
         current = w.DWORD()
         self.check(self.api.ProcessIdToSessionId(os.getpid(), ctypes.byref(current)))
-        snapshot = self.api.CreateToolhelp32Snapshot(2, 0)
-        if snapshot == ctypes.c_void_p(-1).value:
-            raise ctypes.WinError(ctypes.get_last_error())
-        try:
-            entry = PROCESSENTRY32W()
-            entry.dwSize = ctypes.sizeof(entry)
-            found = self.api.Process32FirstW(snapshot, ctypes.byref(entry))
-            while found:
-                if entry.szExeFile.lower() == "lively.exe":
-                    session = w.DWORD()
-                    self.check(self.api.ProcessIdToSessionId(entry.th32ProcessID, ctypes.byref(session)))
-                    if session.value == current.value:
-                        try:
-                            return self.identity(entry.th32ProcessID)
-                        except ProcessLookupError:
-                            pass
-                found = self.api.Process32NextW(snapshot, ctypes.byref(entry))
-            if ctypes.get_last_error() != 18:
-                raise ctypes.WinError(ctypes.get_last_error())
-            return None
-        finally:
-            self.close(snapshot)
+        # Session membership comes from the system snapshot, without opening
+        # foreign processes. A selected same-session identity must still verify.
+        for pid, session, image in self.processes():
+            if session == current.value and image.lower() == "lively.exe":
+                try:
+                    return self.identity(pid)
+                except ProcessLookupError:
+                    pass
+        return None
 
     def executable(self, pid: int) -> str:
         handle = self.open_process(pid)

@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-HELPER = [sys.executable, "-I", str(ROOT / "electron/resources/windows-wallpaper/helper.py")]
+HELPER = [sys.executable, "-I", "-S", str(ROOT / "electron/resources/windows-wallpaper/helper.py")]
 
 
 def inspect() -> dict:
@@ -97,7 +97,7 @@ def main() -> int:
             report["experiments"].append({"scenario": scenario, "renderer_connected": True, "after": after, "passed": True})
             print(f"PASS {scenario}: original wallpaper and host restored", flush=True)
         # Unlike closing stdin alone, real parent death also closes the stdout
-        # reader. Verify that a broken diagnostic pipe cannot abort cleanup.
+        # reader. This is a Python parent, not an Electron/libuv Job test.
         parent_script = '''
 import json, os, subprocess, sys
 child = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -121,8 +121,8 @@ sys.exit(1)
         after = inspect()
         assert not after["recoveryPending"] and after["wallpapers"] == baseline["wallpapers"], after
         assert after["options"] == baseline["options"] and after["running"] == baseline["running"], after
-        report["experiments"].append({"scenario": "actual-parent-crash", "after": after, "passed": True})
-        print("PASS actual-parent-crash: restored after stdin and stdout readers vanished", flush=True)
+        report["experiments"].append({"scenario": "python-parent-crash", "after": after, "passed": True})
+        print("PASS python-parent-crash: restored after stdin and stdout readers vanished", flush=True)
         output.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(output, flush=True)
         return 0

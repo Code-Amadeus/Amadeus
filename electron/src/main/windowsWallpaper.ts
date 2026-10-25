@@ -170,7 +170,11 @@ export function windowsWallpaperDependencies(projectRoot: string, resourcesPath:
       child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Windows wallpaper setup failed: ${detail}`)))
     }),
     launch: url => {
-      const child = spawn(python, ['-I', helper, 'run', url], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      // Keep recovery outside libuv's kill-on-parent-exit Job. Retain the pipes
+      // and exit wait so normal shutdown still waits for desktop restoration.
+      const child = spawn(python, ['-I', '-S', helper, 'run', url], {
+        detached: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      })
       let resolveReady: () => void
       let rejectReady: (error: Error) => void
       const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })

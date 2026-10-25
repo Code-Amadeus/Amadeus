@@ -6,7 +6,7 @@ if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'helper.py')) {
     $helper = Join-Path $PSScriptRoot 'helper.py'
 }
 if ($env:OS -ne 'Windows_NT') { throw 'This setup is Windows-only.' }
-$inspection = (& $Python -I $helper inspect | Select-Object -Last 1) | ConvertFrom-Json
+$inspection = (& $Python -I -S $helper inspect | Select-Object -Last 1) | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the wallpaper host.' }
 if (!$inspection.executable) {
     if (Get-AppxPackage '*LivelyWallpaper*') {
@@ -19,6 +19,6 @@ if (!$inspection.executable) {
     # Do not launch Lively until its first-run configuration has been prepared.
     & winget.exe install --id rocksdanister.LivelyWallpaper --version 2.2.1.0 --exact --source winget --silent --accept-source-agreements --accept-package-agreements --disable-interactivity --override '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOAUTOLAUNCH /MERGETASKS=!desktopicon,!windowsstartup'
     if ($LASTEXITCODE -ne 0) { throw "Lively installation failed: $LASTEXITCODE" }
-    & $Python -I $helper prepare
+    & $Python -I -S $helper prepare
     if ($LASTEXITCODE -ne 0) { throw 'Lively first-run preparation failed.' }
 }

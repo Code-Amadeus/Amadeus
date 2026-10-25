@@ -8,9 +8,11 @@ This is a migration candidate, not a release qualification or merge approval.
 
 This is a Windows integration/dependency replacement. Electron keeps its
 lifecycle entry points, status and shutdown ownership. The independent helper
-uses the backend interpreter selected by `pythonRuntime.ts`, runs with `-I`,
+uses the backend interpreter selected by `pythonRuntime.ts`, runs with `-I -S`,
 and ships with Electron resources. It imports only the Python standard library
-and stays outside the backend's cleanup tree. No new package is required.
+and stays outside the backend's cleanup tree. A detached Electron launch avoids
+libuv's kill-on-parent-exit Job while retaining normal pipe/shutdown ownership.
+No new package is required.
 
 The original lifecycle state machine and #233 reporting/close limitations remain.
 PascalCase journals and string phases are retained. The same-pipe receiver
@@ -65,7 +67,7 @@ model or microphone was used by the desktop probes.
   window and reported the error. The stop endpoint checked authentication and
   Origin, and cleanup restored the original desktop.
 - Local installed-Lively lifecycle: normal exit, stdin loss, helper termination
-  plus journal recovery, and actual parent death all restored the original
+  plus journal recovery, and Python parent death all restored the original
   reported scene/options/running state, with a live renderer connection for
   each mounted scenario. The first run exposed a missing probe report directory;
   it was fixed at the probe layer and the complete probe rerun passed.
@@ -118,7 +120,7 @@ npx electron-builder --config electron-builder-code-only.cjs --win --x64 --dir -
 # From the repository root, with the native Electron smoke wrapper used by CI:
 .venv/Scripts/python.exe tools/smoke_electron_model_less.py --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe
 .venv/Scripts/python.exe tools/probes/windows_wallpaper_lifecycle.py
-.venv/Scripts/python.exe tools/probes/windows_wallpaper_cold_start.py
+.venv/Scripts/python.exe -I -S tools/probes/windows_wallpaper_cold_start.py
 .venv/Scripts/python.exe tools/probes/windows_wallpaper_counterexample.py
 .venv/Scripts/python.exe tools/build_source_release.py
 ```
@@ -133,8 +135,9 @@ recovery counts. Migration does not fix #233.
 The exact baseline was published with its original self-contained win-x64
 settings, excluding PDBs as in the old package filter. Helper plus notices:
 **74,922,671 bytes / 194 files**. The replacement helper plus protocol notices is
-**57,526 bytes / 3 files** after the review repair below (initial candidate:
-56,451 bytes); the setup script is separate in both comparisons.
+**57,526 bytes / 3 files** at the first review repair `d60a4f83` (initial candidate:
+56,451 bytes); the setup script is separate in both comparisons. The later
+audit follow-up below adds process-snapshot discovery to this resource.
 This removes about 71.4 MiB of uncompressed helper resources. It is not a claim
 about compressed installer size or a complete standalone runtime distribution.
 
@@ -183,13 +186,83 @@ Follow-up validation:
   actionable product defect was established. The final three added native cases
   cover the additional physically distinct pairs observed by that reviewer.
 - Related Electron wallpaper/startup/stop tests: **33 passed, 0 skipped**.
-- Installed-Lively normal exit, stdin loss, helper-crash recovery and actual
+- Installed-Lively normal exit, stdin loss, helper-crash recovery and Python
   parent death passed again and restored the original reported state.
 - Changed Python lint and whitespace checks passed.
 
 The 503-file/6,703-test full Python coverage and 703-test Electron suite above
 remain evidence for the initial candidate. The repair received the focused
 regressions listed here; PR CI evaluates the updated head separately.
+
+## Audit follow-up after `d60a4f83`
+
+Three integration findings were addressed before continuing the draft:
+
+- **F1, discovery across sessions:** `ProcessIdToSessionId` requires access to
+  the target process. Discovery now reads SessionId from the native
+  SystemProcessInformation snapshot and opens only current-session Lively
+  candidates for creation identity. Snapshot failures and denied selected
+  identities still fail visibly; an access error never becomes process-exit
+  evidence. Fake API cases cover foreign-session exclusion, selected-identity
+  denial, snapshot failure and buffer resizing. A native snapshot/self-session
+  check and real Lively inspect passed. A second account running Lively was
+  **not** exercised.
+- **F2, site isolation:** every helper launch in Electron, setup, smoke and the
+  lifecycle probe now uses `-I -S` with the same runtime selection. `-I` alone
+  still executes the environment's `.pth` hooks. Source and packaged resource
+  tests create an isolated temporary venv and a controlled `.pth` marker: the
+  control executes it, while production setup/launch leave it untouched and
+  report `no_site=1` with no imported `site`. The development lifecycle harness
+  itself still needs its backend packages; its helper subprocesses use both
+  flags. The stdlib-only cold-start probe can also run with both flags.
+- **F3, Electron parent death:** the production launch now uses `detached: true`
+  to avoid libuv's kill-on-parent-exit Job. Pipes and normal exit waiting remain
+  active. The new regression runs actual Electron, the production launcher,
+  a temporary Windows venv launcher and the real helper main/Session/journal
+  lock, substituting only a synthetic desktop. After `taskkill /F` without `/T`
+  and observed Electron exit, the supervisor allows restoration to finish.
+  The non-detached control loses the helper and retains its journal; the fixed
+  launch restores the synthetic original scene and deletes the journal.
+  Normal shutdown also passes. Test cleanup binds termination to the helper's
+  PID and exact creation ticks. No real desktop is modified by this test.
+
+The earlier "actual parent death" claim referred to a Python subprocess parent.
+It did not test Electron/libuv's Job behavior and was insufficient evidence for
+Electron crash recovery. Historical wording above and in the lifecycle guide
+has been corrected. Detachment does not promise survival after an explicit
+tree kill, logoff or power loss; durable next-start recovery remains necessary.
+
+Follow-up results:
+
+- **95 helper tests passed**, including all Pending dispatch, old identity,
+  PascalCase journal and raw Settings regressions.
+- **706 Electron tests passed, 0 skipped**, including the three real-parent
+  modes and both resource paths' controlled `.pth` checks.
+- Independent read-only review found no actionable defect and independently
+  passed all 95 helper tests plus the 25 isolation/lifecycle/parent-exit cases.
+  It verified native snapshot ABI offsets, own-session membership and bounds
+  rejection. This is advisory review, not a GitHub approval.
+- Build, changed Python lint and whitespace checks passed.
+- Updated Windows code-only package and native tray/helper smoke passed;
+  packaged helper bytes match the current source.
+- Actual packaged application without models: **15 checks passed**, including
+  frontend/backend exit.
+- Installed-Lively normal exit, pipe loss, helper-crash recovery and Python
+  parent death passed again using helper subprocesses with `-I -S`.
+- The stdlib-only cold-start probe passed under `-I -S`, including original
+  settings/layout/running-state restoration.
+
+Current helper plus protocol notices: **58,761 bytes / 3 files**, excluding the
+common setup script. A read-only live-host comparison on the updated helper,
+alternating flags after one warmup and ten samples per mode, measured medians
+**239.5 ms (`-I`)** and **218 ms (`-I -S`)**. This is local diagnostic evidence;
+the different environment/startup paths do not justify attributing all of the
+initial 195-to-269 ms difference to site initialization.
+
+Primary references: [Windows process-session access](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-processidtosessionid),
+[system process snapshot layout](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation),
+[Python `-S`](https://docs.python.org/3.12/using/cmdline.html#cmdoption-S),
+[Node 22.21.1/libuv Windows process implementation](https://github.com/nodejs/node/blob/v22.21.1/deps/uv/src/win/process.c#L988-L1034).
 
 ## Remaining release gates
 

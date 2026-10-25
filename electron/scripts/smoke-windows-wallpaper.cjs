@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
   // Read-only. Never installs Lively, mounts a scene or modifies the CI desktop.
   const { projectPythonCommand } = await import(pathToFileURL(path.join(main, 'pythonRuntime.js')).href)
   const python = projectPythonCommand(path.resolve(__dirname, '../..'))
-  const inspected = JSON.parse(execFileSync(python, ['-I', helper, 'inspect'], { encoding: 'utf8', windowsHide: true }).trim())
+  const inspected = JSON.parse(execFileSync(python, ['-I', '-S', helper, 'inspect'], { encoding: 'utf8', windowsHide: true }).trim())
   assert.equal(typeof inspected.running, 'boolean')
   console.log('PASS packaged Windows startup choices and external host ownership: native tray, missing-icon recovery, setup resources and helper runtime')
   app.quit()

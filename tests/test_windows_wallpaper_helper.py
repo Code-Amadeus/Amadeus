@@ -494,7 +494,7 @@ def test_launch_image_backup_recovers_old_pascalcase_backup_and_unknown_json(tmp
 
 def test_broken_parent_stdout_does_not_change_helper_exit_status():
     code = "import os, runpy, sys; helper = runpy.run_path(sys.argv[1]); os.read(sys.stdin.fileno(), 1); helper['report'](dict(status='restored'))"
-    child = subprocess.Popen([sys.executable, "-I", "-c", code, str(HELPER)], stdin=subprocess.PIPE,
+    child = subprocess.Popen([sys.executable, "-I", "-S", "-c", code, str(HELPER)], stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     child.stdout.close()
     child.stdin.write(b"x")
@@ -669,6 +669,71 @@ def test_deadline_waits_for_entered_persistence_and_retains_pending(f, cancelled
 
 
 native = pytest.mark.skipif(sys.platform != "win32", reason="Native Windows process/message-pipe contract")
+
+
+def test_running_filters_snapshot_sessions_before_opening_processes():
+    windows = h.Windows.__new__(h.Windows)
+    class Kernel:
+        def ProcessIdToSessionId(self, pid, output):
+            assert pid == os.getpid(), "foreign process session query requires access rights"
+            output._obj.value = 7
+            return True
+    windows.api = Kernel()
+    windows.processes = lambda: iter([(201, 8, "Lively.exe"), (202, 7, "Lively.exe")])
+    opened = []
+    def identify(pid):
+        assert pid == 202, "foreign-session Lively must not be opened"
+        opened.append(pid)
+        return h.ProcessIdentity(pid, 123)
+    windows.identity = identify
+    assert windows.running() == h.ProcessIdentity(202, 123)
+    assert opened == [202]
+
+
+def test_running_keeps_same_session_identity_and_snapshot_failures_visible():
+    windows = h.Windows.__new__(h.Windows)
+    class Kernel:
+        def ProcessIdToSessionId(self, pid, output):
+            output._obj.value = 7
+            return True
+    windows.api = Kernel()
+    windows.processes = lambda: iter([(202, 7, "Lively.exe")])
+    denied = PermissionError("same-session process identity unavailable")
+    windows.identity = lambda _: (_ for _ in ()).throw(denied)
+    assert failure(windows.running) is denied
+    unavailable = OSError("snapshot unavailable")
+    windows.processes = lambda: (_ for _ in ()).throw(unavailable)
+    assert failure(windows.running) is unavailable
+
+
+@native
+def test_process_snapshot_reads_session_membership_without_process_handles():
+    import ctypes
+    windows = h.Windows.__new__(h.Windows)
+    names = [(201, 8, "Lively.exe"), (202, 7, "Lively.exe")]
+    class SnapshotApi:
+        calls = 0
+        def NtQuerySystemInformation(self, kind, buffer, size, used):
+            assert kind == 5
+            self.calls += 1
+            if self.calls == 1:
+                used._obj.value = size + 1
+                return 0xC0000004
+            header = ctypes.sizeof(h.SYSTEM_PROCESS_PREFIX)
+            for index, (pid, session, image) in enumerate(names):
+                entry = h.SYSTEM_PROCESS_PREFIX.from_buffer(buffer, index * header)
+                entry.NextEntryOffset = header if index == 0 else 0
+                entry.UniqueProcessId, entry.SessionId = pid, session
+                encoded = image.encode("utf-16-le")
+                name_offset = 2 * header + index * 64
+                entry.ImageName.Length = len(encoded)
+                entry.ImageName.Buffer = ctypes.addressof(buffer) + name_offset
+                ctypes.memmove(entry.ImageName.Buffer, encoded, len(encoded))
+            used._obj.value = 2 * header + 128
+            return 0
+    windows.process_api = SnapshotApi()
+    assert list(windows.processes()) == names
+    assert windows.process_api.calls == 2
 
 
 @native

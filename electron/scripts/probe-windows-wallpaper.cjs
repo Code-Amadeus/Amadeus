@@ -12,7 +12,7 @@ const root = path.resolve(__dirname, '../..')
 const output = path.join(root, 'build/windows-wallpaper')
 const helper = path.join(root, 'electron/resources/windows-wallpaper/helper.py')
 const runtime = import(pathToFileURL(path.join(root, 'electron/dist/main/pythonRuntime.js')).href)
-const executeHelper = async args => execute((await runtime).projectPythonCommand(root), ['-I', helper, ...args], { windowsHide: true })
+const executeHelper = async args => execute((await runtime).projectPythonCommand(root), ['-I', '-S', helper, ...args], { windowsHide: true })
 const inspect = async () => JSON.parse((await executeHelper(['inspect'])).stdout.trim())
 process.env.NODE_ENV = 'production'
 // This probe explicitly selects wallpaper regardless of the saved GUI mode.
