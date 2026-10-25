@@ -106,3 +106,21 @@ use the existing isolated smoke fixture; plugin packages, application startup,
 backend processes, process ownership and persisted state are real. No shared
 dependency environment was synchronized and the worktree's junctions remain
 untouched.
+
+## CI follow-up — 2026-10-26
+
+The Electron Windows job at `15bc3995` failed one of 685 tests: the native
+BootId observation returned unavailable after approximately the 10-second query
+budget, but the test required an integer unconditionally. The log did not expose
+whether the registry value was missing or the query timed out. Production
+already treats unavailable evidence conservatively.
+
+BootId now uses a direct, bounded `reg.exe` query, avoiding the PowerShell host.
+Only one `REG_DWORD` value in the unsigned 32-bit range is accepted and cached.
+The reader tests cover missing/query-timeout, empty, wrong-type, overflow and
+duplicate evidence, including unchanged unknown ownership and no unavailable
+result caching. The native test verifies either stable evidence or continued
+ownership fencing. No workflow, timeout increase, skip or cleanup exemption was
+added. Full Electron tests: **686 passed, 0 skipped**; build passed. The earlier
+Python and real-app results above belong to the recovery implementation, not a
+new rerun for this registry-reader follow-up.

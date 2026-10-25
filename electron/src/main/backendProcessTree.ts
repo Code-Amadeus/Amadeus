@@ -105,14 +105,22 @@ let bootIdentity: Promise<number | undefined> | undefined
  * Missing evidence never authorizes retirement; ordinary Job receipts still work. */
 export function readWindowsBootId(): Promise<number | undefined> {
   if (process.platform !== 'win32') return Promise.resolve(undefined)
-  return bootIdentity ??= powershell(`$ErrorActionPreference='Stop'
-$key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters')
-try { if($null -eq $key -or $key.GetValueKind('BootId') -ne [Microsoft.Win32.RegistryValueKind]::DWord){exit 3}; $key.GetValue('BootId')|ConvertTo-Json -Compress } finally { if($key){$key.Dispose()} }`)
-    .then(output => {
-      const value: unknown = JSON.parse(output)
-      if (!validBootId(value)) throw Error('Windows boot identity is unavailable')
-      return value
-    }).catch(() => { bootIdentity = undefined; return undefined })
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows'
+  // Query the registry directly; boot observation does not need a PowerShell
+  // host (whose startup can exhaust the deadline on a loaded hosted runner).
+  return bootIdentity ??= new Promise<number>((resolve, reject) => {
+    execFile(path.join(systemRoot, 'System32', 'reg.exe'),
+      ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters', '/v', 'BootId', '/reg:64'],
+      { windowsHide: true, timeout: 10000, maxBuffer: 32 * 1024,
+        env: { SystemRoot: systemRoot, WINDIR: systemRoot } },
+      (error, stdout) => {
+        if (error) { reject(error); return }
+        const rows = [...String(stdout).matchAll(/^\s*BootId[ \t]+REG_DWORD[ \t]+(0x[0-9a-f]+)[ \t]*\r?$/gim)]
+        const value = rows.length === 1 ? Number(rows[0][1]) : NaN
+        if (!validBootId(value)) { reject(Error('Windows boot identity is unavailable')); return }
+        resolve(value)
+      })
+  }).catch(() => { bootIdentity = undefined; return undefined })
 }
 
 function reconcileBoot(index: CleanupIndex, bootId: number | undefined): CleanupIndex {

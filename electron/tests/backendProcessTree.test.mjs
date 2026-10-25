@@ -258,10 +258,59 @@ test('physical exit evidence is independent of unsettled Work outcomes but still
   assert.equal(await verifyPreviousBackendCleanup(file, goneAndDrained), true)
 })
 
-test('Windows boot identity is a stable OS counter, not an elapsed-time estimate', {skip: process.platform !== 'win32'}, async () => {
+test('Windows boot reader rejects unavailable or malformed registry evidence and caches only a valid DWORD', {skip: process.platform !== 'win32'}, async t => {
+  const module = new URL('../src/main/backendProcessTree.ts', import.meta.url)
+  const replies = [
+    {error: Error('registry key unavailable')},
+    {error: Object.assign(Error('query timed out'), {killed: true})},
+    {output: ''},
+    {output: '    BootId    REG_SZ    0x20\r\n'},
+    {output: '    BootId    REG_DWORD    0x100000000\r\n'},
+    {output: '    BootId    REG_DWORD    0x20\r\n    BootId    REG_DWORD    0x21\r\n'},
+  ]
+  for (const reply of replies) {
+    let calls = 0
+    const {readWindowsBootId: read} = loadTypeScript(module, {'node:child_process': {execFile: (command, args, options, done) => {
+      calls++
+      assert.equal(path.basename(command).toLowerCase(), 'reg.exe')
+      assert.deepEqual(args.slice(-3), ['/v', 'BootId', '/reg:64'])
+      assert.equal(options.windowsHide, true)
+      queueMicrotask(() => done(reply.error || null, reply.output || ''))
+    }}})
+    assert.equal(await read(), undefined)
+    const file = cleanupFixture(t)
+    await markBackendCleanupUnconfirmed(file)
+    const before = fs.readFileSync(file)
+    assert.equal(await verifyPreviousBackendCleanup(file, {getBootId: read}), false)
+    assert.deepEqual(fs.readFileSync(file), before)
+    assert.equal(calls, 2, 'unavailable evidence must not be cached or grant retirement')
+  }
+  for (const [hex, expected] of [['0x0', 0], ['0x2a', 42], ['0xffffffff', 0xffffffff]]) {
+    let calls = 0
+    const {readWindowsBootId: read} = loadTypeScript(module, {'node:child_process': {execFile: (_command, _args, _options, done) => {
+      calls++
+      queueMicrotask(() => done(null, `HKEY_LOCAL_MACHINE\\fixture\r\n    BootId    REG_DWORD    ${hex}\r\n`))
+    }}})
+    assert.equal(await read(), expected)
+    assert.equal(await read(), expected)
+    assert.equal(calls, 1)
+  }
+})
+
+test('native Windows boot observation supplies stable evidence or leaves unknown ownership fenced', {skip: process.platform !== 'win32'}, async t => {
   const first = await readWindowsBootId()
-  assert.ok(Number.isSafeInteger(first) && first >= 0)
-  assert.equal(await readWindowsBootId(), first)
+  if (first !== undefined) {
+    assert.ok(Number.isSafeInteger(first) && first >= 0 && first <= 0xffffffff)
+    assert.equal(await readWindowsBootId(), first)
+  } else {
+    t.diagnostic('OS boot counter is unavailable; verifying conservative ownership retention')
+  }
+  const file = cleanupFixture(t)
+  await markUnconfirmed(file, {getBootId: readWindowsBootId})
+  assert.equal(await verifyCleanup(file, {getBootId: readWindowsBootId}), false)
+  const retained = JSON.parse(fs.readFileSync(file))
+  assert.equal(retained.unknown, true)
+  assert.deepEqual(retained.owners, [])
 })
 
 test('clean receipt must bind nonce, launch and PID creation, and a fully drained Job', async t => {
