@@ -518,7 +518,8 @@ def test_settings_rewrite_preserves_unknown_bytes_order_and_defaults():
 
 
 @pytest.mark.parametrize("browser,desktop,lock", [(0, False, False), (2, True, True), (1, False, True)])
-def test_settings_restore_preserves_newer_user_choices(browser, desktop, lock):
+@pytest.mark.parametrize("previous_images", [False, True])
+def test_settings_restore_preserves_newer_user_choices(browser, desktop, lock, previous_images):
     raw = h.scalar(28, browser) + h.scalar(49, int(desktop)) + h.scalar(48, int(lock)) + b"\x18\x81\x00"
     class SettingsRpc:
         def call(self, service, method, payload=b"", **kwargs):
@@ -529,10 +530,11 @@ def test_settings_restore_preserves_newer_user_choices(browser, desktop, lock):
             return [b""]
     rpc = SettingsRpc()
     host = h.LivelyHost(None, Path("unused"), rpc)
-    host.restore_options(h.HostOptions(0, 0, True, True))
+    host.restore_options(h.HostOptions(0, 0, previous_images, previous_images))
     result = getattr(rpc, "result", raw)
     assert h.value(result, 28) == (0 if browser == 1 else browser)
-    assert h.value(result, 48) == h.value(result, 49) == 1
+    assert bool(h.value(result, 48)) == (lock or previous_images)
+    assert bool(h.value(result, 49)) == (desktop or previous_images)
     assert b"\x18\x81\x00" in result
 
 
