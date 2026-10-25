@@ -54,3 +54,29 @@ for (const fail of [false, true]) {
     assert.deepEqual(calls, fail ? ['cleanup', 'reported', 'quit'] : ['cleanup', 'quit'])
   })
 }
+
+test('a cancelled Windows shutdown query leaves the app usable; confirmed session end commits quit intent', async () => {
+  const lifecycle = new ApplicationLifecycle()
+  let release, calls = 0
+  const cleanup = () => { calls++; return new Promise(resolve => { release = resolve }) }
+  const query = lifecycle.handleSessionEnd(false, cleanup, assert.fail)
+  await Promise.resolve()
+  assert.equal(lifecycle.isQuitting, false)
+  assert.equal(lifecycle.shouldHideWallpaperWindow(true), true)
+  const ended = lifecycle.handleSessionEnd(true, cleanup, assert.fail)
+  assert.equal(lifecycle.isQuitting, true)
+  assert.equal(lifecycle.shouldHideWallpaperWindow(true), false)
+  assert.equal(calls, 1)
+  release()
+  await Promise.all([query, ended])
+})
+
+test('session-end cleanup failure is observable without creating permanent quit intent for a cancelled query', async () => {
+  const lifecycle = new ApplicationLifecycle(), errors = []
+  await lifecycle.handleSessionEnd(false, async () => { throw Error('shutdown failed') }, error => errors.push(error.message))
+  assert.deepEqual(errors, ['shutdown failed'])
+  assert.equal(lifecycle.isQuitting, false)
+  let retried = false
+  await lifecycle.handleSessionEnd(false, async () => { retried = true }, assert.fail)
+  assert.equal(retried, true)
+})

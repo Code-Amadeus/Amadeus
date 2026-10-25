@@ -477,5 +477,12 @@ class PiAdapter:
 
     async def close(self):
         runs = tuple(self._runs.items())
-        await asyncio.gather(*(self.cancel(key) for key, _ in runs), return_exceptions=True)
-        await asyncio.gather(*(run.client.close() for _, run in runs), return_exceptions=True)
+        cancelled = await asyncio.gather(*(self.cancel(key) for key, _ in runs), return_exceptions=True)
+        closed = await asyncio.gather(*(run.client.close() for _, run in runs), return_exceptions=True)
+        errors = []
+        if any(isinstance(result, BaseException) or not isinstance(result, dict)
+               or result.get("confirmed") is not True for result in cancelled):
+            errors.append("pi_cancel_unconfirmed")
+        if any(isinstance(result, BaseException) for result in closed):
+            errors.append("pi_close_failed")
+        return {"settled": not errors, "errors": errors}

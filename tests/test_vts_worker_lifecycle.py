@@ -195,7 +195,8 @@ def test_heartbeat_preserves_existing_connection_policy(isolated_action, monkeyp
 
 
 @pytest.mark.parametrize("heartbeat_start_fails", [False, True])
-def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_action, monkeypatch, heartbeat_start_fails):
+@pytest.mark.parametrize("pending_work", ["none", "attempt", "lease"])
+def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_action, monkeypatch, heartbeat_start_fails, pending_work):
     """Execute the real final startup/teardown scope without booting heavy devices."""
     async def run():
         path = Path(__file__).resolve().parents[1] / "server/app.py"
@@ -210,6 +211,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
         loop = asyncio.get_running_loop()
         futures, stops, callbacks = [], [], []
         extension_close = Mock()
+        cleanup_record = Mock()
 
         def submit(executor, worker, stop):
             if heartbeat_start_fails and futures:
@@ -224,6 +226,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
             assert stops and all(stop.is_set() for stop in stops)
             assert all(future.done() and not future.cancelled() for future in futures)
             callbacks.append("provider")
+            return {"settled": True}
 
         async def drain_inputs():
             assert callbacks == ["provider"]
@@ -244,7 +247,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
             loop=SimpleNamespace(run_in_executor=submit), _vts_action_mod=action,
             vts_manager=isolated_action, VTS_HEARTBEAT_ENABLED=True, port=0,
                     server_task=server_task, chat_h=SimpleNamespace(close=AsyncMock()), logger=Mock(),
-                    cooperative_chat=None,
+                    cooperative_chat=SimpleNamespace(begin_close=AsyncMock(), finish_close=AsyncMock()),
                     chat_role_delivery=None, cooperative_ledger=None,
                     openclaw_gateway_start_task=None,
                     bus=SimpleNamespace(off=Mock()), Method=Method,
@@ -259,9 +262,13 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
                     set_start_admission_validator=Mock(), close=provider_close),
             provider_activity_h=SimpleNamespace(close=AsyncMock()),
             work_h=SimpleNamespace(drain_inputs=drain_inputs),
-            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=close_ledger),
+            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=close_ledger,
+                store=SimpleNamespace(list_unresolved_provider_attempts=Mock(
+                    return_value=[object()] if pending_work == "attempt" else []),
+                    list_writer_leases=Mock(return_value=[object()] if pending_work == "lease" else []))),
             work_observer=SimpleNamespace(close=AsyncMock()), work_preview=SimpleNamespace(close_all=AsyncMock()),
-            _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None)
+            _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
+            _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
         exec(compile(module, str(path), "exec"), namespace)
         try:
             if heartbeat_start_fails:
@@ -271,6 +278,8 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
                 await namespace["run_tail"]()
             assert len(futures) == (1 if heartbeat_start_fails else 2)
             assert callbacks == ["provider", "inputs", "ledger"]
+            cleanup_record.assert_called_once_with(providers_settled=True,
+                work_settled=pending_work == "none", teardown_succeeded=True)
         finally:
             for stop in stops:
                 stop.set()

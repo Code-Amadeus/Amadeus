@@ -39,7 +39,7 @@ const providers = [
   { provider_id: 'pi', display_name: 'Pi', capabilities: { capability_projections: ['mcp_connection'] } },
   { provider_id: 'unrelated', display_name: 'Incompatible agent', capabilities: { capability_projections: ['skill'] } },
 ]
-const props = overrides => ({ extensions: [extension()], runtime: [], providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
+const props = overrides => ({ platform: 'win32', extensions: [extension()], runtime: [], providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
   onSettingsChanged() {}, onRestartRequired() {}, onOpenVoice() {}, ...overrides })
 
 test('typed extension edits preserve defaults and never reconstruct saved secrets', () => {
@@ -316,6 +316,122 @@ test('opening Browse cannot implicitly recover damaged safety state', async t =>
   await flush();page.render()
   page.button('Browse').props.onClick();await flush();page.render()
   assert.equal(requests.filter(r=>r.action==='recover'||r.action==='refresh').length,0)
-  page.button('Recover official extension security state').props.onClick();await flush();page.render()
+  page.button('Recover security state').props.onClick();await flush();page.render()
   assert.equal(requests.filter(r=>r.action==='recover').length,1)
 })
+
+
+test('update switch changes only checking preference and exact version scheduling never requests hot installation',async t=>{
+  const requests=[]
+  const candidate={id:'org.example.voice',version:'1.1.0',sha256:'b'.repeat(64),size:1,url:'https://example.org/plugin.whl',display:{},compatibility:{contributions:[]},review:{},withdrawal:null,incompatible:[]}
+  const view={entries:[candidate],cached:false,autoCheck:false}
+  const page=harness({extensionCatalog:async request=>{
+    requests.push(request)
+    if(request.action==='auto-check')view.autoCheck=request.enabled
+    return {ok:true,scheduled:request.action==='schedule',catalog:{...view}}
+  }})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  page.find(node=>node.props?.label==='Automatic plugin update checks'&&node.props.onChange).props.onChange(true)
+  await flush();page.render()
+  assert.deepEqual(requests.find(request=>request.action==='auto-check'),{action:'auto-check',enabled:true})
+  page.button('Schedule update for next app start…').props.onClick()
+  await flush();page.render()
+  assert.deepEqual(requests.find(request=>request.action==='schedule'),{action:'schedule',id:'org.example.voice',version:'1.1.0'})
+  assert.equal(requests.some(request=>request.action==='install'),false)
+  assert.ok(page.find(node=>node.props?.role==='status'&&String(node.props.children).includes('Installed packages have not changed')))
+})
+
+test('unconfirmed update exposes rollback and status refresh while keep remains blocked',async t=>{
+  const requests=[]
+  const page=harness({extensionCatalog:async request=>{requests.push(request);return {ok:true,scheduled:request.action==='rollback',catalog:{entries:[],cached:true,pendingUpdate:{id:'org.example.voice',version:'1.1.0',previousVersion:'1.0.0',canConfirm:false,recoveryRequired:true}}}}})
+  t.after(()=>page.restore())
+  await flush();page.render()
+  assert.equal(page.button('Keep this version').props.disabled,true)
+  page.button('Check status').props.onClick();await flush();page.render()
+  page.button('Schedule rollback…').props.onClick();await flush();page.render()
+  assert.ok(requests.some(request=>request.action==='health'))
+  assert.ok(requests.some(request=>request.action==='rollback'))
+  assert.equal(requests.some(request=>request.action==='install'||request.action==='confirm-update'),false)
+})
+
+
+test('native local import reports a queued change instead of claiming an installed package', async t => {
+  let writes = 0
+  const page = harness({installExtension: async () => ({ok:true,scheduled:true})}, {onSettingsChanged: () => { writes++ }})
+  t.after(() => page.restore())
+  page.button('Install plugin…').props.onClick()
+  await flush();page.render()
+  assert.equal(writes, 0)
+  assert.ok(page.find(node => node.props?.role === 'status' && String(node.props.children).includes('Scheduled for the next app start')))
+})
+
+test('update checking has an associated label and description, with manual checking kept independent', async t => {
+  const requests = []
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,autoCheck:false},settings:{extensionSecurity:{status:'ready'}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  const toggle = page.find(node => node.props?.label === 'Automatic plugin update checks' && node.props.onChange)
+  assert.ok(page.find(node => node.type === 'label' && node.props.htmlFor === toggle.props.id))
+  assert.ok(page.find(node => node.props?.id === toggle.props.describedBy))
+  page.button('Check now').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'refresh').length, 1)
+  assert.equal(requests.some(request => request.action === 'auto-check'), false)
+})
+
+test('scheduled installation keeps the full digest in closed details and cancellation remains available', async t => {
+  const requests = []
+  const digest = 'b'.repeat(64)
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,scheduledInstall:{id:'org.example.voice',version:'1.1.0',digest}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  const details = page.find(node => node.type === 'details' && node.props.children?.[0]?.props.children === 'Package details')
+  assert.ok(details)
+  assert.ok(!details.props.open)
+  assert.ok(JSON.stringify(details.props.children).includes(digest))
+  page.button('Cancel scheduled change').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'cancel-scheduled').length, 1)
+  assert.equal(requests.some(request => request.action === 'install' || request.action === 'confirm-update'), false)
+})
+
+test('a verified update still requires the explicit keep action', async t => {
+  const requests = []
+  const page = harness({extensionCatalog: async request => {
+    requests.push(request)
+    return {ok:true,catalog:{entries:[],cached:false,pendingUpdate:{id:'org.example.voice',version:'1.1.0',previousVersion:'1.0.0',canConfirm:true,recoveryRequired:false}}}
+  }})
+  t.after(() => page.restore())
+  await flush(); page.render()
+  assert.equal(requests.some(request => request.action === 'confirm-update'), false)
+  assert.equal(page.button('Keep this version').props.disabled, false)
+  page.button('Keep this version').props.onClick()
+  await flush(); page.render()
+  assert.equal(requests.filter(request => request.action === 'confirm-update').length, 1)
+})
+
+for (const platform of ['linux', 'darwin']) {
+  test(`${platform} update UI requests immediate installation and reports its actual settings`, async t => {
+    const requests = [], saved = []
+    const candidate = {id:'org.example.voice',version:'1.1.0',sha256:'b'.repeat(64),size:1,url:'https://example.org/plugin.whl',display:{},compatibility:{contributions:[]},review:{},withdrawal:null,incompatible:[]}
+    const page = harness({extensionCatalog: async request => {
+      requests.push(request)
+      return {ok:true,catalog:{entries:[candidate],cached:false}, ...(request.action === 'install' ? {settings:{extensions:['installed']}} : {})}
+    }}, {platform, onSettingsChanged: value => saved.push(value)})
+    t.after(() => page.restore())
+    await flush(); page.render()
+    assert.equal(page.button('Schedule update for next app start…'), undefined)
+    page.button('Review and update…').props.onClick()
+    await flush(); page.render()
+    assert.deepEqual(requests.find(request => request.action === 'install'), {action:'install',id:candidate.id,version:candidate.version})
+    assert.equal(requests.some(request => request.action === 'schedule'), false)
+    assert.ok(saved.some(value => value.extensions?.[0] === 'installed'))
+  })
+}

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=83,<84"]
+requires = ["setuptools>=84.2.1,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -154,7 +154,7 @@ dev = [
     "pytest==8.4.2",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.3",
-    "setuptools==83.0.0",
+    "setuptools==84.2.1",
     "wheel==0.47.0",
 ]
 
@@ -166,6 +166,9 @@ extension-authoring = ["jsonschema", "packaging", "PyYAML"]
 # configurable; this only selects the packages in the current project environment.
 [tool.uv]
 required-version = ">=0.12.8"
+# Keep model/cache consumers on the security-fixed filelock line without
+# adding optional model dependencies to the T1 core environment.
+constraint-dependencies = ["filelock>=4.2.4,<5"]
 conflicts = [
     [
         { extra = "torch-cpu" },

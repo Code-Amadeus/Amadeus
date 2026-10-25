@@ -61,3 +61,13 @@ test('empty catalog keeps browsing available and explains preview status', () =>
   assert.match(html, /Plugin store preview: no packages have been listed yet/)
   assert.match(html, /Catalog packages/)
 })
+
+test('catalog confirmation labels match the host installation mode on every platform', () => {
+  const Component = loadTypeScript(new URL('../src/renderer/components/ExtensionCatalog.tsx', import.meta.url), { '../i18n': { useI18n: () => ({ locale: 'en-US', t: s => s }) }, './FluentIcon': { default: () => null } }).default
+  const item = entry('1.0.0')
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const html = renderToStaticMarkup(React.createElement(Component, {platform, catalog:{entries:[item],cached:false}, installed:[], busy:false, selection:item, onSelect(){}, onInstall(){}, onLink(){}}))
+    assert.equal(html.includes('Schedule this version for next app start…'), platform === 'win32')
+    assert.equal(html.includes('Review and install this version…'), platform !== 'win32')
+  }
+})

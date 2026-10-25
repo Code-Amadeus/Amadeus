@@ -12,6 +12,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+async def assert_failed_update_cannot_be_kept(catalog, package_id, version, previous_version):
+    """Reject a real keep request without requiring a forced-rollback phase.
+
+    An unhealthy projection can stay pending in this desktop session so its
+    configuration can be repaired. It still grants no authority to keep it.
+    """
+    health = await catalog({"action": "health"})
+    assert health.get("ok"), "Plugin health query failed"
+    pending = health.get("catalog", {}).get("pendingUpdate")
+    expected = {"id": package_id, "version": version, "previousVersion": previous_version}
+    assert pending and all(pending.get(key) == value for key, value in expected.items()), "Failed update recovery identity changed"
+    assert pending.get("canConfirm") is False, "Failed update became confirmable"
+    refused = await catalog({"action": "confirm-update"})
+    assert refused.get("ok") is False, "Failed update was kept"
+    after = await catalog({"action": "get"})
+    assert after.get("ok") and after.get("catalog", {}).get("pendingUpdate") == pending, "Rejected keep changed the recovery record"
+
+
 def prepare_startup_failure(base, reference):
     from tools.probes.extension_theme_lifecycle import build_wheel
     from tools.extension_package import host_profile
@@ -53,6 +71,7 @@ def prepare_startup_failure(base, reference):
 
 async def exercise_failures(product, fixture):
     from tools.probes.extension_release_shell import evaluate_main
+    from tools.probes.extension_startup import release_fixture_script
     from tools.smoke_electron_model_less import _wait_enabled
 
     checks = []
@@ -98,10 +117,32 @@ async def exercise_failures(product, fixture):
         return await catalog({"action": "refresh"})
 
     async def install(package_id, version):
-        return await catalog({"action": "install", "id": package_id, "version": version})
+        previous = json.loads(state_path.read_text())['extensions'].get(package_id)
+        response = await catalog({"action": "schedule", "id": package_id, "version": version})
+        if not response['ok']:
+            report.setdefault('installation_attempts', []).append({
+                'id': package_id, 'version': version, 'ok': False, 'error': response.get('error')})
+            return response
+        assert response.get('scheduled')
+        assert json.loads(state_path.read_text())['extensions'].get(package_id) == previous
+        await restart()
+        current = json.loads(state_path.read_text())['extensions'].get(package_id)
+        snapshot = await product.page.evaluate('window.amadeus.getDesktopSettings()')
+        result = {'ok': bool(current and current['version'] == version), 'error': '; '.join(snapshot['extensionErrors'])}
+        report.setdefault('installation_attempts', []).append({'id': package_id, 'version': version, **result})
+        return result
 
-    async def restart(damage=None, offline=False):
+    async def restart(damage=None, offline=False, crash_backend=False):
         old_pid = product.process.pid
+        behavior = await main('(()=>{const s=extensionReleaseFixture;return {badWheel:s.badWheel,confirmations:s.confirmations}})()')
+        if crash_backend:
+            # Only the backend ChildProcess held by this disposable Electron
+            # main process is terminated. No PID lookup or external process is
+            # targeted, and no graceful cleanup approval can be written.
+            killed = await main("extensionReleaseFixture.crashBackend()")
+            check('pending-update backend terminated without graceful approval', killed is True)
+        await main("(()=>{setImmediate(()=>process.getBuiltinModule('module').createRequire(process.execPath)('electron').app.quit());return true})()")
+        await asyncio.to_thread(product.process.wait, 30)
         await product.stop()
         assert product.process.poll() is not None
         phase = report.get("app_restarts", 0) + 1
@@ -111,20 +152,10 @@ async def exercise_failures(product, fixture):
             for path in damage:
                 assert path.resolve().is_relative_to(product.run_root.resolve())
                 path.write_bytes(b"\0" * 1536)
-        await product.start(startup_timeout=120)
-        await _wait_enabled(
-            product.page.locator('textarea[placeholder*="Type a message"]'), timeout=60
-        )
+        await product.start(startup_timeout=180, main_startup_script=release_fixture_script(
+            fixture, {**behavior, 'index': index, 'offline': offline}))
+        await _wait_enabled(product.page.locator('textarea[placeholder*="Type a message"]'), timeout=60)
         assert product.process.pid != old_pid
-        code = (ROOT / "electron/tests/fixtures/extensionRelease.cjs").read_text()
-        await main(
-            f"(async()=>{{{code};return setupReleaseFixture({json.dumps(str(fixture))})}})()"
-        )
-        await main(
-            "Object.assign(extensionReleaseFixture,"
-            + json.dumps({"index": index, "offline": offline})
-            + ")"
-        )
 
     async def backend_restart():
         assert await product.page.evaluate("window.amadeus.restartBackend()")
@@ -150,22 +181,17 @@ async def exercise_failures(product, fixture):
             "fresh app process completes prior pending removals",
             not json.loads(state_path.read_text())["extensions"],
         )
-        await main("extensionReleaseFixture.holdWheel=true")
-        pending = asyncio.create_task(install(theme, "0.1.0"))
-        for _ in range(150):
-            status = await catalog({"action": "status"})
-            if (status.get("progress") or {}).get("received", 0) > 0:
-                break
-            await asyncio.sleep(0.1)
-        else:
-            raise AssertionError("Download never yielded progress")
-        await catalog({"action": "cancel"})
-        cancelled = await pending
+        selected = await catalog({'action':'schedule', 'id':theme, 'version':'0.1.0'})
+        assert selected['ok'] and selected['scheduled']
+        cancelled = await catalog({'action':'cancel-scheduled'})
         check(
-            "cancelled streaming download does not install",
-            cancelled.get("cancelled") and not json.loads(state_path.read_text())["extensions"],
+            "cancelled scheduled install neither downloads nor installs",
+            cancelled['ok'] and not cancelled['catalog'].get('scheduledInstall')
+            and not json.loads(state_path.read_text())["extensions"]
+            and not any('.whl' in path for path in await main('extensionReleaseFixture.requests')),
         )
-        await main("extensionReleaseFixture.holdWheel=false")
+        denied = await catalog({'action':'install', 'id':theme, 'version':'0.1.0'})
+        check('live backend refuses immediate installation', not denied['ok'] and 'installation is blocked' in denied['error'])
         assert (await install(theme, "0.1.0"))["ok"]
         await update(theme, True)
         await product.page.evaluate(
@@ -176,6 +202,7 @@ async def exercise_failures(product, fixture):
         check(
             "wrong digest update preserves previous installed and applied version",
             not rejected["ok"]
+            and 'package validation failed' in rejected['error']
             and json.loads(state_path.read_text())["extensions"][theme]["version"] == "0.1.0"
             and (await product.page.evaluate("window.amadeus.getDesktopTheme()"))["theme"][
                 "version"
@@ -217,12 +244,28 @@ async def exercise_failures(product, fixture):
         index["entries"].append(data["startup_failure"])
         assert (await refresh())["ok"]
         assert (await install(tone, "0.3.0"))["ok"]
-        await backend_restart()
         check(
             "updated package startup failure is visible without automatic rollback",
             bool(await runtime_state("0.3.0", {"error"}))
             and json.loads(state_path.read_text())["extensions"][tone]["version"] == "0.3.0",
         )
+        await assert_failed_update_cannot_be_kept(catalog, tone, "0.3.0", "0.1.0")
+        check('failed update cannot be kept')
+        assert (await catalog({'action':'rollback'}))['scheduled']
+        await restart()
+        check('explicit rollback restores the previous verified runtime',
+              json.loads(state_path.read_text())['extensions'][tone]['version'] == '0.1.0'
+              and bool(await runtime_state('0.1.0', {'active'}))
+              and not (await catalog({'action':'get'}))['catalog'].get('pendingUpdate'))
+        assert (await install(tone, "0.3.0"))["ok"]
+        assert await runtime_state("0.3.0", {"error"})
+        await assert_failed_update_cannot_be_kept(catalog, tone, "0.3.0", "0.1.0")
+        assert (await catalog({'action': 'rollback'}))['scheduled']
+        await restart(crash_backend=True)
+        check('unclean pending update can roll back and start the previous runtime',
+              json.loads(state_path.read_text())['extensions'][tone]['version'] == '0.1.0'
+              and bool(await runtime_state('0.1.0', {'active'}))
+              and not (await catalog({'action': 'get'}))['catalog'].get('pendingUpdate'))
         await update(tone, False)
         assert (await product.page.evaluate("id=>window.amadeus.removeExtension(id)", tone))["ok"]
         await backend_restart()
@@ -269,9 +312,14 @@ async def exercise_failures(product, fixture):
             + "]});return true})()"
         )
         local = await product.page.evaluate("window.amadeus.installExtension()")
+        assert local['ok'] and local['scheduled']
+        prior = json.loads(state_path.read_text())['extensions'][theme]['installId']
+        await restart(offline=True)
+        observed = await product.page.evaluate('window.amadeus.getDesktopSettings()')
         check(
-            "offline known ban also blocks local wheel installation",
-            not local["ok"] and "blocked" in local["error"],
+            "offline known ban blocks scheduled local wheel at startup",
+            json.loads(state_path.read_text())['extensions'][theme]['installId'] == prior
+            and any('blocked' in error for error in observed['extensionErrors']),
         )
         await main("extensionReleaseFixture.offline=false")
         rollback = copy.deepcopy(index)

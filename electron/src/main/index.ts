@@ -2,7 +2,7 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
+import { app, BrowserWindow, Menu, Notification, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
@@ -29,7 +29,7 @@ import { isWallpaperStartup } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
-import { stopOwnedBackend } from './backendProcessTree.js'
+import { markBackendCleanupUnconfirmed, prepareBackendCleanup, resolveBackendProjectRoot, stopOwnedBackend, verifyPreviousBackendCleanup } from './backendProcessTree.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
@@ -42,6 +42,8 @@ import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 import { extensionDisclosure } from '../shared/extensions.js'
 import { ExtensionCatalog } from './extensionCatalog.js'
+import { ExtensionUpdateBoundary, localPortIsClosed } from './extensionUpdates.js'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 import { ExtensionThemeResources } from './extensionThemes.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
@@ -52,6 +54,7 @@ const ELECTRON_ROOT = path.join(__dirname, '..', '..')
 const USER_DATA_DIR = process.env.AMADEUS_ELECTRON_USER_DATA_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_USER_DATA_DIR)
   : path.join(PROJECT_ROOT, '.electron-user-data')
+const BACKEND_CLEANUP_STATE = path.join(USER_DATA_DIR, 'backend-cleanup.json')
 const CACHE_DIR = process.env.AMADEUS_ELECTRON_CACHE_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_CACHE_DIR)
   : path.join(PROJECT_ROOT, '.electron-cache')
@@ -65,6 +68,11 @@ const desktopSettings = new DesktopSettingsStore(
   process.platform,
   extensionPackageHelper.validateRecord,
 )
+const scheduledExtensionUpdates = usesScheduledExtensionUpdates(process.platform)
+const extensionRecoveryIdle = async () => !pythonProcess && !backendOwned && !backendStarting && !backendStopping
+  && !applicationLifecycle.isQuitting && await localPortIsClosed(BACKEND_PORT)
+const extensionUpdateBoundary = new ExtensionUpdateBoundary(async () => await extensionRecoveryIdle()
+  && extensionCleanupConfirmed && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE), extensionRecoveryIdle)
 const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), EXTENSION_HOST_ROOT,
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
@@ -74,12 +82,21 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
     return result.response === 1
   }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined,
   new ExtensionThemeResources(async () => {
-    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('System fonts cannot be checked before the main window is available')
-    return mainWindow.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
-  }), () => notifyDesktopThemeChanged())
+    // Scheduled font themes still use the trusted renderer for native font checks.
+    // The maintenance boundary keeps backend/Work startup blocked while it loads.
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+    const renderer = mainWindow
+    if (!renderer || renderer.isDestroyed()) throw new Error('System fonts cannot be checked because the trusted renderer is unavailable')
+    return renderer.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
+  }), () => notifyDesktopThemeChanged(), scheduledExtensionUpdates ? extensionUpdateBoundary.assertHeld : undefined,
+  process.platform, scheduledExtensionUpdates ? extensionUpdateBoundary.assertRecoveryHeld : undefined)
 
 const extensionCatalog = new ExtensionCatalog(path.join(USER_DATA_DIR, 'extension-catalog'), desktopSettings, extensionPackageHelper, extensionInstaller,
-  () => String(startupValue('AMADEUS_EXTENSION_ARTIFACT_MIRROR', desktopSettings.snapshot(process.env), '')), () => notifyDesktopThemeChanged())
+  () => String(startupValue('AMADEUS_EXTENSION_ARTIFACT_MIRROR', desktopSettings.snapshot(process.env), '')), () => notifyDesktopThemeChanged(), undefined,
+  updates => {
+    if (Notification.isSupported()) new Notification({ title: 'Amadeus plugin updates available',
+      body: updates.map(update => `${update.id} → ${update.version}`).join('\n') + '\nReview in Manage plugins. Nothing has been installed.' }).show()
+  })
 
 function notifyDesktopThemeChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed() && isTrustedBackendRenderer(window.webContents)) window.webContents.send('desktop-theme.changed')
@@ -242,6 +259,8 @@ let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
+const backendCleanupLaunches = new WeakMap<ChildProcess, string>()
+let backendCleanupUnavailable = false
 let extensionCleanupConfirmed = true
 let backendStopping: Promise<void> | null = null
 const applicationLifecycle = new ApplicationLifecycle()
@@ -407,6 +426,8 @@ async function extensionStartupStatus(): Promise<unknown> {
 }
 
 function startBackend(): Promise<void> {
+  extensionUpdateBoundary.assertBackendMayStart()
+  extensionInstaller.assertUpdateCanLaunch()
   if (backendStarting) return backendStarting
   const snapshot = desktopSettings.snapshot(process.env)
   const selection = startupCharacterSelection({
@@ -416,6 +437,7 @@ function startBackend(): Promise<void> {
   })
   startupFailure = null
   backendStarting = launchBackend().catch(error => {
+    extensionInstaller.markUpdateFailed()
     startupFailure = backendStartupFailure(error instanceof BackendStartupExitError ? error.exitCode : null,
       error instanceof Error ? error.message : String(error), selection)
     throw error
@@ -423,15 +445,36 @@ function startBackend(): Promise<void> {
   return backendStarting
 }
 
+async function retainUnknownBackendCleanup(error: unknown): Promise<void> {
+  // Maintenance evidence must not take down chat/TTS. Keep this session fenced
+  // even if the damaged/unwritable index cannot persist the unknown marker.
+  backendCleanupUnavailable = true
+  extensionCleanupConfirmed = false
+  console.warn('[electron] backend cleanup evidence unavailable:', error)
+  desktopSettings.reportExtensionWarning('Backend cleanup tracking is unavailable; the backend can run, but extension installation and file deletion remain blocked.')
+  try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+  catch (markError) { console.warn('[electron] could not persist unknown backend cleanup:', markError) }
+}
+
 async function launchBackend(): Promise<void> {
   const health = await backendHealthStatus()
   if (applicationLifecycle.isQuitting) return
   if (health === 'ready') {
+    if (scheduledExtensionUpdates) {
+      try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+      catch (error) { await retainUnknownBackendCleanup(error) }
+    }
+    extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend already available on ${BACKEND_WS}; reusing it`)
     return
   }
   if (health === 'starting') {
+    if (scheduledExtensionUpdates) {
+      try { await markBackendCleanupUnconfirmed(BACKEND_CLEANUP_STATE) }
+      catch (error) { await retainUnknownBackendCleanup(error) }
+    }
+    extensionCleanupConfirmed = false
     backendOwned = true
     console.log(`[electron] backend is assembling on ${BACKEND_WS}; waiting for readiness`)
     await waitForBackendReady()
@@ -444,8 +487,9 @@ async function launchBackend(): Promise<void> {
 
   const python = getPythonCommand()
 
-  // No process owns this instance/port. Pending uninstall and orphan cleanup
-  // happen before a new backend can create Runner children.
+  // Windows maintenance requires the persisted descendant receipt, not merely
+  // a closed port. Other platforms retain their existing cleanup contract.
+  if (scheduledExtensionUpdates) extensionCleanupConfirmed = !backendCleanupUnavailable && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE)
   if (extensionCleanupConfirmed) await extensionInstaller.cleanupStoppedBackend()
 
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
@@ -460,13 +504,25 @@ async function launchBackend(): Promise<void> {
   }
   // An inherited string cannot replace Electron's installation authority.
   delete backendProcessEnvironment[EXTENSIONS_ENV]
+  delete backendProcessEnvironment.AMADEUS_BACKEND_CLEANUP_LAUNCH
   backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
+  let cleanupLaunch: { environment: Record<string, string> } = { environment: {} }
+  if (scheduledExtensionUpdates) {
+    try {
+      cleanupLaunch = await prepareBackendCleanup(BACKEND_CLEANUP_STATE, {
+        nonce: BACKEND_INSTANCE_NONCE,
+        projectRoot: await resolveBackendProjectRoot(python, PROJECT_ROOT, backendProcessEnvironment), pythonCommand: python,
+      })
+    } catch (error) { await retainUnknownBackendCleanup(error) }
+  }
+  extensionCleanupConfirmed = false
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
     cwd: PROJECT_ROOT,
     env: {
       ...backendProcessEnvironment,
       ...bundledDictionaryEnvironment(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
       ...defaultMpsFallbackEnvironment(process.platform, process.arch, backendProcessEnvironment),
+      ...cleanupLaunch.environment,
       PYTHONUNBUFFERED: '1',
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
@@ -479,6 +535,8 @@ async function launchBackend(): Promise<void> {
   })
 
   const proc = pythonProcess
+  const cleanupIdentity = cleanupLaunch.environment.AMADEUS_BACKEND_CLEANUP_LAUNCH
+  if (cleanupIdentity) backendCleanupLaunches.set(proc, cleanupIdentity)
   proc.stdout?.on('data', (data: Buffer) => {
     console.log(`[backend] ${data.toString('utf8').trim()}`)
   })
@@ -506,7 +564,10 @@ async function stopBackend(): Promise<void> {
 
   backendStopping = (async () => {
     extensionCleanupConfirmed = false
-    extensionCleanupConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900))
+    extensionCleanupConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900), {
+      verifyCleanup: async () => !backendCleanupUnavailable && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE),
+      cleanupLaunch: backendCleanupLaunches.get(proc),
+    })
     if (pythonProcess === proc) pythonProcess = null
     backendOwned = false
   })().finally(() => {
@@ -2228,7 +2289,13 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
 })
 ipcMain.handle('extensions.catalog', async (event, raw: unknown) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
-  return extensionCatalog.dispatch(raw, process.env, url => shell.openExternal(url))
+  const action = raw && typeof raw === 'object' && 'action' in raw ? raw.action : undefined
+  const dispatch = () => extensionCatalog.dispatch(raw, process.env, url => shell.openExternal(url))
+  try {
+    if (action === 'health' && backendOwned) await extensionInstaller.refreshUpdateHealth(await extensionStartupStatus())
+    return action === 'install' && scheduledExtensionUpdates ? await extensionUpdateBoundary.run(dispatch) : await dispatch()
+  }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Plugin update boundary is unavailable' } }
 })
 ipcMain.handle('extensions.icon', (event, id: string) => {
   if (!isTrustedBackendRenderer(event.sender) || typeof id !== 'string') return null
@@ -2239,7 +2306,11 @@ ipcMain.handle('extensions.install', async (event) => {
   const options: Electron.OpenDialogOptions = { title: 'Install Amadeus extension', properties: ['openFile'], filters: [{ name: 'Python wheel', extensions: ['whl'] }] }
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   if (selection.canceled || selection.filePaths.length !== 1) return { ok: false, cancelled: true }
-  try { return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) } }
+  try {
+    if (!scheduledExtensionUpdates) return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) }
+    await extensionCatalog.scheduleLocal(selection.filePaths[0])
+    return { ok: true, scheduled: true }
+  }
   catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
 })
 ipcMain.handle('extensions.update', async (event, update: ExtensionUpdate) => {
@@ -2812,6 +2883,22 @@ function ensureWindowsWallpaperTray(): void {
   windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit(), () => { void restoreBuiltinTheme() })
 }
 
+// before-quit is not emitted for Windows shutdown/logoff. Start best-effort
+// cleanup at the query event, without treating a cancelled query as quit intent.
+// Durable process evidence and boot retirement handle termination at any point.
+app.on('browser-window-created', (_event, window) => {
+  if (process.platform !== 'win32') return
+  const endSession = (confirmed: boolean) => {
+    if (confirmed) extensionCatalog.stopAutomaticChecking()
+    void applicationLifecycle.handleSessionEnd(confirmed, async () => {
+      try { await windowsWallpaper?.stop() }
+      finally { await stopBackend() }
+    }, error => console.error('[electron] session-end cleanup failed:', error))
+  }
+  window.on('query-session-end', () => endSession(false))
+  window.on('session-end', () => endSession(true))
+})
+
 app.whenReady().then(async () => {
   if (applicationLifecycle.isQuitting) return
   // This change owns Windows startup only; retain the existing non-Windows
@@ -2822,13 +2909,19 @@ app.whenReady().then(async () => {
   }
   let backendStartFailed = false
   try {
+    await extensionInstaller.prepareStartup()
+    if (extensionCatalog.hasScheduled()) await extensionCatalog.applyScheduled(extensionUpdateBoundary)
+  }
+  catch (error) { desktopSettings.reportExtensionWarning(error instanceof Error ? error.message : 'Scheduled plugin installation failed; review Manage plugins.') }
+  try {
     await startBackend()
   } catch (error) {
     backendStartFailed = true
     console.error('[electron] backend failed to become ready', error)
   }
   if (applicationLifecycle.isQuitting) return
-  createWindow()
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  extensionCatalog.startAutomaticChecking()
   if (process.platform === 'win32' && (backendStartFailed || windowsWallpaperTray?.hasIcon === false)) mainWindow?.show()
   if (applicationLifecycle.completeStartup()) {
     mainWindow?.show()
@@ -2857,6 +2950,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  extensionCatalog.stopAutomaticChecking()
   closeElectronSliceWindow()
   closeWorkOverlayWindow()
   closeAllWorkPreviewSurfaces()

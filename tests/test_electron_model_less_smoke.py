@@ -170,6 +170,19 @@ async def test_launcher_owns_the_installed_native_process(tmp_path, monkeypatch,
     assert "." in command
 
 
+async def test_startup_fixture_refuses_an_existing_inspector_before_launch(tmp_path, monkeypatch):
+    from tools import e2e_live_product_journey as journey
+
+    monkeypatch.setattr(journey, '_windows_launch_identity', lambda: None)
+    monkeypatch.setattr(journey, '_require_windows_electron_profile', lambda identity: None)
+    monkeypatch.setattr(journey, '_port_is_open', lambda port: port == 9224)
+    product = journey.ElectronProduct(run_root=tmp_path, debug_port=9223, main_debug_port=9224,
+                                     no_tts=True, identity={})
+    with pytest.raises(RuntimeError, match='main inspector port 9224 is already in use'):
+        await product.start(startup_timeout=1, main_startup_script='throw Error("must not execute")')
+    assert product.process is None
+
+
 async def test_packaged_launcher_does_not_require_an_npm_install(tmp_path, monkeypatch):
     from tools import e2e_live_product_journey as journey
 
@@ -278,3 +291,53 @@ async def test_windows_still_saves_both_modes_and_checks_restart_semantics():
         await _exercise_startup_settings(StartupPage("win32", visible=True, pending=True), timeout=0)
     with pytest.raises(TimeoutError, match="did not persist"):
         await _exercise_startup_settings(StartupPage("win32", visible=True, persist=False), timeout=0)
+
+
+@pytest.mark.parametrize("recovery_required", [False, True])
+async def test_failed_update_probe_checks_real_keep_rejection_and_retained_recovery(recovery_required):
+    from tools.probes.extension_release_failures import assert_failed_update_cannot_be_kept
+
+    pending = {"id": "com.example.tone", "version": "0.3.0", "previousVersion": "0.1.0",
+               "canConfirm": False, "recoveryRequired": recovery_required}
+    calls = []
+
+    async def catalog(request):
+        calls.append(request["action"])
+        if request["action"] == "confirm-update":
+            return {"ok": False, "error": "Plugin startup has not been confirmed"}
+        return {"ok": True, "catalog": {"pendingUpdate": dict(pending)}}
+
+    await assert_failed_update_cannot_be_kept(catalog, "com.example.tone", "0.3.0", "0.1.0")
+    assert calls == ["health", "confirm-update", "get"]
+
+
+@pytest.mark.parametrize("fault", ["health_failed", "missing", "wrong_target", "confirmable", "accepted_keep", "lost_recovery", "changed_recovery"])
+async def test_failed_update_probe_rejects_false_success_or_lost_recovery(fault):
+    from tools.probes.extension_release_failures import assert_failed_update_cannot_be_kept
+
+    pending = {"id": "com.example.tone", "version": "0.3.0", "previousVersion": "0.1.0",
+               "canConfirm": False, "recoveryRequired": False}
+
+    async def catalog(request):
+        action = request["action"]
+        if action == "confirm-update":
+            return {"ok": fault == "accepted_keep"}
+        current = dict(pending)
+        if action == "health":
+            if fault == "health_failed":
+                return {"ok": False}
+            if fault == "missing":
+                return {"ok": True, "catalog": {}}
+            if fault == "wrong_target":
+                current["version"] = "0.4.0"
+            if fault == "confirmable":
+                current["canConfirm"] = True
+        if action == "get":
+            if fault == "lost_recovery":
+                return {"ok": True, "catalog": {}}
+            if fault == "changed_recovery":
+                current["previousVersion"] = "0.0.9"
+        return {"ok": True, "catalog": {"pendingUpdate": current}}
+
+    with pytest.raises(AssertionError):
+        await assert_failed_update_cannot_be_kept(catalog, "com.example.tone", "0.3.0", "0.1.0")

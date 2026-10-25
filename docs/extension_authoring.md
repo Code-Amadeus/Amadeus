@@ -20,6 +20,60 @@ closed. A new manifest type does not create an execution owner. Main Chat does
 not receive installed MCP tools or Skill bodies. Installation does not grant
 an action permission; OS declarations are disclosures, not an OS sandbox.
 
+## Desktop installation and updates
+
+Windows queues catalog and local-wheel installations for the next app start.
+Installation requires native confirmation and proof that the owned backend
+process tree has exited.
+Updates retain the previous package, configuration and OS-encrypted credentials
+until the user keeps the verified update or explicitly rolls it back. In the
+same app session, a pending update can be configured and retried: saving its
+configuration invalidates prior health results, and confirmation requires health
+for the exact new revision. Failed persistence, a failed backend startup, or an
+unconfirmed update carried into another app session still requires recovery.
+Explicitly disabling a package is preserved by rollback.
+
+Retained-version recovery restores only package records, configuration and
+encrypted credentials while the current backend is stopped. It does not delete
+either installation or require a graceful-exit receipt. File deletion and new
+installation still require physical process-exit evidence. Electron escalates a
+failed or timed-out shutdown by terminating the registered Windows Job, after
+checking the backend's creation identity and Job membership. Its outside
+observer survives and can supply exit evidence once every owned descendant has
+stopped. If the Job cannot be verified/opened, the fallback stops the owned
+process tree and may also kill the observer; that case still needs later-boot
+recovery. Unresolved Work outcomes remain in the Work ledger and
+are never marked successful or replayed by plugin recovery.
+
+Cleanup registration and its Python-root probe are maintenance prerequisites,
+not prerequisites for core backend startup. If they fail, Electron reports a
+warning, starts without cleanup credentials, and fences installation/deletion
+for that app session. It also attempts to persist unknown ownership; corrupt or
+missing-index evidence is preserved, not reset. Authenticated backend reuse has
+the same isolation. The data root and its contents cannot be links/junctions;
+links above that root (for example, a relocated user profile) are supported by
+both desktop and backend checks.
+
+If containment or observer evidence was lost, a positively observed later
+Windows boot retires the old process owners. This uses the OS boot counter,
+not the clock, a closed port or an absent root PID. Sleep, an unavailable boot
+identity, and a later clean app launch do not clear unknown evidence. Existing
+PR profiles without a boot binding first acquire one conservatively; if their
+old exit evidence is missing, restart Windows after opening the updated app.
+Use Windows **Restart**, rather than relying on shutdown/fast startup or resume,
+when recovering lost evidence. Fast-startup and hibernation transitions have
+not been qualified by this change. Windows shutdown/session-end cleanup is best effort; recovery does not depend
+on shutdown callbacks running to completion.
+
+Linux and macOS retain the existing version-isolated installation path, with
+native confirmation at installation time. Backend contributions apply after a
+backend restart; standalone themes apply immediately. These platforms do not
+create the Windows cleanup ledger or a pending-update rollback journal, and do
+not offer scheduled installation or retained-version recovery. Opt-in daily
+catalog checks remain notification-only on every platform. This does not claim
+POSIX descendant containment; the existing shutdown/cleanup behavior, including
+the 2.5-second graceful-stop deadline, is retained.
+
 ## Minimal static checker environment
 
 From this Host checkout on Windows with CPython 3.12.10:
