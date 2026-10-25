@@ -132,9 +132,15 @@ async def exercise_failures(product, fixture):
         report.setdefault('installation_attempts', []).append({'id': package_id, 'version': version, **result})
         return result
 
-    async def restart(damage=None, offline=False):
+    async def restart(damage=None, offline=False, crash_backend=False):
         old_pid = product.process.pid
         behavior = await main('(()=>{const s=extensionReleaseFixture;return {badWheel:s.badWheel,confirmations:s.confirmations}})()')
+        if crash_backend:
+            # Only the backend ChildProcess held by this disposable Electron
+            # main process is terminated. No PID lookup or external process is
+            # targeted, and no graceful cleanup approval can be written.
+            killed = await main("extensionReleaseFixture.crashBackend()")
+            check('pending-update backend terminated without graceful approval', killed is True)
         await main("(()=>{setImmediate(()=>process.getBuiltinModule('module').createRequire(process.execPath)('electron').app.quit());return true})()")
         await asyncio.to_thread(product.process.wait, 30)
         await product.stop()
@@ -251,6 +257,15 @@ async def exercise_failures(product, fixture):
               json.loads(state_path.read_text())['extensions'][tone]['version'] == '0.1.0'
               and bool(await runtime_state('0.1.0', {'active'}))
               and not (await catalog({'action':'get'}))['catalog'].get('pendingUpdate'))
+        assert (await install(tone, "0.3.0"))["ok"]
+        assert await runtime_state("0.3.0", {"error"})
+        await assert_failed_update_cannot_be_kept(catalog, tone, "0.3.0", "0.1.0")
+        assert (await catalog({'action': 'rollback'}))['scheduled']
+        await restart(crash_backend=True)
+        check('unclean pending update can roll back and start the previous runtime',
+              json.loads(state_path.read_text())['extensions'][tone]['version'] == '0.1.0'
+              and bool(await runtime_state('0.1.0', {'active'}))
+              and not (await catalog({'action': 'get'}))['catalog'].get('pendingUpdate'))
         await update(tone, False)
         assert (await product.page.evaluate("id=>window.amadeus.removeExtension(id)", tone))["ok"]
         await backend_restart()

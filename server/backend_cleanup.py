@@ -1,8 +1,8 @@
 """Desktop-owned cleanup evidence; this module never terminates a process.
 
-Install the tracking Job before eager runtime imports. A clean receipt requires
-successful Host teardown and a drained non-breakaway Job. A crash leaves the
-desktop's pre-launch registration unresolved, even after every PID has exited.
+Install the tracking Job before eager runtime imports. The outside observer
+certifies physical exit independently of graceful teardown or Work outcomes.
+Missing containment/observer evidence remains blocked until a proven later boot.
 """
 from __future__ import annotations
 
@@ -176,6 +176,13 @@ class BackendCleanup:
             # their last handle closes, even when descendants are still alive.
             (observer_factory or _start_observer)(self)
             self.job.assign_current()
+            # The observer starts before assignment so it is outside the Job.
+            # An empty Job is evidence only after this root actually joined it.
+            _atomic_json(self.receipt.with_suffix(".tracking.json"), {
+                "schema": SCHEMA, "owner": owner,
+                "process": {"pid": os.getpid(), "created": self.creation},
+                "job_name": self.job_name,
+            })
         except Exception as exc:
             # Ordinary backend startup may continue; unknown containment never
             # authorizes package replacement and is visible in its pending owner.
@@ -187,6 +194,8 @@ class BackendCleanup:
                                 and teardown_succeeded is True)
 
     def finish(self) -> bool:
+        # Optional graceful-teardown diagnostics, not file-cleanup authority.
+        # Orphaned Work remains unresolved in its own ledger after process exit.
         if (self.failure or not self.runtime_settled or self.job is None
                 or not self.creation or not self.job.only_backend_remains()):
             return False
@@ -271,27 +280,19 @@ def _observe(request: dict) -> None:
         })
         if kernel.WaitForSingleObject(root, 0xFFFFFFFF) != 0:
             raise OSError("cleanup observer could not observe backend exit")
-        approval_path = receipt.with_suffix(".approval.json")
-        if not approval_path.exists():
-            _atomic_json(receipt.with_suffix(".failed.json"), {
-                "schema": SCHEMA, "owner": owner, "reason": "backend_cleanup_approval_missing",
-            })
-            return  # Crash/failed teardown: registration remains unresolved.
-        _ordinary_path(approval_path)
-        approval = json.loads(approval_path.read_text(encoding="utf-8"))
-        if (approval.get("schema") != SCHEMA or approval.get("state") != "settled"
-                or approval.get("owner") != owner or approval.get("process") != process
-                or approval.get("job_name") != request["job_name"]
-                or approval.get("proof") != "windows-job-drained"
-                or approval.get("providers_settled") is not True
-                or approval.get("work_settled") is not True):
-            raise ValueError("cleanup observer approval mismatch")
-        deadline = time.monotonic() + 30
+        tracking_path = receipt.with_suffix(".tracking.json")
+        _ordinary_path(tracking_path)
+        tracking = json.loads(tracking_path.read_text(encoding="utf-8"))
+        if tracking != {"schema": SCHEMA, "owner": owner, "process": process,
+                        "job_name": request["job_name"]}:
+            raise ValueError("cleanup observer containment identity mismatch")
+        # Keep the query handle until the last descendant exits. A fixed timeout
+        # would strand the owner forever if that descendant exited just later.
         while job.active_processes() != 0:
-            if time.monotonic() >= deadline:
-                raise TimeoutError("owned descendants survived backend cleanup")
-            time.sleep(.05)
-        _atomic_json(receipt, {**approval, "observer": {
+            time.sleep(.1)
+        _atomic_json(receipt, {"schema": SCHEMA, "owner": owner, "state": "exited",
+                              "process": process, "job_name": request["job_name"],
+                              "proof": "windows-job-drained", "observer": {
             "pid": os.getpid(), "created": _creation_identity(),
         }})
     except Exception as exc:

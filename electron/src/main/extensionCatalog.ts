@@ -9,6 +9,7 @@ import { DesktopSettingsStore } from './desktopSettings.js'
 import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled, removeExtensionDirectory } from './extensions.js'
 import { artifactUrl, downloadExtension, httpsUrl, MAX_INDEX_BYTES, MAX_WHEEL_BYTES, stagingDirectory, type Download } from './extensionDownloads.js'
 import { securityBlock, securitySnapshot } from './extensionSecurity.js'
+import type { ExtensionUpdateBoundary } from './extensionUpdates.js'
 
 export const OFFICIAL_EXTENSION_INDEX = 'https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/catalog/v1/index.json'
 type LocalSelection = { directory: string; file: string; id: string; version: string; digest: string }
@@ -177,28 +178,32 @@ export class ExtensionCatalog {
     const preferences = this.preferences()
     return Boolean(preferences.pending || preferences.local || preferences.rollback)
   }
-  async applyScheduled(): Promise<void> {
+  async applyScheduled(boundary: ExtensionUpdateBoundary): Promise<void> {
     if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
     const preferences = this.preferences()
-    if (preferences.rollback) {
-      this.savePreferences({ ...preferences, rollback: false })
-      await this.installer.rollbackPendingUpdate()
-    } else if (preferences.local) {
-      const selection = preferences.local
-      this.savePreferences({ ...preferences, local: undefined })
-      const file = this.localFile(selection)
-      const assertCurrent = () => {
-        assertExtensionPath(this.root, file)
-        if (fs.statSync(file).size > MAX_WHEEL_BYTES || createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== selection.digest) throw new Error('Scheduled local wheel bytes changed; select the wheel again.')
+    const apply = async () => {
+      if (preferences.rollback) {
+        this.savePreferences({ ...preferences, rollback: false })
+        await this.installer.rollbackPendingUpdate()
+      } else if (preferences.local) {
+        const selection = preferences.local
+        this.savePreferences({ ...preferences, local: undefined })
+        const file = this.localFile(selection)
+        const assertCurrent = () => {
+          assertExtensionPath(this.root, file)
+          if (fs.statSync(file).size > MAX_WHEEL_BYTES || createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== selection.digest) throw new Error('Scheduled local wheel bytes changed; select the wheel again.')
+        }
+        try { assertCurrent(); await this.installer.install(file, { catalog: false, identity: selection, assertCurrent }) }
+        finally { this.removeLocal(selection) }
+      } else if (preferences.pending) {
+        // Consume intent before attempting: never retry a failed/cancelled install
+        // on another boot without a new explicit user selection.
+        this.savePreferences({ ...preferences, pending: undefined })
+        await this.install(preferences.pending.id, preferences.pending.version, preferences.pending.digest)
       }
-      try { assertCurrent(); await this.installer.install(file, { catalog: false, identity: selection, assertCurrent }) }
-      finally { this.removeLocal(selection) }
-    } else if (preferences.pending) {
-      // Consume intent before attempting: never retry a failed/cancelled install
-      // on another boot without a new explicit user selection.
-      this.savePreferences({ ...preferences, pending: undefined })
-      await this.install(preferences.pending.id, preferences.pending.version, preferences.pending.digest)
     }
+    if (preferences.rollback) await boundary.runRecovery(apply)
+    else await boundary.run(apply)
   }
   async view(): Promise<CatalogView> {
     if (!this.trusted && !this.cached && fs.existsSync(this.cacheFile)) {

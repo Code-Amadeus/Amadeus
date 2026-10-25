@@ -8,11 +8,15 @@ import test from 'node:test'
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
 const { forceStopBackendTree, stopOwnedBackend, waitForProcessExit, prepareBackendCleanup: preparePlatformBackendCleanup,
-  verifyPreviousBackendCleanup, markBackendCleanupUnconfirmed, resolveBackendProjectRoot } = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+  verifyPreviousBackendCleanup: verifyCleanup, markBackendCleanupUnconfirmed: markUnconfirmed, resolveBackendProjectRoot,
+  readWindowsBootId } = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
 
 // Receipt protocol fixtures exercise Windows policy even when Node is running
 // elsewhere; the POSIX routing cases explicitly supply their own platform.
-const prepareBackendCleanup = (file, launch, platform = 'win32') => preparePlatformBackendCleanup(file, launch, platform)
+const fixtureBoot = async () => 10
+const prepareBackendCleanup = (file, launch, platform = 'win32', boot = fixtureBoot) => preparePlatformBackendCleanup(file, launch, platform, boot)
+const verifyPreviousBackendCleanup = (file, options = {}) => verifyCleanup(file, {getBootId: fixtureBoot, ...options})
+const markBackendCleanupUnconfirmed = (file, options = {}) => markUnconfirmed(file, {getBootId: fixtureBoot, ...options})
 
 test('packaged cleanup resolves the supplied Python module root with the actual launch environment', async () => {
   const resources = path.resolve('packaged/resources'), backend = path.resolve('external/backend')
@@ -77,7 +81,7 @@ for (const platform of ['linux', 'darwin']) {
     assert.equal(fs.existsSync(file), false)
     const proc = processFixture()
     assert.equal(await stopOwnedBackend(proc, async () => true, {platform,
-      waitForExit: async () => {proc.exit(); return true},
+      waitForExit: async (_proc, timeout) => {assert.equal(timeout, 2500); proc.exit(); return true},
       verifyCleanup: async () => {assert.fail('POSIX must not claim a Windows receipt')},
     }), true)
     const forced = processFixture()
@@ -87,10 +91,10 @@ for (const platform of ['linux', 'darwin']) {
   })
 }
 
-test('graceful owned shutdown requires the provider and process-tree receipt', async () => {
+test('graceful owned shutdown requires independent process-tree exit evidence', async () => {
   const proc = processFixture()
   assert.equal(await stopOwnedBackend(proc, async () => true, { platform: 'win32',
-    waitForExit: async () => { proc.exit(); return true },
+    waitForExit: async (_proc, timeout) => { assert.equal(timeout, 15000); proc.exit(); return true },
     forceStop: async () => { assert.fail('graceful stop must not force the tree') },
     verifyCleanup: async () => true,
   }), true)
@@ -205,13 +209,59 @@ test('a failed durable Windows replacement preserves the original index', { skip
   } finally { fs.chmodSync(file, 0o600) }
 })
 
-test('registration survives crash and a later clean launch cannot erase it', async t => {
+test('a later clean launch cannot erase unresolved containment from the same boot', async t => {
   const file = cleanupFixture(t)
   await prepareBackendCleanup(file, launchIdentity)
   const second = await prepareBackendCleanup(file, launchIdentity)
   writeReceipt(file, second.environment)
   assert.equal(JSON.parse(fs.readFileSync(file)).owners.length, 2)
   assert.equal(await verifyPreviousBackendCleanup(file, goneAndDrained), false)
+})
+
+test('a proven later Windows boot retires unresolved owners and unknown state without modifying archived evidence', async t => {
+  const file = cleanupFixture(t)
+  const launch = await prepareBackendCleanup(file, launchIdentity)
+  const old = JSON.parse(launch.environment.AMADEUS_BACKEND_CLEANUP_LAUNCH).owner
+  const diagnostic = path.join(`${file}.receipts`, `${old.id}.failed.json`)
+  fs.writeFileSync(diagnostic, 'retained failed-teardown evidence')
+  await markBackendCleanupUnconfirmed(file)
+  const bytes = fs.readFileSync(file, 'utf8')
+  for (const getBootId of [fixtureBoot, async () => undefined, async () => 9, async () => { throw Error('unavailable') }]) {
+    assert.equal(await verifyPreviousBackendCleanup(file, {getBootId}), false)
+    assert.equal(fs.readFileSync(file, 'utf8'), bytes)
+  }
+  assert.equal(await verifyPreviousBackendCleanup(file, {getBootId: async () => 11,
+    isProcessIdentityGone: async () => assert.fail('previous-boot PIDs are not current owners'),
+  }), true)
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), {schema: 'amadeus.backend-cleanup.v1', bootId: 11, unknown: false, owners: []})
+  assert.equal(fs.readFileSync(diagnostic, 'utf8'), 'retained failed-teardown evidence')
+  await prepareBackendCleanup(file, launchIdentity, 'win32', async () => 11)
+  assert.equal(await verifyPreviousBackendCleanup(file, {getBootId: async () => 11}), false, 'new-boot registration still needs its own exit proof')
+})
+
+test('legacy unresolved owners acquire a boot binding without being silently cleared', async t => {
+  const file = cleanupFixture(t)
+  await prepareBackendCleanup(file, launchIdentity, 'win32', async () => undefined)
+  assert.equal(JSON.parse(fs.readFileSync(file)).bootId, undefined)
+  assert.equal(await verifyPreviousBackendCleanup(file), false)
+  assert.equal(JSON.parse(fs.readFileSync(file)).bootId, 10)
+  assert.equal(JSON.parse(fs.readFileSync(file)).owners.length, 1)
+  assert.equal(await verifyPreviousBackendCleanup(file), false)
+  assert.equal(await verifyPreviousBackendCleanup(file, {getBootId: async () => 11}), true)
+})
+
+test('physical exit evidence is independent of unsettled Work outcomes but still requires exact process identities', async t => {
+  const file = cleanupFixture(t)
+  const {environment} = await prepareBackendCleanup(file, launchIdentity)
+  writeReceipt(file, environment, {state: 'exited', providers_settled: false, work_settled: false})
+  assert.equal(await verifyPreviousBackendCleanup(file, {isProcessIdentityGone: async () => false}), false)
+  assert.equal(await verifyPreviousBackendCleanup(file, goneAndDrained), true)
+})
+
+test('Windows boot identity is a stable OS counter, not an elapsed-time estimate', {skip: process.platform !== 'win32'}, async () => {
+  const first = await readWindowsBootId()
+  assert.ok(Number.isSafeInteger(first) && first >= 0)
+  assert.equal(await readWindowsBootId(), first)
 })
 
 test('clean receipt must bind nonce, launch and PID creation, and a fully drained Job', async t => {
@@ -290,7 +340,7 @@ test('compaction cannot erase an unknown fence queued during identity verificati
   assert.equal(await checking, true)
   await marking
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {
-    schema: 'amadeus.backend-cleanup.v1', unknown: true, owners: [],
+    schema: 'amadeus.backend-cleanup.v1', bootId: 10, unknown: true, owners: [],
   })
   assert.equal(await verifyPreviousBackendCleanup(file, goneAndDrained), false)
 })
@@ -348,7 +398,7 @@ function existingPython(root) {
   return result.stdout.trim()
 }
 
-test('real Windows tracking Job detects a child surviving its parent without killing it', { skip: process.platform !== 'win32' }, async t => {
+for (const graceful of [true, false]) test(`real Windows Job retains a surviving child with graceful approval=${graceful}`, { skip: process.platform !== 'win32' }, async t => {
   const file = cleanupFixture(t)
   const root = path.resolve('..')
   const python = existingPython(root)
@@ -357,7 +407,7 @@ test('real Windows tracking Job detects a child surviving its parent without kil
   const started = path.join(path.dirname(file), 'child-started')
   const helper = path.join(path.dirname(file), 'job-helper.py')
   const childSource = `import pathlib,time; p=pathlib.Path(${JSON.stringify(release)}); pathlib.Path(${JSON.stringify(started)}).write_text('started'); end=time.monotonic()+20\nwhile not p.exists() and time.monotonic()<end: time.sleep(.02)`
-  fs.writeFileSync(helper, `import json,os,subprocess,sys,time\nfrom pathlib import Path\nsys.path.insert(0,${JSON.stringify(root)})\nfrom server.backend_cleanup import BackendCleanup\nlaunch=json.loads(os.environ['AMADEUS_BACKEND_CLEANUP_LAUNCH'])\nproof=BackendCleanup(launch)\nif proof.failure:\n print(json.dumps({'failure':proof.failure}));sys.exit(3)\nproof.record_runtime_cleanup(providers_settled=True,work_settled=True,teardown_succeeded=True)\nassert proof.finish()\n# Model a late finalizer child after the backend's last observation.\nchild=subprocess.Popen([sys.executable,'-c',${JSON.stringify(childSource)}],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\nend=time.monotonic()+5\nwhile not Path(${JSON.stringify(started)}).exists() and time.monotonic()<end: time.sleep(.02)\nassert Path(${JSON.stringify(started)}).exists(), f'child did not start: {child.poll()}'\nassert not proof.job.only_backend_remains(), 'Job must include the live child'\nprint(json.dumps({'child':child.pid,'root':os.getpid()}))\n`)
+  fs.writeFileSync(helper, `import json,os,subprocess,sys,time\nfrom pathlib import Path\nsys.path.insert(0,${JSON.stringify(root)})\nfrom server.backend_cleanup import BackendCleanup\nlaunch=json.loads(os.environ['AMADEUS_BACKEND_CLEANUP_LAUNCH'])\nproof=BackendCleanup(launch)\nif proof.failure:\n print(json.dumps({'failure':proof.failure}));sys.exit(3)\n${graceful ? 'proof.record_runtime_cleanup(providers_settled=True,work_settled=True,teardown_succeeded=True)\nassert proof.finish()' : '# No graceful approval; child exit must still be proved.'}\n# Model a late finalizer child after the backend's last observation.\nchild=subprocess.Popen([sys.executable,'-c',${JSON.stringify(childSource)}],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\nend=time.monotonic()+5\nwhile not Path(${JSON.stringify(started)}).exists() and time.monotonic()<end: time.sleep(.02)\nassert Path(${JSON.stringify(started)}).exists(), f'child did not start: {child.poll()}'\nassert not proof.job.only_backend_remains(), 'Job must include the live child'\nprint(json.dumps({'child':child.pid,'root':os.getpid()}))\n`)
   const result = spawnSync(python, ['-B', helper], { cwd: root, env: { ...process.env, ...environment }, encoding: 'utf8', timeout: 10000, windowsHide: true })
   assert.equal(result.status, 0, result.stdout + result.stderr)
   const identities = JSON.parse(result.stdout.trim())
@@ -372,19 +422,23 @@ test('real Windows tracking Job detects a child surviving its parent without kil
   assert.equal(clean, true, `owned child ${identities.child} must drain normally after release`)
 })
 
-test('a real backend exit without cleanup approval leaves diagnostic pending evidence', { skip: process.platform !== 'win32' }, async t => {
+for (const outcome of ['crash', 'unsettled-work']) test(`real ${outcome} is recoverable after the Job drains without granting Work success`, { skip: process.platform !== 'win32' }, async t => {
   const file = cleanupFixture(t)
   const root = path.resolve('..')
   const python = existingPython(root)
   const { environment } = await prepareBackendCleanup(file, { ...launchIdentity, projectRoot: root, pythonCommand: python })
   const launch = JSON.parse(environment.AMADEUS_BACKEND_CLEANUP_LAUNCH)
   const helper = path.join(path.dirname(file), 'unsettled-helper.py')
-  fs.writeFileSync(helper, `import json,os,sys\nsys.path.insert(0,${JSON.stringify(root)})\nfrom server.backend_cleanup import BackendCleanup\nproof=BackendCleanup(json.loads(os.environ['AMADEUS_BACKEND_CLEANUP_LAUNCH']))\nassert proof.failure is None, proof.failure\n# Exit without record_runtime_cleanup/finish, as a failed teardown would.\n`)
+  fs.writeFileSync(helper, `import json,os,sys\nsys.path.insert(0,${JSON.stringify(root)})\nfrom server.backend_cleanup import BackendCleanup\nproof=BackendCleanup(json.loads(os.environ['AMADEUS_BACKEND_CLEANUP_LAUNCH']))\nassert proof.failure is None, proof.failure\n${outcome === 'crash' ? 'os._exit(17)' : 'proof.record_runtime_cleanup(providers_settled=True,work_settled=False,teardown_succeeded=True)\nassert not proof.finish()'}\n`)
   const result = spawnSync(python, ['-B', helper], { cwd: root, env: { ...process.env, ...environment }, encoding: 'utf8', timeout: 10000, windowsHide: true })
-  assert.equal(result.status, 0, result.stdout + result.stderr)
-  const failed = path.join(`${file}.receipts`, `${launch.owner.id}.failed.json`)
-  for (let attempt = 0; attempt < 40 && !fs.existsSync(failed); attempt++) await new Promise(resolve => setTimeout(resolve, 25))
-  assert.equal(JSON.parse(fs.readFileSync(failed, 'utf8')).reason, 'backend_cleanup_approval_missing')
-  assert.equal(await verifyPreviousBackendCleanup(file), false)
-  assert.equal(fs.existsSync(path.join(`${file}.receipts`, `${launch.owner.id}.json`)), false)
+  assert.equal(result.status, outcome === 'crash' ? 17 : 0, result.stdout + result.stderr)
+  const receipt = path.join(`${file}.receipts`, `${launch.owner.id}.json`)
+  let clean = false
+  for (let attempt = 0; attempt < 40 && !clean; attempt++) {
+    clean = await verifyPreviousBackendCleanup(file)
+    if (!clean) await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  assert.equal(clean, true)
+  assert.equal(JSON.parse(fs.readFileSync(receipt, 'utf8')).state, 'exited')
+  assert.equal(fs.existsSync(path.join(`${file}.receipts`, `${launch.owner.id}.approval.json`)), false)
 })

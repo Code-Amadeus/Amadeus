@@ -8,6 +8,7 @@ import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 const mocks = { electron: { safeStorage: { isEncryptionAvailable: () => true } } }
 const { ExtensionCatalog, catalogRequest, OFFICIAL_EXTENSION_INDEX } = loadTypeScript(new URL('../src/main/extensionCatalog.ts', import.meta.url), mocks)
 const { DesktopSettingsStore } = loadTypeScript(new URL('../src/main/desktopSettings.ts', import.meta.url), mocks)
+const { ExtensionUpdateBoundary } = loadTypeScript(new URL('../src/main/extensionUpdates.ts', import.meta.url))
 const entry = () => ({ id: 'org.example.demo', version: '0.1.0', sha256: 'a'.repeat(64), url: 'https://source.example/demo-0.1.0-py3-none-any.whl', size: 5, display: { homepage: 'https://example.org/' }, compatibility: {}, publisher: {}, review: {}, withdrawal: null, incompatible: [] })
 function fixture(t, platform = 'win32') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-catalog-'))
@@ -26,7 +27,8 @@ function fixture(t, platform = 'win32') {
   }
   state.notifications = []
   const catalog = new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, updates => state.notifications.push(updates), platform)
-  return { root, store, helper, catalog, state, reopen: () => new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, undefined, platform) }
+  return { root, store, helper, catalog, state, boundary: new ExtensionUpdateBoundary(async () => true),
+    reopen: () => new ExtensionCatalog(path.join(root, 'catalog'), store, helper, installer, () => state.mirror, () => {}, download, undefined, platform) }
 }
 test('renderer may select identity/action only, never supply URL/digest/review/source', () => {
   for (const field of ['url', 'sha256', 'digest', 'review', 'source', 'mirror']) assert.throws(() => catalogRequest({ action: 'install', id: 'p', version: '1.0.0', [field]: 'forged' }))
@@ -44,7 +46,7 @@ for (const platform of ['linux', 'darwin']) {
     assert.equal(f.state.installed.length, 1)
     assert.equal((await f.catalog.dispatch({action: 'schedule', ...choice}, {}, async () => {})).ok, false)
     await assert.rejects(f.catalog.scheduleLocal(path.join(f.root, 'not-opened.whl')), /only available on Windows/)
-    await assert.rejects(f.catalog.applyScheduled(), /only available on Windows/)
+    await assert.rejects(f.catalog.applyScheduled(f.boundary), /only available on Windows/)
     assert.equal(f.catalog.hasScheduled(), false)
     assert.equal(fs.existsSync(path.join(f.root, 'catalog/update-preferences.json')), false)
     f.state.index.sequence++
@@ -172,7 +174,7 @@ test('scheduling pins the selected artifact without downloading or installing un
   assert.equal(scheduled.catalog.scheduledInstall.digest,entry().sha256)
   assert.deepEqual(f.state.installed,[])
   assert.deepEqual(f.state.requests,[OFFICIAL_EXTENSION_INDEX])
-  await f.reopen().applyScheduled()
+  await f.reopen().applyScheduled(f.boundary)
   assert.equal(f.state.installed.length,1)
   assert.deepEqual(f.state.requests,[OFFICIAL_EXTENSION_INDEX,OFFICIAL_EXTENSION_INDEX,entry().url])
   assert.equal((await f.catalog.view()).scheduledInstall,undefined)
@@ -185,11 +187,11 @@ test('offline or changed scheduled bytes cannot install, and failed intent is ne
     if(failure==='offline') f.state.networkError=true
     if(failure==='digest') f.state.index.entries[0].sha256='b'.repeat(64)
     if(failure==='withdrawal') f.state.index.entries[0].withdrawal={reason:'maintainer',evidence:'https://example.org/'}
-    await assert.rejects(f.reopen().applyScheduled())
+    await assert.rejects(f.reopen().applyScheduled(f.boundary))
     assert.deepEqual(f.state.installed,[])
     assert.equal((await f.catalog.view()).scheduledInstall,undefined)
     const requests=f.state.requests.length
-    await f.reopen().applyScheduled()
+    await f.reopen().applyScheduled(f.boundary)
     assert.equal(f.state.requests.length,requests)
   }
 })
@@ -199,7 +201,7 @@ test('rollback selection only queues recovery; no package changes occur in the r
   f.state.pendingUpdate={id:entry().id,version:'0.2.0',previousVersion:'0.1.0',canConfirm:false,recoveryRequired:true}
   assert.equal((await f.catalog.dispatch({action:'rollback'},{},async()=>{})).scheduled,true)
   assert.equal(f.state.rolledBack,undefined)
-  await f.reopen().applyScheduled()
+  await f.reopen().applyScheduled(f.boundary)
   assert.equal(f.state.rolledBack,true)
   assert.equal((await f.catalog.view()).rollbackScheduled,false)
 })
@@ -235,7 +237,7 @@ test('native local selection freezes exact prerelease bytes and installs only on
   assert.deepEqual(f.state.requests, [], 'local import has no catalog lookup or runtime download')
   fs.writeFileSync(wheel, 'the original may change after selection')
   f.state.confirm = async () => { assert.equal(f.state.installed.length, 0) }
-  await f.reopen().applyScheduled()
+  await f.reopen().applyScheduled(f.boundary)
   assert.equal(f.state.installed.length, 1)
   assert.equal(f.state.installed[0].digest, digest)
   assert.equal(f.state.installed[0].version, '1.0.0rc1')
@@ -258,11 +260,11 @@ test('changed local snapshot or native cancellation is not installed or replayed
     } else {
       if (failure === 'tamper') fs.writeFileSync(snapshot, 'different bytes')
       else f.state.confirm = async () => { throw new Error('Native confirmation cancelled') }
-      await assert.rejects(f.reopen().applyScheduled(), failure === 'tamper' ? /bytes changed/ : /cancelled/)
+      await assert.rejects(f.reopen().applyScheduled(f.boundary), failure === 'tamper' ? /bytes changed/ : /cancelled/)
     }
     assert.deepEqual(f.state.installed, [])
     assert.equal((await f.catalog.view()).scheduledInstall, undefined)
-    await f.reopen().applyScheduled()
+    await f.reopen().applyScheduled(f.boundary)
     assert.deepEqual(f.state.installed, [])
     assert.deepEqual(fs.readdirSync(path.join(f.root, 'catalog/pending-local')), [])
   }

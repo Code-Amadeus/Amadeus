@@ -100,6 +100,9 @@ def test_success_receipt_binds_launch_and_root_creation_identity(tmp_path):
     assert receipt["owner"] == proof.launch["owner"]
     assert receipt["process"] == {"pid": os.getpid(), "created": "133000000000000000"}
     assert receipt["job_name"] == "Global\\AmadeusBackendCleanup-" + "a" * 32
+    tracking = json.loads(proof.receipt.with_suffix(".tracking.json").read_text())
+    assert tracking == {"schema": SCHEMA, "owner": proof.launch["owner"],
+                        "process": receipt["process"], "job_name": proof.job_name}
     assert proof.job.handle is not None  # Lifetime handle stays open until exit.
     with pytest.raises(OSError):
         proof.finish()  # An existing receipt is never overwritten.
@@ -114,6 +117,17 @@ def test_failed_containment_preserves_registration_and_blocks_receipt(tmp_path):
     proof.record_runtime_cleanup(providers_settled=True, work_settled=True, teardown_succeeded=True)
     assert not proof.finish()
     assert Path(launch["state_path"]).exists()
+    assert not Path(str(launch["state_path"]) + ".receipts", "a" * 32 + ".tracking.json").exists()
+
+
+def test_failed_assignment_never_claims_that_an_empty_job_contained_the_backend(tmp_path):
+    launch = launch_fixture(tmp_path)
+    job = TrackingJob("Global\\fixture", kernel=FakeKernel(assign=False), assign=False)
+    proof = BackendCleanup(launch, job_factory=lambda name: job,
+                           identity_factory=lambda: "133000000000000000", observer_factory=lambda proof: None)
+    assert proof.failure == "OSError"
+    assert not proof.receipt.with_suffix(".tracking.json").exists()
+    assert not proof.finish()
 
 
 def test_environment_is_consumed_before_any_child_can_inherit_it(tmp_path, monkeypatch):

@@ -18,21 +18,34 @@ export function localPortIsClosed(port: number): Promise<boolean> {
 
 /** Hold the main-process launch boundary for the entire stopped-backend transaction. */
 export class ExtensionUpdateBoundary {
-  private held = false
-  constructor(private readonly stopped: () => Promise<boolean>) {}
+  private held: 'install' | 'recovery' | undefined
+  constructor(private readonly stopped: () => Promise<boolean>,
+    private readonly recoveryIdle: () => Promise<boolean> = stopped) {}
   assertHeld = (): void => {
-    if (!this.held) throw new Error('Plugin installation requires the stopped-backend update boundary; schedule it for the next app start.')
+    if (this.held !== 'install') throw new Error('Plugin installation requires the stopped-backend update boundary; schedule it for the next app start.')
+  }
+  assertRecoveryHeld = (): void => {
+    if (!this.held) throw new Error('Plugin recovery requires the stopped-backend recovery boundary; schedule it for the next app start.')
   }
   assertBackendMayStart(): void {
     if (this.held) throw new Error('Plugin maintenance is in progress; backend start is blocked.')
   }
   async run<T>(operation: () => Promise<T>): Promise<T> {
+    return this.exclusive('install', this.stopped, operation)
+  }
+  /** Restore retained records without deleting files or claiming child cleanup. */
+  async runRecovery<T>(operation: () => Promise<T>): Promise<T> {
+    return this.exclusive('recovery', this.recoveryIdle, operation)
+  }
+  private async exclusive<T>(kind: 'install' | 'recovery', idle: () => Promise<boolean>, operation: () => Promise<T>): Promise<T> {
     if (this.held) throw new Error('Another plugin maintenance transaction is in progress.')
-    this.held = true
+    this.held = kind
     try {
-      if (!await this.stopped()) throw new Error('The backend or its MCP/Work processes are still active or unconfirmed; plugin installation is blocked.')
+      if (!await idle()) throw new Error(kind === 'install'
+        ? 'The backend or its MCP/Work processes are still active or unconfirmed; plugin installation is blocked. After an unexpected exit, restart Windows if cleanup cannot be verified. Retained-version recovery remains available.'
+        : 'The backend is still active; stop it before restoring the retained plugin version.')
       return await operation()
-    } finally { this.held = false }
+    } finally { this.held = undefined }
   }
 }
 

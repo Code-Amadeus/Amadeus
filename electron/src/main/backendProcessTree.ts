@@ -20,8 +20,9 @@ export async function resolveBackendProjectRoot(python: string, cwd: string, env
   return root
 }
 type CleanupOwner = { id: string; nonce: string; project_root: string; python_command: string }
-type CleanupIndex = { schema: string; unknown: boolean; owners: CleanupOwner[] }
+type CleanupIndex = { schema: string; unknown: boolean; owners: CleanupOwner[]; bootId?: number }
 type ProcessIdentity = { pid: number; created: string }
+type BootProbe = () => Promise<number | undefined>
 
 // Desktop is the sole index writer. Hold this boundary across asynchronous
 // identity probes and durable writes so compaction cannot erase a new owner.
@@ -71,6 +72,7 @@ function readIndex(file: string): CleanupIndex | null {
   try {
     const value = readJson(file) as CleanupIndex
     if (!value || value.schema !== CLEANUP_SCHEMA || typeof value.unknown !== 'boolean'
+      || value.bootId !== undefined && !validBootId(value.bootId)
       || !Array.isArray(value.owners) || value.owners.length > 4096 || !value.owners.every(validOwner)
       || new Set(value.owners.map(owner => owner.id)).size !== value.owners.length) throw Error('Invalid cleanup index')
     return value
@@ -91,6 +93,39 @@ function powershell(script: string): Promise<string> {
         env: { SystemRoot: systemRoot, WINDIR: systemRoot } },
       (error, stdout) => error ? reject(error) : resolve(String(stdout).trim()))
   })
+}
+
+function validBootId(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 0xffffffff
+}
+
+let bootIdentity: Promise<number | undefined> | undefined
+/** Windows' boot counter is independent of wall-clock changes and PID reuse.
+ * https://learn.microsoft.com/windows-hardware/design/device-experiences/oem-hvci-enablement
+ * Missing evidence never authorizes retirement; ordinary Job receipts still work. */
+export function readWindowsBootId(): Promise<number | undefined> {
+  if (process.platform !== 'win32') return Promise.resolve(undefined)
+  return bootIdentity ??= powershell(`$ErrorActionPreference='Stop'
+$key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters')
+try { if($null -eq $key -or $key.GetValueKind('BootId') -ne [Microsoft.Win32.RegistryValueKind]::DWord){exit 3}; $key.GetValue('BootId')|ConvertTo-Json -Compress } finally { if($key){$key.Dispose()} }`)
+    .then(output => {
+      const value: unknown = JSON.parse(output)
+      if (!validBootId(value)) throw Error('Windows boot identity is unavailable')
+      return value
+    }).catch(() => { bootIdentity = undefined; return undefined })
+}
+
+function reconcileBoot(index: CleanupIndex, bootId: number | undefined): CleanupIndex {
+  if (bootId === undefined) return index
+  if (!validBootId(bootId)) throw Error('Invalid Windows boot identity')
+  // Existing PR profiles lack a boot binding. Adopt this boot without granting
+  // cleanup authority: their first positively observed later boot can retire it.
+  if (index.bootId === undefined) return { ...index, bootId }
+  if (bootId < index.bootId) throw Error('Windows boot identity moved backwards; cleanup remains unconfirmed')
+  if (bootId === index.bootId) return index
+  // No process from the earlier boot can still hold package files. This says
+  // nothing about Work outcomes; their durable recovery records are untouched.
+  return { schema: CLEANUP_SCHEMA, bootId, unknown: false, owners: [] }
 }
 
 async function atomicIndex(file: string, value: CleanupIndex): Promise<void> {
@@ -127,10 +162,10 @@ if(-not $native::MoveFileExW(${quote(temporary)},${quote(file)},9)){exit 3}`)
 /** Register before spawn. Never replace an earlier unresolved launch with a new one. */
 export async function prepareBackendCleanup(statePath: string,
   { nonce, projectRoot, pythonCommand }: { nonce: string; projectRoot: string; pythonCommand: string },
-  platform: NodeJS.Platform = process.platform): Promise<{ environment: Record<string, string> }> {
+  platform: NodeJS.Platform = process.platform, getBootId: BootProbe = readWindowsBootId): Promise<{ environment: Record<string, string> }> {
   if (!usesScheduledExtensionUpdates(platform)) return { environment: {} }
   return serializeCleanup(statePath, async () => {
-    const index = readIndex(statePath) ?? { schema: CLEANUP_SCHEMA, unknown: false, owners: [] }
+    const index = reconcileBoot(readIndex(statePath) ?? { schema: CLEANUP_SCHEMA, unknown: false, owners: [] }, await getBootId())
     const owner: CleanupOwner = { id: randomBytes(16).toString('hex'), nonce,
       project_root: path.resolve(projectRoot), python_command: pythonCommand }
     if (!validOwner(owner) || index.owners.length >= 4096) throw Error('Invalid backend cleanup launch')
@@ -147,9 +182,9 @@ export async function prepareBackendCleanup(statePath: string,
 }
 
 /** Reusing a backend without its original lifetime handle cannot prove cleanup. */
-export async function markBackendCleanupUnconfirmed(statePath: string): Promise<void> {
+export async function markBackendCleanupUnconfirmed(statePath: string, { getBootId = readWindowsBootId }: { getBootId?: BootProbe } = {}): Promise<void> {
   return serializeCleanup(statePath, async () => {
-    const index = readIndex(statePath) ?? { schema: CLEANUP_SCHEMA, unknown: false, owners: [] }
+    const index = reconcileBoot(readIndex(statePath) ?? { schema: CLEANUP_SCHEMA, unknown: false, owners: [] }, await getBootId())
     await atomicIndex(statePath, { ...index, unknown: true })
   })
 }
@@ -165,22 +200,27 @@ async function processIdentityGone(identity: ProcessIdentity): Promise<boolean> 
  * orphan processes require an operator migration check; absence cannot prove them.
  * Fully verified owners are discharged from the live index; receipts stay archived. */
 export async function verifyPreviousBackendCleanup(statePath: string,
-  { isProcessIdentityGone = processIdentityGone }: {
+  { isProcessIdentityGone = processIdentityGone, getBootId = readWindowsBootId }: {
     isProcessIdentityGone?: (identity: ProcessIdentity) => Promise<boolean>;
+    getBootId?: BootProbe;
   } = {}): Promise<boolean> {
   try {
     return await serializeCleanup(statePath, async () => {
-      const index = readIndex(statePath)
-      if (index === null) return true
+      const saved = readIndex(statePath)
+      if (saved === null) return true
+      const index = reconcileBoot(saved, await getBootId())
+      if (index !== saved) await atomicIndex(statePath, index)
       if (index.unknown) return false
       for (const owner of index.owners) {
         const receipt = readJson(path.join(`${statePath}.receipts`, `${owner.id}.json`)) as {
           schema: string; state: string; owner: CleanupOwner; process: ProcessIdentity; observer: ProcessIdentity;
           proof: string; job_name: string; providers_settled: boolean; work_settled: boolean;
         }
-        if (!receipt || receipt.schema !== CLEANUP_SCHEMA || receipt.state !== 'settled'
+        if (!receipt || receipt.schema !== CLEANUP_SCHEMA || !['exited', 'settled'].includes(receipt.state)
           || !validOwner(receipt.owner) || Object.keys(owner).some(key => owner[key as keyof CleanupOwner] !== receipt.owner[key as keyof CleanupOwner])
-          || receipt.proof !== 'windows-job-drained' || receipt.providers_settled !== true || receipt.work_settled !== true
+          || receipt.proof !== 'windows-job-drained'
+          // Old receipts remain valid only with their original complete shape.
+          || receipt.state === 'settled' && (receipt.providers_settled !== true || receipt.work_settled !== true)
           || receipt.job_name !== `Global\\AmadeusBackendCleanup-${owner.id}`
           || ![receipt.process, receipt.observer].every(identity => identity
             && Number.isSafeInteger(identity.pid) && identity.pid > 0
@@ -239,7 +279,7 @@ export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () =
     verifyCleanup?: () => Promise<boolean>;
   } = {}): Promise<boolean> {
   const requested = await requestShutdown()
-  if (requested && await waitForExit(proc, 15000)) {
+  if (requested && await waitForExit(proc, usesScheduledExtensionUpdates(platform) ? 15000 : 2500)) {
     // Preserve the pre-existing POSIX graceful-root shutdown contract. This is
     // not descendant proof and is never used for the Windows update boundary.
     if (!usesScheduledExtensionUpdates(platform)) return true
@@ -264,6 +304,7 @@ export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () =
   if (!await waitForExit(proc, 1200) && !hasExited(proc)) {
     throw new Error('Owned backend shutdown did not complete')
   }
-  // Forced exit cannot publish a successful provider/Work cleanup receipt.
+  // This stop call does not infer child exit from taskkill. The independent Job
+  // observer may subsequently publish physical exit proof, even after a crash.
   return false
 }

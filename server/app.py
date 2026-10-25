@@ -3267,4 +3267,4 @@ if __name__ == "__main__":
         # asyncio.run has also drained its executor and async generators. No
         # further child launches are allowed after the final Job observation.
         if not _BACKEND_CLEANUP.finish():
-            logger.warning("backend cleanup remains unconfirmed; extension updates are blocked")
+            logger.warning("graceful backend teardown was not settled; Work recovery remains pending and process exit is verified independently")

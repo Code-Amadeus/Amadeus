@@ -1446,6 +1446,87 @@ function healthyUpdateRow(record) {
     startup: 'accepted', state: 'active', contributions: [{kind: 'mcp_server', id: 'tools', health: 'ready'}]}
 }
 
+test('unclean update exit can restore the retained version across launches without granting file cleanup', async t => {
+  const f = await catalogUpdateFixture(t)
+  const {ExtensionCatalog} = loadTypeScript(new URL('../src/main/extensionCatalog.ts', import.meta.url), mocks)
+  const {ExtensionUpdateBoundary} = loadTypeScript(new URL('../src/main/extensionUpdates.ts', import.meta.url))
+  const {prepareBackendCleanup, verifyPreviousBackendCleanup} = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+  const cleanupFile = path.join(f.directory, 'backend-cleanup.json')
+  let boot = 10
+  const getBootId = async () => boot
+  const verify = () => verifyPreviousBackendCleanup(cleanupFile, {getBootId})
+  // Execute index.ts's real boundary wiring: the original deadlock was at this
+  // composition boundary, invisible to a direct installer rollback unit test.
+  const source = fs.readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8')
+  const wiring = source.slice(source.indexOf('const extensionRecoveryIdle ='), source.indexOf('const extensionInstaller ='))
+  assert.ok(wiring.includes('new ExtensionUpdateBoundary'))
+  function startApp(liveBackend = false) {
+    const context = {ExtensionUpdateBoundary, pythonProcess: liveBackend ? {pid: 12345} : null,
+      backendOwned: liveBackend, backendStarting: null, backendStopping: null,
+      applicationLifecycle: {isQuitting: false}, extensionCleanupConfirmed: true,
+      BACKEND_CLEANUP_STATE: cleanupFile, BACKEND_PORT: 17777,
+      verifyPreviousBackendCleanup: verify, localPortIsClosed: async () => !liveBackend}
+    const boundary = new Function(...Object.keys(context), wiring + '\nreturn extensionUpdateBoundary')(...Object.values(context))
+    const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), 'win32', () => true)
+    const installer = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true,
+      undefined, undefined, undefined, boundary.assertHeld, 'win32', boundary.assertRecoveryHeld)
+    const catalog = new ExtensionCatalog(path.join(f.directory, 'catalog'), store, f.helper, installer, () => '', () => {},
+      async () => assert.fail('local recovery must not access the network'), () => {}, 'win32')
+    return {boundary, store, installer, catalog}
+  }
+  const installing = startApp()
+  await installing.installer.prepareStartup()
+  await installing.catalog.scheduleLocal(f.selectedWheel)
+  await installing.catalog.applyScheduled(installing.boundary)
+  const target = installing.store.storedExtensionRecords()[0]
+  await prepareBackendCleanup(cleanupFile, {nonce: 'synthetic-crashed-backend', projectRoot: f.directory, pythonCommand: 'python'}, 'win32', getBootId)
+  assert.equal(await verify(), false)
+  const recovery = startApp()
+  await recovery.installer.prepareStartup()
+  await assert.rejects(recovery.installer.prepareLaunch(), /rollback/)
+  assert.equal((await recovery.catalog.dispatch({action: 'rollback'}, {}, async () => {})).scheduled, true)
+  const live = startApp(true)
+  await assert.rejects(live.catalog.applyScheduled(live.boundary), /backend is still active/)
+  assert.equal(live.catalog.hasScheduled(), true)
+  const next = startApp()
+  await next.installer.prepareStartup()
+  const ledgerBefore = fs.readFileSync(cleanupFile)
+  await next.catalog.applyScheduled(next.boundary)
+  assert.deepEqual(fs.readFileSync(cleanupFile), ledgerBefore)
+  assert.equal(next.installer.pendingUpdate(), undefined)
+  assert.deepEqual(next.store.storedExtensionRecords()[0], f.previous)
+  for (let launch = 0; launch < 3; launch++) {
+    const app = startApp()
+    await app.installer.prepareStartup()
+    assert.equal(JSON.parse((await app.installer.prepareLaunch()).extensions)[0].version, '0.1.0')
+    await assert.rejects(app.boundary.run(() => app.installer.install(f.selectedWheel)), /active or unconfirmed/)
+    assert.ok(fs.existsSync(path.join(f.root, target.installId)))
+    assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
+  }
+  await next.installer.remove(f.previous.id)
+  assert.equal(await verify(), false)
+  assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)), 'pending removal waits for physical cleanup')
+  boot++
+  assert.equal(await verify(), true)
+  await next.installer.cleanupStoppedBackend()
+  assert.equal(fs.existsSync(path.join(f.root, f.previous.installId)), false)
+})
+
+test('restoring a retained theme does not incidentally collect either version', async t => {
+  const f = fixture(t, {manifest: themeManifest()})
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({id: f.metadata.id, enabled: true})
+  const previous = f.store.storedExtensionRecords()[0]
+  f.metadata.version = '0.2.0'
+  fs.writeFileSync(f.selectedWheel, 'synthetic new theme')
+  await f.installer.install(f.selectedWheel, {identity: {id: f.metadata.id, version: '0.2.0', digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')}, assertCurrent() {}})
+  const target = f.store.storedExtensionRecords()[0]
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.rollbackPendingUpdate()
+  assert.equal(f.store.storedExtensionRecords()[0].installId, previous.installId)
+  for (const record of [previous, target]) assert.ok(fs.existsSync(path.join(f.root, record.installId)))
+})
+
 for (const platform of ['linux', 'darwin']) for (const source of ['local', 'catalog']) {
   test(`${platform} ${source} install retains the running version and applies updates without Windows recovery state`, async t => {
     const f = fixture(t, {manifest: manifest('mcp_server'), platform})

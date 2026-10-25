@@ -1,4 +1,29 @@
 // Loaded only through the owned smoke process inspector; never shipped.
+function captureFixtureBackend(childProcess, syncExports, nonce) {
+  if (typeof nonce !== 'string' || nonce.length < 16) throw Error('Missing fixture backend identity')
+  const spawn = childProcess.spawn
+  let backend
+  childProcess.spawn = (command, args, options) => {
+    const child = spawn(command, args, options)
+    if (args?.[0] === '-m' && args?.[1] === 'server.app'
+      && options?.env?.AMADEUS_BACKEND_INSTANCE_NONCE === nonce) backend = child
+    return child
+  }
+  // The shipping main module imports spawn as an ESM named binding.
+  syncExports()
+  return async () => {
+    const child = backend
+    if (!child || child.exitCode !== null || child.signalCode !== null) throw Error('No live owned fixture backend')
+    return await new Promise((resolve, reject) => {
+      const exited = () => { child.off('error', failed); resolve(true) }
+      const failed = error => { child.off('exit', exited); child.off('error', failed); reject(error) }
+      child.once('exit', exited)
+      child.once('error', failed)
+      if (!child.kill()) failed(Error('Owned backend termination failed'))
+    })
+  }
+}
+
 async function setupReleaseFixture(base, automaticConfirm = true) {
   const require = process.getBuiltinModule('module').createRequire(process.execPath)
   const {app, net, session, dialog} = require('electron')
@@ -8,6 +33,8 @@ async function setupReleaseFixture(base, automaticConfirm = true) {
   const fixture = JSON.parse(fs.readFileSync(path.join(base, 'fixture.json')))
   const state = globalThis.extensionReleaseFixture = {fixture, requests:[], confirmations:0, offline:false, badWheel:false, holdWheel:false,
     index:{...fixture.index, entries:fixture.index.entries.filter(e=>e.version==='0.1.0')}}
+  state.crashBackend = captureFixtureBackend(require('node:child_process'),
+    require('node:module').syncBuiltinESMExports, process.env.AMADEUS_BACKEND_INSTANCE_NONCE)
   // Keep the TLS server out of the inspected packaged main process, where the
   // in-process fixture exhibited native crashes and intermittent TLS failures.
   // The actual Electron net client and its certificate verification still run.

@@ -69,8 +69,10 @@ const desktopSettings = new DesktopSettingsStore(
   extensionPackageHelper.validateRecord,
 )
 const scheduledExtensionUpdates = usesScheduledExtensionUpdates(process.platform)
-const extensionUpdateBoundary = new ExtensionUpdateBoundary(async () => !pythonProcess && !backendOwned && !backendStarting && !backendStopping
-  && extensionCleanupConfirmed && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE) && await localPortIsClosed(BACKEND_PORT))
+const extensionRecoveryIdle = async () => !pythonProcess && !backendOwned && !backendStarting && !backendStopping
+  && !applicationLifecycle.isQuitting && await localPortIsClosed(BACKEND_PORT)
+const extensionUpdateBoundary = new ExtensionUpdateBoundary(async () => await extensionRecoveryIdle()
+  && extensionCleanupConfirmed && await verifyPreviousBackendCleanup(BACKEND_CLEANUP_STATE), extensionRecoveryIdle)
 const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), EXTENSION_HOST_ROOT,
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
@@ -86,7 +88,8 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
     const renderer = mainWindow
     if (!renderer || renderer.isDestroyed()) throw new Error('System fonts cannot be checked because the trusted renderer is unavailable')
     return renderer.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
-  }), () => notifyDesktopThemeChanged(), scheduledExtensionUpdates ? extensionUpdateBoundary.assertHeld : undefined)
+  }), () => notifyDesktopThemeChanged(), scheduledExtensionUpdates ? extensionUpdateBoundary.assertHeld : undefined,
+  process.platform, scheduledExtensionUpdates ? extensionUpdateBoundary.assertRecoveryHeld : undefined)
 
 const extensionCatalog = new ExtensionCatalog(path.join(USER_DATA_DIR, 'extension-catalog'), desktopSettings, extensionPackageHelper, extensionInstaller,
   () => String(startupValue('AMADEUS_EXTENSION_ARTIFACT_MIRROR', desktopSettings.snapshot(process.env), '')), () => notifyDesktopThemeChanged(), undefined,
@@ -2853,6 +2856,22 @@ function ensureWindowsWallpaperTray(): void {
   windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit(), () => { void restoreBuiltinTheme() })
 }
 
+// before-quit is not emitted for Windows shutdown/logoff. Start best-effort
+// cleanup at the query event, without treating a cancelled query as quit intent.
+// Durable process evidence and boot retirement handle termination at any point.
+app.on('browser-window-created', (_event, window) => {
+  if (process.platform !== 'win32') return
+  const endSession = (confirmed: boolean) => {
+    if (confirmed) extensionCatalog.stopAutomaticChecking()
+    void applicationLifecycle.handleSessionEnd(confirmed, async () => {
+      try { await windowsWallpaper?.stop() }
+      finally { await stopBackend() }
+    }, error => console.error('[electron] session-end cleanup failed:', error))
+  }
+  window.on('query-session-end', () => endSession(false))
+  window.on('session-end', () => endSession(true))
+})
+
 app.whenReady().then(async () => {
   if (applicationLifecycle.isQuitting) return
   // This change owns Windows startup only; retain the existing non-Windows
@@ -2864,7 +2883,7 @@ app.whenReady().then(async () => {
   let backendStartFailed = false
   try {
     await extensionInstaller.prepareStartup()
-    if (extensionCatalog.hasScheduled()) await extensionUpdateBoundary.run(() => extensionCatalog.applyScheduled())
+    if (extensionCatalog.hasScheduled()) await extensionCatalog.applyScheduled(extensionUpdateBoundary)
   }
   catch (error) { desktopSettings.reportExtensionWarning(error instanceof Error ? error.message : 'Scheduled plugin installation failed; review Manage plugins.') }
   try {

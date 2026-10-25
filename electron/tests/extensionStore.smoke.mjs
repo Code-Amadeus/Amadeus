@@ -32,7 +32,7 @@ const check = (name, value=true)=>{assert.ok(value,name);report.checks.push(name
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const notify=()=>{if(window&&!window.isDestroyed())window.webContents.send('store.theme.changed')}
 const boundary = new ExtensionUpdateBoundary(async()=>true) // This fixture has no backend.
-const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,environment,undefined,async()=>{confirms++;await pause(450);return true},undefined,undefined,notify,boundary.assertHeld)
+const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,environment,undefined,async()=>{confirms++;await pause(450);return true},undefined,undefined,notify,boundary.assertHeld,process.platform,boundary.assertRecoveryHeld)
 const network=[];const opened=[]
 const server=https.createServer({key:fs.readFileSync(path.join(base,'key.pem')),cert:fs.readFileSync(path.join(base,'cert.pem'))},(request,response)=>{
  network.push(request.url)
@@ -69,7 +69,7 @@ try {
  const catalog=new ExtensionCatalog(path.join(base,'catalog'),store,helper,installer,()=>String(store.snapshot({}).values.AMADEUS_EXTENSION_ARTIFACT_MIRROR||''),notify,download)
  const scheduleLabel='Schedule this version for next app start…'
  async function scheduled(){await until("document.body.innerText.includes('Scheduled for the next app start. Installed packages have not changed.')&&!document.querySelector('.extension-download-progress')",'Selection was not scheduled');assert.ok(catalog.hasScheduled())}
- async function applyScheduled(){await boundary.run(()=>catalog.applyScheduled());await installer.refreshUpdateHealth([]);notify();await click('Installed')}
+ async function applyScheduled(){await catalog.applyScheduled(boundary);await installer.refreshUpdateHealth([]);notify();await click('Installed')}
  const reply=async fn=>{try{return {ok:true,settings:await fn()}}catch(e){return {ok:false,error:e.message}}}
  const bind=(name,fn)=>ipcMain.handle(name,(event,...args)=>{assert.equal(event.sender,window.webContents);return fn(...args)})
  bind('store.catalog',request=>catalog.dispatch(request,{},async url=>{opened.push(url)}))
@@ -127,7 +127,7 @@ try {
  store.update({}, {values:{AMADEUS_EXTENSION_ARTIFACT_MIRROR:origin+'/mirror'}})
  badWheel=true;slow=false
  await click('Schedule update for next app start…');await scheduled()
- await assert.rejects(boundary.run(()=>catalog.applyScheduled()),/digest|SHA-256|package validation failed/i)
+ await assert.rejects(catalog.applyScheduled(boundary),/digest|SHA-256|package validation failed/i)
  check('failed startup consumes the scheduled intent',!catalog.hasScheduled())
  check('failed update preserves saved and applied old theme',store.storedExtensionRecords()[0].version==='0.1.0'&&(await installer.themeState()).theme.version==='0.1.0')
  badWheel=false;await click('Schedule update for next app start…');await scheduled();await applyScheduled();await installed(themeId,'0.2.0')

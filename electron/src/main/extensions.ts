@@ -204,7 +204,8 @@ export class ExtensionInstaller {
     private readonly themes = new ExtensionThemeResources(),
     private readonly changed: () => void = () => {},
     private readonly assertInstallIdle: () => void = () => {},
-    private readonly platform: NodeJS.Platform = process.platform) {
+    private readonly platform: NodeJS.Platform = process.platform,
+    private readonly assertRecoveryIdle: () => void = assertInstallIdle) {
     this.updates = new ExtensionUpdateJournal(root, raw => store.validateExtensionRollbackRecord(raw))
   }
 
@@ -275,7 +276,7 @@ export class ExtensionInstaller {
   rollbackPendingUpdate(): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
       if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
-      this.assertInstallIdle()
+      this.assertRecoveryIdle()
       const update = this.updates.read()
       if (!update) throw new Error('No plugin update is waiting for rollback.')
       const previous = update.previous
@@ -290,14 +291,15 @@ export class ExtensionInstaller {
       await this.helper.call('validate-installed', [this.packagePath(previous)], { manifest: previous.manifest })
       if (!await this.confirm({ operation: 'update', manifest: previous.manifest, previousVersion: update.target.version,
         previousManifest: update.target.manifest, digest: previous.digest, sourceFile: originalWheel })) throw new ExtensionChangeCancelled()
-      this.assertInstallIdle()
+      this.assertRecoveryIdle()
       const confirmedWheel = path.join(directory, originalWheel)
       assertExtensionPath(this.root, confirmedWheel)
       if (!fs.lstatSync(confirmedWheel).isFile() || createHash('sha256').update(fs.readFileSync(confirmedWheel)).digest('hex') !== previous.digest) throw new Error('The previous verified wheel changed during confirmation; rollback is blocked.')
       this.store.restoreExtension(previous, update.target.installId)
       this.updates.clear()
       this.updateRecoveryRequired = false
-      await this.applyFrontendChanges()
+      // Recovery changes only retained records. Frontend application and file
+      // collection belong to the next launch, with their own lifetime checks.
       this.changed()
       return this.store.snapshot(this.environment)
     })
