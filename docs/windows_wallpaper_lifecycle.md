@@ -94,9 +94,9 @@ monitor/path pairs, or a missing original scene that this cleanup attempted to
 restore, keeps the journal for retry. An original scene may itself use the same
 managed project; restoring that exact monitor/path pair remains valid.
 
-`Session.Mount` owns its failed-mount rollback. The helper uses
-`Session.RunMounted` to run its active body and arrange exactly one cleanup only
-after Mount succeeds. If rollback or body cleanup also fails, both the primary
+`Session.mount` owns its failed-mount rollback. The helper uses
+`Session.run_mounted` to run its active body and arrange exactly one cleanup only
+after mount succeeds. If rollback or body cleanup also fails, both the primary
 and cleanup errors are retained. The Session remembers the process identity
 whose cleanup it has taken over, including journal recovery. The outer error
 handler only releases a newly started host whose identity is still outside that
@@ -147,10 +147,10 @@ first and preserves newer user choices rather than constructing a Settings model
 
 Old published journals without `Phase` retain their original semantics. A
 `Pending` journal without `RequestProcess` is invalid: recovery reports an error
-without rewriting the journal or changing the desktop. That format and
-`MountUnconfirmed` existed only in this PR's unpublished drafts; neither main nor
-v0.17.0-alpha.0 wrote `Phase`. Their compatibility branches have been removed
-because no existing local journal required them. No recovery data was deleted.
+without rewriting the journal or changing the desktop. Identity-less Pending and
+`MountUnconfirmed` existed only in unpublished #228 drafts and are unsupported.
+The migration retains the published Preparing/Pending/Settled format as well as
+legacy phase-less records. No recovery data is deleted to enable migration.
 
 Recover any pending journal with this helper before reverting to an older helper.
 Older binaries do not understand `Phase`; downgrade while a journal remains is
@@ -165,8 +165,8 @@ not supported, and no recovery record is reset or deleted to enable it.
 本次应恢复的原场景缺失，都会保留日志以便重试；原场景本身可以使用同一维护项目，
 恢复该确切 monitor/path 配对仍然有效。
 
-`Session.Mount` 自行负责挂载失败回滚；helper 经 `Session.RunMounted` 运行挂载后
-的主体，只在 Mount 成功后安排一次清理。主操作和清理同时失败时保留两个异常。
+`Session.mount` 自行负责挂载失败回滚；helper 经 `Session.run_mounted` 运行挂载后
+的主体，只在 mount 成功后安排一次清理。主操作和清理同时失败时保留两个异常。
 Session 已接管某个进程的清理（包括旧日志恢复），即记录其身份；外层异常处理只在
 进程尚未被接管且没有日志时释放新启动的宿主。成功清理删除日志不代表可以再次停止
 宿主；若之后启动的是另一启动身份的宿主，在接管前初始化失败仍可释放该新进程。
@@ -191,14 +191,15 @@ Lively 不会继续迟到挂载。
 仅改 28/48/49，其他字段按原字节写回；false/default 写入省略字段，保留用户新选择。
 
 已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的 `Pending` 日志
-视为无效：恢复明确报错，不改写日志或改变桌面。该格式和 `MountUnconfirmed` 仅
-存在于本 PR 未发布的草稿；main 与 v0.17.0-alpha.0 均未写过 `Phase`。没有现存本地
-日志需要这些兼容分支，因此已将其移除；未删除任何恢复数据。
+视为无效：恢复明确报错，不改写日志或改变桌面。无身份 Pending 与 `MountUnconfirmed`
+仅存在于 #228 未发布草稿，不支持这些格式。迁移保留已发布的三阶段格式和更早无 Phase
+的记录，不通过删除恢复数据来允许迁移。
 
 回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
 时不支持降级，不会为允许降级而重置或删除恢复记录。
 
-This change is limited to phase-aware rollback and error preservation. It does
+#264 replaces the helper runtime while preserving phase-aware rollback and error
+preservation. It does
 **not** repair stock Lively 2.2.1.0's reporting/close protocol: `GetWallpapers`
 can return a falsely empty stream, and project close can swallow errors and
 return success without removing a player. A close response plus an empty stream
@@ -208,7 +209,7 @@ request owned-host shutdown while an unreported scene remains. This is a known
 unresolved limitation, not an accepted strong-recovery guarantee. Scene removal
 is not inferred from a PID, a layout file or a timing heuristic to hide it.
 
-本次范围仅为按阶段回滚和保留异常，**未修复**原版 Lively 2.2.1.0 的报告及关闭
+本次替换 helper 运行时，保留按阶段回滚及异常合同，**未修复**原版 Lively 2.2.1.0 的报告及关闭
 协议：`GetWallpapers` 可能假空，项目关闭也可能吞错后返回成功却没有移除播放器。
 关闭回执加空流不能证明强恢复或播放器退出。对于原来为空的桌面，保留的 baseline
 空报告行为仍可能在未报告场景存在时删除日志并请求停止自有宿主。这是明确未解决的
