@@ -665,7 +665,13 @@ export class DesktopSettingsStore {
   validateExtensionRollbackRecord(raw: unknown, validate: ExtensionRecordValidator = this.validateExtensionRecord): StoredExtension {
     if (!raw || typeof raw !== 'object' || typeof (raw as StoredExtension).id !== 'string') throw new Error('Invalid plugin recovery record')
     const id = (raw as StoredExtension).id
-    const clean = cleanStoredExtensions({ [id]: raw }, validate)
+    let validationUnavailable = false
+    const clean = cleanStoredExtensions({ [id]: raw }, (manifest, values) => {
+      const result = validate(manifest, values)
+      validationUnavailable = result === 'unavailable'
+      return result
+    })
+    if (validationUnavailable) throw new Error('Plugin recovery validation is temporarily unavailable; saved package records were retained. Retry when the trusted validator is available.')
     if (clean.errors.length || !clean.records[id]) throw new Error('Invalid plugin recovery package record')
     return clean.records[id]
   }

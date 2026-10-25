@@ -1202,7 +1202,7 @@ test('cold startup validates both retained versions before reading recovery auth
   } }
   const reopened = new ExtensionInstaller(f.root, f.directory, store, helper, () => 'trusted-python', {}, f.run, async () => true,
     undefined, undefined, undefined, undefined, 'win32')
-  assert.throws(() => reopened.pendingUpdate(), /Invalid plugin recovery package record/)
+  assert.throws(() => reopened.pendingUpdate(), /validation is temporarily unavailable/)
   await reopened.prepareStartup()
   assert.deepEqual([...new Set(seen)].sort(), ['0.1.0', '0.2.0'])
   assert.equal(reopened.pendingUpdate().recoveryRequired, true)
@@ -1211,16 +1211,24 @@ test('cold startup validates both retained versions before reading recovery auth
   assert.equal(store.storedExtensionRecords()[0].version, '0.1.0')
 })
 
-test('cold recovery never treats missing or rejected semantic validation as startup authority', async t => {
+test('cold recovery distinguishes unavailable from rejected validation and preserves all recovery data', async t => {
   const f = await catalogUpdateFixture(t)
   await f.installer.install(f.selectedWheel, f.delivery)
+  const files = [f.file, f.file + '.bak', path.join(f.root, 'update-rollback.json')]
+  const before = files.map(file => fs.readFileSync(file))
   for (const result of ['unavailable', false]) {
     const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform, () => result)
     const reopened = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true,
       undefined, undefined, undefined, undefined, 'win32')
-    await assert.rejects(reopened.prepareStartup(), /Invalid plugin recovery package record/)
-    assert.throws(() => reopened.assertUpdateCanLaunch(), /Invalid plugin recovery package record/)
+    const error = result === 'unavailable' ? /validation is temporarily unavailable/ : /Invalid plugin recovery package record/
+    await assert.rejects(reopened.prepareStartup(), error)
+    assert.throws(() => reopened.pendingUpdate(), error)
+    assert.throws(() => reopened.assertUpdateCanLaunch(), error)
+    await assert.rejects(reopened.prepareLaunch(), error)
+    await assert.rejects(reopened.rollbackPendingUpdate(), error)
+    files.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index]))
     assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
+    assert.ok(fs.existsSync(path.join(f.root, JSON.parse(before[2]).target.installId)))
   }
 })
 

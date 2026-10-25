@@ -12,6 +12,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+async def assert_failed_update_cannot_be_kept(catalog, package_id, version, previous_version):
+    """Reject a real keep request without requiring a forced-rollback phase.
+
+    An unhealthy projection can stay pending in this desktop session so its
+    configuration can be repaired. It still grants no authority to keep it.
+    """
+    health = await catalog({"action": "health"})
+    assert health.get("ok"), "Plugin health query failed"
+    pending = health.get("catalog", {}).get("pendingUpdate")
+    expected = {"id": package_id, "version": version, "previousVersion": previous_version}
+    assert pending and all(pending.get(key) == value for key, value in expected.items()), "Failed update recovery identity changed"
+    assert pending.get("canConfirm") is False, "Failed update became confirmable"
+    refused = await catalog({"action": "confirm-update"})
+    assert refused.get("ok") is False, "Failed update was kept"
+    after = await catalog({"action": "get"})
+    assert after.get("ok") and after.get("catalog", {}).get("pendingUpdate") == pending, "Rejected keep changed the recovery record"
+
+
 def prepare_startup_failure(base, reference):
     from tools.probes.extension_theme_lifecycle import build_wheel
     from tools.extension_package import host_profile
@@ -225,9 +243,8 @@ async def exercise_failures(product, fixture):
             bool(await runtime_state("0.3.0", {"error"}))
             and json.loads(state_path.read_text())["extensions"][tone]["version"] == "0.3.0",
         )
-        health = await catalog({'action':'health'})
-        check('failed update cannot be kept', health['catalog']['pendingUpdate']['recoveryRequired']
-              and not (await catalog({'action':'confirm-update'}))['ok'])
+        await assert_failed_update_cannot_be_kept(catalog, tone, "0.3.0", "0.1.0")
+        check('failed update cannot be kept')
         assert (await catalog({'action':'rollback'}))['scheduled']
         await restart()
         check('explicit rollback restores the previous verified runtime',
