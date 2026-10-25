@@ -143,7 +143,7 @@ def overlay_class(shell=vn_overlay_window):
                 duration = max(350, min(60000, int(payload.get("duration_ms") or duration)))
                 self._return_timer = self.root.after(duration, neutral)
             if getattr(self, "visible", True):
-                self.root.deiconify()
+                self.show()
                 self.root.lift()
 
     return LitePortraitOverlay

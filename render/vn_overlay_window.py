@@ -61,6 +61,9 @@ class PortraitOverlayTk:
         self._scale = self.root.winfo_fpixels("1i") / 96
         self.root.title("Amadeus · VN Companion")
         self.root.overrideredirect(True)
+        # Aqua Tk's native creation clears topmost for overrideredirect windows.
+        # Realize the window before setting its level; do not pump the event loop.
+        self.root.winfo_id()
         self.root.attributes("-topmost", True)
         self.card_width, self.card_height = 470, 226
         self.root.configure(bg=TRANSPARENT_KEY)
@@ -179,6 +182,11 @@ class PortraitOverlayTk:
         self._poll_timer = self.root.after(40, self._poll)
         self._scan_timer = self.root.after(50, self._scan_tick)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+
+    def show(self):
+        self.root.deiconify()
+        # Deiconify also rebuilds Aqua's override-redirect window attributes.
+        self.root.attributes("-topmost", True)
 
     def close(self):
         for name in ("_poll_timer", "_layout_timer", "_hover_timer", "_scan_timer"):
@@ -366,7 +374,7 @@ class PortraitOverlayTk:
                 break
             if path == "/visibility":
                 self.visible = payload["visible"]
-                self.root.deiconify() if self.visible else self.root.withdraw()
+                self.show() if self.visible else self.root.withdraw()
                 self._schedule_hover()
             else:
                 self.apply_reaction(payload)
