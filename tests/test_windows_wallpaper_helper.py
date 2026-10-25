@@ -563,6 +563,26 @@ def rpc_for(pipe):
     return h.Rpc(None, "synthetic", lambda *_: pipe)
 
 
+@pytest.mark.parametrize("same_receiver", [False, True])
+def test_shutdown_dispatch_is_bound_to_owned_receiver(same_receiver):
+    pipe = MemoryPipe([b"\x04\x1a\x02\x10\x01\x02\x2a\x00"])
+    owned = pipe.receiver() if same_receiver else h.ProcessIdentity(10, 20)
+    class ProcessWindows:
+        reads = 0
+        def is_running(self, identity):
+            assert identity == owned
+            self.reads += 1
+            return self.reads == 1
+    host = h.LivelyHost(ProcessWindows(), Path("unused"), rpc_for(pipe))
+    if same_receiver:
+        host.stop_owned_process(owned)
+        assert len(pipe.writes) == 1 and b"AutomationCommand" in pipe.writes[0]
+    else:
+        assert isinstance(failure(lambda: host.stop_owned_process(owned)), RuntimeError)
+        assert pipe.writes == []
+    assert pipe.closed
+
+
 def test_transport_inline_separate_stream_and_trailers():
     # Literal wire vectors are independent of the production envelope encoder.
     pipe = MemoryPipe([b"\x02\x12\x00\x06\x1a\x04\x08\x03\x10\x01abc\x04\x1a\x02\x08\x04", b"data", b"\x02\x2a\x00"])

@@ -46,7 +46,7 @@ Electron 44.0.0. Existing local Python/Node environments were reused; no optiona
 model or microphone was used by the desktop probes.
 
 - Unchanged C# baseline: **50 contracts passed**, before source removal.
-- Python helper contracts: **85 passed**. This includes real Windows message
+- Python helper contracts: **87 passed**. This includes real Windows message
   pipes, exact receiver-before-dispatch, actual journal write obstruction,
   late server availability, deadline/cancellation before and after dispatch,
   persistence spanning a deadline, large separate payloads, exclusive locking,
