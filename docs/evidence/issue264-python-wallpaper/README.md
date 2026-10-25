@@ -133,7 +133,8 @@ recovery counts. Migration does not fix #233.
 The exact baseline was published with its original self-contained win-x64
 settings, excluding PDBs as in the old package filter. Helper plus notices:
 **74,922,671 bytes / 194 files**. The replacement helper plus protocol notices is
-**56,451 bytes / 3 files**; the setup script is separate in both comparisons.
+**57,526 bytes / 3 files** after the review repair below (initial candidate:
+56,451 bytes); the setup script is separate in both comparisons.
 This removes about 71.4 MiB of uncompressed helper resources. It is not a claim
 about compressed installer size or a complete standalone runtime distribution.
 
@@ -146,6 +147,49 @@ Source build/packaging no longer needs the modern .NET SDK, NuGet restore or a
 self-contained runtime publish. First-use setup still provisions Lively through
 winget if missing. Lively's own prerequisites remain its publisher's concern.
 Python/model/asset provisioning remains external, as before.
+
+## Independent review and repair — PR #269
+
+The independent review targeted `f740816322a191b72d21b2de21dc119d7f9003a2`
+and inspected the Pending dispatch boundary, persisted process identities,
+raw Settings compatibility and Electron resource/interpreter integration.
+Its independent native contract run passed the initial 87 tests.
+
+One P2 implementation regression was confirmed: Python `lower()` equated a path
+segment U+0130 with U+0069 U+0307. Both names can exist as distinct Windows
+directories. A synthetic restoration with exact-only project closing replaced
+the newer user scene with the original scene, requested owned-host shutdown and
+deleted the journal. The parent independently reproduced both the user-choice
+failure and the comparison mismatch before changing the implementation.
+
+The repair uses the native Windows ordinal comparator with explicit UTF-16
+code-unit counts. It retains same-directory ASCII/accented case aliases and
+supplementary-character prefixes, while preserving distinct Unicode projects.
+The reviewer verified that .NET 8's managed comparer has additional aliases for
+Deseret, Adlam and final sigma pairs that are physically distinct on Windows;
+the implementation deliberately follows Windows path casing rather than claiming
+universal .NET 8 comparer equivalence. No extra journal state or Settings model
+was added. Portable lifecycle fixtures retain the equivalent ASCII subset and
+reject unsupported Unicode comparisons outside Windows.
+
+Follow-up validation:
+
+- Before repair: two new regressions failed, including the actual newer-choice
+  overwrite. After repair and expanded filesystem cases: **92 helper tests
+  passed**, including all Pending/identity/raw-Settings contracts.
+- Independent repair review: the complete 89-case intermediate suite passed;
+  the 77 portable contracts also passed through the non-Windows branch, with
+  its 12 native cases deselected. The original P2 was resolved and no additional
+  actionable product defect was established. The final three added native cases
+  cover the additional physically distinct pairs observed by that reviewer.
+- Related Electron wallpaper/startup/stop tests: **33 passed, 0 skipped**.
+- Installed-Lively normal exit, stdin loss, helper-crash recovery and actual
+  parent death passed again and restored the original reported state.
+- Changed Python lint and whitespace checks passed.
+
+The 503-file/6,703-test full Python coverage and 703-test Electron suite above
+remain evidence for the initial candidate. The repair received the focused
+regressions listed here; PR CI evaluates the updated head separately.
 
 ## Remaining release gates
 

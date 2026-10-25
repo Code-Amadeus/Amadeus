@@ -672,6 +672,53 @@ native = pytest.mark.skipif(sys.platform != "win32", reason="Native Windows proc
 
 
 @native
+@pytest.mark.parametrize("ours_name,user_name", [
+    ("\u0130", "i\u0307"),
+    ("\U00010400", "\U00010428"),
+    ("\U0001e900", "\U0001e922"),
+    ("\u03c2", "\u03a3"),
+])
+def test_distinct_unicode_project_keeps_new_user_wallpaper_and_host(f, tmp_path, ours_name, user_name):
+    ours = tmp_path / ours_name / "wallpapers" / "amadeus-managed"
+    user_project = tmp_path / user_name / "wallpapers" / "amadeus-managed"
+    ours.mkdir(parents=True)
+    user_project.mkdir(parents=True)
+    assert not os.path.samefile(ours, user_project)
+    host, session = f
+    original(host)
+    snapshot = replace(before(host, host.running), Project=str(ours))
+    session.mount(snapshot)
+    user_choice = h.DesktopItem("primary", str(user_project))
+    host.set_wallpaper(user_choice)
+
+    def exact_close(project):
+        host.closed.append(project)
+        host.items = [item for item in host.items if item.Path != project]
+    host.close_project = exact_close
+    session.restore()
+    assert host.items == [user_choice]
+    assert host.stopped is None and host.closed == [] and not session.journal.exists()
+
+
+@native
+def test_windows_path_case_aliases_and_complete_utf16_lengths(tmp_path):
+    project = tmp_path / "Gallery" / "\u00c9" / "\U0001f600A"
+    project.mkdir(parents=True)
+    aliases = [
+        project.with_name("\U0001f600a"),
+        project.parent.parent / "\u00e9" / project.name,
+        project.parent.parent.with_name("GALLERY") / "\u00e9" / "\U0001f600a",
+    ]
+    for alias in aliases:
+        assert os.path.samefile(project, alias)
+        assert h.same_path(str(project), str(alias))
+    other = project.with_name("\U0001f600B")
+    other.mkdir()
+    assert not os.path.samefile(project, other)
+    assert not h.same_path(str(project), str(other))
+
+
+@native
 def test_real_process_identity_matches_csharp_and_fences_old_pending_journal(f):
     windows = h.Windows()
     identity = windows.identity(os.getpid())

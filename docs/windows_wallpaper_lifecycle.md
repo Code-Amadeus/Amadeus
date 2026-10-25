@@ -70,6 +70,13 @@ their new selection wins. An already-running Lively is never shut down. A
 Lively process started by Amadeus is shut down only after restoration and only
 if no new user-selected scene requires it.
 
+Project paths use Windows ordinal case comparison (`CompareStringOrdinal` with
+explicit UTF-16 lengths). Unicode lowercasing can expand a character and merge
+physically distinct paths, which must remain separate user choices. This follows
+Windows path casing rather than claiming universal equivalence with .NET 8's
+managed ordinal comparer. Portable offline lifecycle fixtures support the exact
+ASCII subset; Unicode comparison requires Windows.
+
 ## Recovery and ownership
 
 `%LOCALAPPDATA%\Amadeus\wallpaper\session.json` is the durable before-image.

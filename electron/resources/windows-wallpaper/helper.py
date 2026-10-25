@@ -9,6 +9,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes as w
 from dataclasses import asdict, dataclass, replace
+from functools import cache
 import json
 import os
 from pathlib import Path
@@ -190,8 +191,28 @@ def atomic_json(file: Path, item) -> None:
     os.replace(temporary, file)
 
 
+@cache
+def _ordinal_comparator():
+    compare = ctypes.WinDLL("kernel32", use_last_error=True).CompareStringOrdinal
+    compare.argtypes = [w.LPCWSTR, ctypes.c_int, w.LPCWSTR, ctypes.c_int, w.BOOL]
+    compare.restype = ctypes.c_int
+    return compare
+
+
 def same_path(left: str, right: str) -> bool:
-    return left.lower() == right.lower()
+    if sys.platform != "win32":
+        # The helper runs only on Windows. Portable lifecycle fixtures use the
+        # identical ASCII subset; Unicode identity requires the native primitive.
+        if not left.isascii() or not right.isascii():
+            raise OSError("Windows ordinal path comparison is unavailable.")
+        return left.lower() == right.lower()
+    # Windows counts UTF-16 code units, including surrogate pairs, not Python
+    # code points. Case conversion can expand strings and alias distinct paths.
+    result = _ordinal_comparator()(left, len(left.encode("utf-16-le", "surrogatepass")) // 2,
+                                   right, len(right.encode("utf-16-le", "surrogatepass")) // 2, True)
+    if not result:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return result == 2  # CSTR_EQUAL
 
 
 class Session:
