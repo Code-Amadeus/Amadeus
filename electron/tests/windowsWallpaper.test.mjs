@@ -49,6 +49,7 @@ else:
         const prepared = JSON.parse(await fs.readFile(trace, 'utf8'))
         assert.equal(prepared.no_site, 1)
         assert.equal(prepared.site_loaded, false)
+        assert.equal(path.resolve(prepared.executable), path.resolve(python))
       }
       const helper = dependencies.launch('http://127.0.0.1:1234/wallpaper/lively/index.html')
       await helper.ready
@@ -59,7 +60,8 @@ else:
       assert.equal(observed.no_site, 1)
       assert.equal(observed.site_loaded, false)
       await assert.rejects(fs.access(marker), { code: 'ENOENT' })
-      assert.equal(path.resolve(observed.executable), path.resolve(python))
+      const helperPython = process.platform === 'win32' ? path.join(runtime, 'Scripts/pythonw.exe') : python
+      assert.equal(path.resolve(observed.executable), path.resolve(helperPython))
       assert.equal(path.resolve(observed.file), path.join(helperDir, 'helper.py'))
       assert.deepEqual(observed.args, ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html'])
     } finally { await fs.rm(root, { recursive: true, force: true }) }

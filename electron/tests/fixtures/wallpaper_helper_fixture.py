@@ -1,4 +1,6 @@
 """Run the real helper/Session with a synthetic desktop in an isolated profile."""
+import ctypes
+from ctypes import wintypes as w
 import importlib.util
 import json
 import os
@@ -75,6 +77,12 @@ class FixtureHost:
 h.Windows, h.LivelyHost = FixtureWindows, FixtureHost
 identity = FixtureWindows().identity(os.getpid())
 (state / "started.json").write_text(json.dumps(dict(Id=identity.Id, Started=str(identity.Started))), encoding="utf-8")
+console_api = ctypes.WinDLL("kernel32", use_last_error=True)
+console_api.GetConsoleWindow.argtypes = []
+console_api.GetConsoleWindow.restype = w.HWND
+assert not console_api.GetConsoleWindow(), "Managed wallpaper helper must not allocate a console window"
+assert sys.stdin is not None and sys.stdout is not None and sys.stderr is not None
+assert sys.flags.isolated and sys.flags.no_site and "site" not in sys.modules
 code = h.main()
 if code == 0:
     journal = state / "local/Amadeus/wallpaper/session.json"

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 
 export function managesWindowsWallpaper(platform: string, environment: NodeJS.ProcessEnv): boolean {
@@ -172,7 +173,12 @@ export function windowsWallpaperDependencies(projectRoot: string, resourcesPath:
     launch: url => {
       // Keep recovery outside libuv's kill-on-parent-exit Job. Retain the pipes
       // and exit wait so normal shutdown still waits for desktop restoration.
-      const child = spawn(python, ['-I', '-S', helper, 'run', url], {
+      // A detached venv python.exe can create a console in its interpreter child
+      // despite windowsHide. Use the same runtime's windowed sibling when present.
+      const windowed = path.join(path.dirname(python), 'pythonw.exe')
+      const command = process.platform === 'win32' && path.basename(python).toLowerCase() === 'python.exe'
+        && fs.existsSync(windowed) ? windowed : python
+      const child = spawn(command, ['-I', '-S', helper, 'run', url], {
         detached: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
       })
       let resolveReady: () => void

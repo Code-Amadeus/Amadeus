@@ -267,14 +267,20 @@ cancellation/time-budget policy remains a release-acceptance item.
 
 The helper is `electron/resources/windows-wallpaper/helper.py`, shipped with
 Electron under `resources/windows-wallpaper`, together with setup and protocol
-notices. Source runs use that same checked-in resource. Electron passes its
-backend interpreter selected by `pythonRuntime.ts` and invokes `python -I -S`;
+notices. Source runs use that same checked-in resource. Electron uses the
+backend runtime selected by `pythonRuntime.ts` with `-I -S`;
 no additional Python package, .NET SDK, NuGet build or bundled .NET runtime is
 required. `-S` prevents the selected environment's site initialization and
 `.pth` hooks from running. Electron launches the helper with `detached: true`
 and retains its pipes and normal shutdown wait. This avoids libuv's
 kill-on-parent-exit Job, allowing EOF-triggered recovery after Electron alone
 is force-killed, including when the selected interpreter is a venv launcher.
+For a selected Windows `python.exe`, the session uses the same directory's
+`pythonw.exe` when present. A detached venv console launcher can otherwise
+allocate a console in its interpreter child despite `windowsHide`. The windowed
+entry point keeps the same runtime and explicit stdin/stdout/stderr pipes;
+setup uses the original interpreter. If the sibling is absent, the selected
+command is retained; custom runtime distributions need their own window checks.
 The helper is separately launched from the backend and its cleanup tree.
 This does not protect against explicit process-tree termination, logoff or
 power loss; the durable journal still supplies next-start recovery.
@@ -456,6 +462,8 @@ actual Electron parent without `/T`. It uses the production launcher and Session
 with a synthetic desktop, proving journal removal and restoration after parent
 exit, normal shutdown, and a non-detached control that reproduces interrupted
 cleanup. It exercises a temporary venv launcher and never changes the desktop.
+The actual helper process must also report no associated console, usable
+stdin/stdout/stderr and isolated mode without site initialization.
 The cold-start probe backs up the
 user's settings and layout, starts installed Lively with a fresh configuration,
 checks that no first-run UI opens, mounts a test scene, verifies release of the

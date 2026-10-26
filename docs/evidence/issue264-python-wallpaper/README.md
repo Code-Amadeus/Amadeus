@@ -8,7 +8,7 @@ This is a migration candidate, not a release qualification or merge approval.
 
 This is a Windows integration/dependency replacement. Electron keeps its
 lifecycle entry points, status and shutdown ownership. The independent helper
-uses the backend interpreter selected by `pythonRuntime.ts`, runs with `-I -S`,
+uses the backend runtime selected by `pythonRuntime.ts`, runs with `-I -S`,
 and ships with Electron resources. It imports only the Python standard library
 and stays outside the backend's cleanup tree. A detached Electron launch avoids
 libuv's kill-on-parent-exit Job while retaining normal pipe/shutdown ownership.
@@ -263,6 +263,55 @@ Primary references: [Windows process-session access](https://learn.microsoft.com
 [system process snapshot layout](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation),
 [Python `-S`](https://docs.python.org/3.12/using/cmdline.html#cmdoption-S),
 [Node 22.21.1/libuv Windows process implementation](https://github.com/nodejs/node/blob/v22.21.1/deps/uv/src/win/process.c#L988-L1034).
+
+## N1: detached venv console regression after `78b48a9c`
+
+The detached console venv launcher can allocate a console for its interpreter
+child even with `windowsHide`. This is an Electron launch integration defect
+introduced by the F3 repair. The prior parent-exit tests exercised the venv
+process structure but did not assert absence of a console; all 16 hosted checks
+at `78b48a9c` passed despite the defect.
+
+Before changing production code, the real helper fixture gained a native
+`GetConsoleWindow() == NULL` assertion. The actual Electron crash case then
+failed on the old launch, confirming the missing contract locally. That test
+uses an isolated synthetic desktop and owned temporary processes. No claim is
+made that manually closing the unwanted terminal was reproduced or caused
+desktop loss.
+
+The session launcher now prefers `pythonw.exe` beside a selected Windows
+`python.exe`, when present. The original runtime selection, `-I -S`, detachment,
+explicit pipes and normal shutdown wait are retained. Setup keeps its original
+interpreter. No base-interpreter search or dependency is added. Missing siblings,
+custom executable names and other platforms retain the configured command;
+custom distributions without the windowed entry point need separate window
+qualification.
+
+The existing native parent tests now assert no associated console, usable
+stdin/stdout/stderr, isolated mode and absent site initialization before mounting.
+All three real Electron parent modes passed after the repair. Both source and
+packaged resource tests verify the windowed interpreter path, original setup
+interpreter, controlled `.pth` exclusion and mounted/stdin/exit round trip.
+
+N1 follow-up validation:
+
+- **95 helper contracts passed** and the full Electron suite passed
+  **706 tests, 0 skipped**. No helper runtime logic or durable/wire format changed.
+- Independent read-only review passed all **25** focused Node cases, verified
+  that an actual windowed interpreter's stderr traceback still rejects both
+  readiness and completion, and checked missing-sibling/custom-name selection.
+  No actionable defect was reported; fallback console behavior is unqualified.
+- Build and Windows code-only packaging passed. Packaged native tray/helper
+  smoke passed, with helper bytes matching source. Python lint and whitespace
+  checks passed.
+- Actual packaged application without models passed all **15** checks,
+  including frontend/backend exit.
+- Actual Electron + installed-Lively startup, scene connection, control-panel
+  open/close and quit restoration passed using the new windowed session launch.
+  The previously documented local-Lively qualification limit still applies.
+
+Primary references: [CPython 3.12.10 launcher startup flags](https://github.com/python/cpython/blob/v3.12.10/PC/launcher.c#L751-L767),
+[native console association check](https://learn.microsoft.com/en-us/windows/console/getconsolewindow).
 
 ## Remaining release gates
 
