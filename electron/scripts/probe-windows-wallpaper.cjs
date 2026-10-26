@@ -10,8 +10,10 @@ const { pathToFileURL } = require('node:url')
 const execute = promisify(execFile)
 const root = path.resolve(__dirname, '../..')
 const output = path.join(root, 'build/windows-wallpaper')
-const helper = path.join(output, 'host/Amadeus.Wallpaper.exe')
-const inspect = async () => JSON.parse((await execute(helper, ['inspect'], { windowsHide: true })).stdout.trim())
+const helper = path.join(root, 'electron/resources/windows-wallpaper/helper.py')
+const runtime = import(pathToFileURL(path.join(root, 'electron/dist/main/pythonRuntime.js')).href)
+const executeHelper = async args => execute((await runtime).projectPythonCommand(root), ['-I', '-S', helper, ...args], { windowsHide: true })
+const inspect = async () => JSON.parse((await executeHelper(['inspect'])).stdout.trim())
 process.env.NODE_ENV = 'production'
 // This probe explicitly selects wallpaper regardless of the saved GUI mode.
 process.env.AMADEUS_WALLPAPER = '1'
@@ -39,7 +41,7 @@ app.on('will-quit', event => {
   void (async () => {
     // Killing the helper deliberately removes its restoration worker. Use its
     // documented recovery command to restore the user's desktop in cleanup.
-    if (faultInjected) await execute(helper, ['recover'], { windowsHide: true })
+    if (faultInjected) await executeHelper(['recover'])
     return inspect()
   })().then(after => {
     const passed = !failed && JSON.stringify(before.wallpapers) === JSON.stringify(after.wallpapers)
@@ -62,7 +64,7 @@ void (async () => {
     if (current.wallpapers.some(item => path.basename(item.Path) === 'amadeus-managed') && slices.length > 0) {
       await new Promise(resolve => setTimeout(resolve, 10000))
       try {
-        await execute(helper, ['screenshot', path.join(output, 'electron-mounted-scene.jpg')], { windowsHide: true })
+        await executeHelper(['screenshot', path.join(output, 'electron-mounted-scene.jpg')])
       } catch (error) { console.warn('Wallpaper screenshot unavailable:', error.message) }
       const image = await slices[0].webContents.capturePage()
       fs.writeFileSync(path.join(output, 'electron-slice.png'), image.toPNG())
@@ -103,7 +105,7 @@ void (async () => {
           'X-Amadeus-Token': token, Origin: 'https://untrusted.invalid',
         } })).status, 403)
         const children = JSON.parse((await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-          `@(Get-CimInstance Win32_Process -Filter "Name = 'Amadeus.Wallpaper.exe'" | Where-Object ParentProcessId -eq ${process.pid} | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress`,
+          `@(Get-CimInstance Win32_Process -Filter "ParentProcessId = ${process.pid}" | Where-Object { $_.Name -match '^python(w)?\\.exe$' -and $_.CommandLine.Contains('windows-wallpaper') -and $_.CommandLine.Contains('helper.py') } | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress`,
         ], { windowsHide: true })).stdout)
         const ids = Array.isArray(children) ? children : [children]
         assert.equal(ids.length, 1, 'expected exactly one helper owned by this probe')

@@ -70,6 +70,13 @@ their new selection wins. An already-running Lively is never shut down. A
 Lively process started by Amadeus is shut down only after restoration and only
 if no new user-selected scene requires it.
 
+Project paths use Windows ordinal case comparison (`CompareStringOrdinal` with
+explicit UTF-16 lengths). Unicode lowercasing can expand a character and merge
+physically distinct paths, which must remain separate user choices. This follows
+Windows path casing rather than claiming universal equivalence with .NET 8's
+managed ordinal comparer. Portable offline lifecycle fixtures support the exact
+ASCII subset; Unicode comparison requires Windows.
+
 ## Recovery and ownership
 
 `%LOCALAPPDATA%\Amadeus\wallpaper\session.json` is the durable before-image.
@@ -94,9 +101,9 @@ monitor/path pairs, or a missing original scene that this cleanup attempted to
 restore, keeps the journal for retry. An original scene may itself use the same
 managed project; restoring that exact monitor/path pair remains valid.
 
-`Session.Mount` owns its failed-mount rollback. The helper uses
-`Session.RunMounted` to run its active body and arrange exactly one cleanup only
-after Mount succeeds. If rollback or body cleanup also fails, both the primary
+`Session.mount` owns its failed-mount rollback. The helper uses
+`Session.run_mounted` to run its active body and arrange exactly one cleanup only
+after mount succeeds. If rollback or body cleanup also fails, both the primary
 and cleanup errors are retained. The Session remembers the process identity
 whose cleanup it has taken over, including journal recovery. The outer error
 handler only releases a newly started host whose identity is still outside that
@@ -115,30 +122,42 @@ does not transfer ownership of the new host to Amadeus or authorize stopping a
 host showing a user's new wallpaper. A failed identity query retains the journal
 and reports the failure instead of assuming the old process exited.
 
-The Set adapter is coupled to the locked GrpcDotNetNamedPipes 3.1.0 transport. Its
-single internal `PipeCallback` binding captures the actual request stream; the
-request marshaller reads `GetNamedPipeServerProcessId` after that stream connects
-and persists the identity before any request bytes are written. The adapter does
-not probe a second connection, retry, or substitute a process-name guess. If the
-binding, identity read, or journal write fails, no Set is dispatched and settings
-preparation can roll back. A library upgrade must rerun the real synthetic-pipe
-contracts before accepting this boundary.
+The standard-library Python helper implements the bounded Windows message-pipe
+protocol from GrpcDotNetNamedPipes 3.1.0, pinned at
+`da307b551a9d56b62f5780e91a2d95a699f32430`. It uses overlapped native IO with a
+single call thread and no background connector or serializer. On the actual Set
+connection, `GetNamedPipeServerProcessId` identifies the receiver and the Session
+flushes its Pending journal before any request bytes are written. An identity or
+persistence failure sends no request. No second connection or process-name guess
+substitutes for receiver identity.
 
-The library's response deadline can expire while its background connection or
-serializer is still running. A single dispatch gate closes before `Send` returns
-and waits for an already entered identity/persistence boundary to finish. A
-connection arriving after that closure cannot identify a receiver, save a journal
-or write the Set request, so an unstarted request can finish settings-only rollback.
-If persistence already began, the caller waits for it and retains `Pending` on a
-deadline error. The transport write may still follow that persisted boundary;
-this is uncertain dispatch protected by the journal, not proof of cancellation.
+Connect/read/write waits honor the call deadline and cancellation. Pending native
+IO is cancelled and drained before its buffers are released. The call cannot
+return while an entered persistence callback is running. Once that callback
+returns, a deadline/cancellation check precedes the first write; a persisted
+Pending journal still conservatively fences recovery even when this check stops
+the write. No late task can recreate the journal after cleanup. A timeout after
+dispatch sends best-effort Cancel and closes the pipe, but neither cancellation
+nor an empty reply proves that Lively stopped loading the scene.
+
+Journal fields retain PascalCase and string phases. Process `Started` is exactly
+the Windows creation FILETIME plus `504911232000000000` (.NET UTC ticks), computed
+with integers. The native regression compiles the original C# expression and
+compares it with Python for the same live process, then verifies that an old
+Pending record still blocks recovery. A failed identity read remains an error.
+
+Settings retain their raw protobuf field sequence. Only scalars 28 (browser),
+48 (lock image), and 49 (desktop image) are rewritten; all other field bytes,
+including unknown encodings, duplicates, groups and order, survive unchanged.
+Proto3 false/default writes omit the scalar. Restoration reads current settings
+first and preserves newer user choices rather than constructing a Settings model.
 
 Old published journals without `Phase` retain their original semantics. A
 `Pending` journal without `RequestProcess` is invalid: recovery reports an error
-without rewriting the journal or changing the desktop. That format and
-`MountUnconfirmed` existed only in this PR's unpublished drafts; neither main nor
-v0.17.0-alpha.0 wrote `Phase`. Their compatibility branches have been removed
-because no existing local journal required them. No recovery data was deleted.
+without rewriting the journal or changing the desktop. Identity-less Pending and
+`MountUnconfirmed` existed only in unpublished #228 drafts and are unsupported.
+The migration retains the published Preparing/Pending/Settled format as well as
+legacy phase-less records. No recovery data is deleted to enable migration.
 
 Recover any pending journal with this helper before reverting to an older helper.
 Older binaries do not understand `Phase`; downgrade while a journal remains is
@@ -153,8 +172,8 @@ not supported, and no recovery record is reset or deleted to enable it.
 本次应恢复的原场景缺失，都会保留日志以便重试；原场景本身可以使用同一维护项目，
 恢复该确切 monitor/path 配对仍然有效。
 
-`Session.Mount` 自行负责挂载失败回滚；helper 经 `Session.RunMounted` 运行挂载后
-的主体，只在 Mount 成功后安排一次清理。主操作和清理同时失败时保留两个异常。
+`Session.mount` 自行负责挂载失败回滚；helper 经 `Session.run_mounted` 运行挂载后
+的主体，只在 mount 成功后安排一次清理。主操作和清理同时失败时保留两个异常。
 Session 已接管某个进程的清理（包括旧日志恢复），即记录其身份；外层异常处理只在
 进程尚未被接管且没有日志时释放新启动的宿主。成功清理删除日志不代表可以再次停止
 宿主；若之后启动的是另一启动身份的宿主，在接管前初始化失败仍可释放该新进程。
@@ -166,27 +185,28 @@ Session 已接管某个进程的清理（包括旧日志恢复），即记录其
 Lively；这不转移新宿主的所有权，也不授权停止承载用户新壁纸的宿主。身份查询失败
 时保留日志并明确报错，不臆测原进程已退出。
 
-Set 适配器耦合锁定的 GrpcDotNetNamedPipes 3.1.0：仅一处内部 `PipeCallback` 绑定
-取得实际请求流，marshaller 在该流连接后读取 `GetNamedPipeServerProcessId`，并在
-写入任何请求字节前持久保存身份。不另开探测连接，不重试，也不以进程名称猜测替代。
-钩子、身份读取或日志保存失败时不派发 Set，设置准备可正常回滚。升级传输库前必须
-重新通过真实合成管道契约，才能接受该边界。
+Python helper 仅用标准库，实现上述锁定版本的 Windows 消息管道协议，以原生 overlapped
+IO 配合同一调用线程执行；没有后台连接器或序列化任务。在实际 Set 连接上先读取
+`GetNamedPipeServerProcessId`，持久保存 Pending 后才允许写请求。身份或日志失败不派发。
+连接、读、写遵守 deadline/取消；取消原生 IO 后等待其完成再释放缓冲区。已进入的持久化
+回调结束前调用不能返回，回调后写入前再次核验 deadline/取消。已保存 Pending 时仍保守
+保留恢复栅栏；迟到任务不能在清理后重建日志。派发后的 Cancel 是尽力而为，不能证明
+Lively 不会继续迟到挂载。
 
-传输库的响应 deadline 可能先于后台连接或序列化结束。单一派发门在 `Send` 返回前
-关闭，并等待已进入的身份读取／持久化边界完成。关闭后迟到的连接不得再识别进程、
-保存日志或写入 Set 请求，因此尚未开始派发的请求可完成仅恢复设置的回滚。
-若持久化边界已开始，调用方须等待其结束，deadline 错误保留 `Pending`。传输写入
-仍可能随后发生；这是由日志保护的不确定派发，不能据此声称取消成功。
+日志保留 PascalCase、字符串 Phase；Started 必须以整数精确等于 FILETIME 加
+`504911232000000000`，真实进程回归与原 C# 表达式逐值比较。Settings 保留原始字段序列，
+仅改 28/48/49，其他字段按原字节写回；false/default 写入省略字段，保留用户新选择。
 
 已发布的无 `Phase` 旧日志保持原语义。缺少 `RequestProcess` 的 `Pending` 日志
-视为无效：恢复明确报错，不改写日志或改变桌面。该格式和 `MountUnconfirmed` 仅
-存在于本 PR 未发布的草稿；main 与 v0.17.0-alpha.0 均未写过 `Phase`。没有现存本地
-日志需要这些兼容分支，因此已将其移除；未删除任何恢复数据。
+视为无效：恢复明确报错，不改写日志或改变桌面。无身份 Pending 与 `MountUnconfirmed`
+仅存在于 #228 未发布草稿，不支持这些格式。迁移保留已发布的三阶段格式和更早无 Phase
+的记录，不通过删除恢复数据来允许迁移。
 
 回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
 时不支持降级，不会为允许降级而重置或删除恢复记录。
 
-This change is limited to phase-aware rollback and error preservation. It does
+#264 replaces the helper runtime while preserving phase-aware rollback and error
+preservation. It does
 **not** repair stock Lively 2.2.1.0's reporting/close protocol: `GetWallpapers`
 can return a falsely empty stream, and project close can swallow errors and
 return success without removing a player. A close response plus an empty stream
@@ -196,7 +216,7 @@ request owned-host shutdown while an unreported scene remains. This is a known
 unresolved limitation, not an accepted strong-recovery guarantee. Scene removal
 is not inferred from a PID, a layout file or a timing heuristic to hide it.
 
-本次范围仅为按阶段回滚和保留异常，**未修复**原版 Lively 2.2.1.0 的报告及关闭
+本次替换 helper 运行时，保留按阶段回滚及异常合同，**未修复**原版 Lively 2.2.1.0 的报告及关闭
 协议：`GetWallpapers` 可能假空，项目关闭也可能吞错后返回成功却没有移除播放器。
 关闭回执加空流不能证明强恢复或播放器退出。对于原来为空的桌面，保留的 baseline
 空报告行为仍可能在未报告场景存在时删除日志并请求停止自有宿主。这是明确未解决的
@@ -228,7 +248,7 @@ snapshot. The `recover` command also handles an interrupted launch preparation.
 Manual recovery, after closing Amadeus:
 
 ```powershell
-build\windows-wallpaper\host\Amadeus.Wallpaper.exe recover
+.venv\Scripts\python.exe -I -S electron\resources\windows-wallpaper\helper.py recover
 ```
 
 `recover` is an operator diagnostic/recovery command, also used by the desktop
@@ -245,12 +265,39 @@ cancellation/time-budget policy remains a release-acceptance item.
 
 ## Build and distribution
 
-Source runs need .NET 8 SDK on the build machine to build the helper once.
-The published Windows x64 helper includes .NET 8.0.31, so end users do not need
-an SDK. The Electron Windows packaging hook builds and includes the helper and
-its dependency notices. It runs no Windows setup for macOS/Linux targets.
-Experimental logs, profile backups and screenshots live outside the published
-`host` directory and are not included in the application package.
+The helper is `electron/resources/windows-wallpaper/helper.py`, shipped with
+Electron under `resources/windows-wallpaper`, together with setup and protocol
+notices. Source runs use that same checked-in resource. Electron uses the
+backend runtime selected by `pythonRuntime.ts` with `-I -S`;
+no additional Python package, .NET SDK, NuGet build or bundled .NET runtime is
+required. `-S` prevents the selected environment's site initialization and
+`.pth` hooks from running. Electron launches the helper with `detached: true`
+and retains its pipes and normal shutdown wait. This avoids libuv's
+kill-on-parent-exit Job, allowing EOF-triggered recovery after Electron alone
+is force-killed, including when the selected interpreter is a venv launcher.
+For a selected Windows `python.exe`, the session uses the same directory's
+`pythonw.exe` when present. A detached venv console launcher can otherwise
+allocate a console in its interpreter child despite `windowsHide`. The windowed
+entry point keeps the same runtime and explicit stdin/stdout/stderr pipes;
+setup uses the original interpreter. If the sibling is absent, the selected
+command is retained; custom runtime distributions need their own window checks.
+The helper is separately launched from the backend and its cleanup tree.
+This does not protect against explicit process-tree termination, logoff or
+power loss; the durable journal still supplies next-start recovery.
+macOS/Linux and external-host paths do not
+run Windows setup. Experimental logs, backups and screenshots stay under build/,
+outside the explicitly selected packaged resource files.
+
+Lively discovery reads process/session membership from the native system
+snapshot before opening current-session candidates for creation-time identity
+checks. An inaccessible foreign-session process does not block discovery;
+snapshot failures and unverified current-session identities remain errors.
+
+[.NET 8 support ends on 2026-11-10](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
+This motivates #264. If replacement cannot be qualified before that date,
+the release branch must first retarget the old helper and CI to net10.0 as a
+separate change. The migration branch contains the replacement; it does not
+claim clean-machine or unmodified-Lively release qualification.
 
 Electron packaging writes to `electron/build`, separate from compiled input
 in `electron/dist`; otherwise electron-builder excludes its own output folder
@@ -260,9 +307,8 @@ does not abort startup, and the main window remains visible if the tray lacks
 an icon.
 
 ```powershell
-powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly -Rebuild
-# Also prepare/install the host when required:
-powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1
+# Prepare/install Lively when required, using the existing backend interpreter:
+powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -Python .venv\Scripts\python.exe
 ```
 
 Lively remains a separate unmodified GPL-3.0 application acquired from the
@@ -377,7 +423,7 @@ the policy; changing these values does not require re-encoding character assets.
 ## Verification
 
 ```powershell
-dotnet run --project wallpaper\windows\Amadeus.Wallpaper.Tests
+.venv\Scripts\python.exe -m pytest tests\test_windows_wallpaper_helper.py
 cd electron
 npm test
 npm run build
@@ -387,10 +433,10 @@ The separate protocol counterexample diagnostic is not an acceptance check:
 独立协议反例诊断不计为验收通过：
 
 ```powershell
-dotnet run --no-restore --project wallpaper\windows\Amadeus.Wallpaper.Tests -- --false-empty-counterexample
+.venv\Scripts\python.exe tools\probes\windows_wallpaper_counterexample.py
 ```
 
-The Windows Electron CI job also runs the C# contract executable, builds an
+The Windows Electron CI job also runs the Python lifecycle/wire contracts, builds an
 unpacked Windows application with electron-builder (including `beforePack`),
 and runs `electron/scripts/smoke-windows-wallpaper.cjs` against that package.
 This smoke imports the packaged startup policy and tray component, creates a
@@ -403,13 +449,21 @@ it in cleanup):
 
 ```powershell
 .venv\Scripts\python.exe tools\probes\windows_wallpaper_lifecycle.py
-dotnet run --project wallpaper\windows\Amadeus.Wallpaper.Tests -- --cold-start-probe build\windows-wallpaper
+.venv\Scripts\python.exe -I -S tools\probes\windows_wallpaper_cold_start.py
 ```
 
 The lifecycle probe requires a real renderer connection, then verifies the
 original scene/options/running state after normal exit, parent-pipe loss, and
-helper termination plus journal recovery. It also kills an actual parent so
+helper termination plus journal recovery. It also kills a Python parent so
 both stdin and stdout readers disappear, and checks restoration still completes.
+That scenario does not exercise Electron/libuv's Job behavior.
+`electron/tests/windowsWallpaperParentExit.test.mjs` separately force-kills an
+actual Electron parent without `/T`. It uses the production launcher and Session
+with a synthetic desktop, proving journal removal and restoration after parent
+exit, normal shutdown, and a non-detached control that reproduces interrupted
+cleanup. It exercises a temporary venv launcher and never changes the desktop.
+The actual helper process must also report no associated console, usable
+stdin/stdout/stderr and isolated mode without site initialization.
 The cold-start probe backs up the
 user's settings and layout, starts installed Lively with a fresh configuration,
 checks that no first-run UI opens, mounts a test scene, verifies release of the

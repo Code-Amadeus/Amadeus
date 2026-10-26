@@ -37,11 +37,13 @@ app.whenReady().then(async () => {
   try { assert.equal(fallback.hasIcon, false) }
   finally { fallback.destroy() }
 
-  const helper = path.join(resources, 'windows-wallpaper', 'Amadeus.Wallpaper.exe')
-  assert.ok(fs.existsSync(helper), 'beforePack did not publish the helper')
+  const helper = path.join(resources, 'windows-wallpaper', 'helper.py')
+  assert.ok(fs.existsSync(helper), 'Packaged Python wallpaper helper is missing')
   assert.ok(fs.existsSync(path.join(resources, 'windows-wallpaper', 'setup_windows_wallpaper.ps1')))
   // Read-only. Never installs Lively, mounts a scene or modifies the CI desktop.
-  const inspected = JSON.parse(execFileSync(helper, ['inspect'], { encoding: 'utf8', windowsHide: true }).trim())
+  const { projectPythonCommand } = await import(pathToFileURL(path.join(main, 'pythonRuntime.js')).href)
+  const python = projectPythonCommand(path.resolve(__dirname, '../..'))
+  const inspected = JSON.parse(execFileSync(python, ['-I', '-S', helper, 'inspect'], { encoding: 'utf8', windowsHide: true }).trim())
   assert.equal(typeof inspected.running, 'boolean')
   console.log('PASS packaged Windows startup choices and external host ownership: native tray, missing-icon recovery, setup resources and helper runtime')
   app.quit()

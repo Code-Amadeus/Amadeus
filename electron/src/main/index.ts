@@ -123,7 +123,7 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
 const devServer = isDev ? developmentServer(PROJECT_ROOT) : null
 const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
   ? new WindowsWallpaperSession({
-      ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
+      ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged, getPythonCommand()),
       status: status => {
         windowsWallpaperTray?.setStatus(status)
         mainWindow?.setProgressBar(['preparing', 'mounting', 'restoring'].includes(status) ? 2 : -1)

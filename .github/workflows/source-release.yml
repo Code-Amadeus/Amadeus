@@ -13,7 +13,7 @@ on:
       - electron/package-lock.json
       - scripts/**
       - wallpaper/**
-      - electron/scripts/build-windows-wallpaper.cjs
+      - electron/resources/windows-wallpaper/**
       - tools/build_source_release.py
       - tools/stage_japanese_dictionary.py
       - tools/probes/verify_bundled_dictionary.py
@@ -101,11 +101,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22.21.1"
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          # Pin the same SDK resolved by 8.0.x; avoid its broken aka.ms blob redirect.
-          dotnet-version: '8.0.427'
 
       - name: Install pinned uv
         run: python -m pip install uv==0.12.8
