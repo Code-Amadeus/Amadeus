@@ -56,7 +56,7 @@ rag = [
 # T2 voice interaction layer: playback, capture, echo cancellation, remote
 # TTS/ASR. Torch-free on purpose: T2 stays a few hundred MB.
 voice = [
-    "msgpack>=1.2.1,<2",
+    "msgpack>=1.2.3,<2",
     "PyAudio==0.2.14",
     "aec-audio-processing==1.0.1",
     "av==17.0.1",
@@ -92,7 +92,7 @@ local-models = [
     "ko-pron==1.3",
     "librosa==0.11.0",
     "matplotlib==3.10.9",
-    "msgpack>=1.2.1,<2",
+    "msgpack>=1.2.3,<2",
     "nltk>=3.10.0,<4",
     "numba==0.65.1",
     "OpenCC==1.3.1",
