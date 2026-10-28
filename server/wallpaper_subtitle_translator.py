@@ -152,7 +152,7 @@ def _config_for_provider(base: SubtitleTranslatorConfig, provider: str) -> Subti
         base_url = base_url_override or "https://generativelanguage.googleapis.com/v1beta"
     else:
         provider = "deepseek"
-        model = model_override or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        model = model_override or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-flash")
         base_url = base_url_override or getattr(settings, "DEEPSEEK_BASE_URL", "")
 
     return SubtitleTranslatorConfig(

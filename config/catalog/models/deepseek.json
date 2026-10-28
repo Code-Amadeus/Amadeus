@@ -42,7 +42,7 @@
         "en-US": "Independent from the Codex Work Provider model.",
         "zh-CN": "独立于 Codex Work Provider 使用的模型。"
       },
-      "default": "deepseek-v4-flash",
+      "default": "deepseek-flash",
       "example_active": true
     }
   },

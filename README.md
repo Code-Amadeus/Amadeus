@@ -753,11 +753,11 @@ failure:
 
 | Responsibility | Recommended profile | Current boundary |
 |---|---|---|
-| Main Chat API | DeepSeek-V4-Flash-0731: `DEEPSEEK_BASE_URL=https://api.deepseek.com` and `DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` is the stable API alias currently pointing to the 0731 release; the dated version is not used as the runtime model id. |
+| Main Chat API | DeepSeek Flash: `DEEPSEEK_BASE_URL=https://api.deepseek.com` and `DEEPSEEK_MODEL_NAME=deepseek-flash` | `deepseek-flash` is the recommended API model name; see the [official model-name guidance](https://api-docs.deepseek.com/quick_start/agent_integrations/). Existing explicit model settings are preserved. |
 | Remote speech synthesis | **Fish Audio S2.1**: `TTS_BACKEND=fish_audio`, `FISH_TTS_MODEL=s2.1-pro-free`; Kurisu voice: `FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | Bidirectional WebSocket streaming; locally committed sentence chunks use `text → flush`, with incremental audio output. Existing Chat sentence scheduling is preserved. |
 | Multimodal / Vision | Prefer `gemini-3.7-flash`; use `gemini-3.5-flash` as a more conservative compatibility profile | Host-owned visual context performs capture in-process, while image delivery still follows the Main Chat Provider. Independent Gemini Vision API routing is not implemented and does not imply restoring the retired Gemini Live sidecar. |
 | Work execution Provider | Pi for daily tasks; Codex App Server for complex coding | Desktop installation includes the pinned Pi runtime; [configure model credentials](docs/pi-rpc-provider.md). OpenClaw remains optional for explicit selection; Browser retains managed-page operations. |
-| Work execution model | Codex App Server may explicitly select a GPT-5.6-family model or `deepseek-v4-flash` | The execution model belongs to the Work Provider and does not share Main Chat routing or credentials. |
+| Work execution model | Codex App Server may explicitly select a GPT-5.6-family model or `deepseek-flash` | The execution model belongs to the Work Provider and does not share Main Chat routing or credentials. |
 | AUIP runtime action decisions | `AUIP_ACTION_PROVIDER=openai`, `AUIP_ACTION_MODEL=gpt-5.6-terra`, `AUIP_ACTION_REASONING_EFFORT=low`, and `AUIP_ACTION_SERVICE_TIER=fast` | This model decides AppSession actions and participation; it is not the execution Provider that authors an AUIP Artifact. `fast` requires availability for the API project. |
 
 ### Recommended remote TTS: Fish Audio + Kurisu

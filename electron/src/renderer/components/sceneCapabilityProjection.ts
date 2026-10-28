@@ -323,7 +323,7 @@ function sceneVisualCapability(
   const modelConnections = groups(settings.model_connections)
   const requiredConnections = chatProfileConnections(provider)
   const imageModel = provider === 'deepseek' || provider === 'hybrid2'
-    ? fieldValue(findGroup(modelConnections, 'deepseek'), 'DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash')
+    ? fieldValue(findGroup(modelConnections, 'deepseek'), 'DEEPSEEK_MODEL_NAME', 'deepseek-flash')
     : ''
   const supported = chatProviderSupportsImages(provider, imageModel)
   const modelConfigured = requiredConnections.length > 0
