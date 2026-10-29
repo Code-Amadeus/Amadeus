@@ -65,6 +65,7 @@ jobs:
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
           tests/test_vn_portrait_environment.py
+          tests/test_vn_overlay_window_contract.py
           tests/test_cu124_dependency_audit_tool.py
           tests/test_core_install_tiers.py
           tests/test_asset_paths.py

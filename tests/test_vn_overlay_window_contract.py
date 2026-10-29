@@ -1,6 +1,9 @@
 """The native VN shell keeps the established caption, emotion and duration contract."""
 import http.client
 import json
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -8,6 +11,42 @@ import pytest
 
 from render.vn_overlay_window import PortraitOverlayTk, clean_display_text, infer_emotion
 from tools.vn_portrait_overlay_lite import overlay_class
+
+
+def test_show_restores_topmost_without_taking_focus():
+    shell = PortraitOverlayTk.__new__(PortraitOverlayTk)
+    shell.root = Mock()
+    shell.show()
+    shell.root.deiconify.assert_called_once()
+    shell.root.attributes.assert_called_once_with("-topmost", True)
+    shell.root.lift.assert_not_called()
+    shell.root.focus_force.assert_not_called()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Aqua Tk native window mapping")
+def test_native_portrait_stays_topmost_after_initial_map_and_hide_show():
+    code = '''
+from render.vn_overlay_window import PortraitOverlayTk
+shell = PortraitOverlayTk(port=0)
+try:
+    shell.root.update()
+    assert shell.root.attributes("-topmost"), "initial map lost topmost"
+    for _ in range(2):
+        shell.root.withdraw()
+        shell.root.update()
+        shell.show()
+        shell.root.update()
+        assert shell.root.attributes("-topmost"), "hide/show lost topmost"
+finally:
+    shell.close()
+    shell._server.shutdown()
+    shell._server.server_close()
+    shell._thread.join(timeout=2)
+'''
+    result = subprocess.run([sys.executable, "-c", code],
+                            cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_presentation_tags_and_installed_emotion_aliases():
@@ -108,6 +147,8 @@ assert "llm.character_prompts" not in sys.modules
 
 def test_non_playback_reactions_use_explicit_duration_then_tag_duration():
     class FakeShell:
+        show = PortraitOverlayTk.show
+
         def _resolve_key(self, emotion):
             return emotion
 
@@ -125,7 +166,7 @@ def test_non_playback_reactions_use_explicit_duration_then_tag_duration():
     overlay._set_emotion = lambda emotion, state, **kwargs: poses.append((emotion, state))
     overlay.root = SimpleNamespace(after=lambda ms, callback: delays.append(ms) or len(delays),
                                    after_cancel=lambda timer: None,
-                                   deiconify=lambda: None, lift=lambda: None)
+                                   deiconify=lambda: None, lift=lambda: None, attributes=lambda *args: None)
     overlay.apply_reaction({"text": "Hello [EMO preset=surprised dur=2.5s]", "duration_ms": 4500})
     assert values == ["Hello"]
     assert poses == [("sided_surprised", "speaking")]

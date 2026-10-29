@@ -39,6 +39,9 @@ def test_sentence_gap_changes_thinking_variant_directly_but_final_stop_returns_i
             callback()
         now[0] = target
     class OriginalShell:
+        def show(self):
+            self.root.deiconify()
+
         def _set_emotion(self, emotion, state="idle"):
             self._current_emotion, self._current_state = emotion, state
     legacy = SimpleNamespace(PortraitOverlayTk=OriginalShell, clean_display_text=lambda text: text,
