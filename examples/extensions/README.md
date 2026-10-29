@@ -24,7 +24,7 @@ accepted subset; broader fields in the protocol draft may be unsupported here.
 - `fish-audio`: Japanese/English speech over the official binary MessagePack
   WebSocket API. One real Japanese utterance has passed through an installed
   isolated environment; listening quality still needs user audition. Its pinned
-  dependencies are websockets 16.0 and msgpack 1.2.2; HTTP proxies are supported,
+  dependencies are websockets 16.0 and msgpack 1.2.3; HTTP proxies are supported,
   SOCKS additionally needs python-socks. No automatic synthesis retry.
 - `notes-mcp`: a standalone stdlib MCP service with list/read/save tools for
   its own data directory. Select compatible Work Providers before enabling it.
