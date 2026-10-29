@@ -767,7 +767,7 @@ async def _translate_ja_to_zh(japanese_text: str) -> str:
     else:
         api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
         base_url = os.environ.get("VN_SUBTITLE_TRANSLATE_BASE_URL") or getattr(settings, "DEEPSEEK_BASE_URL", "")
-        model = read_catalog_value(EnvironmentReader(os.environ), "VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-flash")
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 
@@ -814,7 +814,7 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
     else:
         api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
         base_url = os.environ.get("VN_TTS_TRANSLATE_BASE_URL") or getattr(settings, "DEEPSEEK_BASE_URL", "")
-        model = read_catalog_value(EnvironmentReader(os.environ), "VN_TTS_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_TTS_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-flash")
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 

@@ -794,7 +794,7 @@ export const catalogGroups: CatalogGroup[] = [
           "en-US": "Independent from the Codex Work Provider model.",
           "zh-CN": "独立于 Codex Work Provider 使用的模型。"
         },
-        "default": "deepseek-v4-flash",
+        "default": "deepseek-flash",
         "example_active": true
       }
     },
@@ -1395,7 +1395,7 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "默认继承所选 Models 连接中的模型。"
         },
         "computed_default": true,
-        "example": "deepseek-v4-flash",
+        "example": "deepseek-flash",
         "visible_when": {
           "CODEX_PROVIDER_TRANSPORT": [
             "app_server"
@@ -1630,7 +1630,7 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "Pi 模型"
         },
         "computed_default": true,
-        "example": "deepseek-v4-flash",
+        "example": "deepseek-flash",
         "example_active": true
       }
     },
