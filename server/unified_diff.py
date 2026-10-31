@@ -27,6 +27,8 @@ def parse_unified_diff(
     current_hunk: dict[str, Any] | None = None
     old_line = 0
     new_line = 0
+    old_remaining = 0
+    new_remaining = 0
     parsed_lines = 0
     truncated = False
 
@@ -49,13 +51,18 @@ def parse_unified_diff(
         return item
 
     for raw_line in source.splitlines():
+        # A hunk header declares how many old and new lines follow. Until they
+        # are consumed, "--- x" and "+++ x" are removed/added content such as
+        # an SQL or Lua comment, not file headers.
+        in_hunk_body = current_hunk is not None and (old_remaining > 0 or new_remaining > 0)
+
         if raw_line.startswith("diff --git "):
             old_path, new_path = _paths_from_diff_header(raw_line)
             current_file = append_file(old_path, new_path)
             current_hunk = None
             continue
 
-        if raw_line.startswith("--- "):
+        if raw_line.startswith("--- ") and not in_hunk_body:
             old_path = _marker_path(raw_line[4:])
             if current_file is None:
                 current_file = append_file(old_path, "")
@@ -67,7 +74,7 @@ def parse_unified_diff(
                 current_file["status"] = "added"
             continue
 
-        if raw_line.startswith("+++ "):
+        if raw_line.startswith("+++ ") and not in_hunk_body:
             new_path = _marker_path(raw_line[4:])
             if current_file is None:
                 current_file = append_file("", new_path)
@@ -104,12 +111,14 @@ def parse_unified_diff(
         if hunk_match:
             old_line = int(hunk_match.group("old_start"))
             new_line = int(hunk_match.group("new_start"))
+            old_remaining = int(hunk_match.group("old_count") or 1)
+            new_remaining = int(hunk_match.group("new_count") or 1)
             current_hunk = {
                 "header": raw_line,
                 "oldStart": old_line,
-                "oldCount": int(hunk_match.group("old_count") or 1),
+                "oldCount": old_remaining,
                 "newStart": new_line,
-                "newCount": int(hunk_match.group("new_count") or 1),
+                "newCount": new_remaining,
                 "label": hunk_match.group("label").strip(),
                 "lines": [],
             }
@@ -121,6 +130,10 @@ def parse_unified_diff(
         prefix = raw_line[0]
         if prefix not in {" ", "+", "-", "\\"}:
             continue
+        if prefix in {" ", "-"}:
+            old_remaining = max(0, old_remaining - 1)
+        if prefix in {" ", "+"}:
+            new_remaining = max(0, new_remaining - 1)
         if parsed_lines >= max_lines:
             truncated = True
             continue

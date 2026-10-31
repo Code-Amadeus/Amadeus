@@ -92,6 +92,50 @@ def test_parse_unified_diff_renders_an_untracked_new_file_patch() -> None:
     assert parsed["files"][0]["hunks"][0]["lines"][0]["text"] == "<main>"
 
 
+def test_parse_unified_diff_keeps_marker_like_content_inside_hunks() -> None:
+    parsed = parse_unified_diff(
+        "\n".join(
+            [
+                "diff --git a/schema.sql b/schema.sql",
+                "--- a/schema.sql",
+                "+++ b/schema.sql",
+                "@@ -1,3 +1,3 @@",
+                " CREATE TABLE t (id INT);",
+                "--- legacy index",
+                "+++ counter",
+                " SELECT 1;",
+                "diff --git a/next.sql b/next.sql",
+                "--- a/next.sql",
+                "+++ b/next.sql",
+                "@@ -1 +1 @@",
+                "-old",
+                "+new",
+            ]
+        )
+    )
+
+    assert parsed["fileCount"] == 2
+    assert parsed["additions"] == 2
+    assert parsed["deletions"] == 2
+    first, second = parsed["files"]
+    assert first["path"] == "schema.sql"
+    assert first["oldPath"] == "schema.sql"
+    assert first["newPath"] == "schema.sql"
+    assert first["hunks"][0]["lines"][1:3] == [
+        {"kind": "remove", "oldLine": 2, "text": "-- legacy index"},
+        {"kind": "add", "newLine": 2, "text": "++ counter"},
+    ]
+    assert first["hunks"][0]["lines"][3] == {
+        "kind": "context",
+        "oldLine": 3,
+        "newLine": 3,
+        "text": "SELECT 1;",
+    }
+    assert second["path"] == "next.sql"
+    assert second["additions"] == 1
+    assert second["deletions"] == 1
+
+
 def test_diff_canvas_payload_keeps_report_for_local_mode_switch() -> None:
     structured = parse_unified_diff(
         "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
@@ -143,6 +187,7 @@ if __name__ == "__main__":
     test_parse_unified_diff_preserves_dual_line_numbers()
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
     test_parse_unified_diff_renders_an_untracked_new_file_patch()
+    test_parse_unified_diff_keeps_marker_like_content_inside_hunks()
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
     print("unified diff canvas tests passed")
