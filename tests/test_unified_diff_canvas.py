@@ -183,6 +183,31 @@ def test_parse_unified_diff_caps_files_without_merging_hunks() -> None:
     assert parsed["files"][0]["deletions"] == 1
 
 
+def test_parse_unified_diff_splits_hunk_lines_only_at_newlines() -> None:
+    parsed = parse_unified_diff(
+        "diff --git a/app.py b/app.py\n"
+        "--- a/app.py\n"
+        "+++ b/app.py\n"
+        "@@ -1,4 +1,4 @@\n"
+        " def a():\n"
+        "-    s = 'x\f-y'\n"
+        "+    s = 'x\u2028+y'\n"
+        " \f\n"
+        " windows\r\n"
+    )
+
+    file = parsed["files"][0]
+    assert file["additions"] == 1
+    assert file["deletions"] == 1
+    assert file["hunks"][0]["lines"] == [
+        {"kind": "context", "oldLine": 1, "newLine": 1, "text": "def a():"},
+        {"kind": "remove", "oldLine": 2, "text": "    s = 'x\f-y'"},
+        {"kind": "add", "newLine": 2, "text": "    s = 'x\u2028+y'"},
+        {"kind": "context", "oldLine": 3, "newLine": 3, "text": "\f"},
+        {"kind": "context", "oldLine": 4, "newLine": 4, "text": "windows"},
+    ]
+
+
 if __name__ == "__main__":
     test_parse_unified_diff_preserves_dual_line_numbers()
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
@@ -190,4 +215,5 @@ if __name__ == "__main__":
     test_parse_unified_diff_keeps_marker_like_content_inside_hunks()
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
+    test_parse_unified_diff_splits_hunk_lines_only_at_newlines()
     print("unified diff canvas tests passed")
