@@ -202,6 +202,18 @@ def parse_unified_diff(
 
 
 def _paths_from_diff_header(line: str) -> tuple[str, str]:
+    names = line[len("diff --git ") :]
+    if '"' not in names:
+        # Git does not quote names that only contain spaces, so a space alone
+        # cannot separate them. Split where both names denote the same path;
+        # renames and copies carry their own path lines below the header.
+        for index, char in enumerate(names):
+            if char != " ":
+                continue
+            old_path, new_path = names[:index], names[index + 1 :]
+            stripped = _without_prefix(old_path)
+            if old_path == new_path or (stripped and stripped == _without_prefix(new_path)):
+                return old_path, new_path
     try:
         parts = shlex.split(line)
     except ValueError:
@@ -209,6 +221,11 @@ def _paths_from_diff_header(line: str) -> tuple[str, str]:
     if len(parts) >= 4:
         return parts[2], parts[3]
     return "", ""
+
+
+def _without_prefix(path: str) -> str:
+    _, separator, rest = path.partition("/")
+    return rest if separator else ""
 
 
 def _marker_path(value: str) -> str:
