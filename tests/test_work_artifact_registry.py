@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
+from server.unified_diff import parse_unified_diff
 from server.work_artifact_registry import WorkArtifactRegistry
 
 
@@ -250,6 +251,59 @@ def test_non_ascii_entry_revision_is_registered_as_the_real_path() -> None:
             assert artifact.path == str(target.resolve())
             assert artifact.status == "registered"
             store.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.noprefix", "true"),
+        ("color.diff", "always"),
+    ],
+)
+def test_attempt_patch_ignores_user_diff_format_config(key: str, value: str) -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_diff_config_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "committed.txt").write_text("base\n", encoding="utf-8")
+            (root / "working.txt").write_text("base\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", key, value)
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit files")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit files")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "committed.txt").write_text("committed\n", encoding="utf-8")
+            _git(root, "commit", "-am", "provider commit")
+            (root / "working.txt").write_text("working\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "diff --git a/committed.txt b/committed.txt" in delta["committed_patch"]
+        assert "diff --git a/working.txt b/working.txt" in delta["working_patch"]
+        assert "\x1b[" not in delta["patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [(entry["path"], entry["additions"], entry["deletions"]) for entry in parsed["files"]] == [
+            ("committed.txt", 1, 1),
+            ("working.txt", 1, 1),
+        ]
 
     asyncio.run(run())
 

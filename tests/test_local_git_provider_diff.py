@@ -86,6 +86,27 @@ def test_provider_diff_preserves_non_ascii_and_spaced_paths() -> None:
     asyncio.run(run())
 
 
+def test_provider_diff_patch_ignores_user_diff_format_config() -> None:
+    async def run() -> None:
+        with _repo() as repo:
+            tracked = repo / "tracked.txt"
+            tracked.write_text("one\n", encoding="utf-8")
+            _git(repo, "add", "tracked.txt")
+            _git(repo, "commit", "-m", "initial")
+            _git(repo, "config", "diff.mnemonicPrefix", "true")
+            _git(repo, "config", "color.diff", "always")
+            tracked.write_text("two\n", encoding="utf-8")
+
+            res = await _provider_diff(repo)
+
+        patch = res["diff"]["patch"]
+        assert "\x1b[" not in patch
+        assert "diff --git a/tracked.txt b/tracked.txt" in patch
+        assert "--- a/tracked.txt\n+++ b/tracked.txt" in patch
+
+    asyncio.run(run())
+
+
 def test_provider_diff_handles_unborn_head() -> None:
     async def run() -> None:
         with _repo() as repo:
@@ -201,6 +222,7 @@ def test_codex_attempt_uses_provider_neutral_persisted_diff() -> None:
 def _main() -> None:
     test_provider_diff_uses_head_and_lists_untracked()
     test_provider_diff_preserves_non_ascii_and_spaced_paths()
+    test_provider_diff_patch_ignores_user_diff_format_config()
     test_provider_diff_handles_unborn_head()
     test_terminal_run_diff_uses_persisted_attempt_delta_not_current_cwd()
     test_codex_attempt_uses_provider_neutral_persisted_diff()
