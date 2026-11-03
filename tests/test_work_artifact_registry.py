@@ -15,7 +15,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
-from server.work_artifact_registry import WorkArtifactRegistry
+from server.unified_diff import parse_unified_diff
+from server.work_artifact_registry import WorkArtifactRegistry, _untracked_text_patch
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -381,6 +382,99 @@ def test_explicit_amend_may_change_predecessor_owned_dirty_artifact() -> None:
             assert artifact.status == "registered"
             assert artifact.metadata["attribution"] == "lineage_amendment"
             store.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_lines", "missing_newline"),
+    [
+        ("page\f-break\nx\u2028+y\nlast\n", ["page\f-break", "x\u2028+y", "last"], False),
+        ("a\v-b\x1c+c\x1d d\x1e\\e\x85 f\u2029g\n", ["a\v-b\x1c+c\x1d d\x1e\\e\x85 f\u2029g"], False),
+        ("", [], False),
+        ("\n", [""], False),
+        ("first\n\n", ["first", ""], False),
+        ("first\r\n\r\nlast\r\n", ["first", "", "last"], False),
+        ("first\nlast", ["first", "last"], True),
+        ("first\rlast\r", ["first\rlast"], True),
+    ],
+    ids=[
+        "embedded-separators", "control-characters", "empty", "blank",
+        "trailing-blank", "crlf", "no-final-newline", "bare-cr",
+    ],
+)
+def test_untracked_patch_roundtrip_preserves_git_lines(
+    tmp_path: Path, content: str, expected_lines: list[str], missing_newline: bool,
+) -> None:
+    (tmp_path / "new file.txt").write_bytes(content.encode("utf-8"))
+
+    patch, omissions = _untracked_text_patch(tmp_path, ["new file.txt"])
+    parsed = parse_unified_diff(
+        patch, changed_files=["new file.txt"], untracked=["new file.txt"],
+    )
+
+    assert omissions == []
+    assert parsed["fileCount"] == 1
+    assert parsed["additions"] == len(expected_lines)
+    assert parsed["deletions"] == 0
+    file = parsed["files"][0]
+    assert file["path"] == "new file.txt"
+    assert file["status"] == "added"
+    if not expected_lines:
+        assert file["hunks"] == []
+        return
+    hunk, = file["hunks"]
+    assert hunk["oldCount"] == 0
+    assert hunk["newCount"] == len(expected_lines)
+    expected = [
+        {"kind": "add", "newLine": number, "text": text}
+        for number, text in enumerate(expected_lines, 1)
+    ]
+    if missing_newline:
+        expected.append({"kind": "meta", "text": "\\ No newline at end of file"})
+    assert hunk["lines"] == expected
+
+
+@pytest.mark.parametrize("storage", ["git-untracked", "git-tracked", "filesystem-new"])
+def test_attempt_diff_preserves_newlines_and_trailing_content(tmp_path: Path, storage: str) -> None:
+    async def run() -> None:
+        root = tmp_path / "workspace"
+        root.mkdir()
+        target = root / "new file.txt"
+        if storage.startswith("git-"):
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "README.md").write_bytes(b"baseline\n")
+            if storage == "git-tracked":
+                target.write_bytes(b"old\n")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+        with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Generate file")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Generate file")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            target.write_bytes("page\f-break\nx\u2028+y\nlast\f \n".encode("utf-8"))
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+
+        assert delta["available"] is True
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert parsed["fileCount"] == 1
+        assert parsed["additions"] == 3
+        assert parsed["deletions"] == (1 if storage == "git-tracked" else 0)
+        file = parsed["files"][0]
+        assert file["path"] == "new file.txt"
+        assert [
+            line for hunk in file["hunks"] for line in hunk["lines"] if line["kind"] == "add"
+        ] == [
+            {"kind": "add", "newLine": 1, "text": "page\f-break"},
+            {"kind": "add", "newLine": 2, "text": "x\u2028+y"},
+            {"kind": "add", "newLine": 3, "text": "last\f "},
+        ]
 
     asyncio.run(run())
 

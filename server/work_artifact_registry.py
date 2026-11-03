@@ -475,7 +475,7 @@ async def collect_git_delta(
             part.rstrip("\n")
             for part in (committed_patch, working_patch, untracked_patch)
             if part
-        ).strip(),
+        ),
         "committed_patch": committed_patch,
         "working_patch": working_patch,
         "untracked_patch": untracked_patch,
@@ -692,7 +692,8 @@ def _untracked_text_patch(
         display_path = str(relative_path).replace("\\", "/")
         old_marker = "/dev/null"
         new_marker = f"b/{display_path}"
-        lines = text.splitlines()
+        # Match Git line framing without consuming separators inside source lines.
+        lines = text.removesuffix("\n").split("\n") if text else []
         patch_lines = [
             f"diff --git {_quoted_patch_path(f'a/{display_path}')} {_quoted_patch_path(new_marker)}",
             "new file mode 100644",
@@ -702,7 +703,7 @@ def _untracked_text_patch(
         if lines:
             patch_lines.append(f"@@ -0,0 +1,{len(lines)} @@")
             patch_lines.extend(f"+{line}" for line in lines)
-            if text and not text.endswith(("\n", "\r")):
+            if not text.endswith("\n"):
                 patch_lines.append("\\ No newline at end of file")
         patches.append("\n".join(patch_lines))
     return "\n".join(patches), omissions
