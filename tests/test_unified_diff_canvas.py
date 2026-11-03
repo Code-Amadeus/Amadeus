@@ -136,6 +136,39 @@ def test_parse_unified_diff_keeps_marker_like_content_inside_hunks() -> None:
     assert second["deletions"] == 1
 
 
+def test_parse_unified_diff_keeps_spaced_paths_without_marker_lines() -> None:
+    parsed = parse_unified_diff(
+        "\n".join(
+            [
+                "diff --git a/old notes.txt b/old notes.txt",
+                "deleted file mode 100644",
+                "index 587be6b..0000000",
+                "--- a/old notes.txt\t",
+                "+++ /dev/null",
+                "@@ -1 +0,0 @@",
+                "-x",
+                "diff --git a/cover art.png b/cover art.png",
+                "index bdc955b..8835708 100644",
+                "Binary files a/cover art.png and b/cover art.png differ",
+                "diff --git a/run me.sh b/run me.sh",
+                "old mode 100644",
+                "new mode 100755",
+            ]
+        ),
+        changed_files=["old notes.txt", "cover art.png", "run me.sh"],
+    )
+
+    assert [(item["path"], item["status"]) for item in parsed["files"]] == [
+        ("old notes.txt", "deleted"),
+        ("cover art.png", "modified"),
+        ("run me.sh", "modified"),
+    ]
+    assert parsed["files"][0]["oldPath"] == "old notes.txt"
+    assert parsed["files"][0]["deletions"] == 1
+    assert parsed["files"][1]["oldPath"] == "cover art.png"
+    assert parsed["files"][1]["newPath"] == "cover art.png"
+
+
 def test_diff_canvas_payload_keeps_report_for_local_mode_switch() -> None:
     structured = parse_unified_diff(
         "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
@@ -188,6 +221,7 @@ if __name__ == "__main__":
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
     test_parse_unified_diff_renders_an_untracked_new_file_patch()
     test_parse_unified_diff_keeps_marker_like_content_inside_hunks()
+    test_parse_unified_diff_keeps_spaced_paths_without_marker_lines()
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
     print("unified diff canvas tests passed")
