@@ -11,7 +11,7 @@ from typing import Any
 
 from agent_host.work_ledger_store import WorkLedgerStore
 from agent_host.work_ledger_types import RunAttemptRecord, WorkItemRecord
-from server.local_git import collect_diff, run_git
+from server.local_git import PATCH_FORMAT_ARGS, collect_diff, run_git
 
 
 _HASH_LIMIT_BYTES = 64 * 1024 * 1024
@@ -421,13 +421,13 @@ async def collect_git_delta(
         if baseline_head and current_head and baseline_head != current_head:
             result = await run_git(
                 repo_root,
-                ["diff", "--no-ext-diff", "--unified=3", baseline_head, current_head, "--", *changed_files],
+                ["diff", *PATCH_FORMAT_ARGS, "--unified=3", baseline_head, current_head, "--", *changed_files],
             )
             if result["returncode"] == 0:
                 committed_patch = result["stdout"]
         result = await run_git(
             repo_root,
-            ["diff", "--no-ext-diff", "--unified=3", current_head or "HEAD", "--", *changed_files],
+            ["diff", *PATCH_FORMAT_ARGS, "--unified=3", current_head or "HEAD", "--", *changed_files],
         )
         if result["returncode"] == 0:
             working_patch = result["stdout"]
