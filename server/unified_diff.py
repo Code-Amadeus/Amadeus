@@ -50,7 +50,10 @@ def parse_unified_diff(
         files.append(item)
         return item
 
-    for raw_line in source.splitlines():
+    # Patch lines end at "\n" (or "\r\n"). str.splitlines() would also break
+    # content at a form feed, U+2028 or another separator inside the line.
+    for line in source.split("\n"):
+        raw_line = line.removesuffix("\r")
         # A hunk header declares how many old and new lines follow. Until they
         # are consumed, "--- x" and "+++ x" are removed/added content such as
         # an SQL or Lua comment, not file headers.
