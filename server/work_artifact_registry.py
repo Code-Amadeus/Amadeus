@@ -472,7 +472,7 @@ async def collect_git_delta(
         "conflicts": conflicts,
         "truncated_paths": truncated_paths,
         "patch": "\n".join(
-            part.rstrip("\n")
+            part.removesuffix("\n")
             for part in (committed_patch, working_patch, untracked_patch)
             if part
         ),

@@ -137,8 +137,14 @@ def parse_unified_diff(
             current_file["hunks"].append(current_hunk)
             continue
 
-        if current_hunk is None or not raw_line:
+        if current_hunk is None:
             continue
+        if not raw_line:
+            if not in_hunk_body:
+                continue
+            # diff.suppressBlankEmpty (and GNU diff) write a blank context
+            # line without its leading space. Git apply reads it as context.
+            raw_line = " "
         prefix = raw_line[0]
         if prefix not in {" ", "+", "-", "\\"}:
             continue
