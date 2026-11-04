@@ -572,6 +572,63 @@ def test_attempt_diff_preserves_newlines_and_trailing_content(tmp_path: Path, st
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("patch_sources", ["working", "committed", "both"])
+@pytest.mark.parametrize("blank_lines", [1, 2])
+def test_attempt_diff_preserves_trailing_blank_context(
+    tmp_path: Path, patch_sources: str, blank_lines: int,
+) -> None:
+    async def run() -> None:
+        root = tmp_path / "workspace"
+        root.mkdir()
+        _git(root, "init")
+        _git(root, "config", "user.email", "amadeus-test@example.invalid")
+        _git(root, "config", "user.name", "Amadeus Test")
+        _git(root, "config", "core.autocrlf", "false")
+        _git(root, "config", "diff.suppressBlankEmpty", "true")
+        before = ("x\ny\n" + "\n" * blank_lines).encode("utf-8")
+        after = ("X\ny\n" + "\n" * blank_lines).encode("utf-8")
+        paths = (
+            ["committed.txt", "working.txt"] if patch_sources == "both"
+            else [f"{patch_sources}.txt"]
+        )
+        for path in paths:
+            (root / path).write_bytes(before)
+        _git(root, "add", ".")
+        _git(root, "commit", "-m", "baseline")
+        with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit files")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit files")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            if "committed.txt" in paths:
+                (root / "committed.txt").write_bytes(after)
+                _git(root, "commit", "-am", "provider commit")
+            if "working.txt" in paths:
+                (root / "working.txt").write_bytes(after)
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert sorted(file["path"] for file in parsed["files"]) == sorted(paths)
+        assert parsed["additions"] == parsed["deletions"] == len(paths)
+        for file in parsed["files"]:
+            hunk, = file["hunks"]
+            assert hunk["oldCount"] == hunk["newCount"] == 2 + blank_lines
+            assert hunk["lines"] == [
+                {"kind": "remove", "oldLine": 1, "text": "x"},
+                {"kind": "add", "newLine": 1, "text": "X"},
+                {"kind": "context", "oldLine": 2, "newLine": 2, "text": "y"},
+                *[
+                    {"kind": "context", "oldLine": number, "newLine": number, "text": ""}
+                    for number in range(3, 3 + blank_lines)
+                ],
+            ]
+
+    asyncio.run(run())
+
+
 def _main() -> None:
     test_committed_delta_survives_and_baseline_dirty_is_not_stolen()
     test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact()
