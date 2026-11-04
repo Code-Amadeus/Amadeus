@@ -56,6 +56,10 @@ def test_registry_validation_and_public_projection_never_return_secret_values() 
     assert connection.public_dict()["environment_keys"] == ["FIXTURE_TOKEN"]
     assert "keep-spaces" not in str(connection.public_dict())
     assert connection.public_dict()["main_chat_access"] is False
+    assert "extension_package_id" not in connection.public_dict()
+    projected = _stdio_connection(extension_package_id="org.example.connector")
+    assert projected.public_dict()["extension_package_id"] == "org.example.connector"
+    assert "not-public" not in str(projected.public_dict())
 
 
 def test_enabled_connection_requires_a_provider_and_rejects_bad_http_urls() -> None:
@@ -247,3 +251,65 @@ def test_codex_stdio_forwards_only_each_connections_explicit_environment():
     assert "env_vars" not in config["web"]
     assert config["web"]["bearer_token_env_var"] == "HTTP_TOKEN"
     assert "synthetic-" not in "\n".join(overrides)
+
+
+@pytest.mark.parametrize("failure,code", [
+    (401, "authentication_failed"), (403, "access_denied"),
+    ("unreachable", "connection_unreachable"),
+])
+def test_http_probe_preserves_transport_diagnostics_without_credentials(monkeypatch, failure, code):
+    import httpx2
+
+    original_client = httpx2.AsyncClient
+    monkeypatch.setenv("PROBE_TOKEN", "synthetic-private-token")
+
+    async def respond(request):
+        assert request.headers["Authorization"] == "Bearer synthetic-private-token"
+        if failure == "unreachable":
+            raise httpx2.ConnectError("synthetic-private-token is unreachable", request=request)
+        return httpx2.Response(failure, json={"error": "synthetic-private-token rejected"})
+
+    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: original_client(
+        transport=httpx2.MockTransport(respond), **kwargs))
+    connection = McpConnectionSpec("probe", "Probe", "http", url="https://example.invalid/mcp",
+        bearer_token_env_var="PROBE_TOKEN")
+    result = asyncio.run(McpConnectionHandler((connection,)).handle(
+        Method.MCP_CONNECTION_TEST, {"connection_id": "probe"}))
+    assert result["status"] == "error"
+    assert result["code"] == code
+    assert "synthetic-private-token" not in str(result)
+    assert "Check" in result["detail"]
+
+
+def test_http_probe_keeps_native_protocol_negotiation(monkeypatch):
+    import httpx2
+
+    original_client = httpx2.AsyncClient
+    negotiation = []
+
+    async def respond(request):
+        if request.method != "POST":
+            return httpx2.Response(405)
+        message = json.loads(request.content)
+        if message["method"] == "server/discover":
+            negotiation.append(message["method"])
+            return httpx2.Response(400, json={"jsonrpc": "2.0", "id": message["id"],
+                "error": {"code": -32601, "message": "Use supported initialize"}})
+        if message["method"] == "initialize":
+            negotiation.append(message["method"])
+            result = {"protocolVersion": "2025-11-25", "capabilities": {"tools": {}},
+                "serverInfo": {"name": "probe-fixture", "version": "1"}}
+        elif message["method"] == "tools/list":
+            result = {"tools": []}
+        else:
+            return httpx2.Response(202)
+        return httpx2.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: original_client(
+        transport=httpx2.MockTransport(respond), **kwargs))
+    connection = McpConnectionSpec("probe", "Probe", "http", url="https://example.invalid/mcp")
+    result = asyncio.run(McpConnectionHandler((connection,)).handle(
+        Method.MCP_CONNECTION_TEST, {"connection_id": "probe"}))
+    assert result["status"] == "connected", result
+    assert result["tool_count"] == 0
+    assert negotiation == ["server/discover", "initialize"]
