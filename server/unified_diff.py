@@ -109,6 +109,15 @@ def parse_unified_diff(
             current_file["newPath"] = raw_line[len("rename to ") :].strip()
             current_file["path"] = current_file["newPath"]
             continue
+        if raw_line.startswith("copy from "):
+            current_file["status"] = "copied"
+            current_file["oldPath"] = raw_line[len("copy from ") :].strip()
+            continue
+        if raw_line.startswith("copy to "):
+            current_file["status"] = "copied"
+            current_file["newPath"] = raw_line[len("copy to ") :].strip()
+            current_file["path"] = current_file["newPath"]
+            continue
 
         hunk_match = _HUNK_HEADER.match(raw_line)
         if hunk_match:

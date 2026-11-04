@@ -308,6 +308,125 @@ def test_attempt_patch_ignores_user_diff_format_config(key: str, value: str) -> 
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("submodule_format", ["log", "diff"])
+def test_attempt_patch_ignores_user_submodule_diff_format(submodule_format: str) -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_submodule_") as temp:
+            library = Path(temp) / "library"
+            library.mkdir()
+            _git(library, "init")
+            _git(library, "config", "user.email", "amadeus-test@example.invalid")
+            _git(library, "config", "user.name", "Amadeus Test")
+            (library / "lib.txt").write_text("base\n", encoding="utf-8")
+            _git(library, "add", ".")
+            _git(library, "commit", "-m", "library baseline")
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "app.txt").write_text("base\n", encoding="utf-8")
+            _git(
+                root,
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                str(library),
+                "vendor",
+            )
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.submodule", submodule_format)
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Update vendor")
+            attempt = store.create_attempt(
+                item.work_item_id,
+                provider="codex",
+                task="Update vendor",
+            )
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            vendor = root / "vendor"
+            _git(vendor, "config", "user.email", "amadeus-test@example.invalid")
+            _git(vendor, "config", "user.name", "Amadeus Test")
+            (vendor / "lib.txt").write_text("base\nchanged\n", encoding="utf-8")
+            _git(vendor, "commit", "-am", "library change")
+            (root / "app.txt").write_text("base\nchanged\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "Submodule vendor" not in delta["patch"]
+        assert "lib.txt" not in delta["patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [(entry["path"], entry["additions"], entry["deletions"]) for entry in parsed["files"]] == [
+            ("app.txt", 1, 0),
+            ("vendor", 1, 1),
+        ]
+        assert parsed["files"][0]["hunks"][0]["lines"] == [
+            {"kind": "context", "oldLine": 1, "newLine": 1, "text": "base"},
+            {"kind": "add", "newLine": 2, "text": "changed"},
+        ]
+
+    asyncio.run(run())
+
+
+def test_attempt_diff_lists_committed_copies_once_with_copy_detection() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_copy_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            source = root / "my src.txt"
+            source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.renames", "copies")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Copy notes")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Copy notes")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "my dup.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "provider commit")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "copy to my dup.txt" in delta["committed_patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [
+            (entry["path"], entry["oldPath"], entry["status"], entry["additions"])
+            for entry in parsed["files"]
+        ] == [
+            ("my dup.txt", "my src.txt", "copied", 0),
+            ("my src.txt", "my src.txt", "modified", 1),
+        ]
+
+    asyncio.run(run())
+
+
 def test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_blank_context_") as temp:
@@ -635,6 +754,7 @@ def _main() -> None:
     test_non_ascii_entry_revision_is_registered_as_the_real_path()
     test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes()
     test_explicit_amend_may_change_predecessor_owned_dirty_artifact()
+    test_attempt_diff_lists_committed_copies_once_with_copy_detection()
     test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty()
     print("ok: work artifact registry preserves attempt Git boundaries")
 
