@@ -1073,7 +1073,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const mainModelLabel = modelProviderLabels[mainModelProvider] || mainModelProvider
   const imageModel = mainModelProvider === 'deepseek' || mainModelProvider === 'hybrid2'
     ? String(modelConnections.find(group => group.id === 'deepseek')?.fields
-      ?.find(field => field.key === 'DEEPSEEK_MODEL_NAME')?.value || 'deepseek-v4-flash')
+      ?.find(field => field.key === 'DEEPSEEK_MODEL_NAME')?.value || 'deepseek-flash')
     : ''
   const visionModelReady = mainModelReady && chatProviderSupportsImages(mainModelProvider, imageModel)
   const configuredTranslationModels = modelConnections

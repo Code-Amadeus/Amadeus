@@ -125,7 +125,7 @@
         "zh-CN": "默认继承所选 Models 连接中的模型。"
       },
       "computed_default": true,
-      "example": "deepseek-v4-flash",
+      "example": "deepseek-flash",
       "visible_when": {
         "CODEX_PROVIDER_TRANSPORT": [
           "app_server"
