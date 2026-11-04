@@ -9,9 +9,16 @@ from typing import Any
 CREATE_NO_WINDOW = 0x08000000
 
 # Patches are parsed and displayed by Amadeus, so their format must not follow
-# the user's diff configuration: an external diff driver, forced color, or
-# diff.noprefix/diff.mnemonicPrefix would change what the parser receives.
-PATCH_FORMAT_ARGS = ("--no-ext-diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/")
+# the user's diff configuration: an external diff driver, forced color,
+# diff.noprefix/diff.mnemonicPrefix, or diff.submodule=log/diff would change
+# what the parser receives.
+PATCH_FORMAT_ARGS = (
+    "--no-ext-diff",
+    "--no-color",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--submodule=short",
+)
 
 
 async def run_git(cwd: str, args: list[str]) -> dict[str, Any]:
