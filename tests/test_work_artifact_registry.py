@@ -308,6 +308,53 @@ def test_attempt_patch_ignores_user_diff_format_config(key: str, value: str) -> 
     asyncio.run(run())
 
 
+def test_attempt_diff_lists_committed_copies_once_with_copy_detection() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_copy_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            source = root / "my src.txt"
+            source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.renames", "copies")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Copy notes")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Copy notes")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "my dup.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "provider commit")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "copy to my dup.txt" in delta["committed_patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [
+            (entry["path"], entry["oldPath"], entry["status"], entry["additions"])
+            for entry in parsed["files"]
+        ] == [
+            ("my dup.txt", "my src.txt", "copied", 0),
+            ("my src.txt", "my src.txt", "modified", 1),
+        ]
+
+    asyncio.run(run())
+
+
 def test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_filesystem_") as temp:
@@ -538,6 +585,7 @@ def _main() -> None:
     test_non_ascii_entry_revision_is_registered_as_the_real_path()
     test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes()
     test_explicit_amend_may_change_predecessor_owned_dirty_artifact()
+    test_attempt_diff_lists_committed_copies_once_with_copy_detection()
     print("ok: work artifact registry preserves attempt Git boundaries")
 
 

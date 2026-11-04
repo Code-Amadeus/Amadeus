@@ -241,6 +241,48 @@ def test_parse_unified_diff_splits_hunk_lines_only_at_newlines() -> None:
     ]
 
 
+def test_parse_unified_diff_reads_copy_headers() -> None:
+    # Output of `git -c diff.renames=copies diff HEAD` after copying a
+    # modified file: an exact copy has no marker lines or hunks.
+    parsed = parse_unified_diff(
+        "\n".join(
+            [
+                "diff --git a/my src.txt b/my dup.txt",
+                "similarity index 100%",
+                "copy from my src.txt",
+                "copy to my dup.txt",
+                "diff --git a/lib.py b/lib copy.py",
+                "similarity index 80%",
+                "copy from lib.py",
+                "copy to lib copy.py",
+                "index 01e79c3..94ebaf9 100644",
+                "--- a/lib.py",
+                "+++ b/lib copy.py",
+                "@@ -1 +1,2 @@",
+                " base",
+                "+copy",
+                "diff --git a/my src.txt b/my src.txt",
+                "index b566061..b13f895 100644",
+                "--- a/my src.txt",
+                "+++ b/my src.txt",
+                "@@ -1 +1,2 @@",
+                " base",
+                "+source",
+            ]
+        ),
+        changed_files=["my dup.txt", "lib copy.py", "my src.txt"],
+    )
+
+    assert [
+        (item["path"], item["oldPath"], item["newPath"], item["status"], item["additions"])
+        for item in parsed["files"]
+    ] == [
+        ("my dup.txt", "my src.txt", "my dup.txt", "copied", 0),
+        ("lib copy.py", "lib.py", "lib copy.py", "copied", 1),
+        ("my src.txt", "my src.txt", "my src.txt", "modified", 1),
+    ]
+
+
 if __name__ == "__main__":
     test_parse_unified_diff_preserves_dual_line_numbers()
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
@@ -250,4 +292,5 @@ if __name__ == "__main__":
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
     test_parse_unified_diff_splits_hunk_lines_only_at_newlines()
+    test_parse_unified_diff_reads_copy_headers()
     print("unified diff canvas tests passed")
