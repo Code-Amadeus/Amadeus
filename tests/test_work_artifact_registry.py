@@ -308,6 +308,46 @@ def test_attempt_patch_ignores_user_diff_format_config(key: str, value: str) -> 
     asyncio.run(run())
 
 
+def test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_blank_context_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "notes.txt").write_text("a\n\nb\nc\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.suppressBlankEmpty", "true")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit notes")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit notes")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "notes.txt").write_text("a\n\nB\nc\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "\n a\n\n-b\n" in delta["patch"]
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert [entry["path"] for entry in parsed["files"]] == ["notes.txt"]
+        assert parsed["files"][0]["hunks"][0]["lines"] == [
+            {"kind": "context", "oldLine": 1, "newLine": 1, "text": "a"},
+            {"kind": "context", "oldLine": 2, "newLine": 2, "text": ""},
+            {"kind": "remove", "oldLine": 3, "text": "b"},
+            {"kind": "add", "newLine": 3, "text": "B"},
+            {"kind": "context", "oldLine": 4, "newLine": 4, "text": "c"},
+        ]
+
+    asyncio.run(run())
+
+
 def test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_filesystem_") as temp:
@@ -538,6 +578,7 @@ def _main() -> None:
     test_non_ascii_entry_revision_is_registered_as_the_real_path()
     test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes()
     test_explicit_amend_may_change_predecessor_owned_dirty_artifact()
+    test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty()
     print("ok: work artifact registry preserves attempt Git boundaries")
 
 

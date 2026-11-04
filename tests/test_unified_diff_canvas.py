@@ -241,6 +241,45 @@ def test_parse_unified_diff_splits_hunk_lines_only_at_newlines() -> None:
     ]
 
 
+def test_parse_unified_diff_reads_empty_lines_inside_hunks_as_blank_context() -> None:
+    # Output of `git -c diff.suppressBlankEmpty=true diff`: blank context
+    # lines lose their leading space.
+    parsed = parse_unified_diff(
+        "diff --git a/notes.txt b/notes.txt\n"
+        "--- a/notes.txt\n"
+        "+++ b/notes.txt\n"
+        "@@ -1,4 +1,4 @@\n"
+        " a\n"
+        "\n"
+        "-b\n"
+        "+B\n"
+        "\n"
+        "diff --git a/next.txt b/next.txt\n"
+        "--- a/next.txt\n"
+        "+++ b/next.txt\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "\n"
+    )
+
+    first, second = parsed["files"]
+    assert first["additions"] == 1
+    assert first["deletions"] == 1
+    assert first["hunks"][0]["lines"] == [
+        {"kind": "context", "oldLine": 1, "newLine": 1, "text": "a"},
+        {"kind": "context", "oldLine": 2, "newLine": 2, "text": ""},
+        {"kind": "remove", "oldLine": 3, "text": "b"},
+        {"kind": "add", "newLine": 3, "text": "B"},
+        {"kind": "context", "oldLine": 4, "newLine": 4, "text": ""},
+    ]
+    assert second["hunks"][0]["lines"] == [
+        {"kind": "remove", "oldLine": 1, "text": "old"},
+        {"kind": "add", "newLine": 1, "text": "new"},
+    ]
+    assert parsed["lineCount"] == 7
+
+
 if __name__ == "__main__":
     test_parse_unified_diff_preserves_dual_line_numbers()
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
@@ -250,4 +289,5 @@ if __name__ == "__main__":
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
     test_parse_unified_diff_splits_hunk_lines_only_at_newlines()
+    test_parse_unified_diff_reads_empty_lines_inside_hunks_as_blank_context()
     print("unified diff canvas tests passed")
