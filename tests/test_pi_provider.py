@@ -347,7 +347,7 @@ async def test_pi_native_notifications_are_redacted_without_task_progress(pi_hos
 
     def notify(self, *args, **kwargs):
         self.events.put_nowait({"type": "extension_ui_request", "method": "notify",
-            "message": "Connection failed: synthetic-secret", "notifyType": "error"})
+            "message": "Connection failed: synthetic-secret\nRun /mcp to fix.", "notifyType": "error"})
         finish(self, *args, **kwargs)
 
     monkeypatch.setattr(FakePi, "finish", notify)
@@ -358,6 +358,10 @@ async def test_pi_native_notifications_are_redacted_without_task_progress(pi_hos
     event, = [event for event in events if event.type == "runtime.notice"]
     assert "synthetic-secret" not in str(event.payload)
     assert "[redacted]" in event.payload["message"]
+    assert "Plugins" in event.payload["message"]
+    assert "Settings -> Providers -> MCP" in event.payload["message"]
+    assert "Test connection" in event.payload["message"]
+    assert "Run /mcp" not in event.payload["message"]
     assert event.payload["level"] == "error"
     assert semantic_progress_fact(event.type, event.payload) is None
 

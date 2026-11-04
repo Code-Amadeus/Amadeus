@@ -393,7 +393,9 @@ class PiAdapter:
             elif event.get("method") == "notify" and str(event.get("message") or "").strip():
                 notice = redact_mcp_text(str(event["message"]), self.mcp_connections)
                 notice = notice.replace("Run /mcp to fix.",
-                    "Review connections in Settings -> Providers -> MCP, then restart the backend.")
+                    "Review installed package connections in Plugins, or manual connections in "
+                    "Settings -> Providers -> MCP. Use Test connection to diagnose the service, "
+                    "then restart the backend after changing saved connection settings.")
                 await self._emit(run_id, run, "runtime.notice", {
                     "message": notice, "level": str(event.get("notifyType") or "info"),
                     "source": "pi_native_notification"})

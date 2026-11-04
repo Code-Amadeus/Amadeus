@@ -39,7 +39,9 @@ const providers = [
   { provider_id: 'pi', display_name: 'Pi', capabilities: { capability_projections: ['mcp_connection'] } },
   { provider_id: 'unrelated', display_name: 'Incompatible agent', capabilities: { capability_projections: ['skill'] } },
 ]
-const props = overrides => ({ platform: 'win32', extensions: [extension()], runtime: [], providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
+const props = overrides => ({ platform: 'win32', extensions: [extension()], runtime: [], mcpConnections: [],
+  async send(method) { throw new Error(`Unexpected fixture RPC: ${method}`) },
+  providers, connected: false, available: true, encryptionAvailable: true, selectedVoiceBackend: '',
   onSettingsChanged() {}, onRestartRequired() {}, onOpenVoice() {}, ...overrides })
 
 test('typed extension edits preserve defaults and never reconstruct saved secrets', () => {

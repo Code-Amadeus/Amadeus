@@ -17,6 +17,8 @@ import { compatibleExtensionProviders, extensionDraft, extensionLanguageSupporte
 const ATTENTION_STATES = new Set(['error', 'degraded', 'needs_config', 'incompatible'])
 
 interface Props {
+  mcpConnections: Array<{ id: string; name: string; extension_package_id?: string }>
+  send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   platform?: string
   extensions: ExtensionSummary[]
   runtime: ExtensionRuntimeStatus[]
@@ -34,7 +36,7 @@ interface Props {
   onEditorStateChange?: (state: SettingsEditorState) => void
 }
 
-export default function ExtensionSettings({ platform, extensions, runtime, providers, connected, available, encryptionAvailable, selectedVoiceBackend, selectedTheme, appliedThemeVersion, onOpenAppearance,
+export default function ExtensionSettings({ platform, extensions, runtime, mcpConnections, send, providers, connected, available, encryptionAvailable, selectedVoiceBackend, selectedTheme, appliedThemeVersion, onOpenAppearance,
   onSettingsChanged, onRestartRequired, onOpenVoice, onEditorStateChange }: Props) {
   const { locale, t } = useI18n()
   const scheduledUpdates = usesScheduledExtensionUpdates(platform)
@@ -441,6 +443,9 @@ export default function ExtensionSettings({ platform, extensions, runtime, provi
             </div>
           </li>)}
         </ul>
+        {connected && !pending ? mcpConnections.filter(connection => connection.extension_package_id === extension.id).map(connection =>
+          <ExtensionConnectionTest key={`${connection.id}:${extension.appliedRevision}`} connection={connection} send={send} disabled={busy || dirty} />
+        ) : null}
         <div className="extension-card-bottom">
           <details className="extension-details">
             <summary>{t('Plugin details')}</summary>
@@ -493,5 +498,30 @@ export default function ExtensionSettings({ platform, extensions, runtime, provi
     <section id="extension-panel-browse" role="tabpanel" aria-labelledby="extension-tab-browse" hidden={tab !== 'browse'}>
       <ExtensionCatalog platform={platform} catalog={catalog} installed={extensions} busy={busy || Boolean(progress)} selection={catalogSelection} onSelect={setCatalogSelection} onInstall={entry => void installCatalog(entry)} onLink={(entry, field) => void openCatalogLink(entry, field)} />
     </section>
+  </div>
+}
+
+function ExtensionConnectionTest({ connection, send, disabled }: {
+  connection: { id: string; name: string }; send: Props['send']; disabled: boolean
+}) {
+  const { t } = useI18n()
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<{ message: string; ok: boolean } | null>(null)
+  const test = async () => {
+    setRunning(true); setResult(null)
+    try {
+      const response = await send('mcp.connection.test', { connection_id: connection.id })
+      setResult({ ok: response.status === 'connected', message: response.status === 'connected'
+        ? t('Connected · {count} tools discovered', { count: Number(response.tool_count || 0) })
+        : String(response.detail || response.code || 'Connection failed').split('\n').map(line => t(line)).join('\n') })
+    } catch (reason) {
+      setResult({ ok: false, message: reason instanceof Error ? reason.message : t('Connection failed') })
+    } finally { setRunning(false) }
+  }
+  return <div className="settings-embedded-stack">
+    <div className="extension-contribution-heading"><span>{connection.name}</span>
+      <SettingsButton disabled={disabled || running} onClick={() => void test()}>{t(running ? 'Connecting…' : 'Test connection')}</SettingsButton>
+    </div>
+    {result ? <div role="status" className={result.ok ? 'settings-field-description' : 'settings-form-error'}>{result.message}</div> : null}
   </div>
 }
