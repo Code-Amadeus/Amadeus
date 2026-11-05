@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -266,7 +267,8 @@ def test_http_probe_preserves_transport_diagnostics_without_credentials(monkeypa
     async def respond(request):
         assert request.headers["Authorization"] == "Bearer synthetic-private-token"
         if failure == "unreachable":
-            raise httpx2.ConnectError("synthetic-private-token is unreachable", request=request)
+            raise httpx2.ConnectError("synthetic-private-token is unreachable",
+                request=request) from ConnectionRefusedError(61, "Connection refused")
         return httpx2.Response(failure, json={"error": "synthetic-private-token rejected"})
 
     monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: original_client(
@@ -279,6 +281,44 @@ def test_http_probe_preserves_transport_diagnostics_without_credentials(monkeypa
     assert result["code"] == code
     assert "synthetic-private-token" not in str(result)
     assert "Check" in result["detail"]
+
+
+@pytest.mark.parametrize("reply,code", [
+    pytest.param(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n",
+        "connection_failed", id="tls-protocol-error"),
+    pytest.param(None, "connection_unreachable", id="peer-closed-handshake"),
+])
+async def test_https_probe_classifies_real_handshake_failures(monkeypatch, reply, code):
+    import httpx2
+
+    original_client = httpx2.AsyncClient
+    # Keep the real HTTP/TLS stack, but do not route loopback through host proxies.
+    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: original_client(
+        trust_env=False, **kwargs))
+
+    async def respond(reader, writer):
+        try:
+            assert await reader.read(65536)  # Receive the ClientHello before closing.
+            if reply is not None:
+                writer.write(reply)
+                await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    # Bound the fixture and await every accepted connection during cleanup.
+    async with asyncio.timeout(30), asyncio.TaskGroup() as peers:
+        async with await asyncio.start_server(
+            lambda reader, writer: peers.create_task(respond(reader, writer)),
+            "127.0.0.1", 0,
+        ) as server:
+            connection = McpConnectionSpec("probe", "Probe", "http",
+                url=f"https://127.0.0.1:{server.sockets[0].getsockname()[1]}/mcp")
+            result = await McpConnectionHandler((connection,)).handle(
+                Method.MCP_CONNECTION_TEST, {"connection_id": "probe"})
+
+    assert result["status"] == "error", result
+    assert result["code"] == code, result
 
 
 def test_http_probe_keeps_native_protocol_negotiation(monkeypatch):
@@ -313,3 +353,30 @@ def test_http_probe_keeps_native_protocol_negotiation(monkeypatch):
     assert result["status"] == "connected", result
     assert result["tool_count"] == 0
     assert negotiation == ["server/discover", "initialize"]
+
+
+def test_http_probe_keeps_tls_certificate_diagnostics_without_credentials(monkeypatch):
+    import httpx2
+
+    original_client = httpx2.AsyncClient
+    monkeypatch.setenv("PROBE_TOKEN", "synthetic-private-token")
+
+    async def respond(request):
+        try:
+            raise ssl.SSLCertVerificationError(
+                1, "[SSL: CERTIFICATE_VERIFY_FAILED] synthetic hostname mismatch "
+                "for synthetic-private-token")
+        except ssl.SSLError as cause:
+            raise httpx2.ConnectError(str(cause), request=request) from cause
+
+    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: original_client(
+        transport=httpx2.MockTransport(respond), **kwargs))
+    connection = McpConnectionSpec("probe", "Probe", "http", url="https://example.invalid/mcp",
+        bearer_token_env_var="PROBE_TOKEN")
+    result = asyncio.run(McpConnectionHandler((connection,)).handle(
+        Method.MCP_CONNECTION_TEST, {"connection_id": "probe"}))
+    assert result["status"] == "error"
+    assert result["code"] == "connection_failed"
+    assert "CERTIFICATE_VERIFY_FAILED" in result["detail"]
+    assert "synthetic hostname mismatch" in result["detail"]
+    assert "synthetic-private-token" not in str(result)
