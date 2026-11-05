@@ -58,7 +58,6 @@ Dependency maintenance is now tracked separately in [draft PR #252](https://gith
 | Public immutable artifacts | Pending | Approved versioned wheel URLs with matching SHA-256 and retained review inventory; never replace bytes at an existing ID/version. |
 | Public checker/generator pins | Pending | Reviewed commits reachable from the intended public repositories; fixed Windows/CPython 3.12.10 catalog CI passes using the recorded Host checker and minimal lock. |
 | Main protection | Failed configuration gate on 2026-10-21 | Branch protection or active ruleset requires non-author approval and necessary checks; direct and force pushes are restricted. GitHub returned “Branch not protected” and no applicable branch rules. |
-| Maintainer two-factor authentication | Unverified | Organization requires 2FA or maintainers provide appropriate administrative verification. The API reports organization enforcement false; that does not prove individual maintainers lack 2FA. |
 | Workflow privilege | Partially verified | Repository default token permission is read, Actions cannot approve PRs. Recheck final workflows and environment/release access before publication; submitted code gets no publishing credentials. |
 | Clean source and packaged Windows journeys | Local isolated qualification available; clean-machine/independent human acceptance pending | Fresh supported Windows environment, documented supplied Python dependencies, no old profile/install/cache; useful process + resource package through full lifecycle, manual native confirmations separately recorded. Local automated shell evidence alone is insufficient. |
 | Full release failure matrix | Local final-build fixture matrix recorded in batch 6; reviewed public catalog still pending | Re-run cancellation, digest mismatch, withdrawal, ban, double corruption, startup failure, data retention/delete on final fixed release build and reviewed catalog. Record screenshots, traces, skips and hashes. |
@@ -66,6 +65,12 @@ Dependency maintenance is now tracked separately in [draft PR #252](https://gith
 | First catalog publication/withdrawal | Local full simulated roundtrip passed; reviewed public publication pending | Reviewed input PR, separate publication PR with sequence +1, exact reproducible generation; withdrawal and security decision PR exercise, offline known bans retained. Content rollback must still increase sequence. |
 | D0 public author path | Pending Host integration | After reviewed Host integration, protocol README points to the immutable integrated author guide. Do not point a public completion claim at a local-only commit. |
 | Release decision | Pending | Maintainer explicitly authorizes publication after evaluating the above evidence. Passing tests never publishes automatically. |
+
+Maintainer two-factor authentication is recommended account protection, not a
+prerequisite for catalog approval, merge or publication. Organization-wide 2FA
+enforcement is not required by the catalog. This policy was updated by maintainer
+decision on 2026-11-05; dated verification reports retain the earlier requirement
+as historical context. GitHub's own account requirements remain separate.
 
 Maintainer reference packages may form the first catalog after independent review.
 D3 can remain separate, but the public description must then say **external-author
