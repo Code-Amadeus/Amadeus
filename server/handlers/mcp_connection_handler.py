@@ -129,16 +129,18 @@ def _safe_error(exc: Exception, connection: McpConnectionSpec) -> str:
 
 
 def _has_tls_cause(exc: BaseException) -> bool:
-    # httpcore2 maps TLS handshake failures, including certificate verification,
-    # to ConnectError; their own message is the actionable diagnostic.
+    from httpcore2 import ConnectError as TransportConnectError
+    from httpx2 import ConnectError
+
+    # Inspect the mapped failure, not SSL errors retained inside anyio's
+    # EndOfStream/BrokenResourceError. httpcore2's pool re-raises with `from None`,
+    # so even a genuine TLS failure may survive only through __context__.
     seen: set[int] = set()
     current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        if isinstance(current, ssl.SSLError):
-            return True
+    while isinstance(current, (ConnectError, TransportConnectError)) and id(current) not in seen:
         seen.add(id(current))
         current = current.__cause__ or current.__context__
-    return False
+    return isinstance(current, ssl.SSLError)
 
 
 def _probe_error(exc: Exception, connection: McpConnectionSpec) -> tuple[str, str]:
