@@ -77,7 +77,7 @@ and removes the optional voice/model stack. Ordinary application launch uses the
 installed environment, without synchronizing or changing its selected extras.
 
 Windows is the current reference platform. macOS core/voice has a separate CI
-qualification path and needs PortAudio for PyAudio; the macos-14 candidate job
+qualification path and needs PortAudio for PyAudio; the macos-15 candidate job
 also installs `local-mps` and switches back through T3 vad. A successful install, import
 or Electron build does not replace microphone, playback and desktop acceptance.
 The reference cu124 profile is Windows-only. The cu128 candidate targets
