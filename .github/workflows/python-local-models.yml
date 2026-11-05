@@ -22,7 +22,7 @@ jobs:
           - os: ubuntu-24.04
             extra: local-cu128
             profile: cu128
-          - os: macos-14
+          - os: macos-15
             extra: local-mps
             profile: mps
           - os: ubuntu-24.04
