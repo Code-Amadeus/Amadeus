@@ -205,22 +205,31 @@ Lively 不会继续迟到挂载。
 回退旧 helper 前，须先用本 helper 处理未完成日志。旧程序不理解 `Phase`；日志尚存
 时不支持降级，不会为允许降级而重置或删除恢复记录。
 
-#264 replaces the helper runtime while preserving phase-aware rollback and error
-preservation. It does
-**not** repair stock Lively 2.2.1.0's reporting/close protocol: `GetWallpapers`
-can return a falsely empty stream, and project close can swallow errors and
-return success without removing a player. A close response plus an empty stream
-cannot prove strong recovery or player exit. For an originally empty desktop,
-the retained baseline empty-report behavior can still delete the journal and
-request owned-host shutdown while an unreported scene remains. This is a known
-unresolved limitation, not an accepted strong-recovery guarantee. Scene removal
-is not inferred from a PID, a layout file or a timing heuristic to hide it.
+**#233 — missing scene / surviving player.** Stock Lively 2.2.1.0 can return an
+empty or partial list on enumeration error and acknowledge a close without
+waiting for its player to exit. Amadeus mounts its loopback wallpaper using
+Lively's WebView2 player. The helper now cross-checks the reported managed
+project/display against live Windows player instances before accepting a
+before-image or committing recovery. It uses the wrapper's image, Windows logon
+session, launch URL and display; a browser renderer PID alone identifies none
+of these. A player can veto cleanup but cannot authorize replacing a scene or
+killing a process. If Close is still settling, the helper briefly waits for the
+observed discrepancy to clear without issuing Close again. A surviving player
+or a failed player inspection retains the recovery journal and blocks shutdown.
+Fix the conflicting scene in Lively, then retry `recover`; do not delete the journal.
 
-本次替换 helper 运行时，保留按阶段回滚及异常合同，**未修复**原版 Lively 2.2.1.0 的报告及关闭
-协议：`GetWallpapers` 可能假空，项目关闭也可能吞错后返回成功却没有移除播放器。
-关闭回执加空流不能证明强恢复或播放器退出。对于原来为空的桌面，保留的 baseline
-空报告行为仍可能在未报告场景存在时删除日志并请求停止自有宿主。这是明确未解决的
-限制，不能视为强恢复已验收；本轮不以 PID、磁盘 layout 或延时推断场景移除来掩盖它。
+This check covers the managed WebView2 wrapper, not the complete registry of
+all Lively plugins. A preview or another project using the same Amadeus endpoint
+can also make the observation ambiguous; close that preview before retrying.
+Absence of a wrapper does not certify an arbitrary empty/partial host registry,
+or exit of every descendant. Those guarantees need truthful results from
+[Lively's list and close RPCs](https://github.com/lively-community/lively/blob/6860a4093fc50058c4815908658a4391c4449935/src/Lively/Lively/RPC/WinDesktopCoreServer.cs#L197-L298).
+
+**#233：场景漏报，但播放器仍在运行。** helper 在保存桌面原状和确认恢复前，按 Windows
+登录会话、WebView2 播放器、Amadeus 回环地址及显示器核对 Lively 的报告。若漏报的
+播放器仍然存活，或无法读取其状态，恢复不会删除日志或关闭宿主。请在 Lively 确认对应
+场景及预览已关闭，再运行 `recover`。这项检查只用于否决矛盾的结果；不能证明其他插件的
+场景列表完整，也不能用 PID 推断可关闭用户选定的壁纸。
 
 Deterministic contracts separate fake actual state from reported state and cover
 rollback, retries, late requests, user choices, journal compatibility and both
@@ -229,16 +238,17 @@ execute before Session persists the actual pipe receiver, and executes zero time
 when identity, persistence or transport binding fails. These pipes never connect
 to Lively or change the desktop. They also cover a connection arriving after its
 response deadline and a persistence boundary blocked across that deadline. The
-separate `--false-empty-counterexample` diagnostic records the
-unresolved false-empty/no-op-close case without adding it to the passing contract
-count. These checks do not establish real Lively mounting or close completion.
+separate counterexample probe records the failed close and subsequent retry.
+A native contract keeps an actual hidden test process alive after its registry
+row is removed. It exercises the production Windows observer without replacing
+the user's wallpaper. These checks do not certify stock Lively's whole lifecycle.
 
 离线契约分离 fake 真实状态与报告状态，覆盖回滚、重试、迟到请求、用户选择、日志
 兼容与双重异常。随机命名的本地管道契约还核验：Session 持久保存实际接收进程前
 Set 不得执行，身份、持久化或传输绑定失败时执行次数为零；这些管道不连接 Lively，
 也不改变桌面；还覆盖响应超时后连接迟到、持久化边界阻塞跨越响应超时的竞态。
-独立 `--false-empty-counterexample` 诊断记录未解决的假空及关闭
-no-op 反例，不计入契约通过数；这些检查不证明真实 Lively 挂载或关闭完成。
+独立反例探针记录假空、关闭未生效以及重试的结果；原生契约用真正的测试子进程验证
+漏报检测，不操作用户桌面，不等于原版 Lively 全链路实机验收。
 
 If Lively must be started with its screenshot-to-wallpaper options temporarily
 disabled, `Lively Wallpaper\Amadeus.launch-settings.json` backs up just those
