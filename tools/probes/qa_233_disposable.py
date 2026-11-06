@@ -1,6 +1,6 @@
 """One-off integration instrument. NEVER run on a personal desktop."""
 import ctypes
-import atexit
+# Uninstrumented final product run.
 import importlib.util
 import json
 import os
@@ -25,39 +25,17 @@ base.mkdir(exist_ok=False)
 exe = root / "electron/node_modules/electron/dist/electron.exe"
 external = ["A", "B"]
 
-# Diagnostic run only: add stack locations to the failing helper's report;
-# no changes to process queries, timing, registry, or recovery decisions.
-source = hp.read_text(encoding="utf-8")
-needle = "    except Exception as error:\n        try:\n            session.release_unstarted_host"
-assert source.count(needle) == 1
-hp.write_text(source.replace(needle, """    except Exception as error:
-        import traceback
-        def describe(exc):
-            return {"type": type(exc).__name__, "winerror": getattr(exc, "winerror", None),
-                    "stack": [(f.name, f.lineno) for f in traceback.extract_tb(exc.__traceback__)],
-                    "sub": [describe(e) for e in getattr(exc, "exceptions", [])]}
-        with (Path(os.environ["RUNNER_TEMP"]) / "stock-233" / "helper-errors.jsonl").open("a", encoding="utf8") as qa_log:
-            print(json.dumps(describe(error)), file=qa_log)
-        try:
-            session.release_unstarted_host"""), encoding="utf-8")
-
-
 def report(event, **facts):
     print(json.dumps(dict(event=event, **facts), ensure_ascii=True), flush=True)
 
 
-def drain_traces():
-    trace = base / "helper-errors.jsonl"
-    if trace.exists():
-        for line in trace.read_text(encoding="utf8").splitlines():
-            report("helper-error-trace", error=json.loads(line))
-        trace.unlink()
-
-
-atexit.register(drain_traces)
-
 def scenes():
     return sorted(Path(s.Path).name for s in host.get_wallpapers()) if win.running() else []
+
+
+def live_host():
+    candidate = win.running()
+    return candidate if candidate and win.is_running(candidate) else None
 
 
 def desktop_picture():
@@ -82,7 +60,7 @@ def recover():
     p = subprocess.run([sys.executable, "-I", "-S", str(hp), "recover"], capture_output=True, text=True, timeout=110)
     msg = json.loads(p.stdout.strip().splitlines()[-1])
     report("recover", status=msg.get("status"), error=msg.get("error"), pending=journal.exists(), players=counts(),
-           running=win.running() is not None, scenes=scenes())
+           running=live_host() is not None, scenes=scenes())
     return p.returncode == 0
 
 
@@ -177,7 +155,11 @@ def actual(case, expected, shared=None):
                 assert journal.exists()
                 assert recover()
             assert not journal.exists() and counts() == 0
-            assert win.running() == shared and scenes() == expected
+            report("postcondition", case=case, expected_host=("shared" if shared else "stopped"),
+                   correct_host=live_host() == shared, actual_scenes=scenes(), expected_scenes=expected,
+                   settings_unchanged=(host.get_options() == options if shared else None),
+                   windows_picture_unchanged=desktop_picture() == before_pic)
+            assert live_host() == shared and scenes() == expected
             if shared:
                 assert host.get_options() == options
             assert desktop_picture() == before_pic
@@ -208,7 +190,7 @@ failures = []
 groups = {
     "owned": ("empty-owned", "empty-owned-repeat", "empty-owned-third", "helper-loss"),
     "shared": ("shared-original", "user-change"),
-    "negative": ("stock-close-negative",),
+    "negative": ("empty-owned-cold-control", "stock-close-negative"),
 }
 for name in groups[os.environ["QA233_GROUP"]]:
     shared = None
@@ -238,8 +220,8 @@ for name in groups[os.environ["QA233_GROUP"]]:
                 if (base / n).exists():
                     host.close_project(str(base / n))
             host.stop_owned_process(shared)
-    drain_traces()
-    if win.running() or journal.exists():
+    # Each scenario starts with a verified clean baseline.
+    if live_host() or journal.exists():
         raise SystemExit("Unexpected state after recovery; stopping isolated qualification")
 report("finish", failed=failures)
 raise SystemExit(bool(failures))
