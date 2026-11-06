@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 if os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted" or os.environ.get("GITHUB_REF") != "refs/heads/codex/qa-233-stock-lively":
     raise SystemExit("Isolated GitHub-hosted QA VM required")
@@ -56,6 +57,26 @@ def counts():
     return len(list(win.managed_player_displays()))
 
 
+def helper_processes(parent):
+    script = """
+    $roots = @(Get-CimInstance Win32_Process -Filter 'ParentProcessId = PARENT' | Where-Object {
+      $_.Name -match '^python(w)?[.]exe$' -and $_.CommandLine -match 'windows-wallpaper[\\\\/]helper[.]py' -and $_.CommandLine -match '\\brun\\b' })
+    if ($roots.Count -ne 1) { return }
+    $children = @(Get-CimInstance Win32_Process -Filter ('ParentProcessId = ' + $roots[0].ProcessId) | Where-Object {
+      $_.Name -match '^python(w)?[.]exe$' -and $_.CommandLine -match 'windows-wallpaper[\\\\/]helper[.]py' })
+    if ($children.Count -gt 1) { throw 'Ambiguous helper' }
+    foreach ($p in $children + $roots) { $p.ProcessId }
+    """.replace("PARENT", str(parent))
+    deadline = time.monotonic() + 85
+    while time.monotonic() < deadline:
+        rows = subprocess.check_output(["powershell", "-NoProfile", "-Command", script], text=True,
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
+        if rows.strip():
+            return [win.identity(int(x)) for x in rows.split()]
+        time.sleep(.12)
+    raise TimeoutError("Did not identify the exact test-owned helper")
+
+
 def recover():
     p = subprocess.run([sys.executable, "-I", "-S", str(hp), "recover"], capture_output=True, text=True, timeout=110)
     msg = json.loads(p.stdout.strip().splitlines()[-1])
@@ -92,12 +113,41 @@ def actual(case, expected, shared=None):
     with (work / "electron.log").open("w", encoding="utf8") as log:
         child = subprocess.Popen([str(exe), str(root / "electron/scripts/qa-233-disposable.cjs")], env=env,
                                  stdout=log, stderr=log, creationflags=subprocess.CREATE_NO_WINDOW)
+        pool = ThreadPoolExecutor(1) if case == "pending" else None
+        identities = pool.submit(helper_processes, child.pid) if pool else None
         try:
             deadline = time.monotonic() + 100
             while time.monotonic() < deadline:
                 state = journal_state()
                 players = counts()
                 saw_player |= bool(players)
+                if case == "pending" and state == ("Pending", False) and players and identities.done():
+                    snapshot = h.Session(host, journal).read()
+                    original = snapshot.RequestProcess
+                    assert snapshot.Phase == "Pending" and original == snapshot.OwnedProcess and win.is_running(original)
+                    for identity in identities.result():
+                        if win.is_running(identity):
+                            subprocess.run(["taskkill", "/PID", str(identity.Id), "/F"], stdout=subprocess.DEVNULL)
+                    # No /T: this control specifically needs the original
+                    # named-pipe receiver to survive loss of its helper.
+                    assert all(not win.is_running(i) for i in identities.result())
+                    assert journal_state() == ("Pending", False) and win.is_running(original)
+                    before_retry = journal.read_bytes()
+                    assert not recover()
+                    assert journal.read_bytes() == before_retry and win.is_running(original)
+                    report("pending-fence", managed_player_seen_during_original_set=True, same_receiver_still_alive=True,
+                           journal_unchanged_after_rejected_recovery=True)
+                    (work / "quit").touch()
+                    child.wait(55)
+                    assert win.is_running(original) and journal.exists()
+                    host.stop_owned_process(original)
+                    assert not win.is_running(original)
+                    assert recover()
+                    assert not journal.exists() and not live_host() and counts() == 0 and desktop_picture() == before_pic
+                    report("pending-release", original_receiver_exited=True, restored=True, live_players=0,
+                           host_running=False, windows_picture_unchanged=True)
+                    passed = True
+                    return
                 try:
                     rows = scenes()
                 except OSError:
@@ -108,7 +158,7 @@ def actual(case, expected, shared=None):
                 if now != observed:
                     report("observation", case=case, journal=state, players=players, scenes=rows, slice=now[-1])
                     observed = now
-                if state == ("Settled", True) and players and rows is not None and "amadeus-managed" in rows and now[-1]:
+                if case != "pending" and state == ("Settled", True) and players and rows is not None and "amadeus-managed" in rows and now[-1]:
                     break
                 if child.poll() is not None or (work / "errors").exists():
                     raise RuntimeError("product startup failed")
@@ -165,6 +215,8 @@ def actual(case, expected, shared=None):
             assert desktop_picture() == before_pic
             passed = True
         finally:
+            if pool:
+                pool.shutdown(wait=False, cancel_futures=True)
             (work / "quit").touch(exist_ok=True)
             if child.poll() is None:
                 try:
@@ -188,6 +240,7 @@ assert not win.running() and not journal.exists()
 report("desktop", shell=bool(ctypes.windll.user32.GetShellWindow()), monitors=ctypes.windll.user32.GetSystemMetrics(80))
 failures = []
 groups = {
+    "pending": ("pending",),
     "owned": ("empty-owned", "empty-owned-repeat", "empty-owned-third", "helper-loss"),
     "shared": ("shared-original", "user-change"),
     "negative": ("empty-owned-cold-control", "stock-close-negative"),

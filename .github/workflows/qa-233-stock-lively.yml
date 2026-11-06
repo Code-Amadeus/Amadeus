@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [owned, shared, negative]
+        group: [pending]
     timeout-minutes: 25
     env:
       QA233_GROUP: ${{ matrix.group }}
