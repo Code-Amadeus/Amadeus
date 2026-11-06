@@ -61,7 +61,7 @@ void (async () => {
     const current = await inspect()
     const slices = BrowserWindow.getAllWindows().filter(window =>
       window.webContents.getURL().includes('/render/web/electron_slice.html') && !window.webContents.isLoadingMainFrame())
-    if (current.wallpapers.some(item => path.basename(item.Path) === 'amadeus-managed') && slices.length > 0) {
+    if (current.wallpapers?.some(item => path.basename(item.Path) === 'amadeus-managed') && slices.length > 0) {
       await new Promise(resolve => setTimeout(resolve, 10000))
       try {
         await executeHelper(['screenshot', path.join(output, 'electron-mounted-scene.jpg')])
