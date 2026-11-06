@@ -35,7 +35,8 @@ hp.write_text(source.replace(needle, """    except Exception as error:
             return {"type": type(exc).__name__, "winerror": getattr(exc, "winerror", None),
                     "stack": [(f.name, f.lineno) for f in traceback.extract_tb(exc.__traceback__)],
                     "sub": [describe(e) for e in getattr(exc, "exceptions", [])]}
-        print("QA233_STACK " + json.dumps(describe(error)), file=sys.stderr, flush=True)
+        with (Path(os.environ["RUNNER_TEMP"]) / "stock-233" / "helper-errors.jsonl").open("a", encoding="utf8") as qa_log:
+            print(json.dumps(describe(error)), file=qa_log)
         try:
             session.release_unstarted_host"""), encoding="utf-8")
 
@@ -128,6 +129,25 @@ def actual(case, expected, shared=None):
             if case == "user-change":
                 host.set_wallpaper(fixture("B"))
                 assert scenes() == ["B"]
+            if case == "stock-close-negative":
+                # The verified stock Close RPC loads LivelyInfo.json before
+                # closing. Temporarily withhold only OUR generated project's
+                # metadata on this clean VM, not any user's project or DLL.
+                project = Path(h.Session(host, journal).read().Project).resolve()
+                assert project.name == "amadeus-managed" and project.parent.name == "wallpapers"
+                metadata, held = project / "LivelyInfo.json", project / "LivelyInfo.QA233-held"
+                assert json.loads(metadata.read_text(encoding="utf8"))["Author"] == "Amadeus" and not held.exists()
+                metadata.rename(held)
+                try:
+                    (work / "quit").touch()
+                    child.wait(70)
+                    report("stock-close-withheld", journal=journal.exists(), players=counts(), scenes=scenes(),
+                           host_running=win.running() is not None)
+                    assert journal.exists() and counts() > 0 and win.running() is not None
+                    assert not recover() and journal.exists() and counts() > 0
+                finally:
+                    held.rename(metadata)
+                assert recover()
             if case == "helper-loss":
                 # Match the exact helper launched by this Electron process.
                 command = ("@(Get-CimInstance Win32_Process -Filter 'ParentProcessId = " + str(child.pid) +
@@ -174,7 +194,7 @@ def actual(case, expected, shared=None):
 assert not win.running() and not journal.exists()
 report("desktop", shell=bool(ctypes.windll.user32.GetShellWindow()), monitors=ctypes.windll.user32.GetSystemMetrics(80))
 failures = []
-for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-change", "helper-loss"):
+for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-change", "helper-loss", "stock-close-negative"):
     shared = None
     try:
         if name in ("shared-original", "user-change"):
@@ -195,6 +215,11 @@ for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-chang
                 if (base / n).exists():
                     host.close_project(str(base / n))
             host.stop_owned_process(shared)
+    trace = base / "helper-errors.jsonl"
+    if trace.exists():
+        for line in trace.read_text(encoding="utf8").splitlines():
+            report("helper-error-trace", case=name, error=json.loads(line))
+        trace.unlink()
     if win.running() or journal.exists():
         raise SystemExit("Unexpected state after recovery; stopping isolated qualification")
 report("finish", failed=failures)
