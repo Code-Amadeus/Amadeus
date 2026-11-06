@@ -1,5 +1,6 @@
 """One-off integration instrument. NEVER run on a personal desktop."""
 import ctypes
+import atexit
 import importlib.util
 import json
 import os
@@ -44,6 +45,16 @@ hp.write_text(source.replace(needle, """    except Exception as error:
 def report(event, **facts):
     print(json.dumps(dict(event=event, **facts), ensure_ascii=True), flush=True)
 
+
+def drain_traces():
+    trace = base / "helper-errors.jsonl"
+    if trace.exists():
+        for line in trace.read_text(encoding="utf8").splitlines():
+            report("helper-error-trace", error=json.loads(line))
+        trace.unlink()
+
+
+atexit.register(drain_traces)
 
 def scenes():
     return sorted(Path(s.Path).name for s in host.get_wallpapers()) if win.running() else []
@@ -194,7 +205,12 @@ def actual(case, expected, shared=None):
 assert not win.running() and not journal.exists()
 report("desktop", shell=bool(ctypes.windll.user32.GetShellWindow()), monitors=ctypes.windll.user32.GetSystemMetrics(80))
 failures = []
-for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-change", "helper-loss", "stock-close-negative"):
+groups = {
+    "owned": ("empty-owned", "empty-owned-repeat", "empty-owned-third", "helper-loss"),
+    "shared": ("shared-original", "user-change"),
+    "negative": ("stock-close-negative",),
+}
+for name in groups[os.environ["QA233_GROUP"]]:
     shared = None
     try:
         if name in ("shared-original", "user-change"):
@@ -208,18 +224,21 @@ for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-chang
         failures.append(name)
         report("case-failure", case=name, error=type(error).__name__, detail=str(error)[:220])
     finally:
-        if journal.exists():
-            assert recover()
+        if journal.exists() and not recover():
+            snap = h.Session(host, journal).read()
+            if snap.Phase == "Pending" and snap.OwnedProcess and win.running() == snap.OwnedProcess == snap.RequestProcess:
+                report("pending-operator-recovery", original_receiver_positively_identified=True)
+                host.stop_owned_process(snap.OwnedProcess)
+                assert not win.is_running(snap.OwnedProcess)
+                assert recover()
+            else:
+                raise RuntimeError("Unproven cleanup; stop this disposable VM")
         if shared and win.running() == shared and not journal.exists():
             for n in external:
                 if (base / n).exists():
                     host.close_project(str(base / n))
             host.stop_owned_process(shared)
-    trace = base / "helper-errors.jsonl"
-    if trace.exists():
-        for line in trace.read_text(encoding="utf8").splitlines():
-            report("helper-error-trace", case=name, error=json.loads(line))
-        trace.unlink()
+    drain_traces()
     if win.running() or journal.exists():
         raise SystemExit("Unexpected state after recovery; stopping isolated qualification")
 report("finish", failed=failures)

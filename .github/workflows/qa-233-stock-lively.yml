@@ -7,8 +7,13 @@ permissions:
 jobs:
   desktop:
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [owned, shared, negative]
     timeout-minutes: 25
     env:
+      QA233_GROUP: ${{ matrix.group }}
       PYTHONUTF8: "1"
       PYTHONUNBUFFERED: "1"
       AMADEUS_E2E_NO_TTS: "1"
