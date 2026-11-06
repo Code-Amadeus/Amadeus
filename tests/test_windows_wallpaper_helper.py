@@ -230,6 +230,7 @@ def test_unavailable_player_evidence_retains_the_original_mount_error(f):
     host, session = f
     host.fail_after = True
     denied = PermissionError("cannot inspect player")
+    denied.winerror = 5
     def unlisted(project, reported):
         if host.closed:
             raise denied
@@ -238,6 +239,30 @@ def test_unavailable_player_evidence_retains_the_original_mount_error(f):
     error = failure(lambda: session.mount(before(host, host.running)))
     assert error.exceptions == (host.mount_failure, denied)
     assert session.journal.exists() and host.stopped is None
+
+
+def test_dying_player_access_denial_needs_new_scene_and_process_evidence(f):
+    host, session = f
+    session.mount(before(host, host.running))
+    denied = PermissionError("terminating wrapper")
+    denied.winerror = 5
+    observations = []
+
+    def inspect(project, reported):
+        if not host.closed:
+            return False
+        observations.append(list(reported))
+        if len(observations) == 1:
+            # While inspection is unavailable the user chooses a new wallpaper.
+            host.items = [h.DesktopItem("primary", "new user scene")]
+            raise denied
+        assert session.journal.exists() and host.stopped is None
+        return False  # a new OS inventory can now establish no managed wrapper
+
+    host.unlisted_players = inspect
+    session.restore()
+    assert observations == [[], [h.DesktopItem("primary", "new user scene")]]
+    assert host.closed == ["amadeus"] and host.stopped is None and not session.journal.exists()
 
 
 @pytest.mark.parametrize("choice", ["user-new", None, "layout"])
