@@ -1,0 +1,67 @@
+name: Isolated stock Lively desktop qualification (233 only)
+on:
+  push:
+    branches: [codex/qa-233-stock-lively]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      AMADEUS_E2E_NO_TTS: "1"
+      WAKE_ENABLED: "0"
+      WAKE_AUTO_START_WITH_WALLPAPER: "0"
+      TTS_BACKEND: disabled
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+      - name: Verify dedicated VM, official installer and installed payload
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable hosted runner required' }
+          $os = Get-CimInstance Win32_OperatingSystem
+          $session = (Get-Process -Id $PID).SessionId
+          $explorer = @(Get-Process explorer -ErrorAction SilentlyContinue | Where-Object SessionId -eq $session)
+          "OS=$($os.Caption) build=$($os.BuildNumber) session=$session shellCount=$($explorer.Count)"
+          if ($session -eq 0) { throw 'Session 0 is not an interactive test desktop' }
+          if (Get-Process Lively -ErrorAction SilentlyContinue) { throw 'Existing Lively session' }
+          if (Test-Path "$env:LOCALAPPDATA\Lively Wallpaper\Settings.json") { throw 'Existing Lively profile' }
+          $setup = Join-Path $env:RUNNER_TEMP lively-v2210.exe
+          curl.exe -fsSL --retry 2 --max-time 180 -o $setup https://github.com/lively-community/lively/releases/download/v2.2.1.0/lively_setup_x86_full_v2210.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          $digest = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne '98f4e96bb8e2c416384eeaf48016eadaea9dce8263b8d212052775ebcf2d7e34') { throw 'Installer digest mismatch' }
+          "Official installer SHA256=$digest"
+          $installer = Start-Process $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOAUTOLAUNCH /MERGETASKS=!desktopicon,!windowsstartup' -WindowStyle Hidden -PassThru
+          if (!$installer.WaitForExit(180000) -or $installer.ExitCode -ne 0) { throw 'Stock installation failed' }
+          $data = python -I -S electron/resources/windows-wallpaper/helper.py inspect | ConvertFrom-Json
+          if (!$data.executable -or $data.running -or $data.recoveryPending) { throw 'Not a fresh stopped stock installation' }
+          $dir = Split-Path $data.executable
+          foreach ($relative in @('Lively.exe','Lively.dll','plugins/webview2/Lively.Player.WebView2.exe')) {
+            $p = Join-Path $dir $relative
+            "$relative SHA256=$((Get-FileHash $p -Algorithm SHA256).Hash) version=$((Get-Item $p).VersionInfo.ProductVersion)"
+          }
+          python -I -S electron/resources/windows-wallpaper/helper.py prepare
+          if ($LASTEXITCODE -ne 0) { throw 'First-run preparation failed' }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+      - name: Build exact desktop with its locked model-less dependencies
+        shell: bash
+        run: |
+          set -eu
+          python -m pip install uv==0.12.8
+          uv sync --locked --extra dev
+          cd electron
+          npm ci
+          npm run build
+      - name: Exercise the real desktop and record independent native observations
+        timeout-minutes: 13
+        run: .venv/Scripts/python.exe -u tools/probes/qa_233_disposable.py
