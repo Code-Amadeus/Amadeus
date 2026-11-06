@@ -24,6 +24,21 @@ base.mkdir(exist_ok=False)
 exe = root / "electron/node_modules/electron/dist/electron.exe"
 external = ["A", "B"]
 
+# Diagnostic run only: add stack locations to the failing helper's report;
+# no changes to process queries, timing, registry, or recovery decisions.
+source = hp.read_text(encoding="utf-8")
+needle = "    except Exception as error:\n        try:\n            session.release_unstarted_host"
+assert source.count(needle) == 1
+hp.write_text(source.replace(needle, """    except Exception as error:
+        import traceback
+        def describe(exc):
+            return {"type": type(exc).__name__, "winerror": getattr(exc, "winerror", None),
+                    "stack": [(f.name, f.lineno) for f in traceback.extract_tb(exc.__traceback__)],
+                    "sub": [describe(e) for e in getattr(exc, "exceptions", [])]}
+        print("QA233_STACK " + json.dumps(describe(error)), file=sys.stderr, flush=True)
+        try:
+            session.release_unstarted_host"""), encoding="utf-8")
+
 
 def report(event, **facts):
     print(json.dumps(dict(event=event, **facts), ensure_ascii=True), flush=True)
@@ -54,7 +69,8 @@ def counts():
 def recover():
     p = subprocess.run([sys.executable, "-I", "-S", str(hp), "recover"], capture_output=True, text=True, timeout=110)
     msg = json.loads(p.stdout.strip().splitlines()[-1])
-    report("recover", status=msg.get("status"), error=msg.get("error"), pending=journal.exists(), players=counts())
+    report("recover", status=msg.get("status"), error=msg.get("error"), pending=journal.exists(), players=counts(),
+           running=win.running() is not None, scenes=scenes())
     return p.returncode == 0
 
 
@@ -96,7 +112,7 @@ def actual(case, expected, shared=None):
                     rows = scenes()
                 except OSError:
                     rows = None
-                if players and rows is not None and "amadeus-managed" not in rows and state is not None:
+                if players and rows is not None and "amadeus-managed" not in rows and state and state[0] == "Settled":
                     reported_false_empty = True
                 now = (state, players, rows, (work / "slice-loaded").exists())
                 if now != observed:
@@ -151,13 +167,14 @@ def actual(case, expected, shared=None):
                 for file in [work / "errors", work / "electron.log"]:
                     if file.exists():
                         for line in file.read_text(encoding="utf8", errors="replace").splitlines()[-200:]:
-                            if any(t in line.lower() for t in ("traceback", "error:", "failed", "not found", "timed out", "exception")) and not any(t in line.lower() for t in ("token", "api_key", "bearer", "authorization")):
-                                report("diagnostic", message=line[:330])
+                            if any(t in line.lower() for t in ("qa233_stack", "traceback", "error:", "failed", "not found", "timed out", "exception")) and not any(t in line.lower() for t in ("token", "api_key", "bearer", "authorization")):
+                                report("diagnostic", message=line[:1200])
 
 
 assert not win.running() and not journal.exists()
 report("desktop", shell=bool(ctypes.windll.user32.GetShellWindow()), monitors=ctypes.windll.user32.GetSystemMetrics(80))
-for name in ("empty-owned", "shared-original", "user-change", "helper-loss"):
+failures = []
+for name in ("empty-owned", "empty-owned-repeat", "shared-original", "user-change", "helper-loss"):
     shared = None
     try:
         if name in ("shared-original", "user-change"):
@@ -167,11 +184,18 @@ for name in ("empty-owned", "shared-original", "user-change", "helper-loss"):
             host.set_wallpaper(fixture("A"))
             assert scenes() == ["A"]
         actual(name, ["B"] if name == "user-change" else ["A"] if shared else [], shared)
+    except Exception as error:
+        failures.append(name)
+        report("case-failure", case=name, error=type(error).__name__, detail=str(error)[:220])
     finally:
         if journal.exists():
-            recover()
+            assert recover()
         if shared and win.running() == shared and not journal.exists():
             for n in external:
                 if (base / n).exists():
                     host.close_project(str(base / n))
             host.stop_owned_process(shared)
+    if win.running() or journal.exists():
+        raise SystemExit("Unexpected state after recovery; stopping isolated qualification")
+report("finish", failed=failures)
+raise SystemExit(bool(failures))
