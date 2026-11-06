@@ -248,13 +248,23 @@ class Session:
         # Lively removes its list entry without waiting for WebView2 to exit.
         # Await that postcondition only after our scoped Close; never resend it.
         deadline = time.monotonic() + (2.0 if closing else 0)
-        while self.host.unlisted_players(project, reported):
-            if time.monotonic() >= deadline:
-                raise OSError("Lively's scene report omits a running Amadeus wallpaper player. "
-                              "Check the managed scene in Lively, then retry; recovery state was not cleared.")
+        while True:
+            try:
+                if not self.host.unlisted_players(project, reported):
+                    return reported
+            except PermissionError as error:
+                # A terminating wrapper can deny QueryFullProcessImageNameW
+                # before its handle is signalled. Denial is not exit proof:
+                # require a fresh registry AND kernel inventory within the
+                # same Close deadline, or propagate the inspection error.
+                if getattr(error, "winerror", None) != 5 or time.monotonic() >= deadline:
+                    raise
+            else:
+                if time.monotonic() >= deadline:
+                    raise OSError("Lively's scene report omits a running Amadeus wallpaper player. "
+                                  "Check the managed scene in Lively, then retry; recovery state was not cleared.")
             time.sleep(0.1)
             reported = self.host.get_wallpapers()
-        return reported
 
     def release_unstarted_host(self, process: ProcessIdentity | None) -> None:
         if process is not None and process != self.managed_cleanup_process and not self.journal.exists():
