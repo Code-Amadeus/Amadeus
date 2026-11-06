@@ -253,7 +253,7 @@ class Session:
                 if not self.host.unlisted_players(project, reported):
                     return reported
             except PermissionError as error:
-                # A terminating wrapper can deny QueryFullProcessImageNameW
+                # A terminating wrapper can deny image or command-line queries
                 # before its handle is signalled. Denial is not exit proof:
                 # require a fresh registry AND kernel inventory within the
                 # same Close deadline, or propagate the inspection error.
@@ -261,8 +261,8 @@ class Session:
                     raise
             else:
                 if time.monotonic() >= deadline:
-                    raise OSError("Lively's scene report omits a running Amadeus wallpaper player. "
-                                  "Check the managed scene in Lively, then retry; recovery state was not cleared.")
+                    raise OSError("Lively reports fewer entries for this project than running Amadeus wallpaper "
+                                  "players. Retry when the scene list and player count agree.")
             time.sleep(0.1)
             reported = self.host.get_wallpapers()
 
@@ -434,6 +434,8 @@ class Windows:
         self.process_api.NtQuerySystemInformation.restype = w.LONG
         self.process_api.NtQueryInformationProcess.argtypes = [w.HANDLE, w.ULONG, w.LPVOID, w.ULONG, ctypes.POINTER(w.ULONG)]
         self.process_api.NtQueryInformationProcess.restype = w.LONG
+        self.process_api.RtlNtStatusToDosError.argtypes = [w.LONG]
+        self.process_api.RtlNtStatusToDosError.restype = w.ULONG
 
     def check(self, result):
         if not result:
@@ -558,7 +560,8 @@ class Windows:
             buffer, used = ctypes.create_string_buffer(size), w.ULONG()
             status = self.process_api.NtQueryInformationProcess(handle, 60, buffer, size, ctypes.byref(used)) & 0xFFFFFFFF
             if status:
-                raise OSError(f"Cannot inspect wallpaper player (NTSTATUS 0x{status:08x}); recovery not confirmed.")
+                raise ctypes.WinError(self.process_api.RtlNtStatusToDosError(status),
+                                      f"Cannot inspect wallpaper player command line (NTSTATUS 0x{status:08x}).")
             line = UNICODE_STRING.from_buffer(buffer)
             base = ctypes.addressof(buffer)
             if not (ctypes.sizeof(UNICODE_STRING) <= used.value <= size and line.Length and not line.Length % 2
@@ -582,20 +585,19 @@ class Windows:
         finally:
             self.close(handle)
 
-    def managed_player_displays(self):
+    def managed_player_count(self) -> int:
+        count = 0
         for pid in self.session_processes("lively.player.webview2.exe"):
             args = self.player_argv(pid)
             if not args:
                 continue  # exited before inspection
-            # The pinned Lively WebView2 launcher supplies both options. Do not
-            # log the command line: other wallpapers' URLs may contain secrets.
+            # Do not log command lines: other wallpapers' URLs may contain secrets.
             urls = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--wallpaper-url"]
-            if len(urls) == 1 and not managed_url(urls[0]):
-                continue
-            displays = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--wallpaper-display"]
-            if len(urls) != 1 or len(displays) != 1 or not displays[0]:
+            if len(urls) != 1:
                 raise OSError("Cannot identify the Lively wallpaper player; recovery not confirmed.")
-            yield displays[0]
+            if managed_url(urls[0]):
+                count += 1
+        return count
 
     def image_path(self, handle):
         size, buffer = w.DWORD(32768), ctypes.create_unicode_buffer(32768)
@@ -981,14 +983,10 @@ class LivelyHost:
                 for item in self.rpc.call("Desktop", "GetWallpapers", streaming=True)]
 
     def unlisted_players(self, project, reported):
-        # A surviving wrapper contradicts the registry's negative observation.
-        # Consume one reported slot per player (including duplicate layouts).
-        slots = [x.Monitor for x in reported if same_path(x.Path, project)]
-        for display in self.windows.managed_player_displays():
-            if display not in slots:
-                return True
-            slots.remove(display)
-        return False
+        # A span player can be reassigned to a new primary without relaunch.
+        # Its launch display is not its identity. Each reported project row
+        # accounts for at most one live player; restoration still checks monitors.
+        return self.windows.managed_player_count() > sum(same_path(x.Path, project) for x in reported)
 
     def get_screens(self):
         screens = self.rpc.call("Display", "GetScreens")[0]

@@ -208,15 +208,17 @@ Lively 不会继续迟到挂载。
 **#233 — missing scene / surviving player.** Stock Lively 2.2.1.0 can return an
 empty or partial list on enumeration error and acknowledge a close without
 waiting for its player to exit. Amadeus mounts its loopback wallpaper using
-Lively's WebView2 player. The helper now cross-checks the reported managed
-project/display against live Windows player instances before accepting a
-before-image or committing recovery. It uses the wrapper's image, Windows logon
-session, launch URL and display; a browser renderer PID alone identifies none
-of these. A player can veto cleanup but cannot authorize replacing a scene or
-killing a process. If Close is still settling, the helper briefly waits for the
-observed discrepancy to clear without issuing Close again. A surviving player
-or a failed player inspection retains the recovery journal and blocks shutdown.
-Fix the conflicting scene in Lively, then retry `recover`; do not delete the journal.
+Lively's WebView2 player. Before saving a before-image or committing recovery,
+the helper counts live wrappers for the Amadeus loopback URL in the current
+Windows session. If that count exceeds the number of entries for the managed
+project, the list cannot confirm cleanup. It does not match the player's launch display
+to a registry row: in span mode [Lively can update the primary display without
+relaunching the player](https://github.com/lively-community/lively/blob/6860a4093fc50058c4815908658a4391c4449935/src/Lively/Lively/Core/WinDesktopCore.cs#L742-L750).
+Counts can veto cleanup; the existing project and monitor checks still decide
+which scenes can be restored. After a scoped Close, the helper allows up to two
+seconds for fresh observations without issuing Close again. If the discrepancy
+or an access denial persists, the recovery journal is retained and host shutdown
+is blocked. Retry `recover` once the conflict is resolved; do not delete the journal.
 
 This check covers the managed WebView2 wrapper, not the complete registry of
 all Lively plugins. A preview or another project using the same Amadeus endpoint
@@ -225,11 +227,12 @@ Absence of a wrapper does not certify an arbitrary empty/partial host registry,
 or exit of every descendant. Those guarantees need truthful results from
 [Lively's list and close RPCs](https://github.com/lively-community/lively/blob/6860a4093fc50058c4815908658a4391c4449935/src/Lively/Lively/RPC/WinDesktopCoreServer.cs#L197-L298).
 
-**#233：场景漏报，但播放器仍在运行。** helper 在保存桌面原状和确认恢复前，按 Windows
-登录会话、WebView2 播放器、Amadeus 回环地址及显示器核对 Lively 的报告。若漏报的
-播放器仍然存活，或无法读取其状态，恢复不会删除日志或关闭宿主。请在 Lively 确认对应
-场景及预览已关闭，再运行 `recover`。这项检查只用于否决矛盾的结果；不能证明其他插件的
-场景列表完整，也不能用 PID 推断可关闭用户选定的壁纸。
+**#233：场景漏报，但播放器仍在运行。** helper 在保存桌面原状和确认恢复前，对比当前
+Windows 会话内使用 Amadeus 回环地址的 WebView2 播放器数量与托管项目的登记条目数。
+播放器多于条目才构成漏报。跨屏模式更换主屏时，Lively 会更新登记的显示器，不会重启
+播放器，因此不比较启动参数里的旧屏号。数量只用于否决清理；原有项目和显示器检查
+仍决定恢复哪张壁纸。对指定项目发出 Close 后，最多等两秒重新核验；持续漏报或拒绝
+访问时，保留恢复日志，不关闭宿主。排除冲突后可重试 `recover`，不要删除日志。
 
 Deterministic contracts separate fake actual state from reported state and cover
 rollback, retries, late requests, user choices, journal compatibility and both

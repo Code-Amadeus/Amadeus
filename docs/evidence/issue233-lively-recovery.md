@@ -18,6 +18,23 @@ after the fake registry has removed its row. It exercises native process
 inspection; it is not a stock-Lively desktop reproduction. The host's
 enumeration and close semantics still need independent correction upstream.
 
+## Span and process-exit regressions
+
+On PR head `5658a379`, the span repro refused both restoration attempts: the
+synthetic registry moved the project from the old primary to the new one while
+the real hidden test wrapper kept its original launch arguments. No Close was
+sent. With the project-count check, the same repro closed the project once,
+restored the original scene and cleared the journal. A separate two-wrapper
+case still vetoes a partial report even when an unrelated project is listed.
+These are Windows process and lifecycle tests with a simulated registry, not
+a physical multi-monitor Lively run.
+
+The command-line query now translates NTSTATUS using Windows' own mapping.
+`STATUS_PROCESS_IS_TERMINATING` reaches the same access-denied handling as
+the image query, while an unrelated invalid-parameter error remains distinct.
+The two-second post-Close window was introduced by this PR. The nine earlier
+stock desktop runs belong to `5658a379`; they do not qualify this revision.
+
 ## Upstream report drafts (not submitted)
 
 Destination: [lively-community/lively issues](https://github.com/lively-community/lively/issues).

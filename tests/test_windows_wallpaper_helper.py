@@ -52,7 +52,7 @@ class FakeHost:
         return list(self.items if self.reported is None else self.reported)
 
     def unlisted_players(self, project, reported):
-        return any(x.Path == project and x not in reported for x in self.items)
+        return sum(h.same_path(x.Path, project) for x in self.items) > sum(h.same_path(x.Path, project) for x in reported)
 
     def set_wallpaper(self, wallpaper, request_settled=None, request_dispatching=None):
         if request_dispatching:
@@ -806,45 +806,106 @@ def test_helper_run_reports_pending_and_recover_retries_the_failed_close(tmp_pat
     assert not host.items and host.stopped == host.started_process
 
 
-@native
-def test_recovery_observes_a_real_player_independently_of_the_host_registry(f, tmp_path, monkeypatch):
-    """An ack may remove the registry row before the wrapper actually exits."""
+@pytest.fixture
+def native_players(tmp_path, monkeypatch):
     import shutil
 
+    windows = h.Windows()
+    observer = h.LivelyHost(windows, tmp_path, object())
+    wrapper = tmp_path / "Lively.Player.WebView2.exe"
+    shutil.copyfile(os.environ["ComSpec"], wrapper)
+    players = {}
+    processes = windows.processes
+    monkeypatch.setattr(windows, "processes", lambda: (p for p in processes() if p[0] in players))
+    # /K REM accepts the same quoted arguments as Lively's wrapper and stays
+    # alive on the test's pipe. No Lively instance or desktop is involved.
+    def launch(display):
+        child = subprocess.Popen(
+            [str(wrapper), "/D", "/Q", "/K", "REM", "--wallpaper-url",
+             "http://127.0.0.1:50123/wallpaper/lively/index.html", "--wallpaper-display", display],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        players[child.pid] = child
+        return child
+
+    try:
+        yield observer, launch
+    finally:
+        for child in players.values():
+            with child:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+
+
+@native
+def test_recovery_observes_a_real_player_independently_of_the_host_registry(f, native_players):
+    """An ack may remove the registry row before the wrapper actually exits."""
     host, session = f
     owned = h.ProcessIdentity(10, 20)
     session.mount(before(host, owned))
-    windows = h.Windows()
-    observer = h.LivelyHost(windows, tmp_path, object())
+    observer, launch = native_players
     host.unlisted_players = observer.unlisted_players
-    wrapper = tmp_path / "Lively.Player.WebView2.exe"
-    shutil.copyfile(os.environ["ComSpec"], wrapper)
-    # /K REM accepts the same quoted arguments as Lively's wrapper and stays
-    # alive on the test's pipe. No Lively instance or desktop is involved.
     display = "synthetic monitor 1"
     host.items = [h.DesktopItem(display, "amadeus")]
-    player = subprocess.Popen(
-        [str(wrapper), "/D", "/Q", "/K", "REM", "--wallpaper-url",
-         "http://127.0.0.1:50123/wallpaper/lively/index.html", "--wallpaper-display", display],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    with player:
-        try:
-            processes = windows.processes
-            monkeypatch.setattr(windows, "processes", lambda: (p for p in processes() if p[0] == player.pid))
-            assert list(windows.managed_player_displays()) == [display]
-            assert not observer.unlisted_players("amadeus", host.items)
-            assert observer.unlisted_players("amadeus", [h.DesktopItem(display, "different project")])
-            # Fake close removes its actual registry entry; it does not own our
-            # OS process. Only the production observer can detect this failure.
-            assert isinstance(failure(session.restore), OSError)
-            assert host.items == [] and host.stopped is None and session.journal.exists()
-        finally:
-            player.kill()
-            player.wait(timeout=5)
+    player = launch(display)
+    assert not observer.unlisted_players("amadeus", host.items)
+    assert observer.unlisted_players("amadeus", [h.DesktopItem(display, "different project")])
+    # Fake close removes its actual registry entry; it does not own our OS process.
+    assert isinstance(failure(session.restore), OSError)
+    assert host.items == [] and host.stopped is None and session.journal.exists()
+    player.kill()
+    player.wait(timeout=5)
     h.Session(host, session.journal).restore()
     assert not session.journal.exists() and host.stopped == owned
+
+
+@native
+def test_span_primary_change_allows_close_and_restores_previous_scene(f, native_players):
+    host, session = f
+    observer, launch = native_players
+    host.unlisted_players = observer.unlisted_players
+    host.options = replace(host.options, Arrangement=1)
+    previous = h.DesktopItem("primary", "original-span-project")
+    host.items = [previous]
+    session.mount(before(host))
+    player = launch("primary")
+    # Lively reassigns Screen to the new primary without relaunching a span player.
+    host.items = [h.DesktopItem("new-primary", "amadeus")]
+    close = host.close_project
+
+    def close_and_release(project):
+        close(project)
+        player.kill()
+        player.wait(timeout=5)
+
+    host.close_project = close_and_release
+    session.restore()
+    assert host.closed == ["amadeus"] and host.items == [previous]
+    assert host.stopped is None and not session.journal.exists()
+
+
+@native
+def test_partial_inventory_of_duplicate_players_is_still_a_veto(native_players):
+    observer, launch = native_players
+    launch("primary")
+    launch("secondary")
+    reports = [h.DesktopItem("primary", "amadeus"), h.DesktopItem("secondary", "user-project")]
+    assert observer.unlisted_players("amadeus", reports)
+    assert not observer.unlisted_players("amadeus", [reports[0], h.DesktopItem("secondary", "amadeus")])
+
+
+@native
+@pytest.mark.parametrize("ntstatus,winerror", [(0xC000010A, 5), (0xC000000D, 87)])
+def test_native_argv_error_preserves_win32_classification(monkeypatch, ntstatus, winerror):
+    windows = h.Windows()
+    # Keep the test process alive so a signalled handle cannot mask the error.
+    monkeypatch.setattr(windows, "image_path", lambda _: "Lively.Player.WebView2.exe")
+    monkeypatch.setattr(windows.process_api, "NtQueryInformationProcess", lambda *args: ntstatus)
+    error = failure(lambda: windows.player_argv(os.getpid()))
+    assert isinstance(error, OSError) and getattr(error, "winerror", None) == winerror
+    assert isinstance(error, PermissionError) == (winerror == 5)
 
 
 def test_running_filters_snapshot_sessions_before_opening_processes():
