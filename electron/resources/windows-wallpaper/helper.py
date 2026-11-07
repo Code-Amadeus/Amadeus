@@ -215,6 +215,14 @@ def same_path(left: str, right: str) -> bool:
     return result == 2  # CSTR_EQUAL
 
 
+def managed_url(raw: str) -> bool:
+    try:
+        url = urlsplit(raw)
+        return url.scheme == "http" and url.hostname == "127.0.0.1" and url.path == "/wallpaper/lively/index.html"
+    except ValueError:
+        return False
+
+
 class Session:
     """The journal owns recovery; process ownership never substitutes for it."""
     def __init__(self, host, journal: Path):
@@ -236,6 +244,28 @@ class Session:
     def save(self, snapshot: Snapshot) -> None:
         atomic_json(self.journal, asdict(snapshot))
 
+    def confirm_player_report(self, project, reported, *, closing=False):
+        # Lively removes its list entry without waiting for WebView2 to exit.
+        # Await that postcondition only after our scoped Close; never resend it.
+        deadline = time.monotonic() + (2.0 if closing else 0)
+        while True:
+            try:
+                if not self.host.unlisted_players(project, reported):
+                    return reported
+            except PermissionError as error:
+                # A terminating wrapper can deny image or command-line queries
+                # before its handle is signalled. Denial is not exit proof:
+                # require a fresh registry AND kernel inventory within the
+                # same Close deadline, or propagate the inspection error.
+                if getattr(error, "winerror", None) != 5 or time.monotonic() >= deadline:
+                    raise
+            else:
+                if time.monotonic() >= deadline:
+                    raise OSError("Lively reports fewer entries for this project than running Amadeus wallpaper "
+                                  "players. Retry when the scene list and player count agree.")
+            time.sleep(0.1)
+            reported = self.host.get_wallpapers()
+
     def release_unstarted_host(self, process: ProcessIdentity | None) -> None:
         if process is not None and process != self.managed_cleanup_process and not self.journal.exists():
             self.host.stop_owned_process(process)
@@ -243,6 +273,13 @@ class Session:
     def mount(self, snapshot: Snapshot) -> None:
         if self.journal.exists():
             raise RuntimeError("Recover the previous wallpaper session first.")
+        # An already visible contradiction is not a usable before-image.
+        # Do not release a host that may still be displaying that scene.
+        try:
+            self.confirm_player_report(snapshot.Project, snapshot.Wallpapers)
+        except OSError:
+            self.managed_cleanup_process = snapshot.OwnedProcess
+            raise
         snapshot = replace(snapshot, Mounted=False, Phase="Preparing", RequestProcess=None)
         self.save(snapshot)
         self.managed_cleanup_process = snapshot.OwnedProcess
@@ -306,6 +343,7 @@ class Session:
             self.host.restore_options(snapshot.Options)
             options = self.host.get_options()
             current = self.host.get_wallpapers()
+            self.confirm_player_report(snapshot.Project, current)
             changed = options.Arrangement != snapshot.Options.Arrangement or any(
                 not any(old.Monitor == x.Monitor and same_path(old.Path, x.Path) for old in snapshot.Wallpapers)
                 for x in current)
@@ -323,7 +361,13 @@ class Session:
             (not snapshot.Mounted or restarted_process is not None) and all(x.Monitor != monitor for x in current))}
         if snapshot.Options.Arrangement != 0 and ours:
             restorable = affected
-        if ours or (snapshot.Phase == "Settled" and not snapshot.Mounted):
+        unconfirmed_mount = snapshot.Phase == "Settled" and not snapshot.Mounted
+        if not unconfirmed_mount:
+            # In particular, do not interpret an omitted mounted scene as the
+            # user having cleared the display. The player cannot authorize us
+            # to choose a replacement scene or change the saved before-image.
+            self.confirm_player_report(snapshot.Project, current)
+        if ours or unconfirmed_mount:
             self.save(replace(snapshot, Mounted=False))
             self.host.close_project(snapshot.Project)
         if layout_unchanged:
@@ -332,7 +376,7 @@ class Session:
                 if wallpaper.Monitor in restorable:
                     self.host.set_wallpaper(wallpaper)
         self.host.restore_options(snapshot.Options)
-        after = self.host.get_wallpapers()
+        after = self.confirm_player_report(snapshot.Project, self.host.get_wallpapers(), closing=bool(ours or unconfirmed_mount))
         if any(same_path(x.Path, snapshot.Project) and not any(
             old.Monitor == x.Monitor and same_path(old.Path, x.Path) for old in snapshot.Wallpapers) for x in after) or (
             layout_unchanged and any(not any(x.Monitor == old.Monitor and same_path(x.Path, old.Path) for x in after)
@@ -340,7 +384,7 @@ class Session:
             raise OSError("Wallpaper restoration was not confirmed; recovery journal retained.")
         user_changed = not layout_unchanged or any(not any(
             old.Monitor == x.Monitor and same_path(old.Path, x.Path) for old in snapshot.Wallpapers) for x in after)
-        if snapshot.OwnedProcess and not user_changed:
+        if snapshot.OwnedProcess and not user_changed and self.host.get_options().Arrangement == snapshot.Options.Arrangement:
             self.host.stop_owned_process(restarted_process or snapshot.OwnedProcess)
         self.journal.unlink()
 
@@ -388,6 +432,10 @@ class Windows:
         self.process_api = ctypes.WinDLL("ntdll", use_last_error=True)
         self.process_api.NtQuerySystemInformation.argtypes = [w.ULONG, w.LPVOID, w.ULONG, ctypes.POINTER(w.ULONG)]
         self.process_api.NtQuerySystemInformation.restype = w.LONG
+        self.process_api.NtQueryInformationProcess.argtypes = [w.HANDLE, w.ULONG, w.LPVOID, w.ULONG, ctypes.POINTER(w.ULONG)]
+        self.process_api.NtQueryInformationProcess.restype = w.LONG
+        self.process_api.RtlNtStatusToDosError.argtypes = [w.LONG]
+        self.process_api.RtlNtStatusToDosError.restype = w.ULONG
 
     def check(self, result):
         if not result:
@@ -478,26 +526,90 @@ class Windows:
             offset += entry.NextEntryOffset
 
     def running(self) -> ProcessIdentity | None:
-        current = w.DWORD()
-        self.check(self.api.ProcessIdToSessionId(os.getpid(), ctypes.byref(current)))
         # Session membership comes from the system snapshot, without opening
         # foreign processes. A selected same-session identity must still verify.
-        for pid, session, image in self.processes():
-            if session == current.value and image.lower() == "lively.exe":
-                try:
-                    return self.identity(pid)
-                except ProcessLookupError:
-                    pass
+        for pid in self.session_processes("lively.exe"):
+            try:
+                return self.identity(pid)
+            except ProcessLookupError:
+                pass
         return None
+
+    def session_processes(self, name):
+        current = self.session_id(os.getpid())
+        return (pid for pid, session, image in self.processes() if session == current and image.lower() == name)
+
+    def session_id(self, pid):
+        session = w.DWORD()
+        self.check(self.api.ProcessIdToSessionId(pid, ctypes.byref(session)))
+        return session.value
+
+    def player_argv(self, pid):
+        handle = self.open_process(pid)
+        if handle is None:
+            return []
+        try:
+            # The PID can be reused between enumeration and OpenProcess.
+            # Recheck the image on the handle used to read the command line.
+            if (self.session_id(pid) != self.session_id(os.getpid())
+                    or Path(self.image_path(handle)).name.lower() != "lively.player.webview2.exe"):
+                return []
+            # ProcessCommandLineInformation returns a UNICODE_STRING plus its
+            # text in our own buffer. Do not inspect arbitrary process memory.
+            size = ctypes.sizeof(UNICODE_STRING) + 65536
+            buffer, used = ctypes.create_string_buffer(size), w.ULONG()
+            status = self.process_api.NtQueryInformationProcess(handle, 60, buffer, size, ctypes.byref(used)) & 0xFFFFFFFF
+            if status:
+                raise ctypes.WinError(self.process_api.RtlNtStatusToDosError(status),
+                                      f"Cannot inspect wallpaper player command line (NTSTATUS 0x{status:08x}).")
+            line = UNICODE_STRING.from_buffer(buffer)
+            base = ctypes.addressof(buffer)
+            if not (ctypes.sizeof(UNICODE_STRING) <= used.value <= size and line.Length and not line.Length % 2
+                    and base + ctypes.sizeof(UNICODE_STRING) <= (line.Buffer or 0)
+                    and line.Buffer + line.Length <= base + used.value):
+                raise OSError("Invalid wallpaper player command line; recovery not confirmed.")
+            argc = ctypes.c_int()
+            split = ctypes.WinDLL("shell32", use_last_error=True).CommandLineToArgvW
+            split.argtypes, split.restype = [w.LPCWSTR, ctypes.POINTER(ctypes.c_int)], ctypes.POINTER(w.LPWSTR)
+            argv = self.check(split(ctypes.wstring_at(line.Buffer, line.Length // 2), ctypes.byref(argc)))
+            try:
+                return argv[:argc.value]
+            finally:
+                free = self.api.LocalFree
+                free.argtypes, free.restype = [w.HLOCAL], w.HLOCAL
+                free(ctypes.cast(argv, w.HLOCAL))
+        except OSError:
+            if self.api.WaitForSingleObject(handle, 0) == 0:
+                return []
+            raise
+        finally:
+            self.close(handle)
+
+    def managed_player_count(self) -> int:
+        count = 0
+        for pid in self.session_processes("lively.player.webview2.exe"):
+            args = self.player_argv(pid)
+            if not args:
+                continue  # exited before inspection
+            # Do not log command lines: other wallpapers' URLs may contain secrets.
+            urls = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--wallpaper-url"]
+            if len(urls) != 1:
+                raise OSError("Cannot identify the Lively wallpaper player; recovery not confirmed.")
+            if managed_url(urls[0]):
+                count += 1
+        return count
+
+    def image_path(self, handle):
+        size, buffer = w.DWORD(32768), ctypes.create_unicode_buffer(32768)
+        self.check(self.api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)))
+        return buffer.value
 
     def executable(self, pid: int) -> str:
         handle = self.open_process(pid)
         if handle is None:
             raise ProcessLookupError("Lively exited")
         try:
-            size, buffer = w.DWORD(32768), ctypes.create_unicode_buffer(32768)
-            self.check(self.api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)))
-            return buffer.value
+            return self.image_path(handle)
         finally:
             self.close(handle)
 
@@ -870,6 +982,12 @@ class LivelyHost:
         return [DesktopItem(text_value(value(item, 2, b"", 2), 1), text_value(item, 1))
                 for item in self.rpc.call("Desktop", "GetWallpapers", streaming=True)]
 
+    def unlisted_players(self, project, reported):
+        # A span player can be reassigned to a new primary without relaunch.
+        # Its launch display is not its identity. Each reported project row
+        # accounts for at most one live player; restoration still checks monitors.
+        return self.windows.managed_player_count() > sum(same_path(x.Path, project) for x in reported)
+
     def get_screens(self):
         screens = self.rpc.call("Display", "GetScreens")[0]
         return [(DesktopItem(text_value(f.value, 1), ""), bool(value(f.value, 6)))
@@ -973,8 +1091,7 @@ def main(args=None) -> int:
         if command not in ("run", "recover"):
             raise ValueError("Expected inspect, prepare, run or recover.")
         if command == "run":
-            url = urlsplit(args[1]) if len(args) == 2 else None
-            if url is None or url.scheme != "http" or url.hostname != "127.0.0.1" or url.path != "/wallpaper/lively/index.html":
+            if len(args) != 2 or not managed_url(args[1]):
                 raise ValueError("Expected the local Amadeus wallpaper wrapper URL.")
         lock = windows.lock(state / "session.lock")
         if command == "recover" and not journal.exists():

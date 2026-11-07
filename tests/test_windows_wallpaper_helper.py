@@ -51,6 +51,9 @@ class FakeHost:
         self.reads += 1
         return list(self.items if self.reported is None else self.reported)
 
+    def unlisted_players(self, project, reported):
+        return sum(h.same_path(x.Path, project) for x in self.items) > sum(h.same_path(x.Path, project) for x in reported)
+
     def set_wallpaper(self, wallpaper, request_settled=None, request_dispatching=None):
         if request_dispatching:
             if self.dispatch:
@@ -158,6 +161,108 @@ def test_static_wallpaper_revealed_and_owned_host_released(f):
     session.restore()
     assert host.items == [] and host.stopped == owned
     assert not session.journal.exists()
+
+
+def test_false_empty_after_noop_close_retains_journal_until_retry(f):
+    host, session = f
+    owned = h.ProcessIdentity(10, 20)
+    host.reported, host.close_noop, host.fail_after = [], True, True
+    error = failure(lambda: session.mount(before(host, owned)))
+    assert error.exceptions[0] is host.mount_failure
+    assert isinstance(error.exceptions[1], OSError)
+    assert host.items == [h.DesktopItem("primary", "amadeus")]
+    assert session.journal.exists() and host.stopped is None
+    host.close_noop = False
+    h.Session(host, session.journal).restore()
+    assert host.items == [] and not session.journal.exists() and host.stopped == owned
+
+
+@pytest.mark.parametrize("mounted_before_error", [True, False])
+def test_genuinely_empty_desktop_can_finish_settled_rollback(f, mounted_before_error):
+    host, session = f
+    host.reported = []
+    host.fail_after, host.fail_next = mounted_before_error, not mounted_before_error
+    error = failure(lambda: session.mount(before(host, host.running)))
+    assert not isinstance(error, ExceptionGroup)
+    assert not host.items and host.stopped == host.running and not session.journal.exists()
+
+
+def test_omitted_mounted_scene_is_not_a_user_clear_or_permission_to_replace_it(f):
+    host, session = f
+    original(host)
+    session.mount(before(host, host.running))
+    prior_journal = session.journal.read_bytes()
+    host.reported = []
+    assert isinstance(failure(session.restore), OSError)
+    assert session.journal.read_bytes() == prior_journal and not host.closed and host.stopped is None
+    host.reported = None
+    session.restore()
+    assert host.items == [h.DesktopItem("primary", "old")] and not session.journal.exists()
+
+
+def test_incomplete_before_image_cannot_acquire_or_shut_down_host(f):
+    host, session = f
+    snapshot = before(host, host.running)
+    host.items = [h.DesktopItem("primary", "amadeus")]
+    assert isinstance(failure(lambda: session.mount(snapshot)), OSError)
+    session.release_unstarted_host(host.running)
+    assert host.set_calls == 0 and host.stopped is None and not session.journal.exists()
+
+
+def test_confirmation_refresh_keeps_user_wallpaper_chosen_while_player_exits(f):
+    host, session = f
+    session.mount(before(host, host.running))
+    waiting = True
+    def unlisted(project, reported):
+        nonlocal waiting
+        if not reported and waiting:
+            waiting = False
+            host.items = [h.DesktopItem("primary", "new user scene")]
+            return True
+        return False
+    host.unlisted_players = unlisted
+    session.restore()
+    assert not session.journal.exists() and host.stopped is None
+    assert host.items == [h.DesktopItem("primary", "new user scene")]
+
+
+def test_unavailable_player_evidence_retains_the_original_mount_error(f):
+    host, session = f
+    host.fail_after = True
+    denied = PermissionError("cannot inspect player")
+    denied.winerror = 5
+    def unlisted(project, reported):
+        if host.closed:
+            raise denied
+        return False
+    host.unlisted_players = unlisted
+    error = failure(lambda: session.mount(before(host, host.running)))
+    assert error.exceptions == (host.mount_failure, denied)
+    assert session.journal.exists() and host.stopped is None
+
+
+def test_dying_player_access_denial_needs_new_scene_and_process_evidence(f):
+    host, session = f
+    session.mount(before(host, host.running))
+    denied = PermissionError("terminating wrapper")
+    denied.winerror = 5
+    observations = []
+
+    def inspect(project, reported):
+        if not host.closed:
+            return False
+        observations.append(list(reported))
+        if len(observations) == 1:
+            # While inspection is unavailable the user chooses a new wallpaper.
+            host.items = [h.DesktopItem("primary", "new user scene")]
+            raise denied
+        assert session.journal.exists() and host.stopped is None
+        return False  # a new OS inventory can now establish no managed wrapper
+
+    host.unlisted_players = inspect
+    session.restore()
+    assert observations == [[], [h.DesktopItem("primary", "new user scene")]]
+    assert host.closed == ["amadeus"] and host.stopped is None and not session.journal.exists()
 
 
 @pytest.mark.parametrize("choice", ["user-new", None, "layout"])
@@ -669,6 +774,138 @@ def test_deadline_waits_for_entered_persistence_and_retains_pending(f, cancelled
 
 
 native = pytest.mark.skipif(sys.platform != "win32", reason="Native Windows process/message-pipe contract")
+
+
+@native
+def test_helper_run_reports_pending_and_recover_retries_the_failed_close(tmp_path, monkeypatch):
+    host = FakeHost()
+    host.started_process = host.running
+    host.ensure_running = lambda: None
+    host.write_project = lambda url: "amadeus"
+    host.primary_monitor = lambda: "primary"
+    host.reported, host.close_noop, host.fail_after = [], True, True
+
+    class Lock:
+        def lock(self, file):
+            return 1
+
+        def close(self, handle):
+            pass
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(h, "Windows", Lock)
+    monkeypatch.setattr(h, "LivelyHost", lambda windows: host)
+    reports = []
+    monkeypatch.setattr(h, "report", reports.append)
+    assert h.main(["run", "http://127.0.0.1:12345/wallpaper/lively/index.html"]) == 1
+    assert reports[-1]["status"] == "error" and reports[-1]["recoveryPending"] is True
+    assert "mount confirmation timed out" in reports[-1]["error"]
+    assert host.stopped is None and host.items
+    host.close_noop = False
+    assert h.main(["recover"]) == 0 and reports[-1]["status"] == "restored"
+    assert not host.items and host.stopped == host.started_process
+
+
+@pytest.fixture
+def native_players(tmp_path, monkeypatch):
+    import shutil
+
+    windows = h.Windows()
+    observer = h.LivelyHost(windows, tmp_path, object())
+    wrapper = tmp_path / "Lively.Player.WebView2.exe"
+    shutil.copyfile(os.environ["ComSpec"], wrapper)
+    players = {}
+    processes = windows.processes
+    monkeypatch.setattr(windows, "processes", lambda: (p for p in processes() if p[0] in players))
+    # /K REM accepts the same quoted arguments as Lively's wrapper and stays
+    # alive on the test's pipe. No Lively instance or desktop is involved.
+    def launch(display):
+        child = subprocess.Popen(
+            [str(wrapper), "/D", "/Q", "/K", "REM", "--wallpaper-url",
+             "http://127.0.0.1:50123/wallpaper/lively/index.html", "--wallpaper-display", display],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        players[child.pid] = child
+        return child
+
+    try:
+        yield observer, launch
+    finally:
+        for child in players.values():
+            with child:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+
+
+@native
+def test_recovery_observes_a_real_player_independently_of_the_host_registry(f, native_players):
+    """An ack may remove the registry row before the wrapper actually exits."""
+    host, session = f
+    owned = h.ProcessIdentity(10, 20)
+    session.mount(before(host, owned))
+    observer, launch = native_players
+    host.unlisted_players = observer.unlisted_players
+    display = "synthetic monitor 1"
+    host.items = [h.DesktopItem(display, "amadeus")]
+    player = launch(display)
+    assert not observer.unlisted_players("amadeus", host.items)
+    assert observer.unlisted_players("amadeus", [h.DesktopItem(display, "different project")])
+    # Fake close removes its actual registry entry; it does not own our OS process.
+    assert isinstance(failure(session.restore), OSError)
+    assert host.items == [] and host.stopped is None and session.journal.exists()
+    player.kill()
+    player.wait(timeout=5)
+    h.Session(host, session.journal).restore()
+    assert not session.journal.exists() and host.stopped == owned
+
+
+@native
+def test_span_primary_change_allows_close_and_restores_previous_scene(f, native_players):
+    host, session = f
+    observer, launch = native_players
+    host.unlisted_players = observer.unlisted_players
+    host.options = replace(host.options, Arrangement=1)
+    previous = h.DesktopItem("primary", "original-span-project")
+    host.items = [previous]
+    session.mount(before(host))
+    player = launch("primary")
+    # Lively reassigns Screen to the new primary without relaunching a span player.
+    host.items = [h.DesktopItem("new-primary", "amadeus")]
+    close = host.close_project
+
+    def close_and_release(project):
+        close(project)
+        player.kill()
+        player.wait(timeout=5)
+
+    host.close_project = close_and_release
+    session.restore()
+    assert host.closed == ["amadeus"] and host.items == [previous]
+    assert host.stopped is None and not session.journal.exists()
+
+
+@native
+def test_partial_inventory_of_duplicate_players_is_still_a_veto(native_players):
+    observer, launch = native_players
+    launch("primary")
+    launch("secondary")
+    reports = [h.DesktopItem("primary", "amadeus"), h.DesktopItem("secondary", "user-project")]
+    assert observer.unlisted_players("amadeus", reports)
+    assert not observer.unlisted_players("amadeus", [reports[0], h.DesktopItem("secondary", "amadeus")])
+
+
+@native
+@pytest.mark.parametrize("ntstatus,winerror", [(0xC000010A, 5), (0xC000000D, 87)])
+def test_native_argv_error_preserves_win32_classification(monkeypatch, ntstatus, winerror):
+    windows = h.Windows()
+    # Keep the test process alive so a signalled handle cannot mask the error.
+    monkeypatch.setattr(windows, "image_path", lambda _: "Lively.Player.WebView2.exe")
+    monkeypatch.setattr(windows.process_api, "NtQueryInformationProcess", lambda *args: ntstatus)
+    error = failure(lambda: windows.player_argv(os.getpid()))
+    assert isinstance(error, OSError) and getattr(error, "winerror", None) == winerror
+    assert isinstance(error, PermissionError) == (winerror == 5)
 
 
 def test_running_filters_snapshot_sessions_before_opening_processes():
