@@ -66,7 +66,7 @@ def test_qwen_sources_and_only_declared_packaging_changes_match_upstream():
     original = tomllib.loads((ROOT / 'vendor/qwen-asr.upstream-pyproject.toml').read_text(encoding='utf-8'))
     patched = tomllib.loads((source / 'pyproject.toml').read_text(encoding='utf-8'))
     allowed = deepcopy(original)
-    allowed['build-system']['requires'] = ['setuptools==83.0.0', 'wheel==0.47.0']
+    allowed['build-system']['requires'] = ['setuptools==84.2.1', 'wheel==0.47.0']
     allowed['project']['dependencies'].remove('gradio')
     allowed['project']['optional-dependencies']['demo'] = ['gradio>=6.16.0,<7']
     allowed['project']['license'] = 'Apache-2.0'
@@ -108,7 +108,7 @@ def test_isolated_qwen_distributions_preserve_code_resources_and_metadata(tmp_pa
         info = 'qwen_asr-0.0.6.dist-info/'
         metadata = BytesParser().parsebytes(wheel.read(info + 'METADATA'))
         wheel_metadata = BytesParser().parsebytes(wheel.read(info + 'WHEEL'))
-        assert wheel_metadata['Generator'] == 'setuptools (83.0.0)'
+        assert wheel_metadata['Generator'] == 'setuptools (84.2.1)'
         assert metadata['Name'] == project['name'] and metadata['Version'] == project['version']
         assert metadata['Requires-Python'] == project['requires-python']
         assert metadata['License-Expression'] == 'Apache-2.0'

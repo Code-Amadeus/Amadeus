@@ -15,7 +15,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
-from server.work_artifact_registry import WorkArtifactRegistry
+from server.unified_diff import parse_unified_diff
+from server.work_artifact_registry import WorkArtifactRegistry, _untracked_text_patch
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -254,6 +255,218 @@ def test_non_ascii_entry_revision_is_registered_as_the_real_path() -> None:
     asyncio.run(run())
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.noprefix", "true"),
+        ("color.diff", "always"),
+    ],
+)
+def test_attempt_patch_ignores_user_diff_format_config(key: str, value: str) -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_diff_config_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "committed.txt").write_text("base\n", encoding="utf-8")
+            (root / "working.txt").write_text("base\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", key, value)
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit files")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit files")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "committed.txt").write_text("committed\n", encoding="utf-8")
+            _git(root, "commit", "-am", "provider commit")
+            (root / "working.txt").write_text("working\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "diff --git a/committed.txt b/committed.txt" in delta["committed_patch"]
+        assert "diff --git a/working.txt b/working.txt" in delta["working_patch"]
+        assert "\x1b[" not in delta["patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [(entry["path"], entry["additions"], entry["deletions"]) for entry in parsed["files"]] == [
+            ("committed.txt", 1, 1),
+            ("working.txt", 1, 1),
+        ]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("submodule_format", ["log", "diff"])
+def test_attempt_patch_ignores_user_submodule_diff_format(submodule_format: str) -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_submodule_") as temp:
+            library = Path(temp) / "library"
+            library.mkdir()
+            _git(library, "init")
+            _git(library, "config", "user.email", "amadeus-test@example.invalid")
+            _git(library, "config", "user.name", "Amadeus Test")
+            (library / "lib.txt").write_text("base\n", encoding="utf-8")
+            _git(library, "add", ".")
+            _git(library, "commit", "-m", "library baseline")
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "app.txt").write_text("base\n", encoding="utf-8")
+            _git(
+                root,
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                str(library),
+                "vendor",
+            )
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.submodule", submodule_format)
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Update vendor")
+            attempt = store.create_attempt(
+                item.work_item_id,
+                provider="codex",
+                task="Update vendor",
+            )
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            vendor = root / "vendor"
+            _git(vendor, "config", "user.email", "amadeus-test@example.invalid")
+            _git(vendor, "config", "user.name", "Amadeus Test")
+            (vendor / "lib.txt").write_text("base\nchanged\n", encoding="utf-8")
+            _git(vendor, "commit", "-am", "library change")
+            (root / "app.txt").write_text("base\nchanged\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "Submodule vendor" not in delta["patch"]
+        assert "lib.txt" not in delta["patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [(entry["path"], entry["additions"], entry["deletions"]) for entry in parsed["files"]] == [
+            ("app.txt", 1, 0),
+            ("vendor", 1, 1),
+        ]
+        assert parsed["files"][0]["hunks"][0]["lines"] == [
+            {"kind": "context", "oldLine": 1, "newLine": 1, "text": "base"},
+            {"kind": "add", "newLine": 2, "text": "changed"},
+        ]
+
+    asyncio.run(run())
+
+
+def test_attempt_diff_lists_committed_copies_once_with_copy_detection() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_copy_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            source = root / "my src.txt"
+            source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.renames", "copies")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Copy notes")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Copy notes")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "my dup.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "provider commit")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "copy to my dup.txt" in delta["committed_patch"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [
+            (entry["path"], entry["oldPath"], entry["status"], entry["additions"])
+            for entry in parsed["files"]
+        ] == [
+            ("my dup.txt", "my src.txt", "copied", 0),
+            ("my src.txt", "my src.txt", "modified", 1),
+        ]
+
+    asyncio.run(run())
+
+
+def test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_blank_context_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "notes.txt").write_text("a\n\nb\nc\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+            _git(root, "config", "diff.suppressBlankEmpty", "true")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit notes")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit notes")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            (root / "notes.txt").write_text("a\n\nB\nc\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert "\n a\n\n-b\n" in delta["patch"]
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert [entry["path"] for entry in parsed["files"]] == ["notes.txt"]
+        assert parsed["files"][0]["hunks"][0]["lines"] == [
+            {"kind": "context", "oldLine": 1, "newLine": 1, "text": "a"},
+            {"kind": "context", "oldLine": 2, "newLine": 2, "text": ""},
+            {"kind": "remove", "oldLine": 3, "text": "b"},
+            {"kind": "add", "newLine": 3, "text": "B"},
+            {"kind": "context", "oldLine": 4, "newLine": 4, "text": "c"},
+        ]
+
+    asyncio.run(run())
+
+
 def test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_filesystem_") as temp:
@@ -385,12 +598,164 @@ def test_explicit_amend_may_change_predecessor_owned_dirty_artifact() -> None:
     asyncio.run(run())
 
 
+@pytest.mark.parametrize(
+    ("content", "expected_lines", "missing_newline"),
+    [
+        ("page\f-break\nx\u2028+y\nlast\n", ["page\f-break", "x\u2028+y", "last"], False),
+        ("a\v-b\x1c+c\x1d d\x1e\\e\x85 f\u2029g\n", ["a\v-b\x1c+c\x1d d\x1e\\e\x85 f\u2029g"], False),
+        ("", [], False),
+        ("\n", [""], False),
+        ("first\n\n", ["first", ""], False),
+        ("first\r\n\r\nlast\r\n", ["first", "", "last"], False),
+        ("first\nlast", ["first", "last"], True),
+        ("first\rlast\r", ["first\rlast"], True),
+    ],
+    ids=[
+        "embedded-separators", "control-characters", "empty", "blank",
+        "trailing-blank", "crlf", "no-final-newline", "bare-cr",
+    ],
+)
+def test_untracked_patch_roundtrip_preserves_git_lines(
+    tmp_path: Path, content: str, expected_lines: list[str], missing_newline: bool,
+) -> None:
+    (tmp_path / "new file.txt").write_bytes(content.encode("utf-8"))
+
+    patch, omissions = _untracked_text_patch(tmp_path, ["new file.txt"])
+    parsed = parse_unified_diff(
+        patch, changed_files=["new file.txt"], untracked=["new file.txt"],
+    )
+
+    assert omissions == []
+    assert parsed["fileCount"] == 1
+    assert parsed["additions"] == len(expected_lines)
+    assert parsed["deletions"] == 0
+    file = parsed["files"][0]
+    assert file["path"] == "new file.txt"
+    assert file["status"] == "added"
+    if not expected_lines:
+        assert file["hunks"] == []
+        return
+    hunk, = file["hunks"]
+    assert hunk["oldCount"] == 0
+    assert hunk["newCount"] == len(expected_lines)
+    expected = [
+        {"kind": "add", "newLine": number, "text": text}
+        for number, text in enumerate(expected_lines, 1)
+    ]
+    if missing_newline:
+        expected.append({"kind": "meta", "text": "\\ No newline at end of file"})
+    assert hunk["lines"] == expected
+
+
+@pytest.mark.parametrize("storage", ["git-untracked", "git-tracked", "filesystem-new"])
+def test_attempt_diff_preserves_newlines_and_trailing_content(tmp_path: Path, storage: str) -> None:
+    async def run() -> None:
+        root = tmp_path / "workspace"
+        root.mkdir()
+        target = root / "new file.txt"
+        if storage.startswith("git-"):
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "README.md").write_bytes(b"baseline\n")
+            if storage == "git-tracked":
+                target.write_bytes(b"old\n")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+        with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Generate file")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Generate file")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            target.write_bytes("page\f-break\nx\u2028+y\nlast\f \n".encode("utf-8"))
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+
+        assert delta["available"] is True
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert parsed["fileCount"] == 1
+        assert parsed["additions"] == 3
+        assert parsed["deletions"] == (1 if storage == "git-tracked" else 0)
+        file = parsed["files"][0]
+        assert file["path"] == "new file.txt"
+        assert [
+            line for hunk in file["hunks"] for line in hunk["lines"] if line["kind"] == "add"
+        ] == [
+            {"kind": "add", "newLine": 1, "text": "page\f-break"},
+            {"kind": "add", "newLine": 2, "text": "x\u2028+y"},
+            {"kind": "add", "newLine": 3, "text": "last\f "},
+        ]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("patch_sources", ["working", "committed", "both"])
+@pytest.mark.parametrize("blank_lines", [1, 2])
+def test_attempt_diff_preserves_trailing_blank_context(
+    tmp_path: Path, patch_sources: str, blank_lines: int,
+) -> None:
+    async def run() -> None:
+        root = tmp_path / "workspace"
+        root.mkdir()
+        _git(root, "init")
+        _git(root, "config", "user.email", "amadeus-test@example.invalid")
+        _git(root, "config", "user.name", "Amadeus Test")
+        _git(root, "config", "core.autocrlf", "false")
+        _git(root, "config", "diff.suppressBlankEmpty", "true")
+        before = ("x\ny\n" + "\n" * blank_lines).encode("utf-8")
+        after = ("X\ny\n" + "\n" * blank_lines).encode("utf-8")
+        paths = (
+            ["committed.txt", "working.txt"] if patch_sources == "both"
+            else [f"{patch_sources}.txt"]
+        )
+        for path in paths:
+            (root / path).write_bytes(before)
+        _git(root, "add", ".")
+        _git(root, "commit", "-m", "baseline")
+        with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit files")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit files")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            if "committed.txt" in paths:
+                (root / "committed.txt").write_bytes(after)
+                _git(root, "commit", "-am", "provider commit")
+            if "working.txt" in paths:
+                (root / "working.txt").write_bytes(after)
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+
+        parsed = parse_unified_diff(delta["patch"], changed_files=delta["changed_files"])
+        assert sorted(file["path"] for file in parsed["files"]) == sorted(paths)
+        assert parsed["additions"] == parsed["deletions"] == len(paths)
+        for file in parsed["files"]:
+            hunk, = file["hunks"]
+            assert hunk["oldCount"] == hunk["newCount"] == 2 + blank_lines
+            assert hunk["lines"] == [
+                {"kind": "remove", "oldLine": 1, "text": "x"},
+                {"kind": "add", "newLine": 1, "text": "X"},
+                {"kind": "context", "oldLine": 2, "newLine": 2, "text": "y"},
+                *[
+                    {"kind": "context", "oldLine": number, "newLine": number, "text": ""}
+                    for number in range(3, 3 + blank_lines)
+                ],
+            ]
+
+    asyncio.run(run())
+
+
 def _main() -> None:
     test_committed_delta_survives_and_baseline_dirty_is_not_stolen()
     test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact()
     test_non_ascii_entry_revision_is_registered_as_the_real_path()
     test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes()
     test_explicit_amend_may_change_predecessor_owned_dirty_artifact()
+    test_attempt_diff_lists_committed_copies_once_with_copy_detection()
+    test_attempt_diff_keeps_blank_context_lines_with_suppress_blank_empty()
     print("ok: work artifact registry preserves attempt Git boundaries")
 
 

@@ -676,6 +676,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [acpAgents, setAcpAgents] = useState('[]')
   const [acpConfigurations, setAcpConfigurations] = useState<AcpConfiguration[]>([])
   const [capabilityPackages, setCapabilityPackages] = useState<CapabilityPackage[]>([])
+  const [runtimeMcpConnections, setRuntimeMcpConnections] = useState<Array<{ id: string; name: string; extension_package_id?: string }>>([])
   const [desktop, setDesktop] = useState<DesktopSettingsSnapshot | null>(null)
   const [companionPortraits, setCompanionPortraits] = useState<CompanionPortraitStatus | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
@@ -701,10 +702,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }, [])
 
   const refreshBackend = useCallback(async () => {
-    const [configResponse, providerResponse, capabilityResponse] = await Promise.all([
+    const [configResponse, providerResponse, capabilityResponse, mcpResponse] = await Promise.all([
       send('system.get_config', {}),
       send('provider.list', {}),
       send('capability.list', { include_disabled: true }),
+      send('mcp.connection.list', {}),
     ])
     setConfig((configResponse.values as Record<string, unknown>) ?? configResponse)
     setAcpAgents(JSON.stringify(providerResponse.acp_agents || []))
@@ -713,18 +715,21 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     setProviderManifests(Array.isArray(providerResponse.provider_manifests) ? providerResponse.provider_manifests as unknown as ProviderManifest[] : [])
     setProviderRoleCandidates(providerResponse.role_candidates as Record<string, string[]> | undefined)
     setCapabilityPackages(Array.isArray(capabilityResponse.packages) ? capabilityResponse.packages as unknown as CapabilityPackage[] : [])
+    setRuntimeMcpConnections(Array.isArray(mcpResponse.connections) ? mcpResponse.connections as Array<{ id: string; name: string; extension_package_id?: string }> : [])
   }, [send])
 
   useEffect(() => {
+    let active = true
+    if (restarting) return undefined
     void Promise.all([refreshDesktop(), refreshCompanionPortraits()])
-      .catch(reason => setError(reason instanceof Error ? reason.message : 'Could not load desktop settings'))
-    if (!connected) return undefined
+      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Could not load desktop settings') })
+    if (!connected) { setRuntimeMcpConnections([]); return () => { active = false } }
     const unsubscribe = subscribe('system.config', payload => {
       setConfig((payload.values as Record<string, unknown>) ?? payload)
     })
-    void refreshBackend().catch(reason => setError(reason instanceof Error ? reason.message : 'Could not load runtime settings'))
-    return unsubscribe
-  }, [connected, subscribe, refreshBackend, refreshDesktop, refreshCompanionPortraits])
+    void refreshBackend().catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Could not load runtime settings') })
+    return () => { active = false; unsubscribe() }
+  }, [connected, restarting, subscribe, refreshBackend, refreshDesktop, refreshCompanionPortraits])
 
   useEffect(() => {
     setRestartPending(Boolean(desktop?.restartRequired))
@@ -1073,7 +1078,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const mainModelLabel = modelProviderLabels[mainModelProvider] || mainModelProvider
   const imageModel = mainModelProvider === 'deepseek' || mainModelProvider === 'hybrid2'
     ? String(modelConnections.find(group => group.id === 'deepseek')?.fields
-      ?.find(field => field.key === 'DEEPSEEK_MODEL_NAME')?.value || 'deepseek-v4-flash')
+      ?.find(field => field.key === 'DEEPSEEK_MODEL_NAME')?.value || 'deepseek-flash')
     : ''
   const visionModelReady = mainModelReady && chatProviderSupportsImages(mainModelProvider, imageModel)
   const configuredTranslationModels = modelConnections
@@ -1312,7 +1317,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {section === 'characters' ? characterWorkspace : null}
             {section === 'extensions' ? <>
               {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
-              <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
+              <ExtensionSettings platform={desktop?.platform} extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
+                mcpConnections={connected && !restarting ? runtimeMcpConnections : []} send={send}
                 providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
                 selectedVoiceBackend={String(speechBackend?.value || '')} selectedTheme={selectedTheme} appliedThemeVersion={themeVersion}
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}

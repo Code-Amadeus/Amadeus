@@ -346,6 +346,7 @@ These are not pending mechanical migrations:
 | wallpaper scenario helpers | wallpaper/scenario overrides | Both wallpaper hosts resolve component-local media overrides without importing the heavyweight application settings facade. |
 | `vn_player/runtime.py` | `VN_*` values | These describe one VN session, not the application startup snapshot. |
 | `server/runtime_status.py` | build/workspace metadata | The launcher supplies diagnostic facts for the current process. |
+| `server/backend_cleanup.py` | `AMADEUS_BACKEND_INSTANCE_NONCE` | The desktop supplies this in-memory process identity; cleanup must bind its launch registration to the authenticated desktop before runtime imports. It is not a user setting or persisted credential. |
 | `asr/qwen3_asr_sidecar.py` | `QWEN3_ASR_DEVICE`, `QWEN3_ASR_REQUIRE_CUDA` | The isolated interpreter reads the environment supplied by its parent. |
 | `tts/gpt_sovits_sidecar.py` | `TTS_REQUIRE_CUDA` | The isolated interpreter enforces the device requirement supplied by its parent. |
 | `server/presentation_runtime.py` | `AMADEUS_PRESENTATION_LOCALE`, `AMADEUS_WALLPAPER_CAPTION_MODE` | Presentation resolves its current, component-owned preferences. |

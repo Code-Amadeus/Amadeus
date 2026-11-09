@@ -662,6 +662,33 @@ export class DesktopSettingsStore {
   }
 
   /** Called only by the installation owner after canonical validation. */
+  validateExtensionRollbackRecord(raw: unknown, validate: ExtensionRecordValidator = this.validateExtensionRecord): StoredExtension {
+    if (!raw || typeof raw !== 'object' || typeof (raw as StoredExtension).id !== 'string') throw new Error('Invalid plugin recovery record')
+    const id = (raw as StoredExtension).id
+    let validationUnavailable = false
+    const clean = cleanStoredExtensions({ [id]: raw }, (manifest, values) => {
+      const result = validate(manifest, values)
+      validationUnavailable = result === 'unavailable'
+      return result
+    })
+    if (validationUnavailable) throw new Error('Plugin recovery validation is temporarily unavailable; saved package records were retained. Retry when the trusted validator is available.')
+    if (clean.errors.length || !clean.records[id]) throw new Error('Invalid plugin recovery package record')
+    return clean.records[id]
+  }
+
+  /** Restore one installation only; never rewind global settings or security facts. */
+  restoreExtension(previous: StoredExtension, failedInstallId: string): void {
+    const restored = this.validateExtensionRollbackRecord(previous)
+    const stored = this.read()
+    const current = stored.extensions[restored.id]
+    if (current && ![failedInstallId, restored.installId].includes(current.installId)) throw new Error('Plugin state changed; recovery will not overwrite another installation')
+    stored.extensions[restored.id] = structuredClone(restored)
+    if (this.extensionChangeNeedsRestart(restored, current)) markPending(stored, [EXTENSIONS_ENV])
+    this.write(stored)
+    this.appliedExtensions.delete(restored.id)
+  }
+
+  /** Called only by the installation owner after canonical validation. */
   saveExtension(environment: NodeJS.ProcessEnv, record: StoredExtension, secrets: Record<string, string | null> = {}): Record<string, unknown> {
     const stored = this.read()
     const previous = stored.extensions[record.id]

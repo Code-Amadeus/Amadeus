@@ -10,7 +10,7 @@ jobs:
     # macOS product path is T1 core + T2 remote voice: install T1+T2, verify
     # the voice import contract (brew portaudio → PyAudio source build), lint,
     # run platform-safe contract tests, and compile the Electron renderer.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
     env:
       AMADEUS_E2E_NO_TTS: "1"

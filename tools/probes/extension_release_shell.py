@@ -103,6 +103,7 @@ def verify_checker_schemas(checker_root: Path, wheel: Path, python: str = sys.ex
 async def exercise(product, fixture: Path):
     from playwright.async_api import expect
     from config.process_tree import ProcessTree
+    from tools.probes.extension_startup import release_fixture_script, restart_product, confirm_update
 
     page = product.page
     report = {
@@ -153,12 +154,26 @@ async def exercise(product, fixture: Path):
         selection = page.locator(".extension-catalog-detail select")
         if await selection.count():
             await selection.select_option(version)
-        await button("Install plugin…")
+        await button("Schedule this version for next app start…")
+        await apply_scheduled()
         await expect(page.locator("#extension-panel-installed")).to_be_visible(timeout=120000)
         await expect(page.locator(f'[data-extension-id="{package_id}"][data-extension-version="{version}"]')).to_be_visible(
             timeout=120000
         )
         await expect(page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
+
+    async def apply_scheduled():
+        nonlocal page
+        await expect(page.get_by_text('Scheduled for the next app start. Installed packages have not changed. Review the native confirmation before installation.', exact=True)).to_be_visible(timeout=30000)
+        queued = (await catalog({'action': 'get'}))['catalog']['scheduledInstall']
+        before = json.loads(settings_path.read_text()).get('extensions', {}).get(queued['id'])
+        assert before is None or before['version'] != queued['version']
+        state = await evaluate_main(product, '(()=>{const s=extensionReleaseFixture;return {index:s.index,confirmations:s.confirmations}})()')
+        await restart_product(product, release_fixture_script(fixture, state))
+        page = product.page
+        await button('Plugins')
+        await page.get_by_role('tab', name='Installed', exact=True).click()
+        assert not (await catalog({'action': 'get'}))['catalog'].get('scheduledInstall')
 
     resource_root = (
         product.packaged_executable.parent / "resources" if product.packaged_executable else ROOT
@@ -234,12 +249,14 @@ async def exercise(product, fixture: Path):
             product,
             "(()=>{const s=extensionReleaseFixture;s.index={...s.index,sequence:2,entries:s.fixture.index.entries};return true})()",
         )
-        await button("Check updates and security status")
-        await button("Update plugin…")
+        await button("Check now")
+        await button("Schedule update for next app start…")
+        await apply_scheduled()
         await expect(page.locator(f'[data-extension-id="{theme}"][data-extension-version="0.2.0"]')).to_be_visible(timeout=120000)
         await expect(page.locator(".extension-download-progress")).to_have_count(0, timeout=120000)
         theme_state = await page.evaluate("window.amadeus.getDesktopTheme()")
         check("manual update retains enabled appearance", bool(theme_state.get("theme")))
+        await confirm_update(product, theme, '0.2.0')
         requests = await evaluate_main(product, "extensionReleaseFixture.requests")
         check(
             "download uses configured artifact mirror",

@@ -14,8 +14,10 @@ import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, 
 import { ExtensionThemeResources } from './extensionThemes.js'
 import { readExtensionImage } from './extensionImages.js'
 import { startupValue } from '../shared/startupSettings.js'
+import { ExtensionUpdateJournal } from './extensionUpdates.js'
+import { usesScheduledExtensionUpdates } from '../shared/extensionCatalog.js'
 import type { DesktopThemeState } from '../shared/extensionTheme.js'
-import { extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
+import { contributionProfile, extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
 type HelperReply = { catalog?: CatalogIndex; dependency_mode?: 'offline' | 'resolve'; ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
   package_root?: string; manifest_member?: string; distribution?: string; config?: Record<string, ExtensionConfigValue>; missing?: string[] }
@@ -192,13 +194,116 @@ export class ExtensionInstaller {
   private backendReferences = new Set<string>()
   private cleanupReady = false
   private uncertainPreparations = new Set<string>()
+  private readonly updates: ExtensionUpdateJournal
+  private updateRecoveryRequired = false
   constructor(private readonly root: string, private readonly projectRoot: string, private readonly store: DesktopSettingsStore,
     private readonly helper: ExtensionPackageHelper, private readonly python: () => string,
     private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand,
     private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false,
     private readonly sdkDirectory = path.join(projectRoot, 'vendor', 'extension-sdk'),
     private readonly themes = new ExtensionThemeResources(),
-    private readonly changed: () => void = () => {}) {}
+    private readonly changed: () => void = () => {},
+    private readonly assertInstallIdle: () => void = () => {},
+    private readonly platform: NodeJS.Platform = process.platform,
+    private readonly assertRecoveryIdle: () => void = assertInstallIdle) {
+    this.updates = new ExtensionUpdateJournal(root, raw => store.validateExtensionRollbackRecord(raw))
+  }
+
+  async prepareStartup(): Promise<void> {
+    // Structural validation permits loading records for the asynchronous Python
+    // validator. It grants no activation or rollback authority: re-read with the
+    // strict validator before the app can apply a queued change or launch Host.
+    const update = this.updates.read(raw => this.store.validateExtensionRollbackRecord(raw, () => true))
+    await this.helper.refreshRecords([...this.store.storedExtensionRecords(),
+      ...(update ? [update.previous, update.target] : [])])
+    if (update) this.updates.read()
+  }
+
+  pendingUpdate(): { id: string; version: string; previousVersion: string; canConfirm: boolean; recoveryRequired: boolean } | undefined {
+    const update = this.updates.read()
+    if (!update) return
+    return { id: update.target.id, version: update.target.version, previousVersion: update.previous.version,
+      canConfirm: !this.updateRecoveryRequired && update.owner === this.updates.owner && update.phase === 'startup_confirmed',
+      recoveryRequired: this.updateRecoveryRequired || update.owner !== this.updates.owner || update.phase === 'recovery_required' }
+  }
+  assertUpdateCanLaunch(): void {
+    if (this.updateRecoveryRequired || this.pendingUpdate()?.recoveryRequired) throw new Error('An unconfirmed plugin update requires rollback before the backend can start. Open Manage plugins.')
+  }
+  private observeUpdateHealth(statuses: unknown): void {
+    const update = this.updates.read()
+    if (!update || update.owner !== this.updates.owner || this.updateRecoveryRequired || update.phase === 'recovery_required') return
+    const target = this.store.storedExtensionRecords().find(record => record.id === update.target.id
+      && record.installId === update.target.installId && record.revision === update.target.revision)
+    const rows = Array.isArray(statuses) ? statuses.filter(row => row?.id === update.target.id) : []
+    const row = rows.length === 1 ? rows[0] : undefined
+    // Projection readiness is not a successful remote MCP call. User keep is
+    // still separate, and an earlier process's receipt is never reusable.
+    const expected = target ? Object.entries(target.manifest.contributes).flatMap(([kind, items]) => items
+      .filter(item => contributionProfile(kind, item.role)?.apply !== 'frontend').map(item => `${kind}/${item.id}`)).sort() : []
+    const reported = Array.isArray(row?.contributions) ? row.contributions : []
+    const backendReady = row?.version === target?.version && row?.revision === target?.revision
+      && row?.startup === 'accepted' && row?.state === 'active'
+      && reported.every((item: { health?: string }) => item?.health === 'ready')
+      && JSON.stringify(reported.map((item: { kind?: string; id?: string }) => `${item?.kind}/${item?.id}`).sort()) === JSON.stringify(expected)
+    const frontend = this.store.appliedExtensionRecords().find(record => record.id === target?.id
+      && record.installId === target.installId && record.revision === target.revision)
+    const frontendReady = frontend?.enabled && target && !this.store.extensionFrontendClosed(target.id)
+    const healthy = target && (!target.enabled || (expected.length ? backendReady : frontendReady))
+    // A missing/unhealthy projection is still a pending validation in this
+    // process. Configuration can be repaired and the new revision retried;
+    // failed transactions and a later desktop process still require recovery.
+    this.updates.write({ ...update, phase: healthy ? 'startup_confirmed' : 'pending' })
+  }
+  refreshUpdateHealth(statuses: unknown): Promise<void> {
+    return this.serialize(async () => { this.observeUpdateHealth(statuses); this.changed() })
+  }
+  markUpdateFailed(): void {
+    const update = this.updates.read()
+    if (update?.owner === this.updates.owner) { this.updateRecoveryRequired = true; this.updates.write({ ...update, phase: 'recovery_required' }) }
+  }
+  confirmPendingUpdate(): Promise<Record<string, unknown>> {
+    return this.serialize(async () => {
+      const update = this.updates.read()
+      if (!update || !this.pendingUpdate()?.canConfirm) throw new Error('Plugin startup has not been confirmed; the previous version is retained.')
+      const current = this.store.storedExtensionRecords().find(record => record.id === update.target.id)
+      if (current?.installId !== update.target.installId || current.revision !== update.target.revision) throw new Error('Plugin state changed; confirmation was refused.')
+      this.store.assertExtensionAllowed(update.target)
+      this.updates.clear()
+      this.changed()
+      return this.store.snapshot(this.environment)
+    })
+  }
+  rollbackPendingUpdate(): Promise<Record<string, unknown>> {
+    return this.serialize(async () => {
+      if (!usesScheduledExtensionUpdates(this.platform)) throw new Error('Scheduled plugin updates are only available on Windows.')
+      this.assertRecoveryIdle()
+      const update = this.updates.read()
+      if (!update) throw new Error('No plugin update is waiting for rollback.')
+      const previous = update.previous
+      const directory = path.join(this.root, previous.installId)
+      assertExtensionPath(this.root, directory)
+      const originalWheel = fs.readdirSync(directory).find(name => {
+        const file = path.join(directory, name)
+        assertExtensionPath(this.root, file)
+        return name.endsWith('.whl') && fs.lstatSync(file).isFile() && createHash('sha256').update(fs.readFileSync(file)).digest('hex') === previous.digest
+      })
+      if (!originalWheel) throw new Error('The previous verified wheel is unavailable; rollback is blocked without deleting either version.')
+      await this.helper.call('validate-installed', [this.packagePath(previous)], { manifest: previous.manifest })
+      if (!await this.confirm({ operation: 'update', manifest: previous.manifest, previousVersion: update.target.version,
+        previousManifest: update.target.manifest, digest: previous.digest, sourceFile: originalWheel })) throw new ExtensionChangeCancelled()
+      this.assertRecoveryIdle()
+      const confirmedWheel = path.join(directory, originalWheel)
+      assertExtensionPath(this.root, confirmedWheel)
+      if (!fs.lstatSync(confirmedWheel).isFile() || createHash('sha256').update(fs.readFileSync(confirmedWheel)).digest('hex') !== previous.digest) throw new Error('The previous verified wheel changed during confirmation; rollback is blocked.')
+      this.store.restoreExtension(previous, update.target.installId)
+      this.updates.clear()
+      this.updateRecoveryRequired = false
+      // Recovery changes only retained records. Frontend application and file
+      // collection belong to the next launch, with their own lifetime checks.
+      this.changed()
+      return this.store.snapshot(this.environment)
+    })
+  }
 
   private get dataRoot(): string { return path.join(path.dirname(this.root), 'extension-data') }
 
@@ -240,8 +345,10 @@ export class ExtensionInstaller {
     return result
   }
 
-  install(wheel: string, delivery?: { identity: ArtifactIdentity; assertCurrent: () => void; onStage?: (stage: 'verifying' | 'confirming' | 'preparing') => void }): Promise<Record<string, unknown>> {
+  install(wheel: string, delivery?: { catalog?: boolean; identity: ArtifactIdentity; assertCurrent: () => void; onStage?: (stage: 'verifying' | 'confirming' | 'preparing') => void }): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
+      this.assertInstallIdle()
+      if (this.updates.read()) throw new Error('Confirm or roll back the previous plugin update before installing another package.')
       this.store.assertExtensionAllowed()
       delivery?.assertCurrent()
       if (!path.isAbsolute(wheel) || path.extname(wheel).toLowerCase() !== '.whl' || !fs.lstatSync(wheel).isFile()) {
@@ -255,26 +362,28 @@ export class ExtensionInstaller {
       this.preparing.add(installId)
       let committed = false
       let retainFiles = false
+      let rollback: { previous: StoredExtension; target: StoredExtension } | undefined
       try {
         // Copy before inspection: pip consumes the same immutable wheel bytes
         // inspected by the trusted helper even if the selected source changes.
         const copied = path.join(directory, path.basename(wheel))
         fs.copyFileSync(wheel, copied, fs.constants.COPYFILE_EXCL)
         delivery?.onStage?.('verifying')
-        const inspection = await this.helper.call(delivery ? 'inspect-catalog-wheel' : 'inspect-wheel', [copied])
+        const inspection = await this.helper.call(delivery && delivery.catalog !== false ? 'inspect-catalog-wheel' : 'inspect-wheel', [copied])
         const manifest = inspection.manifest!
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
         const identity = { id: manifest.id, version: manifest.version, digest: inspection.digest }
         const assertAllowed = () => {
+          this.assertInstallIdle()
           this.store.assertExtensionAllowed(identity)
-          if (delivery && (identity.id !== delivery.identity.id || identity.version !== delivery.identity.version || identity.digest !== delivery.identity.digest)) throw new Error('Downloaded artifact identity or digest differs from the official catalog')
+          if (delivery && (identity.id !== delivery.identity.id || identity.version !== delivery.identity.version || identity.digest !== delivery.identity.digest)) throw new Error('Prepared artifact identity or digest differs from the selected bytes')
           delivery?.assertCurrent()
         }
         assertAllowed()
         if (!['offline', 'resolve'].includes(inspection.dependency_mode!)) throw new Error('Dependency classification is unavailable')
-        if (delivery && inspection.dependency_mode !== 'offline') throw new Error('Third-party dependencies require local installation')
+        if (delivery && delivery.catalog !== false && inspection.dependency_mode !== 'offline') throw new Error('Third-party dependencies require local installation')
         await this.themes.validate(manifest)
         let sdkWheel = ''
         if (manifest.runtime.kind === 'python') {
@@ -347,6 +456,11 @@ export class ExtensionInstaller {
           installId, packageRoot: inspection.package_root, sitePackages, manifest, enabled: existing?.enabled || false, pendingRemoval: false,
           deleteDataOnRemoval: false,
           values: checked.config || {}, encryptedSecrets: retainedSecrets, providers: existing?.providers || [] }
+        if (delivery && existing && usesScheduledExtensionUpdates(this.platform)) {
+          record.revision = (existing.revision ?? 1) + 1
+          rollback = { previous: structuredClone(existing), target: record }
+          this.updates.write({ format: 'amadeus.extension-update/v1', owner: this.updates.owner, phase: 'pending', ...rollback })
+        }
         if (existing && (extensionRequiresRestart(existing.manifest) || extensionRequiresRestart(manifest))) this.backendReferences.add(existing.installId)
         assertAllowed()
         this.store.saveExtension(this.environment, record)
@@ -355,8 +469,22 @@ export class ExtensionInstaller {
         this.changed()
         return this.store.snapshot(this.environment)
       } catch (error) {
-        retainFiles = error instanceof ExtensionPreparationShutdownError
-        if (retainFiles) {
+        if (rollback) {
+          try {
+            this.store.restoreExtension(rollback.previous, installId)
+            this.updates.clear()
+            committed = false
+          } catch {
+            this.updateRecoveryRequired = true
+            retainFiles = true
+            try { this.updates.write({ format: 'amadeus.extension-update/v1', owner: this.updates.owner, phase: 'recovery_required', ...rollback }) }
+            catch { /* The previous durable journal still blocks a new process; this owner remains fenced in memory. */ }
+            this.store.reportExtensionWarning('Plugin update failed and rollback persistence needs recovery. Both package versions and encrypted credentials were retained.')
+          }
+        }
+        const shutdownUnconfirmed = error instanceof ExtensionPreparationShutdownError
+        retainFiles ||= shutdownUnconfirmed
+        if (shutdownUnconfirmed) {
           this.uncertainPreparations.add(installId)
           this.store.reportExtensionWarning('Extension preparation shutdown could not be confirmed; staging files were retained.')
         }
@@ -376,6 +504,24 @@ export class ExtensionInstaller {
     return this.serialize(async () => {
       const record = this.store.extensionRecords().find(item => item.id === raw?.id)
       if (!record || record.pendingRemoval) throw new Error('Extension was not found or is pending removal')
+      const pending = this.updates.read()
+      const updatingPending = pending?.target.id === raw?.id
+      if (updatingPending && raw.enabled === false) {
+        const unchangedConfig = Object.keys(raw.values || {}).length === 0 && Object.keys(raw.secrets || {}).length === 0
+          && (raw.providers === undefined || JSON.stringify(raw.providers) === JSON.stringify(record.providers))
+        if (!unchangedConfig || Object.keys(raw).some(key => !['id', 'enabled', 'values', 'secrets', 'providers'].includes(key))) throw new Error('Confirm or roll back this plugin update before changing its configuration.')
+        // Revocation remains available even during recovery. Persist it in the
+        // rollback record first so recovery can never re-enable the package.
+        this.updates.write({ ...pending, phase: 'recovery_required', previous: { ...pending.previous, enabled: false },
+          target: { ...record, enabled: false, revision: (record.revision ?? 1) + 1 } })
+        this.store.saveExtension(this.environment, { ...record, enabled: false })
+        await this.applyFrontendChanges()
+        this.changed()
+        return this.store.snapshot(this.environment)
+      }
+      if (updatingPending && this.pendingUpdate()?.recoveryRequired) {
+        throw new Error('Roll back this plugin update before changing its configuration.')
+      }
       if (raw.enabled !== undefined && typeof raw.enabled !== 'boolean') throw new Error('Invalid extension enabled value')
       const providers = raw.providers === undefined ? record.providers : raw.providers
       if (!Array.isArray(providers) || providers.length > 32 || providers.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))) throw new Error('Invalid extension Work Provider binding')
@@ -404,8 +550,20 @@ export class ExtensionInstaller {
       const validated = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...values, ...secrets }, allow_incomplete: !enabled })
       if (enabled) await this.themes.validate(record.manifest, this.packagePath(record))
       if (enabled) this.store.assertExtensionAllowed(record)
-      this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
-        providers: [...new Set(providers)] }, changedSecrets)
+      // Invalidate health durably before settings can advance. A failed write
+      // leaves recovery fenced, while the original rollback snapshot survives.
+      if (updatingPending) this.updates.write({ ...pending, phase: 'recovery_required' })
+      try {
+        this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
+          providers: [...new Set(providers)] }, changedSecrets)
+        if (updatingPending) {
+          const target = this.store.storedExtensionRecords().find(item => item.id === record.id)!
+          this.updates.write({ ...pending, target, phase: 'pending' })
+        }
+      } catch (error) {
+        if (updatingPending) this.updateRecoveryRequired = true
+        throw error
+      }
       await this.applyFrontendChanges()
       this.changed()
       return this.store.snapshot(this.environment)
@@ -414,6 +572,7 @@ export class ExtensionInstaller {
 
   remove(id: string, options: ExtensionRemovalOptions = {}): Promise<Record<string, unknown>> {
     return this.serialize(async () => {
+      if (this.updates.read()?.target.id === id) throw new Error('Confirm or roll back this plugin update before removal.')
       if (!options || typeof options !== 'object' || Array.isArray(options)
         || Object.keys(options).some(key => key !== 'deleteData')
         || (options.deleteData !== undefined && typeof options.deleteData !== 'boolean')) throw new Error('Invalid extension data removal choice')
@@ -459,6 +618,8 @@ export class ExtensionInstaller {
         return
       }
       const retained = this.store.extensionInstallationReferences()
+      const update = this.updates.read()
+      if (update) { retained.add(update.previous.installId); retained.add(update.target.installId) }
       for (const applied of this.store.appliedExtensionRecords()) retained.add(applied.installId)
       for (const installId of this.backendReferences) retained.add(installId)
       for (const entry of fs.readdirSync(this.root)) {
@@ -482,6 +643,7 @@ export class ExtensionInstaller {
 
   prepareLaunch(): Promise<{ extensions: string; environment: NodeJS.ProcessEnv; pendingRevisions: Record<string, number>; records: StoredExtension[] }> {
     return this.serialize(async () => {
+      this.assertUpdateCanLaunch()
       // A fresh process cannot inherit a receipt from the previous process.
       // This retires logical state only; cleanup still requires confirmed stop.
       this.store.releaseBackendExtensionApplications()
@@ -510,6 +672,7 @@ export class ExtensionInstaller {
         if (Number.isSafeInteger(row.revision) && row.revision > 0 && ['accepted', 'rejected'].includes(row.startup)) receipts.set(row.id, row)
       }
       const sent = JSON.parse(launch.extensions) as Array<{ id: string; revision: number; startup_error?: string }>
+      this.observeUpdateHealth(statuses)
       const blocked = new Map(sent.filter(item => item.startup_error).map(item => [item.id, item.revision]))
       for (const record of launch.records.filter(item => extensionRequiresRestart(item.manifest) && !item.pendingRemoval)) {
         // Host-preflight rejection is a handled revision, not a loaded receipt.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 from collections.abc import Callable, Iterator
 from contextlib import AbstractAsyncContextManager
 from itertools import islice
@@ -68,11 +69,12 @@ class McpConnectionHandler(RequestHandler):
                 connection_id,
                 type(exc).__name__,
             )
+            code, detail = _probe_error(exc, connection)
             return {
                 "connection_id": connection_id,
                 "status": "error",
-                "code": "connection_failed",
-                "detail": _safe_error(exc, connection),
+                "code": code,
+                "detail": detail,
                 "main_chat_access": False,
             }
         names = sorted(
@@ -124,3 +126,32 @@ def _safe_error(exc: Exception, connection: McpConnectionSpec) -> str:
         'environment values, then save and restart the backend.'
         if connection.transport == 'stdio' else '')
     return text[:500 - len(hint)] + hint
+
+
+def _has_tls_cause(exc: BaseException) -> bool:
+    from httpcore2 import ConnectError as TransportConnectError
+    from httpx2 import ConnectError
+
+    # Inspect the mapped failure, not SSL errors retained inside anyio's
+    # EndOfStream/BrokenResourceError. httpcore2's pool re-raises with `from None`,
+    # so even a genuine TLS failure may survive only through __context__.
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while isinstance(current, (ConnectError, TransportConnectError)) and id(current) not in seen:
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return isinstance(current, ssl.SSLError)
+
+
+def _probe_error(exc: Exception, connection: McpConnectionSpec) -> tuple[str, str]:
+    from httpx2 import ConnectError, HTTPStatusError
+
+    for error in _error_leaves(exc):
+        if isinstance(error, HTTPStatusError):
+            if error.response.status_code == 401:
+                return "authentication_failed", "Authentication failed (HTTP 401). Check the connection token in the extension or MCP settings."
+            if error.response.status_code == 403:
+                return "access_denied", "Access denied (HTTP 403). Check the server access policy and connection credentials."
+        if isinstance(error, ConnectError) and not _has_tls_cause(error):
+            return "connection_unreachable", "Could not reach the MCP server. Check that it is running and that the URL and port are correct."
+    return "connection_failed", _safe_error(exc, connection)

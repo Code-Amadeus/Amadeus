@@ -31,6 +31,11 @@ from typing import Any, TYPE_CHECKING
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 
+# Contain descendants before any eager runtime import can create a child. This
+# Job only tracks lifetime; it has no kill-on-close or breakaway policy flags.
+from server.backend_cleanup import begin_from_environment
+_BACKEND_CLEANUP = begin_from_environment() if __name__ == "__main__" else None
+
 # The launch snapshot contains package-scoped credentials. Remove it before
 # eager model/runtime imports can create any child process.
 from server.extensions.snapshot import pop_snapshot_environment
@@ -2459,16 +2464,19 @@ async def bootstrap(port: int = 17777) -> None:
         work_status_narrator = None
 
         async def _close_runtime() -> None:
+            teardown_succeeded = True
             vts_worker_stop.set()
             # Stop external requests before shared playback and Provider teardown.
             await asyncio.to_thread(extension_runtime.close)
             try:
                 await chat_h.close()
             except Exception:
+                teardown_succeeded = False
                 logger.exception("Chat shutdown failed; continuing shared-resource cleanup")
             try:
                 await cooperative_chat.begin_close()
             except Exception:
+                teardown_succeeded = False
                 logger.exception(
                     "cooperative Chat stop preparation failed; continuing shared-resource cleanup"
                 )
@@ -2493,11 +2501,12 @@ async def bootstrap(port: int = 17777) -> None:
             provider_runtime.set_automatic_permission_authorizer(None)
             provider_runtime.set_start_admission_validator(None)
             try:
-                await provider_runtime.close()
+                provider_cleanup = await provider_runtime.close()
             finally:
                 try:
                     await cooperative_chat.finish_close()
                 except Exception:
+                    teardown_succeeded = False
                     logger.exception(
                         "cooperative Chat observation drain failed after Provider close"
                     )
@@ -2515,6 +2524,8 @@ async def bootstrap(port: int = 17777) -> None:
             await work_ledger.drain_provider_facts()
             await work_observer.close()
             await work_preview.close_all()
+            work_settled = (not work_ledger.store.list_unresolved_provider_attempts(limit=1)
+                            and not work_ledger.store.list_writer_leases(active_only=True))
             work_ledger.close()
             _stop_gui_render_runtime()
             close_voice_input_services(wake_service, asr_manager)
@@ -2523,7 +2534,14 @@ async def bootstrap(port: int = 17777) -> None:
 
                 await asyncio.to_thread(stop_llama_server)
             except Exception:
+                teardown_succeeded = False
                 logger.exception("failed to stop managed llama-server")
+            if _BACKEND_CLEANUP is not None:
+                _BACKEND_CLEANUP.record_runtime_cleanup(
+                    providers_settled=provider_cleanup.get("settled") is True,
+                    work_settled=work_settled,
+                    teardown_succeeded=teardown_succeeded,
+                )
 
         # Retain the whole dependency-ordered teardown, not only its first close.
         # Repeated cancellation of the bootstrap caller cannot skip later owners.
@@ -3245,3 +3263,8 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=17777)
     args = parser.parse_args()
     asyncio.run(bootstrap(port=args.port))
+    if _BACKEND_CLEANUP is not None:
+        # asyncio.run has also drained its executor and async generators. No
+        # further child launches are allowed after the final Job observation.
+        if not _BACKEND_CLEANUP.finish():
+            logger.warning("graceful backend teardown was not settled; Work recovery remains pending and process exit is verified independently")

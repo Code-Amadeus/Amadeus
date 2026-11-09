@@ -2,6 +2,7 @@ export class ApplicationLifecycle {
   private quitting = false
   private startupComplete = false
   private restoreAfterStartup = false
+  private sessionCleanup?: Promise<void>
 
   get isQuitting(): boolean { return this.quitting }
 
@@ -34,5 +35,13 @@ export class ApplicationLifecycle {
     if (this.quitting) return false
     this.quitting = true
     return hasOwnedBackend
+  }
+
+  /** Windows may cancel a query-session-end. Only the confirmed event commits
+   * quit intent; neither event delays/vetoes the operating system shutdown. */
+  handleSessionEnd(confirmed: boolean, cleanup: () => Promise<void>, reportFailure: (error: unknown) => void): Promise<void> {
+    if (confirmed) this.quitting = true
+    return this.sessionCleanup ??= Promise.resolve().then(cleanup).catch(reportFailure)
+      .finally(() => { this.sessionCleanup = undefined })
   }
 }

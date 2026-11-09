@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CatalogEntry, CatalogView } from '../../shared/extensionCatalog.js'
+import { usesScheduledExtensionUpdates } from '../../shared/extensionCatalog.js'
 import type { ExtensionSummary } from '../../shared/extensions.js'
 import { useI18n } from '../i18n'
 import { CardShell, SettingsButton, StatusPill } from './SettingsPrimitives'
 import { catalogApplication, catalogBytes, catalogContributions, catalogGroups, catalogText, catalogUnavailable, contributionLabel, compareCatalogVersions } from './extensionCatalogModel'
 
-export default function ExtensionCatalog({ catalog, installed, busy, selection, onSelect, onInstall, onLink }: {
+export default function ExtensionCatalog({ platform, catalog, installed, busy, selection, onSelect, onInstall, onLink }: {
+  platform?: string
   catalog: CatalogView; installed: ExtensionSummary[]; busy: boolean
   selection: { id: string; version: string } | null
   onSelect: (selection: { id: string; version: string } | null) => void
@@ -60,7 +62,7 @@ export default function ExtensionCatalog({ catalog, installed, busy, selection, 
         <div className="settings-form-actions-end">
           {typeof selected.display.homepage === 'string' ? <SettingsButton disabled={busy} onClick={() => onLink(selected, 'homepage')}>{t('Open homepage')}</SettingsButton> : null}
           {typeof selected.display.repository === 'string' ? <SettingsButton disabled={busy} onClick={() => onLink(selected, 'repository')}>{t('Open source repository')}</SettingsButton> : null}
-          <SettingsButton tone="primary" disabled={busy || unavailable.length > 0} onClick={() => onInstall(selected)}>{t(prior ? 'Install selected version…' : 'Install plugin…')}</SettingsButton>
+          <SettingsButton tone="primary" disabled={busy || unavailable.length > 0} onClick={() => onInstall(selected)}>{t(usesScheduledExtensionUpdates(platform) ? 'Schedule this version for next app start…' : 'Review and install this version…')}</SettingsButton>
         </div>
       </CardShell>
     </section> : selection ? <p role="status">{t('This version is no longer in the catalog. Refresh or choose another version.')}</p> : null}

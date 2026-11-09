@@ -153,10 +153,6 @@ jobs:
           --report-dir build\electron-smoke
           --extension-fixture "${{ env.EXTENSION_RELEASE_FIXTURE }}" --extension-failures
 
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '8.0.x'
-
       - name: Build actual Windows executable
         working-directory: electron
         env:

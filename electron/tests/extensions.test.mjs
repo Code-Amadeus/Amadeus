@@ -71,7 +71,9 @@ function fixture(t, options = {}) {
     }
     const { config, allow_incomplete } = input
     if (Object.keys(config).some(key => !metadata.config?.[key])) throw new Error('configuration contains undeclared fields')
-    if (!allow_incomplete && metadata.config?.token?.required && !config.token) throw new Error('required configuration is missing: token')
+    for (const [key, field] of Object.entries(metadata.config || {})) {
+      if (!allow_incomplete && field.required && (config[key] === undefined || config[key] === '')) throw new Error(`required configuration is missing: ${key}`)
+    }
     if (config.streaming !== undefined && typeof config.streaming !== 'boolean') throw new Error('invalid configuration type for streaming')
     return { ok: true, config: { ...Object.fromEntries(Object.entries(metadata.config || {}).filter(([, field]) => !field.secret && field.default !== undefined).map(([key, field]) => [key, field.default])),
       ...Object.fromEntries(Object.entries(config).filter(([key]) => !metadata.config[key].secret)) } }
@@ -107,8 +109,9 @@ function fixture(t, options = {}) {
     fs.renameSync(path.join(directory, 'vendor', 'extension-sdk', name), path.join(sdkDirectory, name))
   }
   const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
-    async review => { calls.push({ command: 'confirm', review }); return typeof options.confirm === 'function' ? options.confirm(review, store) : options.confirm !== false }, sdkDirectory)
-  return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata }
+    async review => { calls.push({ command: 'confirm', review }); return typeof options.confirm === 'function' ? options.confirm(review, store) : options.confirm !== false }, sdkDirectory,
+    undefined, undefined, undefined, options.platform || 'win32')
+  return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata, helper, run }
 }
 
 test('packaged installer uses the shipped SDK without a source build directory', async t => {
@@ -1172,3 +1175,476 @@ test('catalog progress reports inspection, native confirmation and preparation w
   assert.deepEqual(phases, ['verifying', 'confirming', 'preparing'])
   assert.equal(f.store.storedExtensionRecords()[0].digest, identity.digest)
 })
+
+
+async function catalogUpdateFixture(t) {
+  const f=fixture(t,{manifest:manifest('mcp_server')})
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({id:f.metadata.id,enabled:true,providers:['pi'],values:{streaming:false},secrets:{token:'synthetic-rollback-secret'}})
+  f.previous=structuredClone(f.store.storedExtensionRecords()[0])
+  f.metadata.version='0.2.0'
+  fs.writeFileSync(f.selectedWheel,'synthetic updated wheel bytes')
+  f.delivery={identity:{id:f.metadata.id,version:f.metadata.version,digest:createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')},assertCurrent(){}}
+  f.reopen=()=>new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>true,
+    undefined,undefined,undefined,undefined,'win32')
+  return f
+}
+
+test('cold startup validates both retained versions before reading recovery authority', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const validated = new Set()
+  const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform,
+    metadata => validated.has(metadata.version) ? true : 'unavailable')
+  const seen = []
+  const helper = { ...f.helper, refreshRecords: async records => {
+    for (const record of records) { seen.push(record.version); validated.add(record.version) }
+  } }
+  const reopened = new ExtensionInstaller(f.root, f.directory, store, helper, () => 'trusted-python', {}, f.run, async () => true,
+    undefined, undefined, undefined, undefined, 'win32')
+  assert.throws(() => reopened.pendingUpdate(), /validation is temporarily unavailable/)
+  await reopened.prepareStartup()
+  assert.deepEqual([...new Set(seen)].sort(), ['0.1.0', '0.2.0'])
+  assert.equal(reopened.pendingUpdate().recoveryRequired, true)
+  assert.throws(() => reopened.assertUpdateCanLaunch(), /rollback/)
+  await reopened.rollbackPendingUpdate()
+  assert.equal(store.storedExtensionRecords()[0].version, '0.1.0')
+})
+
+test('cold recovery distinguishes unavailable from rejected validation and preserves all recovery data', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const files = [f.file, f.file + '.bak', path.join(f.root, 'update-rollback.json')]
+  const before = files.map(file => fs.readFileSync(file))
+  for (const result of ['unavailable', false]) {
+    const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), process.platform, () => result)
+    const reopened = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true,
+      undefined, undefined, undefined, undefined, 'win32')
+    const error = result === 'unavailable' ? /validation is temporarily unavailable/ : /Invalid plugin recovery package record/
+    await assert.rejects(reopened.prepareStartup(), error)
+    assert.throws(() => reopened.pendingUpdate(), error)
+    assert.throws(() => reopened.assertUpdateCanLaunch(), error)
+    await assert.rejects(reopened.prepareLaunch(), error)
+    await assert.rejects(reopened.rollbackPendingUpdate(), error)
+    files.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index]))
+    assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
+    assert.ok(fs.existsSync(path.join(f.root, JSON.parse(before[2]).target.installId)))
+  }
+})
+
+test('catalog update retains last-good wheel and encrypted config across process restart and explicit rollback',async t=>{
+  const f=await catalogUpdateFixture(t)
+  delete f.metadata.config.token
+  delete f.metadata.config.streaming
+  await f.installer.install(f.selectedWheel,f.delivery)
+  const target=f.store.storedExtensionRecords()[0]
+  assert.equal(target.encryptedSecrets.token,undefined)
+  const journal=fs.readFileSync(path.join(f.root,'update-rollback.json'),'utf8')
+  assert.ok(!journal.includes('synthetic-rollback-secret'))
+  assert.equal(f.installer.pendingUpdate().canConfirm,false)
+  await assert.rejects(f.installer.confirmPendingUpdate(),/startup has not/)
+  const reopened=f.reopen()
+  assert.equal(reopened.pendingUpdate().recoveryRequired,true)
+  assert.throws(()=>reopened.assertUpdateCanLaunch(),/rollback/)
+  await assert.rejects(reopened.prepareLaunch(),/rollback/)
+  await reopened.cleanupStoppedBackend()
+  assert.ok(fs.existsSync(path.join(f.root,f.previous.installId)),'last-good environment must survive cleanup')
+  await reopened.rollbackPendingUpdate()
+  const restored=f.store.storedExtensionRecords()[0]
+  assert.equal(restored.installId,f.previous.installId)
+  assert.deepEqual(restored.values,f.previous.values)
+  assert.deepEqual(restored.encryptedSecrets,f.previous.encryptedSecrets)
+  assert.deepEqual(restored.providers,f.previous.providers)
+  assert.equal(f.store.extensionSecrets(restored).token,'synthetic-rollback-secret')
+  assert.equal(reopened.pendingUpdate(),undefined)
+  assert.equal(JSON.parse(fs.readFileSync(f.file+'.bak')).extensions[restored.id].installId,restored.installId)
+})
+
+test('health receipt retains rollback until explicit user keep; missing or failed startup cannot be kept',async t=>{
+  for(const health of ['ready','missing','error']) {
+    const f=await catalogUpdateFixture(t)
+    await f.installer.install(f.selectedWheel,f.delivery)
+    const launch=await f.installer.prepareLaunch()
+    const target=f.store.storedExtensionRecords()[0]
+    const rows=health==='missing'?[]:[{id:target.id,version:target.version,revision:target.revision,startup:'accepted',state:health==='error'?'error':'active',contributions:[{kind:'mcp_server',id:'tools',health:health==='error'?'error':'ready'}]}]
+    await f.installer.acceptLaunch(launch,rows)
+    assert.equal(f.installer.pendingUpdate().canConfirm,health==='ready')
+    assert.ok(fs.existsSync(path.join(f.root,f.previous.installId)))
+    assert.ok(fs.existsSync(path.join(f.root,'update-rollback.json')))
+    if(health==='ready') {
+      await f.installer.confirmPendingUpdate()
+      assert.equal(f.installer.pendingUpdate(),undefined)
+    } else {
+      assert.doesNotThrow(()=>f.installer.assertUpdateCanLaunch())
+      await assert.rejects(f.installer.confirmPendingUpdate(),/startup has not/)
+    }
+  }
+})
+
+test('a committed-then-failed catalog update restores prior package, config and encrypted secrets',async t=>{
+  const f=await catalogUpdateFixture(t)
+  const save=f.store.saveExtension.bind(f.store)
+  t.mock.method(f.store,'saveExtension',(...args)=>{save(...args);throw new Error('post-save failure')})
+  await assert.rejects(f.installer.install(f.selectedWheel,f.delivery),/post-save failure/)
+  assert.equal(f.store.storedExtensionRecords()[0].installId,f.previous.installId)
+  assert.deepEqual(f.store.storedExtensionRecords()[0].encryptedSecrets,f.previous.encryptedSecrets)
+  assert.equal(f.installer.pendingUpdate(),undefined)
+  for(const file of [f.file,f.file+'.bak']) assert.equal(JSON.parse(fs.readFileSync(file)).extensions[f.previous.id].installId,f.previous.installId)
+})
+
+test('persistent primary-write failure keeps durable last-good recovery and both environments for a later explicit rollback',async t=>{
+  const f=await catalogUpdateFixture(t)
+  const rename=fs.renameSync
+  t.mock.method(fs,'renameSync',(source,target)=>{
+    if(target===f.file&&source===f.file+'.tmp')throw Object.assign(new Error('primary unavailable'),{code:'EACCES'})
+    return rename(source,target)
+  })
+  await assert.rejects(f.installer.install(f.selectedWheel,f.delivery),/primary unavailable/)
+  assert.equal(f.installer.pendingUpdate().recoveryRequired,true)
+  const journal=JSON.parse(fs.readFileSync(path.join(f.root,'update-rollback.json')))
+  assert.equal(journal.previous.installId,f.previous.installId)
+  assert.ok(fs.existsSync(path.join(f.root,journal.target.installId)))
+  fs.renameSync=rename
+  const reopened=f.reopen()
+  await reopened.rollbackPendingUpdate()
+  assert.equal(f.store.storedExtensionRecords()[0].installId,f.previous.installId)
+  assert.deepEqual(f.store.storedExtensionRecords()[0].encryptedSecrets,f.previous.encryptedSecrets)
+})
+
+test('rollback rejects a damaged original wheel without discarding either version',async t=>{
+  const f=await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel,f.delivery)
+  const oldDirectory=path.join(f.root,f.previous.installId)
+  const wheel=fs.readdirSync(oldDirectory).find(name=>name.startsWith('demo-')&&name.endsWith('.whl'))
+  fs.writeFileSync(path.join(oldDirectory,wheel),'tampered old wheel')
+  await assert.rejects(f.reopen().rollbackPendingUpdate(),/previous verified wheel/)
+  assert.equal(f.store.storedExtensionRecords()[0].version,'0.2.0')
+  assert.ok(f.installer.pendingUpdate())
+})
+
+
+test('rollback preserves newer safety bans and explicit disable cannot be undone by recovery',async t=>{
+  const f=await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel,f.delivery)
+  f.store.commitExtensionSecurity(securityFor(f.previous,1))
+  await f.installer.update({id:f.metadata.id,enabled:false,values:{},secrets:{},providers:['pi']})
+  await f.reopen().rollbackPendingUpdate()
+  const restored=f.store.storedExtensionRecords()[0]
+  assert.equal(restored.enabled,false)
+  assert.match(f.store.extensionSecurityBlock(restored),/blocked/)
+  assert.deepEqual(f.store.extensionRecords()[0].encryptedSecrets,f.previous.encryptedSecrets)
+  assert.equal(f.store.extensionSecurityState().sequence,1)
+})
+
+test('a new safety ban cannot erase last-good recovery by accepting an earlier healthy receipt',async t=>{
+  const f=await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel,f.delivery)
+  const launch=await f.installer.prepareLaunch(),target=f.store.storedExtensionRecords()[0]
+  await f.installer.acceptLaunch(launch,[{id:target.id,version:target.version,revision:target.revision,startup:'accepted',state:'active',contributions:[{kind:'mcp_server',id:'tools',health:'ready'}]}])
+  f.store.commitExtensionSecurity(securityFor(target,1))
+  await assert.rejects(f.installer.confirmPendingUpdate(),/blocked/)
+  assert.ok(f.installer.pendingUpdate())
+  assert.ok(fs.existsSync(path.join(f.root,f.previous.installId)))
+})
+
+test('late health may permit explicit keep in the same process; another process cannot reuse that receipt',async t=>{
+  const f=await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel,f.delivery)
+  const launch=await f.installer.prepareLaunch(),target=f.store.storedExtensionRecords()[0]
+  await f.installer.acceptLaunch(launch,[])
+  const rows=[{id:target.id,version:target.version,revision:target.revision,startup:'accepted',state:'active',contributions:[{kind:'mcp_server',id:'tools',health:'ready'}]}]
+  await f.installer.refreshUpdateHealth(rows)
+  assert.equal(f.installer.pendingUpdate().canConfirm,true)
+  const reopened=f.reopen()
+  await reopened.refreshUpdateHealth(rows)
+  assert.equal(reopened.pendingUpdate().canConfirm,false)
+  assert.equal(reopened.pendingUpdate().recoveryRequired,true)
+})
+
+test('native rollback cancellation leaves the new state and both versions intact',async t=>{
+  const f=await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel,f.delivery)
+  const rejecting=new ExtensionInstaller(f.root,f.directory,f.store,f.helper,()=> 'trusted-python',{},f.run,async()=>false,
+    undefined,undefined,undefined,undefined,'win32')
+  await assert.rejects(rejecting.rollbackPendingUpdate(),/cancelled/)
+  assert.equal(f.store.storedExtensionRecords()[0].version,'0.2.0')
+  assert.ok(rejecting.pendingUpdate())
+  assert.ok(fs.existsSync(path.join(f.root,f.previous.installId)))
+})
+
+
+test('failed rollback journal persistence fences the same process and retains recovery across restart',async t=>{
+  const f=await catalogUpdateFixture(t)
+  const save=f.store.saveExtension.bind(f.store)
+  t.mock.method(f.store,'saveExtension',(...args)=>{save(...args);throw new Error('after-save fault')})
+  t.mock.method(f.store,'restoreExtension',()=>{throw new Error('rollback write unavailable')})
+  const rename=fs.renameSync
+  let journalWrites=0
+  t.mock.method(fs,'renameSync',(source,target)=>{
+    if(String(target).endsWith('update-rollback.json')&&++journalWrites>1)throw new Error('journal write unavailable')
+    return rename(source,target)
+  })
+  await assert.rejects(f.installer.install(f.selectedWheel,f.delivery),/after-save fault/)
+  assert.equal(f.installer.pendingUpdate().recoveryRequired,true)
+  assert.throws(()=>f.installer.assertUpdateCanLaunch(),/rollback/)
+  assert.throws(()=>f.reopen().assertUpdateCanLaunch(),/rollback/)
+  assert.ok(fs.existsSync(path.join(f.root,f.previous.installId)))
+  assert.ok(fs.existsSync(path.join(f.root,f.store.storedExtensionRecords()[0].installId)))
+})
+
+
+test('rollback rechecks retained wheel bytes after the native confirmation', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const oldDirectory = path.join(f.root, f.previous.installId)
+  const wheel = fs.readdirSync(oldDirectory).find(name => name.startsWith('demo-') && name.endsWith('.whl'))
+  const racing = new ExtensionInstaller(f.root, f.directory, f.store, f.helper, () => 'trusted-python', {}, f.run,
+    async () => { fs.writeFileSync(path.join(oldDirectory, wheel), 'changed during native confirmation'); return true },
+    undefined, undefined, undefined, undefined, 'win32')
+  await assert.rejects(racing.rollbackPendingUpdate(), /changed during confirmation/)
+  assert.equal(f.store.storedExtensionRecords()[0].version, '0.2.0')
+  assert.ok(racing.pendingUpdate())
+  assert.ok(fs.existsSync(oldDirectory))
+})
+
+
+test('frontend-only queued update uses its native applied revision without inventing a backend contribution', async t => {
+  const f = fixture(t, {manifest:themeManifest()})
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({id:f.metadata.id,enabled:true})
+  const previous = f.store.storedExtensionRecords()[0]
+  f.metadata.version = '0.2.0'
+  fs.writeFileSync(f.selectedWheel, 'updated frontend wheel')
+  const delivery = {catalog:false,identity:{id:f.metadata.id,version:f.metadata.version,digest:createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')},assertCurrent(){}}
+  await f.installer.install(f.selectedWheel, delivery)
+  const launch = await f.installer.prepareLaunch()
+  assert.deepEqual(JSON.parse(launch.extensions), [])
+  await f.installer.acceptLaunch(launch, [])
+  assert.equal(f.installer.pendingUpdate().canConfirm, true)
+  assert.ok(fs.existsSync(path.join(f.root, previous.installId)))
+  await f.installer.confirmPendingUpdate()
+  assert.equal(f.installer.pendingUpdate(), undefined)
+})
+
+test('partial or duplicate backend contribution health cannot discard the recovery version', async t => {
+  const f = await catalogUpdateFixture(t)
+  f.metadata.contributes.mcp_server.push({...f.metadata.contributes.mcp_server[0],id:'more-tools'})
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const launch = await f.installer.prepareLaunch(), target = f.store.storedExtensionRecords()[0]
+  const row = {id:target.id,version:target.version,revision:target.revision,startup:'accepted',state:'active'}
+  const ready = {kind:'mcp_server',id:'tools',health:'ready'}
+  for (const contributions of [[ready], [ready, ready]]) {
+    await f.installer.acceptLaunch(launch, [{...row,contributions}])
+    assert.equal(f.installer.pendingUpdate().canConfirm, false)
+  }
+  await f.installer.refreshUpdateHealth([{...row,contributions:[ready,{...ready,id:'more-tools'}]}])
+  assert.equal(f.installer.pendingUpdate().canConfirm, true)
+})
+
+function healthyUpdateRow(record) {
+  return {id: record.id, version: record.version, revision: record.revision,
+    startup: 'accepted', state: 'active', contributions: [{kind: 'mcp_server', id: 'tools', health: 'ready'}]}
+}
+
+test('unclean update exit can restore the retained version across launches without granting file cleanup', async t => {
+  const f = await catalogUpdateFixture(t)
+  const {ExtensionCatalog} = loadTypeScript(new URL('../src/main/extensionCatalog.ts', import.meta.url), mocks)
+  const {ExtensionUpdateBoundary} = loadTypeScript(new URL('../src/main/extensionUpdates.ts', import.meta.url))
+  const {prepareBackendCleanup, verifyPreviousBackendCleanup} = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+  const cleanupFile = path.join(f.directory, 'backend-cleanup.json')
+  let boot = 10
+  const getBootId = async () => boot
+  const verify = () => verifyPreviousBackendCleanup(cleanupFile, {getBootId})
+  // Execute index.ts's real boundary wiring: the original deadlock was at this
+  // composition boundary, invisible to a direct installer rollback unit test.
+  const source = fs.readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8')
+  const wiring = source.slice(source.indexOf('const extensionRecoveryIdle ='), source.indexOf('const extensionInstaller ='))
+  assert.ok(wiring.includes('new ExtensionUpdateBoundary'))
+  function startApp(liveBackend = false) {
+    const context = {ExtensionUpdateBoundary, pythonProcess: liveBackend ? {pid: 12345} : null,
+      backendOwned: liveBackend, backendStarting: null, backendStopping: null,
+      applicationLifecycle: {isQuitting: false}, extensionCleanupConfirmed: true,
+      BACKEND_CLEANUP_STATE: cleanupFile, BACKEND_PORT: 17777,
+      verifyPreviousBackendCleanup: verify, localPortIsClosed: async () => !liveBackend}
+    const boundary = new Function(...Object.keys(context), wiring + '\nreturn extensionUpdateBoundary')(...Object.values(context))
+    const store = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'), 'win32', () => true)
+    const installer = new ExtensionInstaller(f.root, f.directory, store, f.helper, () => 'trusted-python', {}, f.run, async () => true,
+      undefined, undefined, undefined, boundary.assertHeld, 'win32', boundary.assertRecoveryHeld)
+    const catalog = new ExtensionCatalog(path.join(f.directory, 'catalog'), store, f.helper, installer, () => '', () => {},
+      async () => assert.fail('local recovery must not access the network'), () => {}, 'win32')
+    return {boundary, store, installer, catalog}
+  }
+  const installing = startApp()
+  await installing.installer.prepareStartup()
+  await installing.catalog.scheduleLocal(f.selectedWheel)
+  await installing.catalog.applyScheduled(installing.boundary)
+  const target = installing.store.storedExtensionRecords()[0]
+  await prepareBackendCleanup(cleanupFile, {nonce: 'synthetic-crashed-backend', projectRoot: f.directory, pythonCommand: 'python'}, 'win32', getBootId)
+  assert.equal(await verify(), false)
+  const recovery = startApp()
+  await recovery.installer.prepareStartup()
+  await assert.rejects(recovery.installer.prepareLaunch(), /rollback/)
+  assert.equal((await recovery.catalog.dispatch({action: 'rollback'}, {}, async () => {})).scheduled, true)
+  const live = startApp(true)
+  await assert.rejects(live.catalog.applyScheduled(live.boundary), /backend is still active/)
+  assert.equal(live.catalog.hasScheduled(), true)
+  const next = startApp()
+  await next.installer.prepareStartup()
+  const ledgerBefore = fs.readFileSync(cleanupFile)
+  await next.catalog.applyScheduled(next.boundary)
+  assert.deepEqual(fs.readFileSync(cleanupFile), ledgerBefore)
+  assert.equal(next.installer.pendingUpdate(), undefined)
+  assert.deepEqual(next.store.storedExtensionRecords()[0], f.previous)
+  for (let launch = 0; launch < 3; launch++) {
+    const app = startApp()
+    await app.installer.prepareStartup()
+    assert.equal(JSON.parse((await app.installer.prepareLaunch()).extensions)[0].version, '0.1.0')
+    await assert.rejects(app.boundary.run(() => app.installer.install(f.selectedWheel)), /active or unconfirmed/)
+    assert.ok(fs.existsSync(path.join(f.root, target.installId)))
+    assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)))
+  }
+  await next.installer.remove(f.previous.id)
+  assert.equal(await verify(), false)
+  assert.ok(fs.existsSync(path.join(f.root, f.previous.installId)), 'pending removal waits for physical cleanup')
+  boot++
+  assert.equal(await verify(), true)
+  await next.installer.cleanupStoppedBackend()
+  assert.equal(fs.existsSync(path.join(f.root, f.previous.installId)), false)
+})
+
+test('restoring a retained theme does not incidentally collect either version', async t => {
+  const f = fixture(t, {manifest: themeManifest()})
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({id: f.metadata.id, enabled: true})
+  const previous = f.store.storedExtensionRecords()[0]
+  f.metadata.version = '0.2.0'
+  fs.writeFileSync(f.selectedWheel, 'synthetic new theme')
+  await f.installer.install(f.selectedWheel, {identity: {id: f.metadata.id, version: '0.2.0', digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')}, assertCurrent() {}})
+  const target = f.store.storedExtensionRecords()[0]
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.rollbackPendingUpdate()
+  assert.equal(f.store.storedExtensionRecords()[0].installId, previous.installId)
+  for (const record of [previous, target]) assert.ok(fs.existsSync(path.join(f.root, record.installId)))
+})
+
+for (const platform of ['linux', 'darwin']) for (const source of ['local', 'catalog']) {
+  test(`${platform} ${source} install retains the running version and applies updates without Windows recovery state`, async t => {
+    const f = fixture(t, {manifest: manifest('mcp_server'), platform})
+    const {prepareBackendCleanup} = loadTypeScript(new URL('../src/main/backendProcessTree.ts', import.meta.url))
+    const stateFile = path.join(f.directory, 'backend-cleanup.json')
+    const registration = await prepareBackendCleanup(stateFile, {nonce: 'synthetic-nonce', projectRoot: f.directory, pythonCommand: 'python'}, platform)
+    assert.deepEqual(registration.environment, {})
+    const delivery = () => source === 'catalog' ? {identity: {id: f.metadata.id, version: f.metadata.version,
+      digest: createHash('sha256').update(fs.readFileSync(f.selectedWheel)).digest('hex')}, assertCurrent() {}} : undefined
+    await f.installer.install(f.selectedWheel, delivery())
+    await f.installer.update({id: f.metadata.id, enabled: true, providers: ['pi'], secrets: {token: 'synthetic-token'}})
+    const previous = f.store.storedExtensionRecords()[0]
+    await f.installer.acceptLaunch(await f.installer.prepareLaunch(), [healthyUpdateRow(previous)])
+    f.metadata.version = '0.2.0'
+    fs.writeFileSync(f.selectedWheel, 'synthetic next wheel')
+    await f.installer.install(f.selectedWheel, delivery())
+    const current = f.store.storedExtensionRecords()[0]
+    assert.equal(current.version, '0.2.0')
+    assert.equal(f.store.appliedExtensionRecords()[0].installId, previous.installId)
+    assert.ok(fs.existsSync(path.join(f.root, previous.installId)))
+    assert.equal(f.installer.pendingUpdate(), undefined)
+    assert.equal(fs.existsSync(path.join(f.root, 'update-rollback.json')), false)
+    assert.equal(fs.existsSync(stateFile), false)
+    assert.equal(f.calls.filter(call => call.command === 'confirm' && call.review.operation === 'update').length, 1)
+    await f.installer.cleanupStoppedBackend()
+    await f.installer.acceptLaunch(await f.installer.prepareLaunch(), [healthyUpdateRow(current)])
+    assert.equal(f.store.appliedExtensionRecords()[0].installId, current.installId)
+    await assert.rejects(f.installer.rollbackPendingUpdate(), /only available on Windows/)
+  })
+}
+
+for (const secret of [true, false]) {
+  test(`pending update can complete a new required ${secret ? 'secret' : 'value'} and validate only the resulting revision`, async t => {
+    const f = await catalogUpdateFixture(t)
+    f.metadata.config.added = {type: 'string', title: 'New required configuration', required: true, secret}
+    await f.installer.install(f.selectedWheel, f.delivery)
+    const target = f.store.storedExtensionRecords()[0]
+    const initial = await f.installer.prepareLaunch()
+    assert.ok(JSON.parse(initial.extensions)[0].startup_error)
+    await f.installer.acceptLaunch(initial, [{...healthyUpdateRow(target), startup: 'rejected', state: 'needs_config'}])
+    assert.equal(f.installer.pendingUpdate().canConfirm, false)
+    await assert.rejects(f.installer.update({id: target.id, values: {}, secrets: {}}), /required configuration/)
+    await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+    await f.installer.update({id: target.id, [secret ? 'secrets' : 'values']: {added: 'synthetic-new-value'}})
+    const configured = f.store.storedExtensionRecords()[0]
+    assert.ok(configured.revision > target.revision)
+    const journal = JSON.parse(fs.readFileSync(path.join(f.root, 'update-rollback.json'), 'utf8'))
+    assert.deepEqual(journal.previous, f.previous)
+    assert.deepEqual(journal.target, configured)
+    if (secret) assert.ok(!JSON.stringify(journal).includes('synthetic-new-value'))
+    await f.installer.refreshUpdateHealth([healthyUpdateRow(target)])
+    assert.equal(f.installer.pendingUpdate().canConfirm, false, 'previous revision cannot validate changed configuration')
+    const launch = await f.installer.prepareLaunch()
+    const sent = JSON.parse(launch.extensions)[0]
+    assert.equal(sent.startup_error, undefined)
+    assert.equal((secret ? sent.secrets : sent.config).added, 'synthetic-new-value')
+    await f.installer.acceptLaunch(launch, [healthyUpdateRow(configured)])
+    assert.equal(f.installer.pendingUpdate().canConfirm, true)
+    await f.installer.confirmPendingUpdate()
+    assert.equal(f.installer.pendingUpdate(), undefined)
+  })
+}
+
+test('editing a healthy pending update invalidates its receipt and rollback preserves the original configuration and disable', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const launch = await f.installer.prepareLaunch(), before = f.store.storedExtensionRecords()[0]
+  await f.installer.acceptLaunch(launch, [healthyUpdateRow(before)])
+  assert.equal(f.installer.pendingUpdate().canConfirm, true)
+  await f.installer.update({id: before.id, values: {streaming: true}, secrets: {token: 'replacement-token'}})
+  assert.equal(f.installer.pendingUpdate().canConfirm, false)
+  await f.installer.refreshUpdateHealth([healthyUpdateRow(before)])
+  await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+  await f.installer.update({id: before.id, enabled: false})
+  await f.installer.refreshUpdateHealth([])
+  assert.equal(f.installer.pendingUpdate().recoveryRequired, true)
+  await f.reopen().rollbackPendingUpdate()
+  const restored = f.store.storedExtensionRecords()[0]
+  assert.equal(restored.enabled, false)
+  assert.deepEqual(restored.values, f.previous.values)
+  assert.deepEqual(restored.encryptedSecrets, f.previous.encryptedSecrets)
+})
+
+test('configuration edits cannot resume an update from another desktop or a failed backend startup', async t => {
+  const f = await catalogUpdateFixture(t)
+  await f.installer.install(f.selectedWheel, f.delivery)
+  const edits = {id: f.metadata.id, values: {streaming: true}}
+  await assert.rejects(f.reopen().update(edits), /Roll back/)
+  f.installer.markUpdateFailed()
+  await assert.rejects(f.installer.update(edits), /Roll back/)
+  assert.deepEqual(f.store.storedExtensionRecords()[0].values, f.previous.values)
+})
+
+for (const fault of ['settings', 'journal']) {
+  test(`pending configuration ${fault} persistence failure retains rollback and cannot reuse health`, async t => {
+    const f = await catalogUpdateFixture(t)
+    await f.installer.install(f.selectedWheel, f.delivery)
+    const launch = await f.installer.prepareLaunch(), before = f.store.storedExtensionRecords()[0]
+    await f.installer.acceptLaunch(launch, [healthyUpdateRow(before)])
+    if (fault === 'settings') {
+      const save = f.store.saveExtension.bind(f.store)
+      t.mock.method(f.store, 'saveExtension', (...args) => { save(...args); throw Error('settings failure') })
+    } else {
+      const rename = fs.renameSync
+      let writes = 0
+      t.mock.method(fs, 'renameSync', (source, target) => {
+        if (String(target).endsWith('update-rollback.json') && ++writes === 2) throw Error('journal failure')
+        return rename(source, target)
+      })
+    }
+    await assert.rejects(f.installer.update({id: before.id, values: {streaming: true}}), /failure/)
+    assert.throws(() => f.installer.assertUpdateCanLaunch(), /rollback/)
+    await f.installer.refreshUpdateHealth([healthyUpdateRow(before)])
+    await assert.rejects(f.installer.confirmPendingUpdate(), /startup has not/)
+    const reopened = f.reopen()
+    assert.throws(() => reopened.assertUpdateCanLaunch(), /rollback/)
+    await reopened.rollbackPendingUpdate()
+    assert.deepEqual(f.store.storedExtensionRecords()[0].values, f.previous.values)
+    assert.deepEqual(f.store.storedExtensionRecords()[0].encryptedSecrets, f.previous.encryptedSecrets)
+  })
+}

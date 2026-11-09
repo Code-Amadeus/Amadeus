@@ -57,7 +57,7 @@
         "zh-CN": "Pi 模型"
       },
       "computed_default": true,
-      "example": "deepseek-v4-flash",
+      "example": "deepseek-flash",
       "example_active": true
     }
   },

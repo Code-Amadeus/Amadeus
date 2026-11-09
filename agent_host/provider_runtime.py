@@ -628,7 +628,7 @@ class ProviderRuntime:
             metadata=_public_provider_metadata(record.metadata),
         )
 
-    async def close(self) -> None:
+    async def close(self) -> dict[str, Any]:
         """Release Provider-owned runtime resources during Host shutdown.
 
         Provider execution lifecycles stay behind their adapters.  The Host
@@ -638,11 +638,14 @@ class ProviderRuntime:
         deliberately not fabricated here.
         """
 
+        errors: list[str] = []
         if self._admission_cleanup_tasks:
-            await asyncio.gather(
+            outcomes = await asyncio.gather(
                 *tuple(self._admission_cleanup_tasks),
                 return_exceptions=True,
             )
+            if any(isinstance(outcome, BaseException) for outcome in outcomes):
+                errors.append("admission_cleanup_failed")
         retained_control_tasks = {
             task
             for task in (
@@ -660,6 +663,7 @@ class ProviderRuntime:
                 await self._wait_for_retained_task(task)
             except BaseException:
                 logger.exception("provider retained control transaction failed during close")
+                errors.append("retained_control_failed")
         for provider_id, adapter in tuple(self._adapters.items()):
             close = getattr(adapter, "close", None)
             if not callable(close):
@@ -667,9 +671,18 @@ class ProviderRuntime:
             try:
                 outcome = close()
                 if inspect.isawaitable(outcome):
-                    await outcome
+                    outcome = await outcome
+                if isinstance(outcome, dict) and outcome.get("settled") is not True:
+                    errors.append(f"adapter_unsettled:{provider_id}")
             except Exception:
                 logger.exception("provider adapter close failed: %s", provider_id)
+                errors.append(f"adapter_close_failed:{provider_id}")
+        pending = [record.run_id for record in self._runs.values()
+                   if record.status not in {"done", "error", "cancelled"}
+                   or (record.task_handle is not None and not record.task_handle.done())
+                   or (record.terminal_publication_task is not None
+                       and not record.terminal_publication_task.done())]
+        return {"settled": not errors and not pending, "errors": errors, "pending_runs": pending}
 
     def add_orphaned_run(self, *, provider: str, run: dict[str, Any]) -> None:
         """Restore one adapter-owned resumable checkpoint without interpreting it."""

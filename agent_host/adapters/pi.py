@@ -393,7 +393,9 @@ class PiAdapter:
             elif event.get("method") == "notify" and str(event.get("message") or "").strip():
                 notice = redact_mcp_text(str(event["message"]), self.mcp_connections)
                 notice = notice.replace("Run /mcp to fix.",
-                    "Review connections in Settings -> Providers -> MCP, then restart the backend.")
+                    "Review installed package connections in Plugins, or manual connections in "
+                    "Settings -> Providers -> MCP. Use Test connection to diagnose the service, "
+                    "then restart the backend after changing saved connection settings.")
                 await self._emit(run_id, run, "runtime.notice", {
                     "message": notice, "level": str(event.get("notifyType") or "info"),
                     "source": "pi_native_notification"})
@@ -477,5 +479,12 @@ class PiAdapter:
 
     async def close(self):
         runs = tuple(self._runs.items())
-        await asyncio.gather(*(self.cancel(key) for key, _ in runs), return_exceptions=True)
-        await asyncio.gather(*(run.client.close() for _, run in runs), return_exceptions=True)
+        cancelled = await asyncio.gather(*(self.cancel(key) for key, _ in runs), return_exceptions=True)
+        closed = await asyncio.gather(*(run.client.close() for _, run in runs), return_exceptions=True)
+        errors = []
+        if any(isinstance(result, BaseException) or not isinstance(result, dict)
+               or result.get("confirmed") is not True for result in cancelled):
+            errors.append("pi_cancel_unconfirmed")
+        if any(isinstance(result, BaseException) for result in closed):
+            errors.append("pi_close_failed")
+        return {"settled": not errors, "errors": errors}

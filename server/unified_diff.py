@@ -27,6 +27,8 @@ def parse_unified_diff(
     current_hunk: dict[str, Any] | None = None
     old_line = 0
     new_line = 0
+    old_remaining = 0
+    new_remaining = 0
     parsed_lines = 0
     truncated = False
 
@@ -48,14 +50,22 @@ def parse_unified_diff(
         files.append(item)
         return item
 
-    for raw_line in source.splitlines():
+    # Patch lines end at "\n" (or "\r\n"). str.splitlines() would also break
+    # content at a form feed, U+2028 or another separator inside the line.
+    for line in source.split("\n"):
+        raw_line = line.removesuffix("\r")
+        # A hunk header declares how many old and new lines follow. Until they
+        # are consumed, "--- x" and "+++ x" are removed/added content such as
+        # an SQL or Lua comment, not file headers.
+        in_hunk_body = current_hunk is not None and (old_remaining > 0 or new_remaining > 0)
+
         if raw_line.startswith("diff --git "):
             old_path, new_path = _paths_from_diff_header(raw_line)
             current_file = append_file(old_path, new_path)
             current_hunk = None
             continue
 
-        if raw_line.startswith("--- "):
+        if raw_line.startswith("--- ") and not in_hunk_body:
             old_path = _marker_path(raw_line[4:])
             if current_file is None:
                 current_file = append_file(old_path, "")
@@ -67,7 +77,7 @@ def parse_unified_diff(
                 current_file["status"] = "added"
             continue
 
-        if raw_line.startswith("+++ "):
+        if raw_line.startswith("+++ ") and not in_hunk_body:
             new_path = _marker_path(raw_line[4:])
             if current_file is None:
                 current_file = append_file("", new_path)
@@ -99,28 +109,49 @@ def parse_unified_diff(
             current_file["newPath"] = raw_line[len("rename to ") :].strip()
             current_file["path"] = current_file["newPath"]
             continue
+        if raw_line.startswith("copy from "):
+            current_file["status"] = "copied"
+            current_file["oldPath"] = raw_line[len("copy from ") :].strip()
+            continue
+        if raw_line.startswith("copy to "):
+            current_file["status"] = "copied"
+            current_file["newPath"] = raw_line[len("copy to ") :].strip()
+            current_file["path"] = current_file["newPath"]
+            continue
 
         hunk_match = _HUNK_HEADER.match(raw_line)
         if hunk_match:
             old_line = int(hunk_match.group("old_start"))
             new_line = int(hunk_match.group("new_start"))
+            old_remaining = int(hunk_match.group("old_count") or 1)
+            new_remaining = int(hunk_match.group("new_count") or 1)
             current_hunk = {
                 "header": raw_line,
                 "oldStart": old_line,
-                "oldCount": int(hunk_match.group("old_count") or 1),
+                "oldCount": old_remaining,
                 "newStart": new_line,
-                "newCount": int(hunk_match.group("new_count") or 1),
+                "newCount": new_remaining,
                 "label": hunk_match.group("label").strip(),
                 "lines": [],
             }
             current_file["hunks"].append(current_hunk)
             continue
 
-        if current_hunk is None or not raw_line:
+        if current_hunk is None:
             continue
+        if not raw_line:
+            if not in_hunk_body:
+                continue
+            # diff.suppressBlankEmpty (and GNU diff) write a blank context
+            # line without its leading space. Git apply reads it as context.
+            raw_line = " "
         prefix = raw_line[0]
         if prefix not in {" ", "+", "-", "\\"}:
             continue
+        if prefix in {" ", "-"}:
+            old_remaining = max(0, old_remaining - 1)
+        if prefix in {" ", "+"}:
+            new_remaining = max(0, new_remaining - 1)
         if parsed_lines >= max_lines:
             truncated = True
             continue
@@ -189,6 +220,18 @@ def parse_unified_diff(
 
 
 def _paths_from_diff_header(line: str) -> tuple[str, str]:
+    names = line[len("diff --git ") :]
+    if '"' not in names:
+        # Git does not quote names that only contain spaces, so a space alone
+        # cannot separate them. Split where both names denote the same path;
+        # renames and copies carry their own path lines below the header.
+        for index, char in enumerate(names):
+            if char != " ":
+                continue
+            old_path, new_path = names[:index], names[index + 1 :]
+            stripped = _without_prefix(old_path)
+            if old_path == new_path or (stripped and stripped == _without_prefix(new_path)):
+                return old_path, new_path
     try:
         parts = shlex.split(line)
     except ValueError:
@@ -196,6 +239,11 @@ def _paths_from_diff_header(line: str) -> tuple[str, str]:
     if len(parts) >= 4:
         return parts[2], parts[3]
     return "", ""
+
+
+def _without_prefix(path: str) -> str:
+    _, separator, rest = path.partition("/")
+    return rest if separator else ""
 
 
 def _marker_path(value: str) -> str:

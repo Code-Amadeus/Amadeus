@@ -71,6 +71,10 @@ let runtime = desktop.extensions.map(extension => ({ id: extension.id, version: 
 }))
 let failSave = false
 let failCatalog = false
+let probeResponse: Record<string, unknown> = { status: 'connected', tool_count: 9 }
+let holdInitialRefresh = query.has('stale-refresh')
+let rejectInitialRefresh: ((error: Error) => void) | undefined
+if (holdInitialRefresh) desktop.restartRequired = true
 if (palette) {
   desktop.values.AMADEUS_UI_THEME = `${themeManifest.id}/${palette.id}`
   desktop.extensions.push({ id: themeManifest.id, version: themeManifest.version, revision: 2, appliedRevision: 2, appliedVersion: themeManifest.version,
@@ -84,8 +88,10 @@ const pending = () => { desktop.restartRequired = true; desktop.pendingKeys = ['
 const subscribe = (method: string, listener: (payload: Record<string, unknown>) => void) => {
   (listeners[method] ||= new Set()).add(listener); return () => { listeners[method].delete(listener) }
 }
-const send = async (method: string): Promise<Record<string, unknown>> => {
-  calls.push({ method, params: {} })
+const send = async (method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
+  calls.push({ method, params })
+  if (method === 'mcp.connection.list') return { connections: runtime.filter(item => item.id === tools.id && item.enabled).map(item => ({ id: 'loaded-extension-connection', name: 'Example MCP service', extension_package_id: item.id })) }
+  if (method === 'mcp.connection.test') return probeResponse
   if (method === 'system.get_config') return { values: config() }
   if (method === 'provider.list') return { provider_availability: [], provider_manifests: [
     { provider_id: 'codex', display_name: 'Codex', runtime_kind: 'native', capabilities: { capability_projections: ['mcp_connection', 'agent_skill'] } },
@@ -93,7 +99,13 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
     { provider_id: 'pi', display_name: 'Pi', runtime_kind: 'native', capabilities: { capability_projections: ['agent_skill'] } },
     { provider_id: 'unsupported', display_name: 'Incompatible agent', runtime_kind: 'native', capabilities: { capability_projections: [] } },
   ], acp_agents: [], provider_configurations: [] }
-  if (method === 'capability.list') return { packages: [] }
+  if (method === 'capability.list') {
+    if (holdInitialRefresh) {
+      holdInitialRefresh = false
+      return new Promise((_resolve, reject) => { rejectInitialRefresh = reject })
+    }
+    return { packages: [] }
+  }
   throw new Error('Unexpected synthetic RPC: ' + method)
 }
 host.amadeus = {
@@ -142,6 +154,11 @@ host.amadeus = {
   },
   restartBackend: async () => {
     calls.push({ method: 'restartBackend', params: {} })
+    if (rejectInitialRefresh) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      rejectInitialRefresh(new Error('reconnecting'))
+      rejectInitialRefresh = undefined
+    }
     desktop.extensions = desktop.extensions.filter(extension => !extension.pendingRemoval)
     desktop.extensions.forEach(extension => { extension.restartRequired = false; extension.appliedRevision = extension.revision; extension.appliedVersion = extension.version })
     runtime = runtime.filter(observed => desktop.extensions.some(extension => extension.id === observed.id)).map(observed => {
@@ -154,6 +171,7 @@ host.amadeus = {
 }
 if (query.has('real')) Object.assign(host.amadeus, host.extensionStoreFixture)
 host.extensionFixture = { calls, errors, snapshot, setFailCatalog: (value: boolean) => { failCatalog = value }, setFailSave: (value: boolean) => { failSave = value },
+  setProbeResponse: (value: Record<string, unknown>) => { probeResponse = value },
   refreshRuntime: () => { emit() },
   setContributionHealth: (health: string, detail: string) => { Object.assign(runtime[0].contributions[0], { health, detail }); emit() } }
 document.documentElement.style.height = '100%'

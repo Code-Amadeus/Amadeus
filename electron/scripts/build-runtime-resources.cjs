@@ -1,7 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
-const buildWallpaper = require('./build-windows-wallpaper.cjs')
 
 function verifyDictionary(directory, pin) {
   const names = ['userdict.csv', 'provenance.json', 'NOTICE.md', 'GPT-SoVITS-MIT.txt',
@@ -37,9 +36,8 @@ function prepareDictionary(root) {
   return staged
 }
 
-module.exports = async context => {
+module.exports = async () => {
   prepareDictionary(path.resolve(__dirname, '../..'))
-  await buildWallpaper(context)
 }
 module.exports.prepareDictionary = prepareDictionary
 module.exports.verifyDictionary = verifyDictionary

@@ -116,6 +116,14 @@ def test_catalog_defaults_remain_registered_in_the_environment_reader() -> None:
             }.get(field["type"], "str"))
 
 
+@pytest.mark.parametrize("model", [None, "deepseek-v4-flash", "deepseek-v4-pro", "custom-model", ""])
+def test_deepseek_default_preserves_explicit_model_selection(model) -> None:
+    reader = EnvironmentReader({} if model is None else {"DEEPSEEK_MODEL_NAME": model})
+    assert catalog.read_catalog_value(reader, "DEEPSEEK_MODEL_NAME") == (
+        "deepseek-flash" if model is None else model
+    )
+
+
 def test_catalog_preserves_explicit_empty_values_and_secret_normalization() -> None:
     reader = EnvironmentReader({
         "FISH_TTS_MODEL": "", "FISH_TTS_LATENCY": "low",

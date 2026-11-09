@@ -173,6 +173,7 @@ class McpConnectionSpec:
             "bearer_token_env_var": self.bearer_token_env_var,
             "environment_keys": sorted(self.environment),
             "main_chat_access": False,
+            **({"extension_package_id": self.extension_package_id} if self.extension_package_id else {}),
         }
 
 
@@ -361,7 +362,14 @@ async def open_mcp_connection(
         if not token:
             raise RuntimeError("configured bearer token is unavailable")
         headers["Authorization"] = f"Bearer {token}"
-    async with AsyncClient(headers=headers) as http_client:
+    async def preserve_authentication_error(response):
+        # The SDK maps non-JSON-RPC failures to a generic protocol error. Keep
+        # HTTP authentication facts at the transport boundary; negotiation's
+        # other error statuses must still reach the native MCP client.
+        if response.status_code in (401, 403):
+            response.raise_for_status()
+
+    async with AsyncClient(headers=headers, event_hooks={"response": [preserve_authentication_error]}) as http_client:
         transport = streamable_http_client(connection.url, http_client=http_client)
         async with Client(transport, raise_exceptions=False) as client:
             yield client
