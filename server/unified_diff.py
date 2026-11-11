@@ -152,6 +152,13 @@ def parse_unified_diff(
             old_remaining = max(0, old_remaining - 1)
         if prefix in {" ", "+"}:
             new_remaining = max(0, new_remaining - 1)
+        # The line cap bounds the rendered hunk lines only. File and patch
+        # totals still count every change, so a file after the cap is not
+        # listed as +0 / -0.
+        if prefix == "+":
+            current_file["additions"] += 1
+        elif prefix == "-":
+            current_file["deletions"] += 1
         if parsed_lines >= max_lines:
             truncated = True
             continue
@@ -161,12 +168,10 @@ def parse_unified_diff(
             kind = "add"
             line_item = {"kind": kind, "newLine": new_line, "text": text}
             new_line += 1
-            current_file["additions"] += 1
         elif prefix == "-":
             kind = "remove"
             line_item = {"kind": kind, "oldLine": old_line, "text": text}
             old_line += 1
-            current_file["deletions"] += 1
         elif prefix == " ":
             kind = "context"
             line_item = {
