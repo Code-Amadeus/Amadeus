@@ -216,6 +216,43 @@ def test_parse_unified_diff_caps_files_without_merging_hunks() -> None:
     assert parsed["files"][0]["deletions"] == 1
 
 
+def test_parse_unified_diff_counts_changes_past_the_line_cap() -> None:
+    patch = "\n".join(
+        [
+            "diff --git a/data.txt b/data.txt",
+            "--- a/data.txt",
+            "+++ b/data.txt",
+            "@@ -1,2 +1,3 @@",
+            " keep",
+            "-old",
+            "+new",
+            "+extra",
+            "diff --git a/app.py b/app.py",
+            "--- a/app.py",
+            "+++ b/app.py",
+            "@@ -1 +1 @@",
+            "-before",
+            "+after",
+        ]
+    )
+    parsed = parse_unified_diff(patch, max_lines=2)
+
+    assert parsed["truncated"] is True
+    assert parsed["lineCount"] == 2
+    assert [(item["path"], item["additions"], item["deletions"]) for item in parsed["files"]] == [
+        ("data.txt", 2, 1),
+        ("app.py", 1, 1),
+    ]
+    assert parsed["additions"] == 3
+    assert parsed["deletions"] == 2
+    data, app = parsed["files"]
+    assert data["hunks"][0]["lines"] == [
+        {"kind": "context", "oldLine": 1, "newLine": 1, "text": "keep"},
+        {"kind": "remove", "oldLine": 2, "text": "old"},
+    ]
+    assert app["hunks"][0]["lines"] == []
+
+
 def test_parse_unified_diff_splits_hunk_lines_only_at_newlines() -> None:
     parsed = parse_unified_diff(
         "diff --git a/app.py b/app.py\n"
@@ -330,6 +367,7 @@ if __name__ == "__main__":
     test_parse_unified_diff_keeps_spaced_paths_without_marker_lines()
     test_diff_canvas_payload_keeps_report_for_local_mode_switch()
     test_parse_unified_diff_caps_files_without_merging_hunks()
+    test_parse_unified_diff_counts_changes_past_the_line_cap()
     test_parse_unified_diff_splits_hunk_lines_only_at_newlines()
     test_parse_unified_diff_reads_empty_lines_inside_hunks_as_blank_context()
     test_parse_unified_diff_reads_copy_headers()
