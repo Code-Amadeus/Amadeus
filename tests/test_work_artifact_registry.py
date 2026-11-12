@@ -210,6 +210,49 @@ def test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact() -> None
     asyncio.run(run())
 
 
+def test_attempt_patch_reads_changed_paths_literally_not_as_globs() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_literal_paths_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            route = root / "[id].tsx"
+            route.write_text("route\n", encoding="utf-8")
+            (root / "i.tsx").write_text("clean\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+
+            # As a glob, "[id].tsx" also matches this pre-existing user edit.
+            (root / "i.tsx").write_text("dirty before run\n", encoding="utf-8")
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit route")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit route")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            route.write_text("route changed\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert delta["changed_files"] == ["[id].tsx"]
+        assert delta["excluded_baseline_paths"] == ["i.tsx"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [(entry["path"], entry["additions"], entry["deletions"]) for entry in parsed["files"]] == [
+            ("[id].tsx", 1, 1),
+        ]
+
+    asyncio.run(run())
+
+
 def test_non_ascii_entry_revision_is_registered_as_the_real_path() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_unicode_") as temp:
