@@ -34,10 +34,14 @@ async def run_git(cwd: str, args: list[str]) -> dict[str, Any]:
         kwargs["creationflags"] = CREATE_NO_WINDOW
     # Git quotes non-ASCII pathnames by default. Machine consumers must see
     # repository paths, not display-oriented C-style escape text.
+    # Paths passed after "--" are repository paths taken from Git's own
+    # output, never patterns: a name such as "[id].tsx" must not glob-match
+    # "i.tsx", and a leading ":" must not be read as pathspec magic.
     proc = await asyncio.create_subprocess_exec(
         "git",
         "-c",
         "core.quotepath=false",
+        "--literal-pathspecs",
         *args,
         **kwargs,
     )
