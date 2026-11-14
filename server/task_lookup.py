@@ -936,6 +936,14 @@ def status_query_narration_note(
     outcome_verdict = row.get("outcome_verdict")
     outcome_verdict = outcome_verdict if isinstance(outcome_verdict, dict) else {}
     is_terminal = execution in {"succeeded", "failed", "cancelled"}
+    # Silence is measured against the live clock, so it describes a waiting
+    # gap only while the Attempt can still report; after that it would read
+    # as a stall that never happened.
+    silent_seconds = (
+        _fact_seconds(row.get("activity_silent_seconds"))
+        if execution in {"queued", "running"}
+        else 0
+    )
     fact_verified = False
     fact_source = ""
     fact_observed_at = 0.0
@@ -1049,6 +1057,12 @@ def status_query_narration_note(
                 "fact_observed_at": fact_observed_at,
                 "steering_state": str(steering.get("state") or ""),
                 "steering_revision": int(steering.get("revision") or 0),
+                # Activity observations answer "how long" and "is it still
+                # moving"; they are never evidence of what the Work achieved.
+                "elapsed_seconds": _fact_seconds(row.get("activity_elapsed_seconds")),
+                "silent_seconds": silent_seconds,
+                "last_tool": " ".join(str(row.get("activity_last_tool") or "").split())[:80],
+                "tool_count": int(row.get("activity_tool_count") or 0),
             },
         },
     }
