@@ -584,6 +584,43 @@ def test_status_query_reaches_the_narrator_with_runtime_and_silence_facts() -> N
     print("ok: status queries carry runtime and silence facts to the Narrator")
 
 
+def test_status_query_silence_respects_activity_phase() -> None:
+    from server.work_observer_llm import _compact_note
+
+    for execution, event_type, payload, phase in (
+        ("running", "tool.call", {"tool": "command_execution"}, "working"),
+        ("running", "permission.requested", {"action": "invoke_tool"}, "waiting_for_user"),
+        ("running", "run.status", {"liveness": "cancel_pending"}, "cancelling"),
+        ("queued", "run.created", {}, "queued"),
+        ("succeeded", "run.status", {"status": "completed"}, "review"),
+        ("orphaned", "run.status", {"status": "orphaned"}, "orphaned"),
+    ):
+        snapshot = project_activity_event(
+            {},
+            _event(1, event_type, payload, at=6_030.0),
+            execution_status=execution,
+            now=6_030.0,
+        )
+        fields = activity_report_fields(
+            snapshot,
+            execution_status=execution,
+            created_at=6_000.0,
+            started_at=None if execution == "queued" else 6_000.0,
+            finished_at=6_030.0 if execution == "succeeded" else None,
+            now=6_210.0,
+        )
+        assert fields["activity_phase"] == phase
+        assert fields["activity_silent_seconds"] > 0
+        note = task_lookup.status_query_narration_note({"execution": execution, **fields})
+        facts = _compact_note(note)["progress_context"]["status_facts"]
+        assert facts["activity_phase"] == phase
+        assert facts["silent_seconds"] == (
+            fields["activity_silent_seconds"] if phase == "working" else 0
+        ), phase
+        assert facts["elapsed_seconds"] == fields["activity_elapsed_seconds"]
+    print("ok: status-query silence is limited to active work")
+
+
 def test_repeated_permission_fact_does_not_reset_clock_after_other_progress() -> None:
     permission_payload = {
         "capability": "tool.execute",
@@ -1127,6 +1164,7 @@ def main() -> None:
     test_verified_tool_fact_advances_semantic_clock_once()
     test_status_query_tracks_the_current_steer_evidence_end_to_end()
     test_status_query_reaches_the_narrator_with_runtime_and_silence_facts()
+    test_status_query_silence_respects_activity_phase()
     test_repeated_permission_fact_does_not_reset_clock_after_other_progress()
     test_staging_observation_is_bounded_to_the_attempt_namespace()
     test_report_refresh_combines_durable_activity_with_live_git_facts()

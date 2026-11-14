@@ -936,12 +936,12 @@ def status_query_narration_note(
     outcome_verdict = row.get("outcome_verdict")
     outcome_verdict = outcome_verdict if isinstance(outcome_verdict, dict) else {}
     is_terminal = execution in {"succeeded", "failed", "cancelled"}
-    # Silence is measured against the live clock, so it describes a waiting
-    # gap only while the Attempt can still report; after that it would read
-    # as a stall that never happened.
+    # Live-clock silence describes missing reports only during active work.
+    # Waiting for the person, queueing, and cancellation have their own cause;
+    # execution remains authoritative if the activity snapshot is still old.
     silent_seconds = (
         _fact_seconds(row.get("activity_silent_seconds"))
-        if execution in {"queued", "running"}
+        if execution == "running" and activity_phase in {"working", "stalled"}
         else 0
     )
     fact_verified = False
