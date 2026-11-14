@@ -510,6 +510,80 @@ def test_status_query_tracks_the_current_steer_evidence_end_to_end() -> None:
     assert observed["summary"] == "Project validation passed."
 
 
+def test_status_query_reaches_the_narrator_with_runtime_and_silence_facts() -> None:
+    from server.work_observer_llm import _compact_note
+
+    snapshot: dict = {}
+    for params in (
+        _event(1, "run.started", at=6_000.0),
+        _event(
+            2,
+            "semantic.progress",
+            {
+                "milestone": "design",
+                "summary": "I will switch the text hook to the Luna plugin.",
+                "source": "provider_explicit_progress",
+                "verified": False,
+            },
+            at=6_030.0,
+        ),
+        _event(3, "tool.call", {"tool": "command_execution", "item_id": "dl-1"}, at=6_040.0),
+        _event(
+            4,
+            "run.status",
+            {"status": "stalled", "liveness": "stalled", "silence_s": 600},
+            at=6_630.0,
+        ),
+    ):
+        snapshot = project_activity_event(
+            snapshot,
+            params,
+            execution_status="running",
+            now=float(params["observed_at"]),
+        )
+
+    def status_facts(execution: str, *, now: float, finished_at: float | None = None) -> dict:
+        fields = activity_report_fields(
+            snapshot,
+            execution_status=execution,
+            created_at=5_990.0,
+            started_at=6_000.0,
+            finished_at=finished_at,
+            now=now,
+        )
+        note = task_lookup.status_query_narration_note(
+            {
+                "work_item_id": "work-long-install",
+                "attempt_id": "attempt-long-install",
+                "title": "Configure the VN text source",
+                "execution": execution,
+                "completion": "unknown",
+                "attention": "none",
+                **fields,
+            }
+        )
+        # The Narrator sees exactly the compacted note, not the Host row.
+        return _compact_note(note)["progress_context"]["status_facts"]
+
+    stalled = status_facts("running", now=6_660.0)
+    # The same old direction is still the latest report, but the Narrator is
+    # also told how long the Attempt has run and how long it has been silent.
+    assert stalled["fact_kind"] == "design"
+    assert stalled["activity_phase"] == "stalled"
+    assert stalled["uncertainty"] == "provider_silent"
+    assert stalled["elapsed_seconds"] == 660
+    assert stalled["silent_seconds"] == 630
+    assert stalled["last_tool"] == "command_execution"
+    assert stalled["tool_count"] == 1
+
+    # A terminal Attempt keeps its runtime, but read-time silence is no longer
+    # a waiting gap and must not be narrated as a stall.
+    finished = status_facts("failed", now=7_200.0, finished_at=6_700.0)
+    assert finished["elapsed_seconds"] == 700
+    assert finished["silent_seconds"] == 0
+    print("ok: status queries carry runtime and silence facts to the Narrator")
+
+
 def test_repeated_permission_fact_does_not_reset_clock_after_other_progress() -> None:
     permission_payload = {
         "capability": "tool.execute",
@@ -1052,6 +1126,7 @@ def main() -> None:
     test_mechanical_events_do_not_reset_semantic_silence()
     test_verified_tool_fact_advances_semantic_clock_once()
     test_status_query_tracks_the_current_steer_evidence_end_to_end()
+    test_status_query_reaches_the_narrator_with_runtime_and_silence_facts()
     test_repeated_permission_fact_does_not_reset_clock_after_other_progress()
     test_staging_observation_is_bounded_to_the_attempt_namespace()
     test_report_refresh_combines_durable_activity_with_live_git_facts()
