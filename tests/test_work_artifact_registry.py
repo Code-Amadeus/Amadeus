@@ -171,6 +171,64 @@ def test_committed_delta_survives_and_baseline_dirty_is_not_stolen() -> None:
     asyncio.run(run())
 
 
+def test_attempt_patch_is_the_net_delta_across_a_provider_commit() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_net_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            (root / "edited.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            (root / "restored.txt").write_text("base\n", encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Edit files")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Edit files")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            # Commit, then keep editing: one file changes again and the other
+            # returns to its baseline content in the working tree.
+            (root / "edited.txt").write_text("one\nTWO\nthree\n", encoding="utf-8")
+            (root / "restored.txt").write_text("changed\n", encoding="utf-8")
+            _git(root, "commit", "-am", "provider commit")
+            (root / "edited.txt").write_text("one\nTWO again\nthree\n", encoding="utf-8")
+            (root / "restored.txt").write_text("base\n", encoding="utf-8")
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert delta["head_changed"] is True
+        assert "+TWO\n" in delta["committed_patch"]
+        assert "+TWO again\n" in delta["working_patch"]
+        assert delta["patch"].count("diff --git ") == 1
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [
+            (entry["path"], entry["additions"], entry["deletions"])
+            for entry in parsed["files"]
+        ] == [
+            ("edited.txt", 1, 1),
+            ("restored.txt", 0, 0),
+        ]
+        assert [
+            line for line in parsed["files"][0]["hunks"][0]["lines"] if line["kind"] != "context"
+        ] == [
+            {"kind": "remove", "oldLine": 2, "text": "two"},
+            {"kind": "add", "newLine": 2, "text": "TWO again"},
+        ]
+
+    asyncio.run(run())
+
+
 def test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_ambiguous_") as temp:
