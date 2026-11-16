@@ -413,12 +413,14 @@ async def collect_git_delta(
         else:
             ambiguous.append(path)
 
+    head_changed = bool(baseline_head and current_head and baseline_head != current_head)
     committed_patch = ""
     working_patch = ""
+    tracked_patch = ""
     untracked_patch = ""
     untracked_patch_omissions: list[dict[str, str]] = []
     if changed_files and include_patch:
-        if baseline_head and current_head and baseline_head != current_head:
+        if head_changed:
             result = await run_git(
                 repo_root,
                 ["diff", *PATCH_FORMAT_ARGS, "--unified=3", baseline_head, current_head, "--", *changed_files],
@@ -431,6 +433,18 @@ async def collect_git_delta(
         )
         if result["returncode"] == 0:
             working_patch = result["stdout"]
+        tracked_patch = working_patch
+        if head_changed:
+            # The attempt's tracked delta is baseline commit -> working tree.
+            # Joining the committed and working segments would list a file
+            # edited both before and after a commit twice, and keep a change
+            # that a later edit reverted.
+            result = await run_git(
+                repo_root,
+                ["diff", *PATCH_FORMAT_ARGS, "--unified=3", baseline_head, "--", *changed_files],
+            )
+            if result["returncode"] == 0:
+                tracked_patch = result["stdout"]
         owned_untracked = [
             str(path)
             for path in dirty.get("untracked") or []
@@ -461,7 +475,7 @@ async def collect_git_delta(
         "current_head": current_head,
         "baseline_branch": baseline_branch,
         "current_branch": current_branch,
-        "head_changed": bool(baseline_head and current_head and baseline_head != current_head),
+        "head_changed": head_changed,
         "changed_files": changed_files,
         "committed_files": committed_files,
         "working_files": current_dirty,
@@ -473,7 +487,7 @@ async def collect_git_delta(
         "truncated_paths": truncated_paths,
         "patch": "\n".join(
             part.removesuffix("\n")
-            for part in (committed_patch, working_patch, untracked_patch)
+            for part in (tracked_patch, untracked_patch)
             if part
         ),
         "committed_patch": committed_patch,
