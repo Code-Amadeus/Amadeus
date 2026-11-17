@@ -111,6 +111,21 @@ installed by the Host local-model presets. Do not downgrade the Host's image
 decoder to run them. This source packaging change does not change ASR/TTS model
 code, weights, configured interpreter selection, or GPU qualification.
 
+## Chinese tokenizer in local-model profiles
+
+T4 uses the already pinned pure-Python `jieba==0.42.1` for Chinese GPT-SoVITS
+segmentation, POS tags and tone sandhi. The three former jieba-fast imports and
+the `jieba-fast==0.53` dependency are removed, so this tokenizer no longer
+requires its native extension build. A normal sync with the complete selected
+`local-<build>` command removes jieba-fast from an existing environment.
+
+This does not establish that all T4 installations are compiler-free. Other
+source distributions, including crcmod's optional extension, and the v3 BigVGAN
+CUDA kernel/nvcc path have separate requirements. A clean Windows T4 installation
+without Build Tools and end-to-end model/audio qualification remain separate
+checks. See [Chinese tokenizer validation](chinese_tokenizer_validation.md) for
+frontend comparisons and the precise tested scope.
+
 ## Experimental Linux Voice source build
 
 On Ubuntu 24.04, install `build-essential`, `pkg-config` and `portaudio19-dev`,

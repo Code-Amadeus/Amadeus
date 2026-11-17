@@ -14,6 +14,9 @@ on:
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
       - tests/test_local_tts_device_context.py
+      - GPT_SoVITS/text/**
+      - tests/*chinese_frontend*.py
+      - tests/fixtures/chinese_frontend.json
       - tests/test_local_tts_semantic_guard.py
       - tests/test_local_tts_reference_cache.py
       - tests/test_playback_device_recovery.py
@@ -34,6 +37,9 @@ on:
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
       - tests/test_local_tts_device_context.py
+      - GPT_SoVITS/text/**
+      - tests/*chinese_frontend*.py
+      - tests/fixtures/chinese_frontend.json
       - tests/test_local_tts_semantic_guard.py
       - tests/test_local_tts_reference_cache.py
       - tests/test_playback_device_recovery.py
@@ -80,6 +86,7 @@ jobs:
           uv run --locked --no-sync python -m pytest -q
           tests/test_gpt_sovits_sidecar_backend.py
           tests/test_local_tts_device_context.py
+          tests/test_local_tts_chinese_frontend.py
           tests/test_local_tts_semantic_guard.py
           tests/test_local_tts_reference_cache.py
           tests/test_playback_device_recovery.py
