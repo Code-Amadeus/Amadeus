@@ -359,6 +359,37 @@ def test_parse_unified_diff_reads_copy_headers() -> None:
     ]
 
 
+def test_parse_unified_diff_lists_a_rename_source_only_in_its_rename() -> None:
+    patch = "\n".join(
+        [
+            "diff --git a/old.txt b/new.txt",
+            "similarity index 100%",
+            "rename from old.txt",
+            "rename to new.txt",
+            "diff --git a/src/a.py b/src/b.py",
+            "similarity index 100%",
+            "rename from src/a.py",
+            "rename to src/b.py",
+        ]
+    )
+
+    parsed = parse_unified_diff(
+        patch,
+        changed_files=["new.txt", "old.txt", "src/b.py", "src/a.py"],
+        untracked=["src/a.py"],
+    )
+
+    # old.txt is gone; src/a.py is a new untracked file whose patch was omitted.
+    assert [
+        (item["path"], item["oldPath"], item["status"], item["additions"], item["deletions"])
+        for item in parsed["files"]
+    ] == [
+        ("new.txt", "old.txt", "renamed", 0, 0),
+        ("src/b.py", "src/a.py", "renamed", 0, 0),
+        ("src/a.py", "", "untracked", 0, 0),
+    ]
+
+
 if __name__ == "__main__":
     test_parse_unified_diff_preserves_dual_line_numbers()
     test_parse_unified_diff_keeps_untracked_files_without_hunks()
@@ -371,4 +402,5 @@ if __name__ == "__main__":
     test_parse_unified_diff_splits_hunk_lines_only_at_newlines()
     test_parse_unified_diff_reads_empty_lines_inside_hunks_as_blank_context()
     test_parse_unified_diff_reads_copy_headers()
+    test_parse_unified_diff_lists_a_rename_source_only_in_its_rename()
     print("unified diff canvas tests passed")

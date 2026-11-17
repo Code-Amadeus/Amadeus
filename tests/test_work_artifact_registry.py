@@ -229,6 +229,51 @@ def test_attempt_patch_is_the_net_delta_across_a_provider_commit() -> None:
     asyncio.run(run())
 
 
+def test_attempt_diff_lists_a_file_moved_across_a_provider_commit_once() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_artifact_moved_") as temp:
+            root = Path(temp) / "project"
+            root.mkdir()
+            _git(root, "init")
+            _git(root, "config", "user.email", "amadeus-test@example.invalid")
+            _git(root, "config", "user.name", "Amadeus Test")
+            content = "".join(f"line {index}\n" for index in range(8))
+            (root / "old.txt").write_text(content, encoding="utf-8")
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "baseline")
+
+            store = WorkLedgerStore(Path(temp) / "ledger.sqlite3")
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title="Move file")
+            attempt = store.create_attempt(item.work_item_id, provider="codex", task="Move file")
+            registry = WorkArtifactRegistry(store)
+            await registry.capture_baseline(attempt, item)
+            # Commit a copy, then delete the original in the working tree:
+            # the net attempt delta is a rename.
+            (root / "new.txt").write_text(content, encoding="utf-8")
+            _git(root, "add", "new.txt")
+            _git(root, "commit", "-m", "provider commit")
+            (root / "old.txt").unlink()
+
+            current_attempt = store.get_attempt(attempt.attempt_id)
+            assert current_attempt is not None
+            delta = await registry.finalize_attempt(current_attempt, item)
+            store.close()
+
+        assert sorted(delta["changed_files"]) == ["new.txt", "old.txt"]
+        parsed = parse_unified_diff(
+            delta["patch"],
+            changed_files=delta["changed_files"],
+            untracked=delta["untracked"],
+        )
+        assert [
+            (entry["path"], entry["oldPath"], entry["status"])
+            for entry in parsed["files"]
+        ] == [("new.txt", "old.txt", "renamed")]
+
+    asyncio.run(run())
+
+
 def test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_ambiguous_") as temp:
