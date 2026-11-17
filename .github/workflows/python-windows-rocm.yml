@@ -14,6 +14,10 @@ on:
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
       - tests/test_local_tts_device_context.py
+      - tests/test_local_tts_chinese_frontend.py
+      - tests/_chinese_frontend_probe.py
+      - tests/fixtures/chinese_frontend.json
+      - GPT_SoVITS/text/**
       - GPT_SoVITS/text/**
       - tests/*chinese_frontend*.py
       - tests/fixtures/chinese_frontend.json
@@ -37,6 +41,10 @@ on:
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
       - tests/test_local_tts_device_context.py
+      - tests/test_local_tts_chinese_frontend.py
+      - tests/_chinese_frontend_probe.py
+      - tests/fixtures/chinese_frontend.json
+      - GPT_SoVITS/text/**
       - GPT_SoVITS/text/**
       - tests/*chinese_frontend*.py
       - tests/fixtures/chinese_frontend.json
