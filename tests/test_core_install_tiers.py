@@ -19,6 +19,7 @@ _NON_CORE_MODULES = (
     "aec_audio_processing",
     "soundfile",
     "av",
+    "ffmpeg",
 )
 
 _BOOT_PROBE = f"""
