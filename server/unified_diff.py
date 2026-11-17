@@ -190,10 +190,20 @@ def parse_unified_diff(
 
     known_paths = {_path_key(item.get("path")) for item in files}
     untracked_keys = {_path_key(item) for item in (untracked or [])}
+    # A rename section already shows its source path leaving. Unless an
+    # untracked file now occupies that path, listing it again would add an
+    # empty "modified" entry for a file that no longer exists.
+    rename_sources = {
+        _path_key(item.get("oldPath"))
+        for item in files
+        if item.get("status") == "renamed"
+    }
     for path in [*(changed_files or []), *(untracked or [])]:
         text = str(path or "").strip()
         key = _path_key(text)
         if not text or key in known_paths:
+            continue
+        if key in rename_sources and key not in untracked_keys:
             continue
         if len(files) >= max_files:
             truncated = True
