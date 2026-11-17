@@ -102,7 +102,16 @@ def probe(*, block_legacy=True):
                          "phones": " ".join(phones), "word2ph": " ".join(map(str, word2ph)),
                          "ids": " ".join(map(str, cleaned_text_to_sequence(phones, version)))})
         frontends[version] = rows
-    return {"tokenization": tokenization, "tones": tones, "frontends": frontends}
+    # An unknown three-character sequence used to reach sandhi as [word, ""].
+    # jieba's 1+2 grouping now exercises the existing middle-third-tone rule.
+    unknown_word = {}
+    for version in VERSIONS:
+        phones, word2ph, normalized = clean_text("憭怃憯。", "zh", version)
+        unknown_word[version] = {
+            "phones": phones, "word2ph": word2ph, "normalized": normalized,
+        }
+    return {"tokenization": tokenization, "tones": tones, "frontends": frontends,
+            "unknown_word": unknown_word}
 
 
 if __name__ == "__main__":

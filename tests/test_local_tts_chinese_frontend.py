@@ -18,6 +18,7 @@ from packaging.requirements import Requirement
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+UV = shutil.which("uv")
 EXPECTED = json.loads((ROOT / "tests/fixtures/chinese_frontend.json").read_text(encoding="utf-8"))
 VERSIONS = ("v1", "v2", "v2Pro", "v2ProPlus", "v3")
 
@@ -52,6 +53,17 @@ def test_chinese_phones_alignment_and_symbols_without_jieba_fast(
     assert frontends_without_legacy_tokenizer["frontends"][version][case] == EXPECTED["frontends"][family][case]
 
 
+@pytest.mark.parametrize("version", VERSIONS)
+def test_unknown_three_character_input_applies_existing_sandhi(
+    frontends_without_legacy_tokenizer, version,
+):
+    actual = frontends_without_legacy_tokenizer["unknown_word"][version]
+    assert actual["phones"] == ["l", "iao3", "w", "u2", "c", "an3", "."]
+    assert actual["word2ph"] == [2, 2, 2, 1]
+    assert actual["normalized"] == "憭怃憯."
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
 @pytest.mark.parametrize("extra,platforms", [
     ("local-cpu", ("win32", "linux", "darwin")),
     ("local-cu124", ("win32",)),
@@ -60,10 +72,8 @@ def test_chinese_phones_alignment_and_symbols_without_jieba_fast(
     ("local-rocm", ("win32",)),
 ])
 def test_t4_exports_keep_jieba_and_omit_jieba_fast(extra, platforms):
-    uv = shutil.which("uv")
-    assert uv, "The supported development/CI environment requires uv"
     result = subprocess.run(
-        [uv, "export", "--locked", "--offline", "--extra", extra,
+        [UV, "export", "--locked", "--offline", "--extra", extra,
          "--no-hashes", "--no-emit-project"],
         cwd=ROOT, capture_output=True, text=True, timeout=60,
     )

@@ -5,14 +5,15 @@ D1 replaces the three GPT-SoVITS `jieba_fast` imports with the already pinned
 selections. This is a dependency-boundary change; no adapter, fallback, runtime
 branch, dictionary modification or upstream source refresh is added.
 
-**Compatibility qualification is incomplete: rare-character inputs can change
-final phoneme tones.** The direct substitution is a reviewable draft, not a
-claim of identical pronunciation for every supported Chinese input. For example,
+**Compatibility decision after review: retain jieba's grouping and apply the
+existing three-tone sandhi rule to it.** This does not preserve identical
+pronunciation for every Chinese input. For example,
 real `clean_text("憭怃憯。", "zh", version)` changes
 `l iao3 w u3 c an3 .` to `l iao3 w u2 c an3 .` for v1, v2, v2Pro,
-v2ProPlus and v3. Normalized text and `word2ph` remain identical. No listening or
-synthesized-audio acceptance was performed, and the evidence does not decide
-whether these rare-input pronunciation changes are acceptable.
+v2ProPlus and v3. Normalized text and `word2ph` remain identical. The old grouping
+bypassed the existing rule; the new 1+2 grouping follows its intended branch.
+The regression suite now records this behavior across all five model routes.
+No listening or synthesized-audio acceptance was performed.
 
 ## Checked sources and environment
 
@@ -53,8 +54,12 @@ search-cut boundary. For example, jieba-fast returns the whole unknown sequence
 `憭怃憯`, so `_split_word` produces `["憭怃憯", ""]`; jieba produces character
 cuts and the existing helper produces `["憭", "怃憯"]`. The unchanged sandhi
 algorithm then changes the middle third tone to second tone. `揜揝揞。` is another
-real frontend counterexample (`an3` becomes `an2`). The evidence proves a
-compatibility delta, without establishing which pronunciation is preferable.
+real frontend counterexample (`an3` becomes `an2`). Retaining the old empty
+second group would preserve a bypass of the existing 1+2 sandhi rule. The direct
+substitution therefore keeps the new grouping rather than adding an exception
+for the legacy output. This is a mechanism-based compatibility decision; it does
+not certify subjective pronunciation quality or bound all possible changes to
+the sampled rare sequences.
 
 The real-G2PW matching 14-case result files have identical SHA-256:
 `4b582c69bc5ef50dfb248ec293b5a89c785d75e083cfa16c5e533729da172883`.
@@ -98,7 +103,9 @@ are the relevant boundaries.
   unreachable package/artifact record were removed; all 285 remaining third-party
   package records and artifact hashes, and lock-wide settings, are unchanged.
 - `python -X utf8 -m pytest -q tests/test_local_tts_chinese_frontend.py`:
-  77 passed. The five T4 build exports retain jieba 0.42.1 and omit jieba-fast,
+  The original 77 cases passed; five additional regression cases now pin the
+  reviewed unknown-word sandhi behavior. The five T4 build exports retain jieba
+  0.42.1 and omit jieba-fast,
   including their applicable Windows/Linux/macOS markers. The new tests are
   included in cu124, candidate-build and ROCm T4 CI lists.
 - All local_tts, gpt_sovits and t2s test files: 290 passed, 1 skipped (the explicit
@@ -114,5 +121,7 @@ are the relevant boundaries.
 The tokenizer source-build result does not qualify a clean whole-T4 Windows
 installation without Build Tools. crcmod's optional extension and the v3
 BigVGAN/nvcc path still need separate qualification, as do actual synthesized
-audio, listening, GPU execution and full platform CI. No claim is made that T4
-as a whole is compiler-free.
+audio, listening and GPU execution. Hosted platform CI is recorded on PR #308;
+it passed all 18 checks before the review follow-up, and changed heads require
+fresh checks. The clean Windows installation gate remains tracked in #268.
+No claim is made that T4 as a whole is compiler-free.
