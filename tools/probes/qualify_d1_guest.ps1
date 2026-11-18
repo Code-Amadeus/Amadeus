@@ -49,7 +49,7 @@ if ($Phase -eq 'Install') {
     uv.exe sync --locked --extra local-cpu
     Confirm-Exit 'cold locked T4 installation'
     Write-Host ("D1_COLD_SYNC_SECONDS {0:F1}" -f $clock.Elapsed.TotalSeconds)
-    foreach ($name in 'MSVCP140.dll','MSVCP140_1.dll','VCRUNTIME140_1.dll','dxgi.dll') {
+    foreach ($name in 'MSVCP140.dll','MSVCP140_1.dll','VCRUNTIME140_1.dll','dxgi.dll','AVICAP32.dll') {
         Write-Host "D1_BASE_SYSTEM_DLL $name present=$(Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $name)))"
     }
     $redist = Start-Process -FilePath 'C:\inputs\VC_redist.x64.exe' -ArgumentList '/install','/quiet','/norestart' -WindowStyle Hidden -Wait -PassThru

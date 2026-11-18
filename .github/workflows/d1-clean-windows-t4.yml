@@ -50,13 +50,14 @@ jobs:
           $vc = Join-Path $inputDir 'VC_redist.x64.exe'
           curl.exe --fail --silent --show-error --location --retry 2 'https://download.visualstudio.microsoft.com/download/pr/78d061c5-9ef3-42ab-98ed-3309d1095dc4/9C02C9ED120F671B900E6B9471D890E3B2414117A7E53F4AE2E855466FA2B7C9/VC_redist.x64.exe' --output $vc
           if ($LASTEXITCODE -or (Get-FileHash $vc).Hash -ne '9C02C9ED120F671B900E6B9471D890E3B2414117A7E53F4AE2E855466FA2B7C9' -or (Get-AuthenticodeSignature $vc).Status -ne 'Valid') { throw 'Invalid Microsoft x64 runtime' }
-      - name: Cold install T4 CPU in pristine Microsoft Windows Server Core
+      - name: Cold install T4 CPU in a pristine Microsoft Windows Server container
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $inputDir = Join-Path $env:RUNNER_TEMP 'd1-inputs'
           $scratch = Join-Path $env:RUNNER_TEMP 'd1-empty-work'
-          $image = 'mcr.microsoft.com/windows/servercore:ltsc2025'
+          # PyAV's pinned Windows wheel links avdevice to the desktop capture APIs.
+          $image = 'mcr.microsoft.com/windows/server:ltsc2025'
           $dockerService = Get-Service -Name docker -ErrorAction Stop
           if ($dockerService.Status -ne 'Running') {
             Start-Service -Name docker
@@ -72,13 +73,6 @@ jobs:
           if ($LASTEXITCODE) { throw 'Windows Docker engine unavailable' }
           docker pull $image
           if ($LASTEXITCODE) { throw 'Microsoft base image unavailable' }
-          docker run --rm --isolation=process $image powershell.exe -NoLogo -NoProfile -Command 'if (Test-Path C:\Windows\System32\dxgi.dll) { exit 0 } else { exit 42 }'
-          if ($LASTEXITCODE -eq 42) {
-            Write-Host 'Server Core omits DXGI required by the ONNX wheel. Selecting the Microsoft Windows Server image with the full Windows API.'
-            $image = 'mcr.microsoft.com/windows/server:ltsc2025'
-            docker pull $image
-          }
-          if ($LASTEXITCODE) { throw 'Unable to select Windows image with the required OS API' }
           docker image inspect --format 'D1_BASE {{index .RepoDigests 0}}' $image
           docker run --name d1-guest --detach --isolation=process --mount "type=bind,source=$inputDir,target=C:\inputs,readonly" --mount "type=bind,source=$scratch,target=C:\work" $image powershell.exe -NoLogo -NoProfile -Command 'Start-Sleep -Seconds 5000'
           if ($LASTEXITCODE) { throw 'Unable to start isolated Windows' }
