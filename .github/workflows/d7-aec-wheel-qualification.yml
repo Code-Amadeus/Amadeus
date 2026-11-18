@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12.14"
+          python-version: "3.12.10"
       - name: Check runner and install project uv
         run: |
           set -euo pipefail
