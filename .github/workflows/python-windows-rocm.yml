@@ -10,6 +10,7 @@ on:
       - asr/**
       - tts/**
       - local_tts_infer.py
+      - GPT_SoVITS/text/**
       - tools/verify_python_environment.py
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
@@ -22,6 +23,8 @@ on:
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
       - tests/test_local_model_loading.py
+      - tests/*chinese_frontend*.py
+      - tests/fixtures/chinese_frontend.json
       - config/local_model_loading.py
   pull_request:
     paths:
@@ -31,6 +34,7 @@ on:
       - asr/**
       - tts/**
       - local_tts_infer.py
+      - GPT_SoVITS/text/**
       - tools/verify_python_environment.py
       - tools/rocm_sidecar/**
       - tests/test_gpt_sovits_sidecar_backend.py
@@ -43,6 +47,8 @@ on:
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
       - tests/test_local_model_loading.py
+      - tests/*chinese_frontend*.py
+      - tests/fixtures/chinese_frontend.json
       - config/local_model_loading.py
   workflow_dispatch:
 
@@ -96,3 +102,4 @@ jobs:
           tests/test_python_environment_verifier.py
           tests/test_qwen3_asr_sidecar_bootstrap.py
           tests/test_local_model_loading.py
+          tests/test_local_tts_chinese_frontend.py

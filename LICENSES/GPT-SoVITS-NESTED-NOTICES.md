@@ -30,6 +30,19 @@ The comparison identifies the closest reproducible base; it does not claim
 that the 18 non-identical/local-only files came from that commit without
 further modification.
 
+## Amadeus tokenizer dependency change
+
+The Chinese frontends in `text/chinese.py` (v1), `text/chinese2.py`
+(v2/v2Pro/v2ProPlus/v3), and shared `text/tone_sandhi.py` use the existing
+`jieba==0.42.1` package instead of `jieba-fast==0.53`. This is a local dependency
+substitution, not an upstream source refresh. Both POS segmentation and
+search-cut for tone sandhi use jieba directly; no compatibility layer or fallback
+is retained. The local-model extras and lock omit jieba-fast.
+
+The retained upstream notices and source-chain qualifications below continue to
+apply. See [Chinese tokenizer validation](../docs/chinese_tokenizer_validation.md)
+for the checked main revision, comparison scope and remaining qualification gates.
+
 ## Included source families and retained notices
 
 | Local source family | Recorded upstream source | License evidence |
