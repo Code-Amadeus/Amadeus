@@ -8,6 +8,35 @@ import pytest
 from tools import verify_python_environment as verifier
 
 
+@pytest.mark.parametrize("profile", ["voice", "vad", "vad-cpu"])
+def test_voice_verification_does_not_require_local_audio_decoders(monkeypatch, profile):
+    def import_module(name):
+        if name in {"av", "ffmpeg"}:
+            raise ModuleNotFoundError(name, name=name)
+
+    monkeypatch.setattr(verifier.importlib, "import_module", import_module)
+    monkeypatch.setattr(verifier, "_distribution_installed", lambda _: False)
+    monkeypatch.setattr(verifier, "_verify_torch_build", lambda *a, **kw: "")
+    monkeypatch.setattr(verifier, "_detect_torch_build", lambda: "cpu")
+    monkeypatch.setattr(verifier.subprocess, "run", lambda *a, **kw: None)
+    verifier.verify(profile)
+
+
+@pytest.mark.parametrize("module", ["av", "ffmpeg"])
+@pytest.mark.parametrize("profile", ["cu124", "cu128", "mps", "t4-cpu", "rocm"])
+def test_local_model_verification_requires_audio_decoders(monkeypatch, module, profile):
+    def import_module(name):
+        if name == module:
+            raise ModuleNotFoundError(name, name=name)
+
+    monkeypatch.setattr(verifier.platform, "system", lambda: "Darwin" if profile == "mps" else "Windows")
+    monkeypatch.setattr(verifier.platform, "machine", lambda: "arm64" if profile == "mps" else "AMD64")
+    monkeypatch.setattr(verifier.importlib, "import_module", import_module)
+    with pytest.raises(ModuleNotFoundError) as error:
+        verifier.verify(profile)
+    assert error.value.name == module
+
+
 def _torch(
     monkeypatch,
     version: str,

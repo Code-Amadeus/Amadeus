@@ -65,6 +65,13 @@ build and optional RAG select Torch/Torchaudio 2.7.0, using the explicit CPU
 index on Windows and Linux and the macOS registry wheel. Switching builds
 replaces the previous build extra.
 
+T2 remote voice and T3 interruption do not require PyAV (`av`) or
+`ffmpeg-python`. Local-model presets retain `ffmpeg-python` for GPT-SoVITS
+reference-audio decoding and PyAV through Qwen-ASR's dependency chain.
+The FFmpeg executable remains a separate prerequisite for the local decoding
+path. Updating with the complete `uv sync --locked` command for your chosen
+tier removes unneeded decoder packages from T2/T3; T4 retains them.
+
 Optional [character RAG](character_rag.md) adds local embedding dependencies.
 For core plus retrieval use `uv sync --locked --extra rag --extra torch-cpu`;
 for an existing local-voice profile, append `--extra rag` to its complete command

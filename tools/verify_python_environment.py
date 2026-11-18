@@ -28,8 +28,6 @@ BASE_IMPORTS = (
 VOICE_IMPORTS = (
     "pyaudio",
     "aec_audio_processing",
-    "av",
-    "ffmpeg",
     "scipy",
     "soundfile",
 )
@@ -50,6 +48,7 @@ PROJECT_IMPORTS = (
     "server.app",
 )
 MODEL_BACKEND_IMPORTS = (
+    "av",
     "ffmpeg",
     "qwen_asr",
     "local_tts_infer",

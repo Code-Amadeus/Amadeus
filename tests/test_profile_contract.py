@@ -148,9 +148,20 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
         assert "aiohttp" in selected
         assert not selected.keys() & {
             "torch", "torchaudio", "silero-vad", "onnxruntime", "faiss-cpu", "sentence-transformers",
+            "av", "ffmpeg-python",
         }
         assert ("pyaudio" in selected) == ("voice" in extras)
         assert ("aec-audio-processing" in selected) == ("voice" in extras)
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+def test_vad_resolution_does_not_install_local_audio_decoders() -> None:
+    result = _export("vad", "torch-cpu")
+    assert result.returncode == 0, result.stderr
+    for platform in ("win32", "darwin", "linux"):
+        selected = _selected_requirements(result.stdout, platform)
+        assert {"pyaudio", "aec-audio-processing", "silero-vad", "torch", "torchaudio"} <= selected.keys()
+        assert not selected.keys() & {"av", "ffmpeg-python"}
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
@@ -222,13 +233,15 @@ def test_verify_profiles_cover_the_capability_ladder() -> None:
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
 @pytest.mark.parametrize("build,platform", [
-    ("local-cu124", "win32"), ("local-cpu", "linux"), ("local-mps", "darwin"),
+    ("local-cu124", "win32"), ("local-cu128", "win32"), ("local-cu128", "linux"),
+    ("local-cpu", "win32"), ("local-cpu", "linux"), ("local-cpu", "darwin"),
+    ("local-mps", "darwin"), ("local-rocm", "win32"),
 ])
 def test_t4_build_alone_installs_the_whole_ladder(build, platform) -> None:
     result = _export(build)
     assert result.returncode == 0, result.stderr
     selected = _selected_requirements(result.stdout, platform)
-    assert {"pyaudio", "silero-vad", "funasr", "qwen-asr", "torch"} <= selected.keys()
+    assert {"pyaudio", "silero-vad", "funasr", "qwen-asr", "torch", "av", "ffmpeg-python"} <= selected.keys()
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
