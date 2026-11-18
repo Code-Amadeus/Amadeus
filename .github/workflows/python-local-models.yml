@@ -47,10 +47,15 @@ jobs:
           python-version: "3.12.10"
       - name: Install Linux native build prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev pkg-config swig meson ninja-build
-      - name: Install macOS audio prerequisite
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev pkg-config swig meson ninja-build ffmpeg
+      - name: Install macOS audio prerequisites
         if: runner.os == 'macOS'
-        run: brew install portaudio
+        run: brew install portaudio ffmpeg
+      - name: Install Windows FFmpeg
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+      - name: Verify local audio decoding prerequisite
+        run: ffmpeg -version
       - name: Install pinned uv
         run: python -m pip install uv==0.12.8
       - name: Install locked candidate
@@ -62,6 +67,7 @@ jobs:
         run: >-
           uv run --locked --no-sync python -m pytest -q -rs
           tests/test_gpt_sovits_checkpoint_loading.py
+          tests/test_local_audio_decoders.py
           tests/test_local_tts_device_context.py
           tests/test_local_tts_semantic_guard.py
           tests/test_local_tts_punctuation.py
@@ -80,8 +86,10 @@ jobs:
           tests/test_bundled_japanese_dictionary.py
       - name: Switch the same environment to T3 vad
         run: |
-          uv sync --locked --extra voice --extra vad --extra torch-cpu
+          uv sync --locked --extra voice --extra vad --extra torch-cpu --extra dev
           uv run --locked --no-sync python tools/verify_python_environment.py --profile vad-cpu
+          uv run --locked --no-sync python -c "import importlib.util as u; assert all(u.find_spec(n) is None for n in ('av', 'ffmpeg'))"
+          uv run --locked --no-sync python -m pytest -q tests/test_voice_install_tiers.py
       - name: Return to model-less core
         run: |
           uv sync --locked

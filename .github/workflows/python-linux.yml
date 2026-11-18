@@ -163,6 +163,7 @@ jobs:
           tests/test_python_environment_verifier.py
           tests/test_core_install_tiers.py
           tests/test_voice_backend_registry.py
+          tests/test_voice_install_tiers.py
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
           tests/test_aec_build_contract.py
