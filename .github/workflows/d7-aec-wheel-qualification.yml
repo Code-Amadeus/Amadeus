@@ -1,0 +1,101 @@
+name: D7 Apple Silicon AEC qualification
+on:
+  push:
+    branches: [codex/qualify-d7-aec-wheel]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      TTS_DEVICE: cpu
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      UV_PYTHON: "3.12.14"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.14"
+      - name: Check runner and install project uv
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sw_vers
+          python -m pip install uv==0.12.8
+          uv python install 3.12.14
+      - name: Import the official 1.0.0 wheel in a fresh environment without other Python packages
+        run: |
+          set -euo pipefail
+          unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
+          py="$(uv python find --managed-python 3.12.14)"
+          uv venv --python "$py" "$RUNNER_TEMP/only-aec"
+          isolated="$RUNNER_TEMP/only-aec/bin/python"
+          url='https://files.pythonhosted.org/packages/85/d5/de9dc1feef6e3ef9d688819577d7864214b210f81a0169589342dbfc763e/aec_audio_processing-1.0.0-cp312-cp312-macosx_15_0_arm64.whl#sha256=2bcfe5b9237293fca262ab4974b17401564e68d184ae85d738d30342faa2ea3f'
+          uv pip install --python "$isolated" --no-deps --only-binary :all: "$url"
+          cd "$RUNNER_TEMP"
+          "$isolated" -I - <<'PY'
+          import platform
+          from importlib.metadata import version
+          from aec_audio_processing import AudioProcessor
+          assert platform.machine() == "arm64" and version("aec-audio-processing") == "1.0.0"
+          ap = AudioProcessor(enable_aec=True, enable_ns=False, enable_agc=False)
+          ap.set_stream_format(16000, 1, 16000, 1)
+          ap.set_reverse_stream_format(16000, 1)
+          ap.set_stream_delay(64)
+          for _ in range(30):
+              ap.process_reverse_stream(bytes(320))
+              assert ap.process_stream(bytes(320)) == bytes(320)
+          print("Official AEC wheel loaded and processed 30 capture/reference frames")
+          PY
+      - name: Get public speech fixtures and the existing PyAudio prerequisite
+        if: always() && !cancelled()
+        run: |
+          set -euo pipefail
+          brew list portaudio >/dev/null 2>&1 || brew install portaudio
+          base='https://raw.githubusercontent.com/Uberi/speech_recognition/b17757a65ceddc51d8e11bf7498b0af1125fbaa8/examples'
+          for name in english.wav french.aiff; do
+            curl --fail --location --retry 2 "$base/$name" --output "$RUNNER_TEMP/$name"
+          done
+          test "$(git hash-object "$RUNNER_TEMP/english.wav")" = 40d7eb5c19f9b0d7a83456b13adc70beec8fc29f
+          test "$(git hash-object "$RUNNER_TEMP/french.aiff")" = 31cd0d0fb08e01c3e662ef2689b8c0449dd0a490
+      - name: Compare source-built 1.0.1 and wheel 1.0.0 with the locked Voice and VAD stack
+        if: always() && !cancelled()
+        run: |
+          set -euo pipefail
+          py="$(uv python find --managed-python 3.12.14)"
+          url='https://files.pythonhosted.org/packages/85/d5/de9dc1feef6e3ef9d688819577d7864214b210f81a0169589342dbfc763e/aec_audio_processing-1.0.0-cp312-cp312-macosx_15_0_arm64.whl#sha256=2bcfe5b9237293fca262ab4974b17401564e68d184ae85d738d30342faa2ea3f'
+          for version in 1.0.1 1.0.0; do
+            export UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/voice-$version"
+            set -- --extra vad --extra torch-cpu --extra dev --no-install-project
+            if [[ "$version" == 1.0.0 ]]; then
+              set -- "$@" --no-install-package aec-audio-processing
+            fi
+            uv sync --locked --python "$py" "$@"
+            installed="$UV_PROJECT_ENVIRONMENT/bin/python"
+            if [[ "$version" == 1.0.0 ]]; then
+              uv pip install --python "$installed" --no-deps --only-binary :all: "$url"
+            fi
+            uv pip check --python "$installed"
+            "$installed" -c 'import sys,pyaudio; from importlib.metadata import version; assert version("aec-audio-processing")==sys.argv[1]; assert version("PyAudio")=="0.2.14"; print(pyaudio.get_portaudio_version_text())' "$version"
+            uv pip freeze --python "$installed" | grep -ivE '^aec[-_]audio[-_]processing([[:space:]]|=)' | sort > "$RUNNER_TEMP/inventory-$version.txt"
+            "$installed" -m pytest -q -p no:cacheprovider \
+              tests/test_aec_native_smoke.py tests/test_barge_in_capability_gate.py \
+              tests/test_mic_input_handoff_endpointing.py tests/test_interrupt_flow.py tests/test_voice_install_tiers.py
+            "$installed" tools/probes/qualify_d7_wheel.py "$RUNNER_TEMP/english.wav" "$RUNNER_TEMP/french.aiff" "$RUNNER_TEMP/replay-$version.json"
+          done
+          diff -u "$RUNNER_TEMP/inventory-1.0.1.txt" "$RUNNER_TEMP/inventory-1.0.0.txt"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          for name in ("1.0.1", "1.0.0"):
+              result = json.loads((root/f"replay-{name}.json").read_text())
+              echo, overlap = result["far_only"], result["near_speech_during_playback"]
+              print(name, "attenuation dB", echo["echo_attenuation_db_seconds_2_to_4"],
+                    "echo-only interrupt count", echo["callback_count"],
+                    "overlap interrupt count", overlap["callback_count"], "handoff", overlap["handoff_speech_positions_s"])
+          PY
