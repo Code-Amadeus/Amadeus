@@ -16,7 +16,7 @@
 | Tier | 能力 | Apple Silicon | Intel | 装机命令 | 验证 profile |
 |---|---|---|---|---|---|
 | `T1 core` | 文字对话、Work、Provider、角色渲染 | 受支持（CI） | 受支持 | `uv sync --locked` | `cpu` |
-| `T2 voice` | 远端语音 I/O：播放、麦克风、AEC、远端 TTS / ASR | 受支持（CI） | 受支持 | `--extra voice` | `voice` |
+| `T2 voice` | 远端语音 I/O：播放、麦克风、AEC、远端 TTS / ASR | 受支持（安装 CI 仅覆盖 macOS 15 arm64 的 AEC wheel） | 受支持（CI 仅校验 AEC 依赖选择） | `--extra voice` | `voice` |
 | `T3 vad` | 实时打断 | 受支持（CI：仅安装/导入） | **装不上**（缺 x86_64 轮子） | `--extra vad --extra torch-cpu` | `vad-cpu` |
 | `T4 embedded` | 本地 TTS、本地 ASR、唤醒词 | 实验性（CI：仅安装/导入；TTS 实机证据基于 torch 2.6.0） | **装不上** | `--extra local-mps`（或 `--extra local-cpu`） | `mps`（`local-cpu` 用 `t4-cpu`） |
 
@@ -197,6 +197,10 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 ```bash
 brew install portaudio
 ```
+
+在 macOS 15 及以上的 Apple Silicon 上，使用原生 arm64 CPython 3.12 安装 T2–T4 时，uv 会选用 AEC 1.0.0 的官方预编译包，省去本机编译 WebRTC 和 Abseil 的步骤。
+
+在 Intel Mac 或运行 macOS 11–14 的 Apple Silicon 上，uv 从源码安装 AEC 1.0.1。首次安装要用 Xcode 命令行工具编译 WebRTC。如果系统缺少兼容的 Abseil，还会编译随包提供的版本。CI 对这些目标只校验锁文件的依赖选择。所有 Mac 上的 PyAudio 都需要 PortAudio 和 Xcode 命令行工具。
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git

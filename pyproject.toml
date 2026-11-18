@@ -58,7 +58,11 @@ rag = [
 voice = [
     "msgpack>=1.2.3,<2",
     "PyAudio==0.2.14",
-    "aec-audio-processing==1.0.1",
+    # Use the older 1.0.0 release for its CPython 3.12 arm64 wheel on macOS 15+ (Darwin 24+).
+    # Return to one pin when 1.0.1 or a newer shared release ships a compatible wheel
+    # that passes the macOS Voice installation, echo cancellation and barge-in checks.
+    "aec-audio-processing==1.0.0; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '24.0'",
+    "aec-audio-processing==1.0.1; sys_platform != 'darwin' or platform_machine != 'arm64' or platform_release < '24.0'",
     "scipy==1.17.1",
     "soundfile==0.13.1",
 ]

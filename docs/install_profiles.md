@@ -83,10 +83,18 @@ Running only `uv sync --locked --extra dev` selects core plus development tools
 and removes the optional voice/model stack. Ordinary application launch uses the
 installed environment, without synchronizing or changing its selected extras.
 
-Windows is the current reference platform. macOS core/voice has a separate CI
-qualification path and needs PortAudio for PyAudio; the macos-15 candidate job
-also installs `local-mps` and switches back through T3 vad. A successful install, import
-or Electron build does not replace microphone, playback and desktop acceptance.
+Windows is the current reference platform. macOS Voice needs PortAudio and the
+Xcode Command Line Tools for PyAudio. On macOS 15 and later with arm64 CPython
+3.12, Voice and higher tiers install the official AEC 1.0.0 wheel and skip the
+local WebRTC and Abseil build. On Intel Macs and on Apple Silicon running
+macOS 11–14, uv builds AEC 1.0.1 from source. A cold installation compiles
+WebRTC with the Xcode Command Line Tools and builds Abseil if a compatible
+system copy is unavailable.
+
+Hosted macOS Voice CI tests the wheel on macOS 15 arm64. For the source-build
+targets, CI checks only the version selected by the lockfile. The macos-15
+candidate job also installs `local-mps` and switches back through T3 vad.
+Microphone, playback and desktop acceptance require real-device testing.
 The reference cu124 profile is Windows-only. The cu128 candidate targets
 Windows/Linux x86_64; the MPS candidate targets Apple Silicon macOS. Local model
 weights and reference audio remain external and are not downloaded by this installer.

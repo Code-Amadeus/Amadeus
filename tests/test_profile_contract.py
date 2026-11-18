@@ -64,11 +64,15 @@ def _export(*extras: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
 
 
-def _selected_requirements(output: str, platform: str, *, root: Path = ROOT) -> dict[str, Requirement]:
+def _selected_requirements(
+    output: str, platform: str, *, root: Path = ROOT,
+    machine: str | None = None, release: str | None = None,
+) -> dict[str, Requirement]:
     environment = {
         **default_environment(), "sys_platform": platform,
         "platform_system": {"win32": "Windows", "linux": "Linux", "darwin": "Darwin"}[platform],
-        "platform_machine": {"win32": "AMD64", "linux": "x86_64", "darwin": "arm64"}[platform],
+        "platform_machine": machine or {"win32": "AMD64", "linux": "x86_64", "darwin": "arm64"}[platform],
+        "platform_release": release or {"win32": "10", "linux": "6.8.0", "darwin": "24.0.0"}[platform],
     }
     requirements = {}
     for line in output.splitlines():
@@ -152,6 +156,23 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
         }
         assert ("pyaudio" in selected) == ("voice" in extras)
         assert ("aec-audio-processing" in selected) == ("voice" in extras)
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+def test_voice_selects_aec_for_the_target_os_and_architecture() -> None:
+    result = _export("voice")
+    assert result.returncode == 0, result.stderr
+    for platform, machine, release, expected in (
+        ("darwin", "arm64", "24.0.0", "==1.0.0"),
+        ("darwin", "arm64", "25.1.0", "==1.0.0"),
+        ("darwin", "arm64", "23.6.0", "==1.0.1"),
+        ("darwin", "x86_64", "24.6.0", "==1.0.1"),
+        ("win32", "AMD64", "11", "==1.0.1"),
+        ("linux", "x86_64", "6.8.0-45-generic", (ROOT / "vendor/aec-audio-processing").as_uri()),
+    ):
+        selected = _selected_requirements(result.stdout, platform, machine=machine, release=release)
+        aec = selected["aec-audio-processing"]
+        assert (aec.url or str(aec.specifier)) == expected, (platform, machine, release)
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
