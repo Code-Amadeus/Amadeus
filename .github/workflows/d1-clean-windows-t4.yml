@@ -1,0 +1,80 @@
+name: D1 clean Windows T4 qualification
+on:
+  push:
+    branches: [codex/qualify-d1-no-msvc]
+permissions:
+  contents: read
+jobs:
+  clean-windows:
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Stage exact main and the runtime executables
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $inputDir = Join-Path $env:RUNNER_TEMP 'd1-inputs'
+          $scratch = Join-Path $env:RUNNER_TEMP 'd1-empty-work'
+          $bin = Join-Path $inputDir 'bin'
+          New-Item -ItemType Directory -Path $inputDir,$scratch,$bin | Out-Null
+          $base = 'd8d692694b94b27e8e7dab0e9c1928855569ee57'
+          git fetch --no-tags --depth=1 origin $base
+          if ($LASTEXITCODE) { throw 'Cannot fetch main under test' }
+          git archive --format=tar --output (Join-Path $inputDir 'source.tar') $base
+          if ($LASTEXITCODE) { throw 'Unable to export main' }
+          Write-Host "D1_SOURCE $base"
+          Copy-Item -LiteralPath tools/probes/qualify_d1_guest.ps1 -Destination (Join-Path $inputDir 'guest.ps1')
+          Copy-Item -LiteralPath tools/probes/qualify_d1_synthesis.py -Destination (Join-Path $inputDir 'synthesize.py')
+          $assets = @(
+            @('uv.zip','https://github.com/astral-sh/uv/releases/download/0.12.8/uv-x86_64-pc-windows-msvc.zip','e07acf3f8a29fe41f9e04b799c3325cb0e0893836bb222bf102829b45c679ad6'),
+            @('ffmpeg.zip','https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip','60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba')
+          )
+          foreach ($asset in $assets) {
+            $out = Join-Path $env:RUNNER_TEMP $asset[0]
+            curl.exe --fail --silent --show-error --location --retry 2 $asset[1] --output $out
+            if ($LASTEXITCODE -or (Get-FileHash $out).Hash -ne $asset[2]) { throw "Invalid download $($asset[0])" }
+            $dest = Join-Path $env:RUNNER_TEMP ($asset[0] + '.contents')
+            Expand-Archive -LiteralPath $out -DestinationPath $dest
+            $wanted = if ($asset[0] -eq 'uv.zip') { @('uv.exe') } else { @('ffmpeg.exe','ffprobe.exe') }
+            foreach ($name in $wanted) {
+              $file = @(Get-ChildItem -LiteralPath $dest -Filter $name -File -Recurse)
+              if ($file.Count -ne 1) { throw "Missing $name" }
+              Copy-Item -LiteralPath $file[0].FullName -Destination (Join-Path $bin $name)
+            }
+          }
+      - name: Cold install T4 CPU in pristine Microsoft Windows Server Core
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $inputDir = Join-Path $env:RUNNER_TEMP 'd1-inputs'
+          $scratch = Join-Path $env:RUNNER_TEMP 'd1-empty-work'
+          $image = 'mcr.microsoft.com/windows/servercore:ltsc2025'
+          docker version --format '{{.Server.Os}} {{.Server.Version}}'
+          if ($LASTEXITCODE) { throw 'Windows Docker engine unavailable' }
+          docker pull $image
+          if ($LASTEXITCODE) { throw 'Microsoft base image unavailable' }
+          docker image inspect --format 'D1_BASE {{index .RepoDigests 0}}' $image
+          docker run --name d1-guest --detach --isolation=process --mount "type=bind,source=$inputDir,target=C:\inputs,readonly" --mount "type=bind,source=$scratch,target=C:\work" $image powershell.exe -NoLogo -NoProfile -Command 'Start-Sleep -Seconds 5000'
+          if ($LASTEXITCODE) { throw 'Unable to start isolated Windows' }
+          docker exec d1-guest powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\inputs\guest.ps1 Install
+          if ($LASTEXITCODE) { throw 'Cold T4 install or verifier failed in clean Windows' }
+      - name: Fetch official resources and generate one Japanese WAV inside the same container
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $inputDir = Join-Path $env:RUNNER_TEMP 'd1-inputs'
+          $voice = Join-Path $inputDir 'voice.zip'
+          $dict = Join-Path $inputDir 'dictionary.zip'
+          $pin = Get-Content release/japanese_dictionary.json -Raw | ConvertFrom-Json
+          curl.exe --fail --silent --show-error --location --retry 2 $pin.download_url --output $dict
+          if ($LASTEXITCODE -or (Get-FileHash $dict).Hash -ne $pin.sha256) { throw 'Japanese dictionary hash mismatch' }
+          $uri = 'https://drive.usercontent.google.com/download?id=14ccgqSYHqwf700l-CnWf236-7XSYRKAT&export=download&confirm=t'
+          curl.exe --fail --silent --show-error --location --retry 2 --range '0-' --user-agent 'Mozilla/5.0' --max-time 900 $uri --output $voice
+          if ($LASTEXITCODE -or (Get-Item $voice).Length -ne 2907936803 -or (Get-FileHash $voice).Hash -ne '8d670e25d82c9f1562e2eefd1705116404caa9ee14deb94b898faecacda38d91') { throw 'Official voice bundle failed size or SHA-256 verification' }
+          docker exec d1-guest powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\inputs\guest.ps1 Synthesize
+          if ($LASTEXITCODE) { throw 'Japanese synthesis failed in clean Windows' }
