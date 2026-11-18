@@ -198,6 +198,8 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 brew install portaudio
 ```
 
+在 macOS 15 及以上的 Apple Silicon 上，使用原生 arm64 CPython 3.12 安装 T2–T4 时，uv 会选用 AEC 1.0.0 的官方预编译包，省去本机编译 WebRTC 和 Abseil 的步骤。Intel Mac 和更早版本的 macOS 使用 AEC 1.0.1。PyAudio 仍需要 PortAudio 和 Xcode 命令行工具。
+
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus

@@ -41,7 +41,8 @@ jobs:
         run: |
           uv python install 3.12.14
           uv venv .venv --python 3.12.14 --managed-python
-          uv sync --locked --extra voice --extra dev
+          uv sync --locked --extra voice --extra dev --no-build-package aec-audio-processing
+          uv run --locked --no-sync python -c "from importlib.metadata import version; assert version('aec-audio-processing') == '1.0.0'"
 
       - name: Verify environment (voice profile)
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
