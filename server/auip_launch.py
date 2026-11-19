@@ -1129,6 +1129,13 @@ class AuipLaunchCoordinator:
         key = (str(session_id or "").strip(), str(turn_id or "").strip())
         return self._deferred.pop(key, None) is not None
 
+    def cancel_all_deferred(self) -> int:
+        """Retire every not-yet-launched continuation, e.g. when AI entry is turned off."""
+
+        count = len(self._deferred)
+        self._deferred.clear()
+        return count
+
     def authorize_prepare(
         self,
         *,

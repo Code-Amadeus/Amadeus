@@ -23,7 +23,7 @@ from server.auip_control_decision import (
     reconcile_active_auip_control,
 )
 from server.auip_engagement import AuipEngagementCoordinator
-from server.auip_runtime import AuipRuntime, runtime
+from server.auip_runtime import AuipRuntime, ai_interaction_enabled, runtime
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -310,6 +310,11 @@ class AuipHandler(RequestHandler):
         performs no wording match and accepts no model-supplied AppSession id.
         """
 
+        if not ai_interaction_enabled():
+            # A decision captured before the user turned interaction off may
+            # still arrive; it is refused here, before any app or launch side
+            # effect, and presented through the ordinary rejection receipt.
+            return {"ok": False, "error": "auip_interaction_disabled"}
         projection = self.runtime.focused_projection(session_id)
         control = reconcile_active_auip_control(attrs, projection)
         action = str(control.get("action") or "").strip().lower()
@@ -430,6 +435,41 @@ class AuipHandler(RequestHandler):
         if action == "none":
             return {"ok": True, "action": "none"}
         raise AuipProtocolError("unsupported_control_action", action)
+
+    async def suspend_interaction(self) -> None:
+        """Withdraw AI participation that began before interaction was turned off.
+
+        Every live AppSession returns to observe mode through the ordinary mode
+        transition, which cancels private Participant work and revokes any
+        Controller lease.  An action already sent keeps its pending receipt;
+        nothing is undone.  Not-yet-launched entry continuations are retired.
+        """
+
+        if self.launch is not None:
+            self.launch.cancel_all_deferred()
+        for app_session_id in self.runtime.active_session_ids():
+            try:
+                projection = self.runtime.get(app_session_id)
+            except AuipProtocolError:
+                continue
+            if str(projection.get("engagement_mode") or "") == "observe":
+                continue
+            if "observe" in (projection.get("available_modes") or ()):
+                result = await self.handle(
+                    Method.AUIP_MODE_SET,
+                    {"app_session_id": app_session_id, "mode": "observe"},
+                )
+                if isinstance(result, dict) and result.get("ok") is False:
+                    logger.warning(
+                        "[AUIP] could not return app_session=%s to observe "
+                        "after interaction was turned off: %s",
+                        app_session_id,
+                        result.get("error"),
+                    )
+            elif self.engagement is not None:
+                # Apps without a spectator stance cannot observe, and a
+                # Controller requires one, so only private decisions remain.
+                self.engagement.cancel_participation(app_session_id)
 
     def _resolved_session_id(self, data: dict[str, Any]) -> str:
         claimed = _session_id(data)

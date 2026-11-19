@@ -1,0 +1,28 @@
+{
+  "id": "auip_interaction",
+  "title": {
+    "en-US": "AI application interaction",
+    "zh-CN": "AI 应用交互"
+  },
+  "description": {
+    "en-US": "Choose whether Amadeus joins AUIP applications from conversation. Creating, opening and manually using apps stays available.",
+    "zh-CN": "选择 Amadeus 是否从对话中参与 AUIP 应用。创建、打开和手动使用应用始终可用。"
+  },
+  "desktop": true,
+  "apply": "host",
+  "config": {
+    "AUIP_INTERACTION_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Let Amadeus interact with applications",
+        "zh-CN": "允许 Amadeus 与应用交互"
+      },
+      "description": {
+        "en-US": "When off, ordinary chat makes no AUIP model calls and carries no app prompts, and Amadeus stops taking turns, acting or commenting in apps. Open apps return to watching; an action already sent keeps its receipt. Saved across restarts.",
+        "zh-CN": "关闭后，普通聊天不再调用 AUIP 模型、也不附带应用提示词，Amadeus 不再在应用中轮流操作、行动或解说。已打开的应用回到观看模式；已发出的动作保留回执。跨重启保存。"
+      },
+      "default": true,
+      "runtime_key": "auip_interaction_enabled"
+    }
+  }
+}

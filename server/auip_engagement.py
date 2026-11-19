@@ -27,7 +27,12 @@ from server.auip_participant import (
     AuipParticipantProposal,
     ControllerCallable,
 )
-from server.auip_runtime import PENDING_ACTION_TIMEOUT_S, AuipRuntime, runtime
+from server.auip_runtime import (
+    PENDING_ACTION_TIMEOUT_S,
+    AuipRuntime,
+    ai_interaction_enabled,
+    runtime,
+)
 from server.event_bus import bus
 from server.protocol import Method
 
@@ -100,6 +105,8 @@ class AuipEngagementCoordinator:
 
     async def set_mode(self, *, app_session_id: str, mode: str) -> dict[str, Any]:
         clean_requested = str(mode or "").strip().lower()
+        if clean_requested in {"collaborate", "delegate"} and not ai_interaction_enabled():
+            raise AuipProtocolError("auip_interaction_disabled")
         if clean_requested == "delegate" and (
             self.controller is None or self.role_authorizer is None
         ):
@@ -129,6 +136,8 @@ class AuipEngagementCoordinator:
         expected_revision: int | None = None,
         current_role_response: str = "",
     ) -> dict[str, Any]:
+        if not ai_interaction_enabled():
+            raise AuipProtocolError("auip_interaction_disabled")
         if str(reason or "") == "explicit_step":
             self._cancel_deferred_automatic(app_session_id)
         b2_unavailable = bool(
@@ -220,6 +229,9 @@ class AuipEngagementCoordinator:
                 self._remember_receipt(receipt_key)
         if app_session_id and str(payload.get("status") or "") != "active":
             self._cancel_receipt_watch(app_session_id)
+        if not ai_interaction_enabled():
+            # Receipt bookkeeping above stays truthful; no new turn is offered.
+            return
         event = payload.get("event") if isinstance(payload.get("event"), dict) else None
         if event is None:
             return
@@ -353,6 +365,16 @@ class AuipEngagementCoordinator:
         except Exception:
             logger.exception("AUIP chat-busy probe failed")
             return True
+
+    def cancel_participation(self, app_session_id: str) -> None:
+        """Retire deferred and in-flight Participant decisions for one AppSession.
+
+        This is the cancellation half of returning to observe mode, for an app
+        that cannot observe.  An action already sent keeps its receipt watch.
+        """
+
+        self._cancel_deferred_automatic(app_session_id)
+        self._cancel_decision(app_session_id)
 
     async def leave(self, *, app_session_id: str, reason: str = "user_left") -> dict[str, Any]:
         self._cancel_deferred_automatic(app_session_id)

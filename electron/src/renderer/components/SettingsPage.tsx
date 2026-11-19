@@ -1224,6 +1224,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       }
     } else if (targetSection === 'general') {
       anchor = targetId?.includes('visual') ? 'settings-vision' : targetId?.includes('translation') ? 'settings-language' : ''
+    } else if (targetSection === 'providers' && targetId === 'application_interaction') {
+      anchor = 'settings-auip-interaction'
     }
     if (anchor) window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }, [openCharacters, setSection])
@@ -1579,6 +1581,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   {(Array.isArray(config.acp_credentials) ? config.acp_credentials as StartupField[] : []).map(field =>
                     <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave}/>)}
                 </SettingsGroup>
+                <div id="settings-auip-interaction"><SettingsGroup title={catalogGroups.find(group => group.id === 'auip_interaction')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'auip_interaction')!.description['en-US']}>
+                  {renderRuntimeGroup('auip_interaction', 'CommandPrompt')}
+                </SettingsGroup></div>
                 <SettingsGroup title="Artifact appearance" detail="Generation preferences for new interactive apps. Save and restart the backend to apply.">
                   {artifactConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Palette" />)}
                 </SettingsGroup>

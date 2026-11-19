@@ -721,6 +721,13 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     return () => unsubscribe()
   }, [applyWorkEnvelope, subscribe])
 
+  // A refused host control, e.g. auip_interaction_disabled, changes no
+  // AppSession state, so no auip.updated arrives to explain it.
+  const showAuipRefusal = useCallback((result: Record<string, unknown>) => {
+    if (result.ok !== false) return
+    setAuipExperience(previous => previous && { ...previous, operatorError: String(result.error || 'auip_request_refused') })
+  }, [])
+
   useEffect(() => {
     const unsubscribe = subscribe('auip.updated', payload => {
       setAuipExperience(previous => {
@@ -1327,14 +1334,14 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                 void send('auip.mode.set', {
                   app_session_id: auipExperience.appSessionId,
                   mode,
-                })
+                }).then(showAuipRefusal)
               }}
               onStep={() => {
                 if (!auipExperience.appSessionId) return
                 void send('auip.step', {
                   app_session_id: auipExperience.appSessionId,
                   instruction: 'Take one appropriate declared action now.',
-                })
+                }).then(showAuipRefusal)
               }}
               onLeave={() => {
                 if (!auipExperience.appSessionId) return

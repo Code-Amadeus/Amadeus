@@ -657,17 +657,21 @@ export function buildCapabilityProfiles(
   const modelRoles = groups(settings.model_roles)
   const auipAction = findGroup(modelRoles, 'auip_action')
   const auipReady = groupAvailable(auipAction)
+  // The user's switch outranks role readiness: off is a choice, not a fault.
+  const auipTurnedOff = backendFactsAvailable && settings.auip_interaction_enabled === false
   const auipItem: SceneCapabilityItem = {
     id: 'application_interaction',
     label: 'Application interaction',
     implementation: 'Host AUIP runtime · action role',
-    detail: groupDetail(auipAction, 'The Host owns AUIP session identity, action legality, receipts, and application attachment.'),
+    detail: auipTurnedOff
+      ? 'AI application interaction is turned off. Apps can still be created, opened and used manually.'
+      : groupDetail(auipAction, 'The Host owns AUIP session identity, action legality, receipts, and application attachment.'),
     importance: 'optional',
-    state: !backendFactsAvailable ? 'unknown' : auipReady ? 'ready' : 'attention',
-    stateLabel: !backendFactsAvailable ? 'Backend not connected' : auipReady ? 'Available' : 'Action role needs setup',
+    state: !backendFactsAvailable ? 'unknown' : auipTurnedOff ? 'inactive' : auipReady ? 'ready' : 'attention',
+    stateLabel: !backendFactsAvailable ? 'Backend not connected' : auipTurnedOff ? 'Turned off' : auipReady ? 'Available' : 'Action role needs setup',
     policyLabel: 'Shared conversation capability',
-    currentLabel: auipAction?.active ? 'B2 action role active' : 'Observe or legacy mode',
-    configureSection: 'models',
+    currentLabel: auipTurnedOff ? 'Off' : auipAction?.active ? 'B2 action role active' : 'Observe or legacy mode',
+    configureSection: auipTurnedOff ? 'providers' : 'models',
   }
   const applicationInteraction: CapabilityProfile = {
     id: 'application_interaction',

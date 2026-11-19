@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from config.catalog import application_policy, configuration_groups, option_values, read_catalog_value, runtime_fields, voice_backend_groups
@@ -603,6 +603,7 @@ class SystemHandler(RequestHandler):
         self._asr_manager_getter: Callable[[], Any] | None = None
         self._playback_manager = None
         self._is_chat_busy: Callable[[], bool] | None = None
+        self._suspend_auip_interaction: Callable[[], Awaitable[None]] | None = None
         self._log_path: Path | None = None
 
     def configure(
@@ -614,6 +615,7 @@ class SystemHandler(RequestHandler):
         is_chat_busy: Callable[[], bool] | None = None,
         project_root: Path | None = None,
         asr_manager_getter: Callable[[], Any] | None = None,
+        suspend_auip_interaction: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._vts_manager = vts_manager
         self._asr_manager = asr_manager
@@ -621,6 +623,7 @@ class SystemHandler(RequestHandler):
         self._asr_manager_getter = asr_manager_getter
         self._playback_manager = playback_manager
         self._is_chat_busy = is_chat_busy
+        self._suspend_auip_interaction = suspend_auip_interaction
         if project_root:
             self._log_path = Path(project_root) / "server.log"
 
@@ -720,6 +723,7 @@ class SystemHandler(RequestHandler):
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
             "work_permission_auto_approve": settings.WORK_PERMISSION_AUTO_APPROVE,
+            "auip_interaction_enabled": settings.AUIP_INTERACTION_ENABLED,
             "graphics": {
                 "profile": settings.GRAPHICS_PROFILE,
                 "custom_max_fps": settings.RENDER_MAX_FPS,
@@ -853,6 +857,9 @@ class SystemHandler(RequestHandler):
         if "work_permission_auto_approve" in values:
             settings.WORK_PERMISSION_AUTO_APPROVE = values["work_permission_auto_approve"]
             updated.append("work_permission_auto_approve")
+        if "auip_interaction_enabled" in values:
+            settings.AUIP_INTERACTION_ENABLED = values["auip_interaction_enabled"]
+            updated.append("auip_interaction_enabled")
         if CHARACTER_PROMPT_SETTING in values:
             updated.extend(set_character_prompt(values[CHARACTER_PROMPT_SETTING]))
         if "asr_backend" in values:
@@ -912,6 +919,14 @@ class SystemHandler(RequestHandler):
                 from agent_host.provider_runtime import runtime
                 # 设置事实先可见；个别请求的未知回执另行报告，不撤销用户策略。
                 await runtime.apply_permission_policy()
+        if (
+            "auip_interaction_enabled" in updated
+            and not settings.AUIP_INTERACTION_ENABLED
+            and self._suspend_auip_interaction is not None
+        ):
+            # The setting is already authoritative for every later gate; this
+            # retires interaction that started before it changed.
+            await self._suspend_auip_interaction()
         return {"updated": updated, "values": current}
 
     async def _list_windows(self, params: dict[str, Any]) -> dict[str, Any]:

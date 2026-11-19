@@ -27,6 +27,7 @@ _ENV = load_project_environment(_ROOT)
 _catalog_values = read_catalog_environment(_ENV)
 AMADEUS_CHARACTER_ID: str = _catalog_values["AMADEUS_CHARACTER_ID"]
 AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA: str = _catalog_values["AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA"]
+AUIP_INTERACTION_ENABLED: bool = _catalog_values["AUIP_INTERACTION_ENABLED"]
 AUIP_ARTIFACT_STYLE_ENABLED: bool = _catalog_values["AUIP_ARTIFACT_STYLE_ENABLED"]
 VTS_ENABLED: bool = _catalog_values["VTS_ENABLED"]
 VTS_WS_URL: str = _catalog_values["VTS_WS_URL"]
