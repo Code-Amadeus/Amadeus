@@ -1,0 +1,8 @@
+{
+  "note": "ffmpeg 9.0.2; input assets/scenarios/runtime/look_at_CRT/look_at_CRT_loop/loop/frame_%04d.png (180 frames, 1070x860 RGB, 30 fps, 225 MB); metrics vs the PNG frames in rgb24",
+  "encodes": [
+    {"codec": "libx264", "args": "-preset slow -crf 16 -pix_fmt yuv420p -g 30", "bytes": 2116236, "psnrAvgDb": 43.58, "ssimAll": 0.9856},
+    {"codec": "libx264", "args": "-preset slow -crf 20 -pix_fmt yuv420p -g 30", "bytes": 1466089, "psnrAvgDb": 42.53, "ssimAll": 0.9814},
+    {"codec": "libvpx-vp9", "args": "-crf 24 -b:v 0 -row-mt 1 -g 30 -pix_fmt yuv420p", "bytes": 1237487, "psnrAvgDb": 40.90, "psnrMinDb": 31.51, "ssimAll": 0.9764}
+  ]
+}

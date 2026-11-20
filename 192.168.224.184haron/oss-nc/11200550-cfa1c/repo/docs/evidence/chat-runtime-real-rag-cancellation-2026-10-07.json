@@ -1,0 +1,66 @@
+{
+  "schema": "amadeus.real-rag-cancellation.v1",
+  "date": "2026-10-07",
+  "scope": "Observe real FAISS + cached multilingual-e5-small first loading, cancel the Cooperative-owned input task, then query real DeepSeek through a new loop sharing the same process service. No GUI, speech or Work execution.",
+  "modes": [
+    {
+      "route": "basic",
+      "real_index": true,
+      "real_embedding_model": true,
+      "real_role_model": true,
+      "checks": {
+        "actual_first_load_observed": true,
+        "cancelled_turn_stopped": true,
+        "cancelled_turn_never_queried_role": true,
+        "current_turn_no_action": true,
+        "current_turn_correct_reference": true,
+        "shared_index_ready": true,
+        "exactly_one_role_query": true,
+        "no_cancelled_input_in_current_query": true,
+        "no_cancelled_role_reply": true
+      },
+      "model_calls": 1,
+      "reply": "ええ、[EMO thinking] 合成テスト資料に書かれていたわね。青いしおりのコード名は ORCHID よ。[EMO normal] ただ、これはテスト専用の架空設定だから、実際の資料と混同しないように気をつけて。",
+      "status": "passed",
+      "retrieval": {
+        "matched_count": 1,
+        "nearest_distance": 0.12109417468309402,
+        "reference_selected": true
+      }
+    },
+    {
+      "route": "professional",
+      "real_index": true,
+      "real_embedding_model": true,
+      "real_role_model": true,
+      "checks": {
+        "actual_first_load_observed": true,
+        "cancelled_turn_stopped": true,
+        "cancelled_turn_never_queried_role": true,
+        "current_turn_no_action": true,
+        "current_turn_correct_reference": true,
+        "shared_index_ready": true,
+        "exactly_one_role_query": true,
+        "no_cancelled_input_in_current_query": true,
+        "no_cancelled_role_reply": true
+      },
+      "model_calls": 1,
+      "reply": "ええ、[EMO normal] 合成テスト資料の青いしおりのコード名は ORCHID よ。もっとも、これはテスト専用の架空設定だから、実際の研究データと混同しないでね。",
+      "status": "passed",
+      "retrieval": {
+        "matched_count": 1,
+        "nearest_distance": 0.12109417468309402,
+        "reference_selected": true
+      }
+    }
+  ],
+  "previous_attempt": {
+    "status": "instrument_failed",
+    "reason": "Called graceful close without first cancelling the owned input; close drains admitted inputs and timed out during loading. No role request was made.",
+    "production_change": false
+  },
+  "limits": [
+    "Cancellation is applied at the actual loop-owned input task, not through a physical GUI or microphone.",
+    "The embedding model is cached offline; this does not test network download cancellation."
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "id": "profile",
+  "title": {
+    "en-US": "Desktop default",
+    "zh-CN": "桌面默认"
+  },
+  "description": {
+    "en-US": "The model profile selected when the desktop backend starts.",
+    "zh-CN": "桌面后端启动时选定的模型配置。"
+  },
+  "desktop": true,
+  "apply": "host",
+  "config": {
+    "LLM_PROVIDER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Default model profile",
+        "zh-CN": "默认模型配置"
+      },
+      "default": "deepseek",
+      "runtime_key": "llm_provider",
+      "options": [
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek",
+            "zh-CN": "DeepSeek"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        },
+        {
+          "value": "gemini",
+          "label": {
+            "en-US": "Gemini",
+            "zh-CN": "Gemini"
+          }
+        },
+        {
+          "value": "bedrock",
+          "label": {
+            "en-US": "AWS Bedrock",
+            "zh-CN": "AWS Bedrock"
+          }
+        },
+        {
+          "value": "local",
+          "label": {
+            "en-US": "Pure-local model",
+            "zh-CN": "纯本地模型"
+          }
+        },
+        {
+          "value": "hybrid",
+          "label": {
+            "en-US": "Hybrid · Local + Bedrock",
+            "zh-CN": "混合 · 本地 + Bedrock"
+          }
+        },
+        {
+          "value": "hybrid2",
+          "label": {
+            "en-US": "Hybrid · Local + DeepSeek",
+            "zh-CN": "混合 · 本地 + DeepSeek"
+          }
+        },
+        {
+          "value": "hybrid3",
+          "label": {
+            "en-US": "Hybrid · Local + OpenAI",
+            "zh-CN": "混合 · 本地 + OpenAI"
+          }
+        }
+      ],
+      "example_active": true
+    }
+  }
+}

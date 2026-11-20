@@ -1,0 +1,7 @@
+{
+  "host_repository": "https://github.com/Code-Amadeus/Amadeus",
+  "host_commit": "1840c8e4f646992ddaebea3139c8895f29743a8f",
+  "python": "3.12.10",
+  "platform": "win32",
+  "requirements_sha256": "eca122787362dc7d39b309b931c5e17ce7fb0507f79524589f2978bb018c17e7"
+}

@@ -1,0 +1,7 @@
+{
+  "required_columns": ["id", "amount"],
+  "unique_column": "id",
+  "nonnegative_column": "amount",
+  "codes": {"missing": "missing_value", "duplicate": "duplicate_id", "negative": "negative_amount"},
+  "rules_revision": "csv-audit-r1"
+}

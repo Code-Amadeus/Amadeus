@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visual asset preview</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#202b36}
+    canvas{display:block}
+    #state{position:absolute;left:12px;top:12px;color:#d7e4ee;font:12px system-ui;pointer-events:none}
+  </style>
+</head>
+<body>
+  <div id="state">Initializing preview…</div>
+  <script src="./vendor/pixi.min.js"></script>
+  <script src="./render_budget.js"></script>
+  <script src="./live2d_character.js"></script>
+  <script src="./model_character.js"></script>
+  <script src="./visual_preview.js"></script>
+</body>
+</html>

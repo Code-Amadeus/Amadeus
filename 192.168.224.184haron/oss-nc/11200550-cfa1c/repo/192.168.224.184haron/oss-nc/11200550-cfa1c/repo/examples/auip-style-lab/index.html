@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amadeus · Artifact 风格实验 v0.1</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="../../electron/src/renderer/styles/workPreview.css">
+<style>
+body { margin: 0; }
+.lab { max-width: 1480px; padding: 32px; margin: auto; }
+.lab h1 { font-size: 27px; font-weight: 500; margin: 4px 0 8px; }
+.intro { margin: 0; color: var(--am-muted); font-size: 15px; }
+.lab-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 18px; align-items: center; }
+.lab-controls a { color: var(--am-muted); font-size: 14px; }
+.spacer { flex: 1; }
+.lab-check { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; }
+.lab-check input { accent-color: var(--am-accent); width: 18px; height: 18px; }
+#stage { height: 850px; }
+#stage.with-frame { padding: 18px; background: #030c10; border-radius: 30px; }
+.work-preview-shell { grid-template-rows: 50px minmax(0, 1fr) 26px; }
+.work-preview-shell.unframed { display: block; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.unframed .work-preview-titlebar, .unframed .work-preview-footer, .unframed .work-preview-grid, .unframed .work-preview-corner { display: none; }
+.unframed .work-preview-frame { margin: 0; padding: 0; border: 0; height: 100%; box-shadow: none; }
+iframe { width: 100%; height: 100%; border: 0; background: #07171b; display: block; }
+.work-preview-titlebar { user-select: text; }
+.lab-note { color: var(--am-muted); font-size: 14px; margin-top: 20px; }
+.lab-result { border-top: 1px solid var(--am-line); margin-top: 24px; padding-top: 16px; }
+@media(max-width: 700px) { .lab { padding: 20px 12px; } #stage.with-frame { padding: 0; } #stage { height: 900px; } .spacer { display: none; } }
+</style>
+<body class="am-app"><main class="lab">
+<span class="am-label">AMADEUS / VISUAL STUDY — V0.1</span>
+<h1>同一种气质，两种内容</h1>
+<p class="intro">实验室的操作细节保持一致，内容的颜色、布局与玩法自由表达。</p>
+<nav class="lab-controls" aria-label="实验样例">
+<button class="am-button" id="reference" aria-pressed="true">设计参考 · 光谱实验台</button>
+<button class="am-button" id="provider" aria-pressed="false">Provider · 低饱和版</button>
+<button class="am-button" id="warm" aria-pressed="false">对照 · 原暖色版</button>
+<button class="am-button" id="original" aria-pressed="false">生成首版</button>
+<span class="spacer"></span>
+<label class="lab-check"><input type="checkbox" id="frame" checked>显示现有 Preview 外框</label>
+<a href="DESIGN.md" target="_blank">设计准则</a>
+<a id="standalone" href="reference.html" target="_blank">单独打开</a>
+</nav>
+<div id="stage" class="with-frame"><div id="shell" class="work-preview-shell">
+<div class="work-preview-grid"></div>
+<div class="work-preview-titlebar"><div class="work-preview-title-copy"><div><small>AMADEUS / ARTIFACT STUDY</small><strong id="caption">光谱实验台</strong></div></div><span class="am-label">外框视觉对照</span></div>
+<div class="work-preview-frame"><div class="work-preview-corner top-left"></div><div class="work-preview-corner top-right"></div><div class="work-preview-corner bottom-left"></div><div class="work-preview-corner bottom-right"></div><div class="work-preview-viewport"><iframe id="content" title="交互样例" src="reference.html"></iframe></div></div>
+<div class="work-preview-footer"><span>VISUAL EXPERIMENT</span><span>真实 Preview 样式 · 此页不建立 AUIP 连接</span><span>v0.1</span></div>
+</div></div>
+<p class="lab-note">切换外框，检查内容是否仍有 Amadeus 的辨识度。大面积表面保持深色，暖色收敛到盘片。Provider 按用户反馈修订；生成首版原样保留。</p>
+<div class="lab-result" id="summary"><span class="am-label">实验结果</span><p>Provider 样例生成后由实验主持者独立检查，记录首版表现与验证范围。</p></div>
+</main>
+<script src="result.js"></script>
+<script>
+const q=id=>document.getElementById(id);
+function choose(kind){
+ const isReference=kind==='reference';
+ const src=isReference?'reference.html':kind==='original'?window.styleLabResult?.originalUrl:kind==='warm'?window.styleLabResult?.warmUrl:window.styleLabResult?.providerUrl;
+ if(!src){q('summary').textContent='Provider 样例尚未生成完成。';return;}
+ q('content').src=src;q('standalone').href=src;q('caption').textContent=isReference?'光谱实验台':kind==='original'?'三柱汉诺塔 · 首版原样':kind==='warm'?'三柱汉诺塔 · 原暖色方案':'三柱汉诺塔 · 低饱和方案';
+ for(const name of ['reference','provider','warm','original'])q(name).setAttribute('aria-pressed',String(name===kind));
+}
+q('reference').onclick=()=>choose('reference');q('provider').onclick=()=>choose('provider');q('warm').onclick=()=>choose('warm');q('original').onclick=()=>choose('original');
+q('frame').onchange=()=>{q('shell').classList.toggle('unframed',!q('frame').checked);q('stage').classList.toggle('with-frame',q('frame').checked);};
+if(window.styleLabResult?.summary) q('summary').textContent=window.styleLabResult.summary;
+</script>
+</body></html>

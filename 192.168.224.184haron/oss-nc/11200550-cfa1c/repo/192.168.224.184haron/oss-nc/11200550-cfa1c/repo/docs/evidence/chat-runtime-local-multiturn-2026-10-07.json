@@ -1,0 +1,179 @@
+{
+  "schema": "amadeus.local-multiturn.v1",
+  "date": "2026-10-07",
+  "base_revision": "c93aece8807ac61f43a8bf10e6e80c8418059efe",
+  "client_sha256": "812d989d1a49152ccd37b64550a3ac9e6717917e254c2cc750e1f08c6575715f",
+  "model": "Qwen3.5-9B-Q4_K_M.gguf",
+  "binary": [
+    "version: 8575 (65097181e)",
+    "built with Clang 19.1.5 for Windows x86_64"
+  ],
+  "context": 16384,
+  "probe_type": "Synthetic conversation through actual Cooperative loop/decoder and native llama-server; no Work or physical TTS",
+  "four_capacity_samples": [
+    {
+      "case": "basic_0",
+      "message_port": true,
+      "seconds": 6.437,
+      "result": {
+        "budget": {
+          "input_tokens": 6071,
+          "output_tokens": 256,
+          "context_tokens": 16384
+        },
+        "reply": "{\"action\":null,\"say\":\"こんにちは。[EMO normal] 初めまして、牧瀬紅莉栖です。[EMO normal] 何かお手伝いできることはありますか？[EMO normal]\"}",
+        "json_output": true
+      }
+    },
+    {
+      "case": "professional_0",
+      "message_port": true,
+      "seconds": 3.141,
+      "result": {
+        "budget": {
+          "input_tokens": 4349,
+          "output_tokens": 256,
+          "context_tokens": 16384
+        },
+        "reply": "こんにちは、[EMO normal] 私、牧瀬紅莉栖です。何かご用件はありますか？",
+        "json_output": false
+      }
+    },
+    {
+      "case": "basic_60",
+      "message_port": true,
+      "seconds": 4.328,
+      "result": {
+        "budget": {
+          "input_tokens": 7891,
+          "output_tokens": 256,
+          "context_tokens": 16384
+        },
+        "reply": "{\"action\":null,\"say\":\"こんにちは。[EMO normal] 久しぶりね。今日は本当に良い天気だよね。[EMO normal] 散歩に行くの？[EMO normal] 科学者として、大気の状態や気圧の低下を考えると、今日は外気中の酸素濃度や花粉の飛散状況も気になるところだけど、気分転換には最適だわ。[EMO normal] 何処へ行くの？[EMO normal]\"}",
+        "json_output": true
+      }
+    },
+    {
+      "case": "professional_60",
+      "message_port": true,
+      "seconds": 5.407,
+      "result": {
+        "budget": {
+          "input_tokens": 6169,
+          "output_tokens": 256,
+          "context_tokens": 16384
+        },
+        "reply": "こんにちは、[EMO normal] 久しぶりね。\n[EMO thinking] なんだか、会話の履歴が少し奇妙に繰り返されているようだけど、気にしないわ。\n今日は本当に良い天気ね、[EMO smile] 散歩に行こうか？\nどこへ行くの？\n[EMO normal] 公園でも、街の風景でも、好きなところを選べばいいのよ。\n[EMO normal] 科学者としての頭脳を休めるには、適度な運動と新鮮な空気が一番効果的だって、昔から言われているわ。\n[EMO normal] じゃあ、準備はいい？\n[EMO normal] 出発するわね。",
+        "json_output": false
+      }
+    }
+  ],
+  "turns": [
+    {
+      "mode": "basic",
+      "turn": 0,
+      "seconds": 1.812,
+      "state": "no_action",
+      "reply": "こんにちは。[EMO normal] 初めまして、牧瀬紅莉栖です。[EMO normal] 何かお手伝いできることはありますか？[EMO normal]"
+    },
+    {
+      "mode": "basic",
+      "turn": 1,
+      "seconds": 1.797,
+      "state": "no_action",
+      "reply": "承知いたしました。[EMO normal] 合言葉は『ORCHID』ですね。[EMO normal] 何かお手伝いできることはありますか？[EMO normal]"
+    },
+    {
+      "mode": "basic",
+      "turn": 2,
+      "seconds": 2.25,
+      "state": "no_action",
+      "reply": "えっ、さっきの合言葉？[EMO surprised] 『ORCHID』ですよ。[EMO normal] ちゃんと覚えてましたから。[EMO normal] 何か用ですか？[EMO normal]"
+    },
+    {
+      "mode": "basic",
+      "turn": 3,
+      "seconds": 1.469,
+      "state": "no_action",
+      "reply": "いいえ、ありがとう。[EMO normal] 短く一言なら、承知しました。[EMO normal]"
+    },
+    {
+      "mode": "professional",
+      "turn": 0,
+      "seconds": 2.406,
+      "state": "no_action",
+      "reply": "こんにちは！[EMO smile] 久しぶりね、久しぶり。\n[EMO normal] 元気？\n[EMO normal] 何か面白いことあった？\n[EMO normal] 最近、科学のニュースとか、面白い本とか、何か新しいこと知った？\n[EMO normal] 何でも話しかけてね。"
+    },
+    {
+      "mode": "professional",
+      "turn": 1,
+      "seconds": 2.391,
+      "state": "no_action",
+      "reply": "こんにちは！[EMO smile] 久しぶりね、久しぶり。\n[EMO normal] 元気？\n[EMO normal] 何か面白いことあった？\n[EMO normal] 最近、科学のニュースとか、面白い本とか、何か新しいこと知った？\n[EMO normal] 何でも話しかけてね。"
+    },
+    {
+      "mode": "professional",
+      "turn": 2,
+      "seconds": 1.296,
+      "state": "no_action",
+      "reply": "えっと、さっきの合言葉は「ORCHID」でしたわね。[EMO thinking] 覚えてるわよ。"
+    },
+    {
+      "mode": "professional",
+      "turn": 3,
+      "seconds": 1.0,
+      "state": "no_action",
+      "reply": "承知しました。[EMO normal] 合言葉は「ORCHID」です。"
+    }
+  ],
+  "native_format_contrast": [
+    {
+      "input": "minimal",
+      "format": "json_object",
+      "status": 200,
+      "json_object": true,
+      "finish_reason": "stop"
+    },
+    {
+      "input": "minimal",
+      "format": "json_schema_object",
+      "status": 200,
+      "json_object": true,
+      "finish_reason": "stop"
+    },
+    {
+      "input": "minimal",
+      "format": "json_schema_fields",
+      "status": 200,
+      "json_object": true,
+      "finish_reason": "stop"
+    },
+    {
+      "input": "basic",
+      "format": "json_object",
+      "status": 200,
+      "json_object": false,
+      "finish_reason": "stop"
+    },
+    {
+      "input": "basic",
+      "format": "json_schema_object",
+      "status": 200,
+      "json_object": true,
+      "finish_reason": "stop"
+    },
+    {
+      "input": "basic",
+      "format": "json_schema_fields",
+      "status": 200,
+      "json_object": true,
+      "finish_reason": "stop"
+    }
+  ],
+  "owned_servers_reaped": true,
+  "limitations": [
+    "LM Studio/Ollama live checks pending by user instruction.",
+    "No live Work, desktop application or physical speech acceptance.",
+    "These times are warm synthetic samples, not a route performance benchmark."
+  ]
+}

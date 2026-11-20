@@ -1,0 +1,53 @@
+{
+  "id": "acoustic_pipeline",
+  "title": {
+    "en-US": "Echo cancellation & interruption",
+    "zh-CN": "回声消除与语音打断"
+  },
+  "description": {
+    "en-US": "Realtime AEC and barge-in controls shared by scene microphone paths.",
+    "zh-CN": "各场景麦克风路径共享的实时 AEC 与语音打断控制。"
+  },
+  "desktop": true,
+  "config": {
+    "AEC_REALTIME_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Realtime echo cancellation",
+        "zh-CN": "实时回声消除"
+      },
+      "default": false,
+      "desktop_default": { "value": true },
+      "example_active": false,
+      "example": true
+    },
+    "AEC_REALTIME_BARGE_IN": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Allow microphone interruption",
+        "zh-CN": "允许麦克风打断"
+      },
+      "default": false,
+      "desktop_default": { "value": true },
+      "example_active": false,
+      "example": true
+    },
+    "AEC_REALTIME_DELAY_MS": {
+      "type": "number",
+      "title": {
+        "en-US": "AEC reference delay",
+        "zh-CN": "AEC 参考延迟"
+      },
+      "description": {
+        "en-US": "Playback-to-microphone reference delay in milliseconds.",
+        "zh-CN": "播放到麦克风的参考延迟，单位毫秒。"
+      },
+      "default": 280.0,
+      "min": 0,
+      "max": 2000,
+      "step": 10,
+      "example_active": false
+    }
+  },
+  "apply": "backend_restart"
+}

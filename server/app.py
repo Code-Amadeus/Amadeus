@@ -2319,12 +2319,6 @@ async def bootstrap(port: int = 17777) -> None:
     )
     vts_h.configure(vts_manager=vts_manager)
     expr_h.configure(expression_controller=_expr_ctrl)
-
-    async def _suspend_auip_interaction() -> None:
-        if auip_narration is not None:
-            auip_narration.cancel_pending()
-        await auip_h.suspend_interaction()
-
     sys_h.configure(
         vts_manager=vts_manager,
         asr_handler=asr_h,
@@ -2332,7 +2326,6 @@ async def bootstrap(port: int = 17777) -> None:
         playback_manager=playback_manager,
         is_chat_busy=chat_h.is_busy,
         project_root=Path(ROOT),
-        suspend_auip_interaction=_suspend_auip_interaction,
     )
     render_h.configure(
         project_root=Path(ROOT),

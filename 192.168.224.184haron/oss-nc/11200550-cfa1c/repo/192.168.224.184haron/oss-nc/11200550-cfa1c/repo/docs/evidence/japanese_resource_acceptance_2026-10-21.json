@@ -1,0 +1,439 @@
+{
+  "date": "2026-10-21",
+  "status": "superseded_after_external_review_not_for_release",
+  "resource": {
+    "file": "amadeus-japanese-pronunciation-2026.10.21.1-rc2.zip",
+    "sha256": "f721f43e29eb24ae2a1e3fbac2c523621b3cf4689483caee1f1271767ade0fa7",
+    "bytes": 36612024
+  },
+  "resource_identity": "cbd4755f9b8f2528c0c6e1c91ab24806576090ddff9ba503b80a5b97425c2e4f",
+  "data_format": 2,
+  "source_rows": 134201,
+  "reviewed_reading_corrections": 462,
+  "original_unverified": 133739,
+  "deleted_source_rows": 0,
+  "source_sha256": "cf3ae9063ee6b171f5553900fcaa813238a8d20bb0917a6a3a0f8d0c35c27962",
+  "working_sha256": "195daed9bd3aa3d9ed14008c3f927143fe7c1dea7890803d83638cef43608fea",
+  "overlay_sha256": "c2c75f2032080275959a511b985e91590950f133b977f2fcd4a0a013cb68629f",
+  "overlay_rows": 4534,
+  "overlay_words": 4532,
+  "accent_evidence": {
+    "native_lexeme_features": 409,
+    "source_accent_retained_pending_review": 41,
+    "unidic_lexical_accent": 12
+  },
+  "runtime_exclusions": {
+    "base_owned": 1038,
+    "short_token_native_owner": 236,
+    "pending_accent": 1,
+    "context_sensitive": 79
+  },
+  "data_input_commit": "dd5f091959ed7153531712ac52a8007c37d509d1",
+  "reproducibility": {
+    "independent_git_checkout": true,
+    "all_nine_members_byte_identical": true,
+    "bundle_byte_identical": true,
+    "data_input_commit": "dd5f091959ed7153531712ac52a8007c37d509d1",
+    "builder": "Final clean PR worktree, independent data checkout; all nine resource members and entire ZIP byte-identical."
+  },
+  "lifecycle": {
+    "install": {
+      "version": "2026.10.21.0-validation-only",
+      "resource_identity": "beb2e7d922a7bf555e756fa9791588d59ef26a1a52d30f0eeebc280cc5216adc",
+      "audio_cache_identity": "7f866cb94e82c7036114af892f4cf72da2e9c72950eeafdaf8a5a363c6f25545",
+      "installed_files": 9,
+      "many_phones": [
+        "m",
+        "a",
+        "[",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "update": {
+      "version": "2026.10.21.1-rc2",
+      "resource_identity": "cbd4755f9b8f2528c0c6e1c91ab24806576090ddff9ba503b80a5b97425c2e4f",
+      "audio_cache_identity": "b2fe2c55f463bfdd664ebfc15c2541dee8c57d87f758997e44cdb4e043e74d80",
+      "installed_files": 4,
+      "many_phones": [
+        "m",
+        "e",
+        "]",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "rollback": {
+      "version": "2026.10.21.0-validation-only",
+      "resource_identity": "beb2e7d922a7bf555e756fa9791588d59ef26a1a52d30f0eeebc280cc5216adc",
+      "audio_cache_identity": "7f866cb94e82c7036114af892f4cf72da2e9c72950eeafdaf8a5a363c6f25545",
+      "installed_files": 4,
+      "many_phones": [
+        "m",
+        "a",
+        "[",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "restore_candidate": {
+      "version": "2026.10.21.1-rc2",
+      "resource_identity": "cbd4755f9b8f2528c0c6e1c91ab24806576090ddff9ba503b80a5b97425c2e4f",
+      "audio_cache_identity": "b2fe2c55f463bfdd664ebfc15c2541dee8c57d87f758997e44cdb4e043e74d80",
+      "installed_files": 4,
+      "many_phones": [
+        "m",
+        "e",
+        "]",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    }
+  },
+  "personal_and_legacy_preserved": true,
+  "idempotent_reinstall": true,
+  "failed_update_restores_previous_files": "Synthetic fault injected after the first changed member; previous full pack bytes restored by existing installer.",
+  "corpus": {
+    "sentences": 5672,
+    "synthetic_complete_replies": 672,
+    "jsut_sentences": 5000,
+    "input_sha256": "5d195573a912563e2457255038687d83658b46ba5d469d828b9d7732f551d03e",
+    "phone_sequence_changes_from_base": 179,
+    "phone_sequence_changes_from_legacy": 206,
+    "base_controls": 83,
+    "base_control_changes": [],
+    "interpretation": "Changed phones are observations, not independent accuracy or everyday error-rate measurements."
+  },
+  "audio": {
+    "cases": [
+      "menu",
+      "game",
+      "disney",
+      "neutral"
+    ],
+    "waveforms": 8,
+    "candidate_target_matches": 4,
+    "original_full_csv_target_matches": 2,
+    "reference_conditioning_identical": true,
+    "synthesis": {
+      "model_version": "v3",
+      "gpt_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "sovits_sha256": "7f21f7bdbeaef5c43f54f412a96c6371df4ed8484a6d0b432ff87c5a68273c7a",
+      "reference_sha256": "4157bc810d4a3c3300cfb225852924e72890c8f8f186a4fda5ed98031ffbdb91",
+      "seed": 237,
+      "top_k": 20,
+      "top_p": 0.6,
+      "temperature": 0.6,
+      "speed": 1.0,
+      "sample_steps": 16
+    },
+    "listening": {
+      "date": "2026-10-21",
+      "status": "maintainer_preferred_candidate_on_all_four_samples",
+      "reported_regressions": 0,
+      "scope": "Four pairs only; absolute pronunciation accuracy was not separately asserted."
+    },
+    "tested_resource_version": "2026.10.21.1-rc1",
+    "rc2_equivalence": {
+      "changed_members": [
+        "NOTICE.md",
+        "provenance.json"
+      ],
+      "reason": "Correct preserved CRLF source byte count and inherited notice references; version/metadata identity changed. All reading-bearing CSVs remain byte-identical.",
+      "all_four_case_phones_identical": true,
+      "all_5672_corpus_observations_identical": true,
+      "all_83_control_phones_identical": true,
+      "target_observations_identical": true,
+      "reuse": "Existing eight heard WAVs; no new acoustic acceptance claimed."
+    }
+  },
+  "punctuation_followup": {
+    "reason": "Preserve complete Latin tokens through punctuation splitting so game-2 cannot select the internal native game entry.",
+    "sentences_replayed_per_profile": 5672,
+    "profiles": {
+      "base": {
+        "corpus_changes": 0,
+        "control_changes": []
+      },
+      "legacy": {
+        "corpus_changes": 0,
+        "control_changes": []
+      },
+      "candidate": {
+        "corpus_changes": 0,
+        "control_changes": []
+      }
+    },
+    "audio_case_phones_identical": true,
+    "reference_phones_identical": true,
+    "audio_reused": "Eight previously heard WAVs; no repeated synthesis after unchanged case/reference phone checks."
+  },
+  "tests": {
+    "targeted": {
+      "passed": 128,
+      "command": "python -X utf8 -m pytest tests/test_japanese_full_resource.py tests/test_japanese_aliases.py tests/test_japanese_dictionary.py tests/test_japanese_dictionary_data_policy.py tests/test_japanese_dictionary_boundaries.py tests/test_japanese_reading.py tests/test_external_assets.py -q",
+      "workspace": "Clean main-based PR worktree, final implementation."
+    },
+    "full_suite": {
+      "command": "AMADEUS_E2E_NO_TTS=1 TTS_DEVICE=cpu python -X utf8 tools/run_tests.py",
+      "status": "passed",
+      "runner_reported_passed": 6398,
+      "runner_reported_skipped": 16,
+      "files": 492,
+      "scope": "Clean main-based worktree before final complete-token punctuation change; final delta verified by the 128-test targeted run and all 5672 sentences across three profiles. A behavior-preserving unrelated text-helper extraction in that snapshot is omitted from the PR."
+    },
+    "static_checks": [
+      "ruff check .",
+      "tools/architecture/generate_views.py --check",
+      "tools/architecture/generate_readme_overview.py --check",
+      "tools/check_third_party_provenance.py --release-ready (0 errors; 8 warnings for absent optional components)"
+    ]
+  },
+  "source_code_sha256_lf": {
+    "GPT_SoVITS/text/japanese.py": "678eff0a3dd7a0b5d7dd88018ac5aa3c9c4ee303228a66b3464d71c443c839d9",
+    "config/japanese_dictionary.py": "511c55f4b4ec59c446af8110ea3280357a6c05e94706ecb4d43e35cd81c719b7",
+    "config/asset_packages.py": "fb3fd6239c3a67fc732b5e629b3dda2abaa91a08a44ef6a905f24610d71e86de",
+    "tts/japanese_dictionary.py": "6e6a154be3ebb84e6948ed828e20d687d5b7713af2f558da4ada4bc499c79277",
+    "tts/japanese_reading.py": "9305faedc157bd6a4efdf3c9d22d2de19796302253c70b7ae8e9bc378f74d450",
+    "tools/prepare_japanese_full_resource.py": "8ee977660a8b89c2eb57567d74bba744396c896233fcf6d9f5dd9e4c51ae2af0",
+    "tools/probes/validate_japanese_resource.py": "104402c9071acdce4c6951f1a7a511be8cfaca4a5bc9fcc067b88f4d60007c10",
+    "tools/probes/japanese_pronunciation_evidence.py": "e2ded7e886ad509c4447cbcfa015960054c7d81863fc53ad49701609096ef7b6"
+  },
+  "remaining_acceptance": [
+    "Independent draft-PR review, including full-source contract and source/license records.",
+    "Maintainer release decision; no publication, default switch, or live resource installation performed."
+  ],
+  "limitations": [
+    "Unchanged originals are intentionally unverified, not silently certified or deleted.",
+    "Of 41 changed rows with unresolved lexical accents, the source-reviewed single readings use native kana prosody or explicit native fallback; full accent correctness is not claimed.",
+    "Resource versions require a matching format-2 loader and the pinned base dictionary hashes.",
+    "Local source data and audio remain separate from the application source PR.",
+    "Eight corrected-word contexts can still select another unverified original reading. They remain explicit review work; 1342/1353 is not a pronunciation correctness score."
+  ],
+  "resource_version": "2026.10.21.1-rc2",
+  "source_preserved_bytes": 17315171,
+  "source_canonical_lf_bytes": 17180971,
+  "corrected_word_application": {
+    "words": 451,
+    "contexts": 1353,
+    "candidate_matches": 1342,
+    "original_full_source_matches": 60,
+    "lost_original_matches": 0,
+    "scope": "Target application, not independent lexical correctness or listened accuracy. Retained alternative readings are not automatically certified or removed.",
+    "unmatched": [
+      {
+        "word": "accompaniments",
+        "text": "accompaniments",
+        "expected": [
+          "アカンパニメンツ"
+        ],
+        "actual": [],
+        "matches": false
+      },
+      {
+        "word": "accompaniments",
+        "text": "このaccompanimentsを確認して。",
+        "expected": [
+          "アカンパニメンツ"
+        ],
+        "actual": [],
+        "matches": false
+      },
+      {
+        "word": "accompaniments",
+        "text": "これはaccompanimentsです。",
+        "expected": [
+          "アカンパニメンツ"
+        ],
+        "actual": [],
+        "matches": false
+      },
+      {
+        "word": "decrease",
+        "text": "decrease",
+        "expected": [
+          "ディクリース"
+        ],
+        "actual": [
+          "デクリース"
+        ],
+        "matches": false
+      },
+      {
+        "word": "focusing",
+        "text": "focusing",
+        "expected": [
+          "フォーカシング"
+        ],
+        "actual": [
+          "フォーキシング"
+        ],
+        "matches": false
+      },
+      {
+        "word": "maginot",
+        "text": "これはmaginotです。",
+        "expected": [
+          "マジノ"
+        ],
+        "actual": [
+          "マジノット"
+        ],
+        "matches": false
+      },
+      {
+        "word": "massif",
+        "text": "massif",
+        "expected": [
+          "マシフ"
+        ],
+        "actual": [
+          "マシーフ"
+        ],
+        "matches": false
+      },
+      {
+        "word": "nationality",
+        "text": "nationality",
+        "expected": [
+          "ナショナリティー"
+        ],
+        "actual": [
+          "ナショナリティ"
+        ],
+        "matches": false
+      },
+      {
+        "word": "necessity",
+        "text": "necessity",
+        "expected": [
+          "ネセシティー"
+        ],
+        "actual": [
+          "ネセサティ"
+        ],
+        "matches": false
+      },
+      {
+        "word": "vehicle",
+        "text": "vehicle",
+        "expected": [
+          "ビークル"
+        ],
+        "actual": [
+          "ビーイクル"
+        ],
+        "matches": false
+      },
+      {
+        "word": "whipped",
+        "text": "whipped",
+        "expected": [
+          "ウィップト"
+        ],
+        "actual": [
+          "ホイップ"
+        ],
+        "matches": false
+      }
+    ],
+    "unscored_explanation": "Three accompaniments spans: native postprocessing rewrites kana ニ to 二. Observed nodes ア/カンパ/二/メンツ have readings ア/カンパ/ニ/メンツ; observed phones include n i. Whole-node matcher leaves these unscored."
+  },
+  "superseded_by": "japanese_resource_review_followup_2026-10-22.json"
+}

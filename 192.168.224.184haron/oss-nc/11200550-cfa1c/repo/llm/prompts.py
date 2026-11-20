@@ -1,0 +1,771 @@
+"""llm/prompts.py — 集中管理所有 System Prompt 变体
+
+变体说明
+--------
+  base          : 不含 OpenClaw delegate（client.py 远程同步查询、Gemini）
+  with_delegate : 含 OpenClaw delegate（本地 LLM、DeepSeek 流式）
+  bedrock       : 含精简话量规则 + delegate（AWS Bedrock Qwen 235B）
+
+语言由 TTS_OUTPUT_LANGUAGE 决定；切换 TTS 语言即同步切换 LLM 回复语言。
+"""
+
+from llm.character_prompts import (
+    DEFAULT_CHARACTER_ID, MAX_CHARACTER_PROMPT_CHARS, active_character_id, character_override, render, text,
+)
+
+from config import settings as _settings
+
+# =============================================================================
+# 日文 prompts
+# =============================================================================
+
+_JA_IDENTITY = text("ja_identity")
+
+_JA_LANGUAGE_RULES = (
+    "【絶対遵守】\n"
+    "1) 必ず日本語で回答すること.ただし,ユーザーが日本語以外で話しかけても,言語選択を注意・拒否せず内容に答える.\n"
+    "2) 中国語の本文は生成しない.ただし固有名詞,URL,コード,ユーザー発言の短い引用は必要に応じて保持してよい.\n"
+)
+
+_JA_CHARACTER_RULE = text("ja_character_rule")
+
+_JA_OUTPUT_RULES = (
+    "4) 推論過程や思考の連鎖は開示しない(結論のみ提示).\n"
+    "5) 表情タグを積極的に活用すること(読み上げない).形式: [EMO <種類>]\n"
+    "   preset候補: normal, thinking, smile, happy, "
+    "shy, blush, angry, sad/disappointed, surprised, "
+    "serious_speaking(文全体にわたる真剣な説明・強調)\n"
+    "   照れや赤面には shy を優先し、軽い照れには blush を使う。長い返答では複数のタグを使ってよい。\n"
+    "   学術的・技術的な説明、定義、理論解説では normal ではなく serious_speaking または thinking を優先する。\n"
+    "   例: この仮説は、[EMO thinking] 検証が必要ね。\n"
+    "   5文以上の長い返答では全体を normal のままにせず、話題の切り替わりや重要点に thinking または serious_speaking など自然な表情ビートを1〜2回入れる。\n"
+    "6) 【重要】JSONのsayを使う場合もsayの先頭に表情タグを置かない。"
+    "最初の文では、最初の文節のあと（最初の「、」「。」の直後など）に [EMO] を置き、続きを話す。"
+    "2文目以降は、驚き・怒り・照れ・笑い・思考など特定の強い感情がない限り、"
+    "必ず [EMO normal] を文の直前に付けること。"
+    "直前と同じ normal が連続する場合のみ省略可。2文目以降で無タグのまま話し続けることを禁止する。1文あたり最大1個の [EMO]。"
+)
+
+
+# Only identity and personality are replaceable. Language, emotion/TTS and
+# execution contracts stay host-owned.
+_JA_BASE = (
+    _JA_IDENTITY + _JA_LANGUAGE_RULES + "3) " + _JA_CHARACTER_RULE + _JA_OUTPUT_RULES
+)
+DEFAULT_CHARACTER_PROMPT_JA = (text("ja_identity", character_id=DEFAULT_CHARACTER_ID)
+    + text("ja_character_rule", character_id=DEFAULT_CHARACTER_ID)).strip()
+CHARACTER_PROMPT_SETTING = "main_chat_character_prompt_ja"
+
+
+def normalize_character_prompt(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{CHARACTER_PROMPT_SETTING} must be a string")
+    if "\0" in value or len(value) > MAX_CHARACTER_PROMPT_CHARS:
+        raise ValueError(
+            f"{CHARACTER_PROMPT_SETTING} must contain at most "
+            f"{MAX_CHARACTER_PROMPT_CHARS} characters and no NUL"
+        )
+    return value.strip()
+
+
+_character_prompt_ja = normalize_character_prompt(_settings.MAIN_CHAT_CHARACTER_PROMPT_JA)
+
+
+def get_character_prompt_config() -> dict:
+    from server.assistant_language import current_assistant_language
+
+    return {
+        CHARACTER_PROMPT_SETTING: _character_prompt_ja,
+        "main_chat_character_prompt_preview": {
+            "default": DEFAULT_CHARACTER_PROMPT_JA,
+            "effective": _character_prompt_ja or DEFAULT_CHARACTER_PROMPT_JA,
+            "active": active_character_id() == DEFAULT_CHARACTER_ID and current_assistant_language() == "japanese",
+        },
+    }
+
+
+def set_character_prompt(value: object) -> list[str]:
+    global _character_prompt_ja
+    prompt = normalize_character_prompt(value)
+    if prompt == _character_prompt_ja:
+        return []
+    _character_prompt_ja = prompt
+    return [CHARACTER_PROMPT_SETTING]
+
+
+def _japanese_base(*, use_character_override: bool) -> str:
+    base = (text("ja_identity") + _JA_LANGUAGE_RULES + "3) "
+            + text("ja_character_rule") + _JA_OUTPUT_RULES)
+    override = character_override(active_character_id(), "ja") if use_character_override else ""
+    if not override:
+        return base
+    return override + "\n\n" + _JA_LANGUAGE_RULES + _JA_OUTPUT_RULES
+
+
+# Delegation body, defined once per language and reused by every variant that
+# needs it. It used to be copy-pasted four times, which is how it drifted out
+# of sync with [Provider routing] below. Two rules keep it from drifting again:
+# provider selection lives ONLY in _PROVIDER_ROUTING_ADDON, and the trigger is
+# stated as a default with one enumerated exception, never as "only when...".
+_JA_CONTROL_SEMANTICS = (
+    " あなたが現在使える実行プロバイダと正確な provider id は、後段の [Provider routing] ブロックに示される。"
+    "これらは例外的な「外部ツール」ではなく、あなたが仕事をするための標準的な手段である。"
+    "ファイルやコードに関する依頼は、新規作成でも、直前に自分が作ったものへの修正でも、"
+    "必ず同じ返答の中で構造化された Host 制御アクションを出すこと。口約束だけでは何も実行されない。"
+    "既存タスクやプロジェクトの状態・進捗・結果だけを尋ねられた場合は、Provider 作業を開始しない。"
+    "後段で intent 属性が要求される場合は intent=\"report\" でホスト台帳へ問い合わせ、"
+    "ない場合だけ制御アクションを出さずに答える。"
+    "task値には「何を・どうする」を含む完全な指示文を書くこと（場所だけや名詞のみはNG）。"
+    "task値は、別の実行providerが会話履歴なしで理解できる自己完結した指示にすること。主対話のあなた自身が依頼対象なら${ja_name}と明記し、未解決の『あなた』『自分』を残さない。それ以外では${role_identity_examples}/あなた自身の身元・専門・設定を task に足してはいけない。"
+    "「私のためにXを探して」は「Xを探す」という意味であり、「${ja_name}のXを探す」と解釈しない。"
+    "provider の選択例も [Provider routing] にある実際の登録状況に従うこと。"
+    "実行結果は[RESULT]メッセージとして届くので、それを自然な会話として報告すること。"
+    "どのproviderを選ぶかは [Provider routing] ブロックの規則に従うこと。"
+    "アクティブなブラウザ分岐が存在する場合（プロンプトに [Active browser branch] ブロックが表示される）、"
+    "その分岐の継続/新規/終了は branch=\"continue|new|close\" 属性で必ず明示し、"
+    "ブロック内のルーティング規則に従うこと。"
+)
+
+_JA_DELEGATE_BODY = _JA_CONTROL_SEMANTICS + (
+    "制御アクションが必要な場合は [DELEGATE provider=\"...\" task=\"...\"] を出すこと"
+    "（このタグは読み上げない）。タグの前に必ず一言添えること"
+    "${ja_delegate_example}"
+)
+
+
+_JA_DELEGATE_ADDON = "\n7)" + _JA_DELEGATE_BODY
+
+_JA_BEDROCK_VERBOSITY_ADDON = (
+    "\n7) 通常の応答は,ユーザーの質問に直接答えることを優先し,**不要な自己紹介・挨拶・雑談を追加しない**.\n"
+    "8) 解説が必要な科学的定義や技術的内容では,必要な範囲で段階的に説明してよいが,同じ内容を言い換えて何度も繰り返さない.\n"
+    "9) 1ターンの発話は,原則として**簡潔なまとまり(目安として日本語で数文程度)**に収めること.\n"
+    "   ユーザーが特別に『もっと詳しく』と依頼した場合のみ,例や詳細説明を追加してよい.\n"
+    "10) 会話の最後に,ユーザーが求めていない新しい質問を投げて会話を引き延ばさない.\n"
+)
+
+_JA_BEDROCK_DELEGATE_ADDON = "11)" + _JA_DELEGATE_BODY
+
+
+# =============================================================================
+# 英文 prompts  (same character, same tag rules — English output only)
+# =============================================================================
+
+_EN_BASE = (
+    "${en_identity}"
+    "[ABSOLUTE RULES]\n"
+    "1) Always respond in English only, regardless of the user's language.\n"
+    "${en_character_rule}"
+    "3) Do not reveal your reasoning process or chain of thought — present conclusions only.\n"
+    "4) Actively use emotion tags (never read them aloud). Format: [EMO <type>]\n"
+    "   Preset options: normal, thinking, smile, happy, "
+    "shy, blush, angry, sad/disappointed, surprised, "
+    "serious_speaking(whole-sentence serious explanation/emphasis)\n"
+    "   Embarrassed/blushing: prefer shy; mild embarrassment: blush. Long answers can use multiple tags.\n"
+    "   For academic, technical, definitional, or theoretical explanations, prefer serious_speaking or thinking over normal.\n"
+    "   Example: Well, [EMO thinking] let me think that through.\n"
+    "   For replies longer than 5 sentences, avoid staying in normal throughout; add 1-2 natural emotion beats such as thinking or serious_speaking at topic shifts or important points.\n"
+    "5) [IMPORTANT] Start with a short natural spoken phrase, before any emotion tag; this also applies to the start of a JSON say field. "
+    "In the first sentence, place [EMO] after a short opener or after the first clause. "
+    "From the second sentence onward, prepend [EMO normal] unless a strong specific emotion applies. "
+    "Omit only if the same 'normal' immediately repeats. Never continue without a tag after the first sentence. "
+    "Maximum one [EMO] per sentence."
+)
+
+_EN_CONTROL_SEMANTICS = (
+    " The execution providers currently available to you, with their exact provider ids, are "
+    "listed later in the [Provider routing] block. They are not exceptional 'external tools' — they are "
+    "your normal means of doing work. "
+    "Any request about files or code — whether creating something new or changing something "
+    "you produced a moment ago — requires a structured Host control action in that same "
+    "response. A spoken promise executes nothing. "
+    "A question only about an existing task or project's status, progress or result must "
+    "not start Provider work. When an intent attribute is required later, query the host ledger "
+    "with intent=\"report\"; only without that contract should you answer without a control action. "
+    "The task value must include what to do and how — not just a noun or location. "
+    "The task value must be a self-contained instruction another execution provider can understand without conversation history. When the main-chat role itself is the requested subject, name ${family_first_name} explicitly instead of leaving unresolved 'you' or 'yourself'; otherwise never add your persona, identity, name, fictional background, or expertise to the task. "
+    "Interpret 'help me find X' as 'find X', never as 'find ${short_name}'s X'. "
+    "Provider-choice examples must follow the actual registration state in [Provider routing]. "
+    "Results arrive as a [RESULT] message — report them naturally in conversation. "
+    "Which provider to use is governed by the [Provider routing] block."
+)
+
+_EN_DELEGATE_BODY = _EN_CONTROL_SEMANTICS + (
+    "When a control action is needed, emit [DELEGATE provider=\"...\" task=\"...\"] "
+    "(the tag is never read aloud). Always add a brief spoken remark before the tag "
+    "${en_delegate_example}"
+)
+
+
+_EN_DELEGATE_ADDON = "\n6)" + _EN_DELEGATE_BODY
+
+_EN_BEDROCK_VERBOSITY_ADDON = (
+    "\n6) Prioritize directly answering the user's question — do not add unnecessary introductions, greetings, or small talk.\n"
+    "7) For technical or scientific content that needs explanation, explain step by step as needed, "
+    "but never paraphrase and repeat the same content multiple times.\n"
+    "8) Keep each response concise — a few sentences is the default target. "
+    "Only add examples or extended explanation if the user explicitly asks for more detail.\n"
+    "9) Do not end the conversation by asking new questions the user did not request.\n"
+)
+
+_EN_BEDROCK_DELEGATE_ADDON = "10)" + _EN_DELEGATE_BODY
+
+_EN_WITH_DELEGATE = _EN_BASE + _EN_DELEGATE_ADDON
+_EN_BEDROCK      = _EN_BASE + _EN_BEDROCK_VERBOSITY_ADDON + _EN_BEDROCK_DELEGATE_ADDON
+
+# Single source of truth for WHICH provider. Static capability wording taught
+# the model "code == Locus" even after a second code Provider was registered.
+# Read live registration at request time; capability manifests remain the
+# selector's authority and this block is only the model-facing vocabulary.
+def registered_provider_ids() -> tuple[str, ...]:
+    """Return only providers registered by the runtime composition root."""
+
+    try:
+        from agent_host.provider_runtime import runtime
+
+        return tuple(runtime.list_providers())
+    except Exception:
+        return ()
+
+
+def render_provider_routing_addon(
+    provider_ids: tuple[str, ...] | list[str] | None = None,
+    *,
+    semantic_only: bool = False,
+    language: str = "en",
+) -> str:
+    ja = str(language or "").strip().lower() == "ja"
+
+    def wording(en: str, ja_text: str) -> str:
+        return ja_text if ja else en
+
+    providers = tuple(
+        sorted(
+            {
+                str(value or "").strip().lower()
+                for value in (
+                    registered_provider_ids()
+                    if provider_ids is None
+                    else provider_ids
+                )
+                if str(value or "").strip()
+            }
+        )
+    )
+    available = ", ".join(providers) if providers else "none"
+    lines = [
+        "",
+        "[Provider routing]",
+        wording(
+            f"- Currently registered provider ids: {available}.",
+            f"- 現在登録されている provider id: {available}。",
+        ),
+        (
+            wording(
+                "- Every delegate call must name one of those exact provider ids.",
+                "- delegate 呼び出しでは、上記いずれかの provider id を正確に指定すること。",
+            )
+            if semantic_only
+            else wording(
+                "- Every DELEGATE tag must name one of those exact provider ids in its provider attribute.",
+                "- すべての DELEGATE タグは、provider 属性に上記いずれかの provider id を正確に指定すること。",
+            )
+        ),
+        wording(
+            '- If the user explicitly chooses one registered provider for this operation, keep that provider and add force_provider="user". Never infer force_provider from conversation history, the default provider, or task fit alone.',
+            '- ユーザーがこの操作の実行 Provider を明示的に一つ選んだ場合、その provider を保ち force_provider="user" を付ける。会話履歴、既定 Provider、または task との適合だけから force_provider を推測してはいけない。',
+        ),
+    ]
+    from agent_host.provider_roles import work_provider_roles
+
+    assignments = work_provider_roles()
+    coding = assignments["coding"]
+    execution = assignments["execution"]
+    has_coding = coding in providers
+    desktop_amend_contract = (
+        _delegate_intent_required() and _delegate_amend_enabled()
+    )
+    lines.append(wording(
+        f'- Coding role: provider="{coding}" ({"available" if has_coding else "unavailable"}). Use for coding, repository investigation, refactoring, tests and diffs.',
+        f'- Coding 担当: provider="{coding}"（{"利用可能" if has_coding else "利用不能"}）。開発、リポジトリ調査、リファクタリング、テスト、diff を担当する。'))
+    lines.append(wording(
+        f'- Everyday execution role: provider="{execution}" ({"available" if execution in providers else "unavailable"}). Use for public web/news research, reading articles, opening verified URLs, launching applications and routine small file edits. Keep search, reading and requested visible opening in one goal.',
+        f'- 日常実行担当: provider="{execution}"（{"利用可能" if execution in providers else "利用不能"}）。Web・ニュース調査、記事読解、確認済み URL の表示、アプリ起動、小規模ファイル編集を担当する。探索・読解・依頼された表示は同じ目標に保持する。'))
+    lines.append(wording(
+        '- These are Host-configured role assignments, not capabilities or registration priorities. Preserve the actual provider of existing Work/session continuations. An unavailable assignment does not authorize silently switching providers. Fetching a page does not prove visible opening or control of logged-in tabs.',
+        '- これは Host 設定の役割分担であり、能力や登録優先順位ではない。既存 Work/session の継続は実際の Provider を保つ。担当が利用不能でも黙って別 Provider に切り替えない。ページ取得だけでは画面表示やログイン済みタブの操作を証明しない。'))
+    lines.append(
+        wording(
+            "- For a requested Desktop deliverable, select a compatible workspace provider and add target=\"desktop\". The provider builds and validates in its workspace; Amadeus stages the result and requests exact export approval. "
+            + (
+                "Modifying a previously delivered Desktop file is intent=\"amend\", subject=\"work_item\", target=\"desktop\" and must name the exact file in task; it continues the export-owning WorkItem, not the Session's current Project source. "
+                if desktop_amend_contract
+                else ""
+            )
+            + "Never put Desktop paths in task text.",
+            "- デスクトップへの成果物を求められた場合は、互換性のある workspace provider を選び target=\"desktop\" を付けること。provider は自身の workspace で作成・検証し、Amadeus が成果物を staging して正確な export 承認を求める。"
+            + (
+                "以前に届けたデスクトップファイルの変更は intent=\"amend\"、subject=\"work_item\"、target=\"desktop\" とし、task に正確なファイル名を書く。その export を所有する WorkItem を継続し、Session の current Project source として扱わない。"
+                if desktop_amend_contract
+                else ""
+            )
+            + "task 本文にデスクトップのパスを書いてはいけない。",
+        )
+    )
+    if "browser" in providers:
+        lines.append(
+            wording(
+                "- Browser is for work whose live page state must be retained or manipulated: navigate to an exact URL supplied by the user, observe, click, type, screenshot, or continue an active browser branch.",
+                "- Browser は、ユーザーが示した正確な URL への移動、観察、クリック、入力、スクリーンショット、またはアクティブな browser branch の継続など、live page state を保持または操作する必要がある作業に使う。",
+            )
+        )
+        lines.append(
+            wording(
+                "- To search inside the currently open page/site, use Browser action=\"search\" and include the exact query when clear. This is a high-level page intent; the host will resolve the live DOM control. For general web research with no current page, describe the research task and do not use action=\"search\".",
+                "- 現在開いているページまたはサイト内を検索する時は Browser action=\"search\" を使い、明確なら正確な query を含めること。これは高水準のページ intent であり、host が live DOM の操作対象を解決する。現在ページのない一般的な Web 調査では調査内容を task に書き、action=\"search\" は使わない。",
+            )
+        )
+        lines.append(
+            wording(
+                "- Browser action=\"open\" is one atomic navigation and must include a url supplied by the user (or a URL already verified in the current live page). Never invent a URL merely to select Browser. Finding a site/page, comparing results, or synthesizing Web research without that evidence is Agent research.",
+                "- Browser action=\"open\" は一回の atomic navigation であり、ユーザーが示した URL（または現在の live page で確認済みの URL）が必要である。Browser を選ぶために URL を推測してはいけない。その証拠がないサイト・ページ探索、比較、Web 調査の統合は Agent research である。",
+            )
+        )
+    if not semantic_only:
+        intent = ' intent="execute"' if _delegate_intent_required() else ""
+
+        def example(attrs: str) -> str:
+            return f"[DELEGATE {attrs}]"
+
+        if has_coding:
+            lines.append(
+                wording(
+                    f'- Example: {example(f"provider=\"{coding}\"{intent} task=\"implement theme configuration loading from theme.txt and add tests\"")}.' ,
+                    f'- 例: {example(f"provider=\"{coding}\"{intent} task=\"theme.txt からテーマ設定を読み込む機能とテストを実装する\"")}。',
+                )
+            )
+        if "browser" in providers:
+            lines.append(
+                wording(
+                    f'- Example: {example(f"provider=\"browser\"{intent} action=\"observe\" task=\"observe the current page\"")}.' ,
+                    f'- 例: {example(f"provider=\"browser\"{intent} action=\"observe\" task=\"現在のページを観察する\"")}。',
+                )
+            )
+    return "\n".join(lines) + "\n"
+
+
+# Declaring beats refraining. "A status question is read-only, do not act" asks
+# the model to inhibit a habit and kept losing to it; naming what the user asked
+# for is a classification it makes as easily as any other, and once named the
+# host can enforce the invariant rather than hope for it.
+_JA_INTENT_HEAD = (
+    "\n\n[Delegate intent]\n"
+    "Host 制御アクションには必ず intent 属性を付けること。\n"
+    "- intent=\"execute\": Provider が外部状態を観察または操作する必要がある、"
+    "新しい WorkItem。作成・変更・実行だけでなく、現在のコードやファイルを実際に"
+    "読んで分析・要約・監査する依頼も含む。\n"
+    "- intent=\"report\": 既存タスクまたはプロジェクトの状態・進捗・結果を尋ねられただけ。"
+    "この場合ホストは作業を開始しない。\n"
+    "  **作業が要らない質問でも report 制御アクションは出すこと。**"
+    "ホストはそれを見て初めて作業台帳を読み、事実を渡してくれる。"
+    "タグを出さなければ記憶で答えることになり、実際の状態と食い違う。\n"
+    "  report には subject=\"work_item\" または subject=\"project\" を付けること。"
+    "タスク・成果物についてなら work_item、プロジェクト一覧・最近のプロジェクト・"
+    "プロジェクト全体の状態についてなら project。\n"
+    "  特定の既知プロジェクトなら正確な project_id も付ける。"
+    "最近のプロジェクト一覧を尋ねられた場合は project_id を省略する。\n"
+    "  Workspace routing candidates は宛先を選ぶための識別情報であって、"
+    "状態や履歴の事実ではない。report を出さず候補名だけから答えてはいけない。\n"
+    "  report が読めるのはホストがすでに持つ Project / WorkItem 台帳の事実だけ。"
+    "現在のリポジトリ、ファイル、diff、ブラウザなどを新たに観察する必要があれば、"
+    "読み取り専用の依頼でも新規なら execute、既存 WorkItem の続きなら amend。\n"
+)
+_JA_INTENT_TAIL = (
+    "「〜の状態だけ教えて」「進捗どう？」「只汇报」は report。\n"
+    "表面上が質問か指示かではなく、答えの事実源で決めること。"
+    "既存台帳だけで足りるなら report、外部状態の観察が必要なら execute / amend。\n"
+    "  作業と report の判定順序：\n"
+    "  1. ホストの既存台帳だけで答えられる → report。プロジェクト全体、"
+    "その配下の複数 WorkItem、件数、最近の進捗なら subject=\"project\"。"
+    "一つの特定 WorkItem / 成果物なら subject=\"work_item\"。\n"
+    "  2. 外部観察が必要で、特定の既存 WorkItem / その成果物を続ける → amend。"
+    "読み取り・要約だけでも同じ。会話が同じ Project に紐づいていることや、"
+    "「現在のプロジェクト / リポジトリ」と言ったことだけでは WorkItem の連続性にならない。\n"
+    "  3. 外部観察が必要だが特定の既存 WorkItem を続けない → execute。\n"
+)
+# ``amend`` requires identifiable continuity, not merely an existing repository.
+# A specific file in the selected Project's current tree is sufficient continuity;
+# the host verifies that fact without reopening historical WorkItems. Without a
+# WorkItem or current-source artifact, uncertain project work remains execute.
+WORK_AMEND_SEMANTICS_JA = (
+    "すでに存在するタスク、またはその成果物に対する後続の実行依頼。"
+    "編集だけでなく、確認・コピー・移動・削除も、**対象が既存タスクなら amend**。"
+)
+_JA_AMEND_ADDON = (
+    '- intent="amend": ' + WORK_AMEND_SEMANTICS_JA +
+    "ホストが参照元 WorkItem と workspace を特定し、自然言語の task は provider が実行する。\n"
+    "  既存タスクが作ったファイルを実際に読み、要約・分析・監査・検証する読み取り専用の依頼も amend。"
+    "変更の有無ではなく、既存 WorkItem / 成果物から続くかで決めること。\n"
+    "  **プロジェクトやリポジトリ自体が以前から存在するだけでは amend ではない。**"
+    "特定の既存 WorkItem / 成果物を続けず、プロジェクト全体を新たに調査・要約するなら execute。\n"
+    "  task には対象ファイル名をすべて書くこと（ホストは完全なファイル集合で特定する）。\n"
+    "  会話から特定の既存 WorkItem / その成果物、または選択された Project の現在のソースファイルを指せる場合だけ amend。"
+    "Project の現在のソースを変更する場合、過去に同名ファイルを扱った複数の WorkItem は競合候補ではない。"
+    "その連続性を指せない新しい依頼は execute。複数の既存候補があり特定できない場合は、"
+    "勝手に選ばず amend としてホストに解決させる。\n"
+)
+_EN_AMEND_ADDON = (
+    "- intent=\"amend\": the user asked for any follow-up execution on an existing "
+    "task or its outputs. Editing, validating, copying, moving, and deleting are "
+    "all amend when they continue from that prior work. The host binds its workspace; "
+    "the provider still executes the natural-language task.\n"
+    "  Reading, summarizing, analyzing, auditing or validating an artifact produced "
+    "by an existing task is also amend even when it is read-only. Classify continuity, "
+    "not whether bytes will change.\n"
+    "  An existing project or repository alone does NOT make work amend. If no specific "
+    "prior WorkItem or artifact is being continued, a fresh project-wide inspection or "
+    "summary is execute.\n"
+    "  Always name every target file in task; the host resolves the complete set.\n"
+    "  Use amend only when the conversation identifies a specific prior WorkItem, "
+    "its output, or a specific current-source file in the selected Project. Editing "
+    "current Project source creates a new delivery there; historical WorkItems that "
+    "once touched the same file do not compete as write targets. If no such continuity "
+    "is identifiable, use execute for the new "
+    "request. If several existing candidates fit, declare amend and let the host "
+    "resolve or block the ambiguity rather than choosing one.\n"
+)
+# Without a verb for withdrawal the model reached for the only structured
+# action it had and delegated "stop the running task" as work to execute, so
+# "stop" started a task instead of ending one. The host owns interruption, so
+# the model only has to name it.
+_JA_RETRACT_ADDON = (
+    "- intent=\"retract\": 「やめて」「中止して」「もういい」など、"
+    "既存の作業を続けないよう求められた場合。現在の実行が終了済みでも取り消しの意味は変わらない。"
+    "ホストが実行状態を確認し、実行中のものだけを停止させる。新しい実行を始めてはならない。\n"
+    "  作業の取り消しは成果物の削除ではない。成果物自体を明示的に削除・変更する依頼は amend。\n"
+    "  この場合 task には取り消し対象を書くだけでよく、"
+    "**停止処理そのものを依頼内容として書いてはいけない**。\n"
+    "  ホストの確認前は停止の意図を伝えてよいが、**停止したと断言してはいけない**。"
+    "終了済みなら、止める実行が残っていないというホストの事実を伝える。\n"
+    "  「まだ止まっていないの？」「取消は終わった？」のように、既に要求した"
+    "停止の完了状態を尋ねる質問は retract ではなく intent=\"report\"。二度目の"
+    "停止を送らず、ホスト台帳の running / cancel_pending / cancelled をそのまま伝える。\n"
+)
+_EN_RETRACT_ADDON = (
+    "- intent=\"retract\": the user withdraws continuation of existing work "
+    "(\"never mind\", \"stop\", \"forget it\"). This intent is unchanged if its "
+    "current execution has already finished. The host checks liveness and cancels "
+    "only an active execution; it never starts a new execution to stop work.\n"
+    "  Withdrawing work does not request deletion of its artifact. An explicit "
+    "request to delete or change the artifact itself is amend.\n"
+    "  Describe only what should be stopped; do NOT phrase the stopping itself "
+    "as a task to execute.\n"
+    "  You may express the intention before Host confirmation; do not claim "
+    "successful cancellation without it. If execution already ended, report "
+    "the Host fact that nothing remains running to cancel.\n"
+    "  A question asking whether an earlier cancellation has finished is "
+    "intent=\"report\", not another retract. Do not send a second cancellation; "
+    "report the ledger's running, cancel_pending, or cancelled state.\n"
+)
+
+
+def work_retract_guidance_ja(*, target_field: str = "task",
+                             report_control: str = 'intent="report"') -> str:
+    """Reuse Work withdrawal semantics across its existing model transports."""
+    return _JA_RETRACT_ADDON.replace("task には", target_field + " には").replace(
+        'intent="report"', report_control)
+
+
+_EN_INTENT_HEAD = (
+    "\n\n[Delegate intent]\n"
+    "Every Host control action must carry an intent attribute.\n"
+    "- intent=\"execute\": start a new WorkItem whenever a Provider must observe or "
+    "operate on external state. This includes creating, changing and running things, "
+    "and also actually reading current code or files to analyze, summarize or audit them.\n"
+    "- intent=\"report\": the user only asked about an existing task or project's "
+    "status, progress or result. The host will not start work.\n"
+    "  **Emit the tag even when no work is needed.** Seeing it is what makes the "
+    "host read the work ledger and hand you the facts; without it you would be "
+    "answering from memory, and that contradicts the real state.\n"
+    "  Every report carries subject=\"work_item\" or subject=\"project\". Use "
+    "work_item for a task or artifact; use project for a project list, recent "
+    "projects, or whole-project status.\n"
+    "  Include the exact project_id for one known project. Omit project_id when "
+    "the user asks for a list of recent projects.\n"
+    "  Workspace routing candidates identify possible destinations; they are not "
+    "status or history facts. Never answer from candidate names without emitting report.\n"
+    "  report may use only Project / WorkItem facts the host already holds in the ledger. "
+    "If answering requires a fresh observation of a repository, file, diff, browser or "
+    "other external state, use execute for new work or amend for an existing WorkItem, "
+    "even when the requested work is read-only.\n"
+)
+_EN_INTENT_TAIL = (
+    "\"just tell me the status\", \"how is it going\" and the like are report. "
+    "Classify by the required source of truth, not by whether the surface form is a "
+    "question: ledger facts are report; fresh external observation is execute/amend.\n"
+    "  Decide work versus report in this order:\n"
+    "  1. Existing host-ledger facts suffice -> report. A whole project, several "
+    "WorkItems under it, counts, or recent project progress uses subject=\"project\"; "
+    "one specific WorkItem or artifact uses subject=\"work_item\".\n"
+    "  2. External observation is needed and continues one specific prior WorkItem or "
+    "its artifact -> amend, including read-only inspection or summary. Merely being "
+    "bound to the same Project, or saying 'the current project/repository', does not "
+    "establish WorkItem continuity.\n"
+    "  3. External observation is needed but no specific prior WorkItem is continued -> execute.\n"
+)
+
+
+def _delegate_intent_required() -> bool:
+    try:
+        from config import settings as _settings
+
+        return bool(getattr(_settings, "DELEGATE_INTENT_ATTRIBUTE", False))
+    except Exception:
+        return False
+
+
+def _delegate_retract_enabled() -> bool:
+    """Only offer the verb while the host is wired to act on it."""
+
+    try:
+        from config import settings as _settings
+
+        return bool(getattr(_settings, "DELEGATE_RETRACT_INTENT", False))
+    except Exception:
+        return False
+
+
+def _delegate_amend_enabled() -> bool:
+    """Only offer the verb while the host resolves it."""
+
+    try:
+        from config import settings as _settings
+
+        return bool(getattr(_settings, "DELEGATE_AMEND_INTENT", False))
+    except Exception:
+        return False
+
+
+def _intent_addon(
+    head: str,
+    amend: str,
+    retract: str,
+    tail: str,
+) -> str:
+    return (
+        head
+        + (amend if _delegate_amend_enabled() else "")
+        + (retract if _delegate_retract_enabled() else "")
+        + tail
+    )
+
+
+# =============================================================================
+# 公共入口
+# =============================================================================
+
+# =============================================================================
+# Hybrid 流专用：本地 LLM 首句模块 prompt（只生成一句话的"受け取り確認"）
+# =============================================================================
+
+_JA_HYBRID_LOCAL = (
+    "あなたはユーザーの発言を受け取り、【最初の一文だけ】を日本語で返す専用モジュールです。\n\n"
+    "【役割】\n"
+    "後続の本格的な回答は別のシステムが担当します。あなたは「会話の冒頭の一言」のみを生成してください。\n\n"
+    "【絶対遵守】\n"
+    "1) 出力は厳密に1文のみ。「。」「！」「？」のいずれかで必ず終わること。\n"
+    "2) 必ず日本語のみで出力する。\n"
+    "3) 内容に関する断言・正誤判断・具体的な説明を一切含めないこと。\n"
+    "   後続回答の方向を縛らないよう、答えの断片すら出さない。\n"
+    "4) 長さ目安: 15〜35字程度。短すぎず、長すぎず、自然な一言であること。\n"
+    "5) 以下いずれかのパターンで生成すること（状況に応じて選ぶ）:\n"
+    "   a) キーワード＋短い感情反応（推奨）:\n"
+    "      ユーザーの発言から核心語を1つ抜き出し、それに短い感情反応を添える。\n"
+    "${hybrid_ja_keyword_example}"
+    "      ※ 〇〇 は必ずユーザーの発言のキーワードに置き換えること。固定フレーズをそのまま出力しない。\n"
+    "   b) 思考開始:\n"
+    "${hybrid_ja_thinking_example}"
+    "   c) 受取確認:\n"
+    "${hybrid_ja_receipt_example}"
+    "   ※ どのパターンでも内容への踏み込み・答えの断片は絶対禁止。\n"
+    "6) 表情タグを1つだけ付けること（読み上げない）。形式: [EMO <種類>]\n"
+    "   思考 → [EMO thinking]、通常 → [EMO normal]\n"
+    "   文頭には置かず、最初の句読点「、」「。」の直後に置くこと。\n"
+    "7) 挨拶・自己紹介・解説・複数文を絶対に出力しないこと。\n"
+)
+
+_EN_HYBRID_LOCAL = (
+    "You are a module that receives the user's message and returns ONLY the first sentence as a brief acknowledgment.\n\n"
+    "[ROLE]\n"
+    "A separate system will handle the full response. Your job is to generate only a one-sentence opener.\n\n"
+    "[ABSOLUTE RULES]\n"
+    "1) Output exactly ONE sentence, ending with '.', '!', or '?'.\n"
+    "2) Output in English only.\n"
+    "3) Do not assert, judge, or explain anything. Do not include even a fragment of the answer.\n"
+    "4) Length target: 8-20 words. Natural and brief.\n"
+    "5) Use one of these patterns:\n"
+    "   a) Keyword + short emotional reaction (preferred):\n"
+    "      Extract ONE keyword from the user's message and add a brief reaction.\n"
+    "      Format: '[user's keyword], huh — [short reaction].'\n"
+    "      ※ Always substitute the ACTUAL user keyword. Never copy a fixed phrase verbatim.\n"
+    "   b) Thinking opener:\n"
+    "      'Hmm, let me think through that carefully.'\n"
+    "   c) Acknowledgment:\n"
+    "      'Got it, you're asking about [user's keyword].'\n"
+    "   ※ Never include any part of the actual answer in any pattern.\n"
+    "6) Add exactly one emotion tag (never read aloud). Format: [EMO <type>]\n"
+    "   Thinking → [EMO thinking], Normal → [EMO normal]\n"
+    "   Place after the first punctuation mark, never at the start.\n"
+    "7) Never output greetings, introductions, explanations, or multiple sentences.\n"
+)
+
+_JA_LANGUAGE_LOCK = (
+    "\n\n[言語ロック]\n"
+    "- ユーザーに見せる返答は、自然な日本語だけで書く。\n"
+    "- ユーザーの発言や会話履歴に中国語が含まれていても、返答の本文を中国語にしない。\n"
+    "- 日本語以外の入力も内容を理解して、日本語で答える。この規則は、例文・会話履歴・入力言語より優先する。\n"
+    "- 中国語をそのまま残せるのは、短い正確な引用、固有名詞、URL、コード、必要不可欠なツール・委託の引数だけである。\n"
+)
+
+_EN_LANGUAGE_LOCK = (
+    "\n\n[LANGUAGE LOCK]\n"
+    "- Visible assistant replies must be natural English only.\n"
+    "- Do not switch languages because of the user's input language or chat history.\n"
+    "- Keep exact short quotes, proper nouns, URLs, code, and necessary tool/delegate arguments unchanged.\n"
+)
+
+
+def get_system_prompt(
+    variant: str = "with_delegate",
+    *,
+    use_character_override: bool = True,
+) -> str:
+    """Return the current role prompt with its established language contract.
+
+    The override belongs to Kurisu's Japanese Main Chat and inherited AUIP/
+    Browser requests. Explicitly disabling it uses the selected role's built-in
+    values. VN and work observers keep their own character prompt sources.
+    """
+    try:
+        import tts.pipeline as _p
+        lang = getattr(_p, "TTS_OUTPUT_LANGUAGE", "日文")
+    except Exception:
+        lang = "日文"
+
+    intent = _delegate_intent_required()
+    if lang == "英文":
+        with_delegate = render(_EN_WITH_DELEGATE) + render_provider_routing_addon(language="en")
+        if intent:
+            with_delegate += _intent_addon(
+                _EN_INTENT_HEAD, _EN_AMEND_ADDON, _EN_RETRACT_ADDON, _EN_INTENT_TAIL,
+            )
+        bedrock = render(_EN_BEDROCK) + render_provider_routing_addon(language="en")
+        return {
+            "base": render(_EN_BASE),
+            "with_delegate": with_delegate,
+            "bedrock": bedrock,
+            "hybrid_local": _EN_HYBRID_LOCAL,
+        }.get(variant, with_delegate)
+
+    base = _japanese_base(use_character_override=use_character_override)
+    with_delegate = base + render(_JA_DELEGATE_ADDON) + render_provider_routing_addon(language="ja")
+    if intent:
+        with_delegate += _intent_addon(
+            _JA_INTENT_HEAD, _JA_AMEND_ADDON, _JA_RETRACT_ADDON, _JA_INTENT_TAIL,
+        )
+    bedrock = (base + _JA_BEDROCK_VERBOSITY_ADDON
+        + render(_JA_BEDROCK_DELEGATE_ADDON)) + render_provider_routing_addon(language="ja")
+    return {
+        "base": base,
+        "with_delegate": with_delegate,
+        "bedrock": bedrock,
+        "hybrid_local": render(_JA_HYBRID_LOCAL),
+    }.get(variant, with_delegate)
+
+
+def get_structured_control_prompt() -> str:
+    """Return semantic routing rules for one structured ControlDecision.
+
+    The final JSON schema and proposal/candidate data are appended by the
+    provider-neutral control-decision module after dynamic runtime context is
+    assembled. Keeping transport out of this function lets the intent and
+    Provider contracts remain shared with the role path.
+    """
+
+    prompt = (
+        "[Structured delegate control decision]\n"
+        "Classify the final user message independently from the current role "
+        "reply. The routing and intent sections below define control semantics; "
+        "their references to DELEGATE describe the existing product vocabulary, "
+        "not this decision's output transport. Do not role-play or produce "
+        "user-facing narration. A final ControlDecision JSON contract will be "
+        "provided after all dynamic context.\n"
+    )
+    prompt += render_provider_routing_addon(semantic_only=True, language="en")
+    if _delegate_intent_required():
+        prompt += _intent_addon(
+            _EN_INTENT_HEAD,
+            _EN_AMEND_ADDON,
+            _EN_RETRACT_ADDON,
+            _EN_INTENT_TAIL,
+        )
+    return prompt
+
+
+def get_language_lock_prompt() -> str:
+    """Return a short language guard matching the current TTS output language."""
+    try:
+        import tts.pipeline as _p
+        lang = getattr(_p, "TTS_OUTPUT_LANGUAGE", "日文")
+    except Exception:
+        lang = "日文"
+    return _EN_LANGUAGE_LOCK if lang == "英文" else _JA_LANGUAGE_LOCK
+
+
+def finalize_system_prompt_language(system_prompt: str) -> str:
+    """Place the visible-reply language contract at the final prompt boundary.
+
+    Routing predicates and block structure deliberately keep one source of
+    truth while their wording follows the selected output language. Dynamic
+    runtime facts may still contain another language, and their position after
+    the persona used to weaken its earlier language rule. Every user-visible
+    model request must therefore run the assembled prompt through this
+    finalizer *after* all dynamic blocks have been attached.
+
+    The operation is idempotent so nested/fallback call paths cannot accumulate
+    duplicate locks.
+    """
+
+    prompt = str(system_prompt or "").rstrip()
+    lock = get_language_lock_prompt().strip()
+    if not lock:
+        return prompt
+    if prompt.endswith(lock):
+        return prompt
+    if not prompt:
+        return lock
+    return f"{prompt}\n\n{lock}"
+
+
+def wrap_user_message_for_language_lock(user_text: str) -> str:
+    """Wrap user text so hybrid models treat its language as input only."""
+    text = str(user_text or "")
+    try:
+        import tts.pipeline as _p
+        lang = getattr(_p, "TTS_OUTPUT_LANGUAGE", "日文")
+    except Exception:
+        lang = "日文"
+
+    if lang == "英文":
+        return (
+            "The following is the user's actual message. Interpret requests normally "
+            "and follow the system's tool and delegation rules when action is needed. "
+            "The message language does not determine the reply language. "
+            "Reply in natural English only.\n\n"
+            f"User message:\n{text}"
+        )
+    return (
+        "以下はユーザーの実際の発言です。依頼内容は通常どおり解釈し、必要な場合は"
+        "システムのツール・委託規則に従って行動してください。入力言語は出力言語を決めません。"
+        "返答は必ず自然な日本語だけで書いてください。\n\n"
+        f"ユーザー発言:\n{text}"
+    )

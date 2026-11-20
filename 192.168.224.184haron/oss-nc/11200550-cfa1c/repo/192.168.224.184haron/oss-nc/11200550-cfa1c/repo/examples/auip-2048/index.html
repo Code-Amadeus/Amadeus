@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Merge 2048</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0e1118; color: #f5f7ff; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: radial-gradient(circle at 15% 10%, #263054, #0e1118 48%); }
+    main { width: min(92vw, 620px); padding: 26px; border: 1px solid #53628a; border-radius: 24px; background: rgba(17, 22, 35, .94); box-shadow: 0 24px 80px #05060a99; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 42px; letter-spacing: -.05em; }
+    header p, #connection { margin: 4px 0 0; color: #aab4d4; }
+    .score { text-align: right; }
+    .score b { display: block; font-size: 28px; }
+    #board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px; border-radius: 18px; background: #0a0d14; }
+    .tile { aspect-ratio: 1; display: grid; place-items: center; border-radius: 13px; background: #222a3d; font-size: clamp(22px, 7vw, 38px); font-weight: 800; }
+    .tile[data-value="0"] { color: transparent; background: #171c29; }
+    .tile[data-value="2"], .tile[data-value="4"] { background: #35415e; }
+    .tile[data-value="8"], .tile[data-value="16"] { background: #675279; }
+    .tile[data-value="32"], .tile[data-value="64"] { background: #a25471; }
+    .tile[data-value="128"], .tile[data-value="256"] { background: #c77b45; }
+    .controls { margin-top: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    button { border: 1px solid #6575a5; border-radius: 10px; padding: 11px; color: inherit; background: #232b42; cursor: pointer; }
+    button:hover { background: #303b5a; }
+    button[data-direction="up"] { grid-column: 2; }
+    button[data-direction="left"] { grid-column: 1; }
+    button[data-direction="down"] { grid-column: 2; }
+    button[data-direction="right"] { grid-column: 3; }
+    #status { min-height: 24px; margin: 18px 0 0; font-weight: 700; }
+    #connection { font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Merge 2048</h1><p>No alternating turns—just committed slides.</p></div>
+      <div class="score"><span>Score</span><b id="score">0</b></div>
+    </header>
+    <div id="board" aria-label="2048 board"></div>
+    <div class="controls">
+      <button type="button" data-direction="up">Up</button>
+      <button type="button" data-direction="left">Left</button>
+      <button type="button" data-direction="down">Down</button>
+      <button type="button" data-direction="right">Right</button>
+    </div>
+    <p id="status">Playing</p>
+    <p id="connection">Standalone mode</p>
+  </main>
+  <script id="auip-manifest" type="application/json">
+  {
+    "schema": "amadeus.auip/v0",
+    "app": {
+      "id": "merge-2048",
+      "title": "Merge 2048",
+      "version": "0.1.0",
+      "objective": "Combine equal tiles until the target tile is reached.",
+      "interactionSummary": "The participant can make one legal board slide at a time. Examples: '往空位多的方向走' means inspect the visible grid and choose one available game.slide direction; '继续合并最大的两块' still maps to one currently legal slide, not an invented multi-step macro."
+    },
+    "events": {
+      "game.ready": {
+        "beat": true
+      },
+      "game.slide_committed": {
+        "beat": true
+      },
+      "game.finished": {
+        "beat": true,
+        "importance": "important",
+        "terminal": true
+      }
+    },
+    "actions": {
+      "game.slide": {
+        "description": "Slide in one exact available payload listed by state.actions while state.status is playing.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "type": "string",
+              "description": "Slide direction.",
+              "enum": [
+                "up",
+                "down",
+                "left",
+                "right"
+              ]
+            }
+          },
+          "required": [
+            "direction"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "stances": [
+      "spectator",
+      "participant"
+    ],
+    "situationKinds": [
+      "grid/v1",
+      "choice/v1"
+    ]
+  }
+  </script>
+  <script src="../../sdk/auip-core/managed-v0.js"></script>
+  <script src="../../sdk/auip-core/situations-v0.js"></script>
+  <script src="../../sdk/auip-web/auip-v0.js"></script>
+  <script src="./game.js"></script>
+</body>
+</html>

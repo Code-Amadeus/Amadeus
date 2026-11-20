@@ -1,0 +1,311 @@
+{
+  "baseline_commit": "5351dd710d3ea68f533422f098556fa4b078cc21",
+  "scope": "Read-only production catalog; optional synthetic remote model to real sentence queue, no ASR/TTS/device audio.",
+  "local": [
+    {
+      "index": 0,
+      "label": "baseline",
+      "ms": 224.804
+    },
+    {
+      "index": 0,
+      "label": "indexed",
+      "ms": 21.912
+    },
+    {
+      "index": 1,
+      "label": "indexed",
+      "ms": 19.351
+    },
+    {
+      "index": 1,
+      "label": "baseline",
+      "ms": 211.004
+    },
+    {
+      "index": 2,
+      "label": "baseline",
+      "ms": 250.911
+    },
+    {
+      "index": 2,
+      "label": "indexed",
+      "ms": 29.78
+    },
+    {
+      "index": 3,
+      "label": "indexed",
+      "ms": 23.843
+    },
+    {
+      "index": 3,
+      "label": "baseline",
+      "ms": 239.868
+    },
+    {
+      "index": 4,
+      "label": "baseline",
+      "ms": 241.6
+    },
+    {
+      "index": 4,
+      "label": "indexed",
+      "ms": 24.358
+    },
+    {
+      "index": 5,
+      "label": "indexed",
+      "ms": 23.981
+    },
+    {
+      "index": 5,
+      "label": "baseline",
+      "ms": 207.017
+    }
+  ],
+  "remote": [
+    {
+      "index": -1,
+      "label": "indexed",
+      "warmup": true,
+      "entry_ms": 28.54,
+      "model_first_text_ms": 2007.7,
+      "to_first_text_ms": 2512.06,
+      "to_first_sentence_ms": 2556.07,
+      "first_text_to_sentence_ms": 44.01
+    },
+    {
+      "index": 0,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 243.37,
+      "model_first_text_ms": 1131.9,
+      "to_first_text_ms": 1375.88,
+      "to_first_sentence_ms": 1479.53,
+      "first_text_to_sentence_ms": 103.65
+    },
+    {
+      "index": 0,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 25.51,
+      "model_first_text_ms": 654.4,
+      "to_first_text_ms": 680.67,
+      "to_first_sentence_ms": 771.66,
+      "first_text_to_sentence_ms": 90.99
+    },
+    {
+      "index": 0,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.01,
+      "model_first_text_ms": 556.3,
+      "to_first_text_ms": 557.1,
+      "to_first_sentence_ms": 637.87,
+      "first_text_to_sentence_ms": 80.77
+    },
+    {
+      "index": 1,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.01,
+      "model_first_text_ms": 716.1,
+      "to_first_text_ms": 716.75,
+      "to_first_sentence_ms": 769.22,
+      "first_text_to_sentence_ms": 52.47
+    },
+    {
+      "index": 1,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 25.29,
+      "model_first_text_ms": 1074.7,
+      "to_first_text_ms": 1100.66,
+      "to_first_sentence_ms": 1187.76,
+      "first_text_to_sentence_ms": 87.1
+    },
+    {
+      "index": 1,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 249.75,
+      "model_first_text_ms": 810.0,
+      "to_first_text_ms": 1060.6,
+      "to_first_sentence_ms": 1145.44,
+      "first_text_to_sentence_ms": 84.84
+    },
+    {
+      "index": 2,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 256.17,
+      "model_first_text_ms": 735.6,
+      "to_first_text_ms": 992.48,
+      "to_first_sentence_ms": 1074.93,
+      "first_text_to_sentence_ms": 82.44
+    },
+    {
+      "index": 2,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 28.11,
+      "model_first_text_ms": 835.8,
+      "to_first_text_ms": 864.57,
+      "to_first_sentence_ms": 991.64,
+      "first_text_to_sentence_ms": 127.07
+    },
+    {
+      "index": 2,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.0,
+      "model_first_text_ms": 805.7,
+      "to_first_text_ms": 806.41,
+      "to_first_sentence_ms": 953.21,
+      "first_text_to_sentence_ms": 146.8
+    },
+    {
+      "index": 3,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.0,
+      "model_first_text_ms": 623.4,
+      "to_first_text_ms": 623.98,
+      "to_first_sentence_ms": 692.88,
+      "first_text_to_sentence_ms": 68.9
+    },
+    {
+      "index": 3,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 30.94,
+      "model_first_text_ms": 576.3,
+      "to_first_text_ms": 607.97,
+      "to_first_sentence_ms": 674.35,
+      "first_text_to_sentence_ms": 66.38
+    },
+    {
+      "index": 3,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 354.23,
+      "model_first_text_ms": 662.0,
+      "to_first_text_ms": 1017.02,
+      "to_first_sentence_ms": 1111.31,
+      "first_text_to_sentence_ms": 94.3
+    },
+    {
+      "index": 4,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 327.21,
+      "model_first_text_ms": 942.3,
+      "to_first_text_ms": 1270.35,
+      "to_first_sentence_ms": 1394.81,
+      "first_text_to_sentence_ms": 124.46
+    },
+    {
+      "index": 4,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 34.52,
+      "model_first_text_ms": 640.9,
+      "to_first_text_ms": 676.15,
+      "to_first_sentence_ms": 787.18,
+      "first_text_to_sentence_ms": 111.03
+    },
+    {
+      "index": 4,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.01,
+      "model_first_text_ms": 802.0,
+      "to_first_text_ms": 802.7,
+      "to_first_sentence_ms": 913.92,
+      "first_text_to_sentence_ms": 111.22
+    },
+    {
+      "index": 5,
+      "label": "prepared_voice",
+      "warmup": false,
+      "entry_ms": 0.0,
+      "model_first_text_ms": 788.3,
+      "to_first_text_ms": 788.94,
+      "to_first_sentence_ms": 803.65,
+      "first_text_to_sentence_ms": 14.71
+    },
+    {
+      "index": 5,
+      "label": "indexed",
+      "warmup": false,
+      "entry_ms": 35.38,
+      "model_first_text_ms": 877.1,
+      "to_first_text_ms": 913.16,
+      "to_first_sentence_ms": 913.85,
+      "first_text_to_sentence_ms": 0.69
+    },
+    {
+      "index": 5,
+      "label": "baseline",
+      "warmup": false,
+      "entry_ms": 312.94,
+      "model_first_text_ms": 830.8,
+      "to_first_text_ms": 1144.45,
+      "to_first_sentence_ms": 1154.99,
+      "first_text_to_sentence_ms": 10.54
+    }
+  ],
+  "roster_unchanged": true,
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "local_median_ms": {
+    "baseline": 232.336,
+    "indexed": 23.912
+  },
+  "remote_median_ms": {
+    "baseline": {
+      "entry_ms": 284.56,
+      "model_first_text_ms": 820.4,
+      "to_first_text_ms": 1102.53,
+      "to_first_sentence_ms": 1150.22,
+      "first_text_to_sentence_ms": 89.57
+    },
+    "indexed": {
+      "entry_ms": 29.52,
+      "model_first_text_ms": 745.1,
+      "to_first_text_ms": 772.62,
+      "to_first_sentence_ms": 850.51,
+      "first_text_to_sentence_ms": 89.04
+    },
+    "prepared_voice": {
+      "entry_ms": 0.01,
+      "model_first_text_ms": 752.2,
+      "to_first_text_ms": 752.85,
+      "to_first_sentence_ms": 786.43,
+      "first_text_to_sentence_ms": 74.84
+    }
+  },
+  "date": "2026-10-11",
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.10"
+  },
+  "pairs": 6,
+  "regression_origin": {
+    "pull_request": "https://github.com/Code-Amadeus/Amadeus/pull/74",
+    "commit": "4084bb8e862d3bb9fa6d6186d01eb9f76ba7df3d",
+    "finding": "Awaited entry context joins role first-sentence path to historical draft discovery."
+  },
+  "methodology": [
+    "Alternating baseline/indexed order and reversed three-arm remote order; one remote warmup excluded.",
+    "Read-only production ledger snapshot. Candidate lists asserted equal before comparison.",
+    "Remote requests use identical role instructions and synthetic dialogue; real catalog labels are replaced with an identical empty roster in every arm.",
+    "prepared_voice completes the indexed query before the measured submission; it measures reuse when preparation has finished, not an ASR timing simulation."
+  ],
+  "limitations": [
+    "No microphone ASR, TTS inference, speaker playback or acoustic first-sound measurement.",
+    "Small live-model sample; network/provider variance is not controlled. First-sentence delta is not wholly attributable to this patch.",
+    "Focused-catalog nonblocking behavior is covered by deterministic tests, not this remote benchmark.",
+    "The benchmark excludes real conversation history and does not measure accumulated-history model cost."
+  ]
+}

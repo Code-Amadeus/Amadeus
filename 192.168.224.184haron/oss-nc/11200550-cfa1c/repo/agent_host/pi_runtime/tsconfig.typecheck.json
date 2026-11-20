@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      // Playwright's public declarations re-export playwright-core. Resolve only
+      // types here; do not install or alias the optional runtime/browser backend.
+      "playwright": ["./node_modules/playwright-core/index.d.ts"]
+    }
+  },
+  "include": ["*.ts"]
+}

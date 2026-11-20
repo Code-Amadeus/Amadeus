@@ -1,0 +1,40 @@
+{
+  "id": "character_identity",
+  "title": {
+    "en-US": "Character identity",
+    "zh-CN": "角色身份"
+  },
+  "description": {
+    "en-US": "Character selection applies when the backend starts; the Kurisu Japanese persona can also update live.",
+    "zh-CN": "角色选择在后端启动时生效；栗栖日文人格也可实时更新。"
+  },
+  "desktop": true,
+  "apply": "backend_restart",
+  "config": {
+    "AMADEUS_CHARACTER_ID": {
+      "type": "string",
+      "title": {
+        "en-US": "Character",
+        "zh-CN": "角色"
+      },
+      "default": "kurisu",
+      "setting": "CHARACTER_ID",
+      "identifier": true,
+      "example_active": true
+    },
+    "AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA": {
+      "type": "string",
+      "title": {
+        "en-US": "Kurisu Japanese persona override",
+        "zh-CN": "红莉栖日语人格覆盖"
+      },
+      "default": "",
+      "setting": "MAIN_CHAT_CHARACTER_PROMPT_JA",
+      "runtime_key": "main_chat_character_prompt_ja",
+      "apply": "host",
+      "allow_empty": true,
+      "trim": true,
+      "max_length": 8192
+    }
+  }
+}

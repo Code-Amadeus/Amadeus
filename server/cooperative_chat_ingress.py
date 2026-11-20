@@ -86,7 +86,7 @@ from server.auip_control_decision import (
     auip_decision_preserves_main_context,
     render_auip_role_grounding,
 )
-from server.auip_runtime import ai_interaction_enabled
+from server.auip_runtime import runtime as auip_app_runtime
 from server.interaction_branch import (
     InteractionBranchRoutingLease,
     InteractionBranchRunStopUnconfirmed,
@@ -1522,7 +1522,7 @@ class CooperativeChatManager:
     def prefetch_auip_entry_context(self, session_id: str):
         """Prepare presentation during speech; never create a session or an action."""
         context = self.auip_entry_context
-        if not session_id or context is None or not ai_interaction_enabled():
+        if not session_id or context is None or not auip_app_runtime.ai_interaction_in_effect():
             return None
 
         async def prepare():
@@ -1656,8 +1656,9 @@ class CooperativeChatManager:
         """Route focused control; schedule every inactive entry behind the role."""
 
         if (self.auip_decider is None or self.auip_router is None
-                or not ai_interaction_enabled()):
-            # Off: no AUIP decision query and no entry prompt for this turn.
+                or not auip_app_runtime.ai_interaction_in_effect()):
+            # Off with no active app: no AUIP decision query and no entry
+            # prompt. While shutdown is pending, evaluation still runs.
             return None
         binding = ingress.loop._binding
         history = ingress.loop.prior_messages(turn_id)
@@ -2029,9 +2030,9 @@ class CooperativeChatManager:
         action = str(getattr(decision, "action", "") or "")
         read_facets = tuple(getattr(decision, "read_facets", ()) or ())
         app_session_id = str(getattr(decision, "app_session_id", "") or "")
-        # A decision frozen before interaction was turned off is refused here,
+        # A decision frozen before the last app session ended is refused here,
         # before a step model call, read or app action can start.
-        disabled = not ai_interaction_enabled()
+        disabled = not auip_app_runtime.ai_interaction_in_effect()
         accepted_decision = getattr(decision, "status", "") == "ok" and not disabled
         confirmed = require_live_turn()
         if inspect.isawaitable(confirmed):
@@ -2272,7 +2273,7 @@ class CooperativeChatManager:
         """Use the shared role projections independently of action proposals."""
         from server.auip_runtime import runtime
 
-        if not ai_interaction_enabled():
+        if not runtime.ai_interaction_in_effect():
             # The app stays usable by hand, but its state is not chat context.
             return ""
         expected = str(app_session_id or "").strip()

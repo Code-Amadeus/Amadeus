@@ -41,6 +41,7 @@ from server.auip_app_source import (
     list_current_runnable_artifacts,
 )
 from server.auip_contract import available_engagement_modes
+from server.auip_runtime import ai_interaction_enabled
 from server.event_bus import bus
 from server.protocol import Method
 from server.work_permission_service import WorkPermissionService
@@ -443,6 +444,13 @@ class AuipLaunchCoordinator:
         prepare_work: PreparationDispatcher | None = None,
         source_app_session_id: str = "",
     ) -> dict[str, Any]:
+        if (
+            str(attrs.get("action") or "").strip().lower() != "prepare"
+            and not ai_interaction_enabled()
+        ):
+            # No new AUIP session while the switch is off or pending off,
+            # including a continuation deferred until Work finishes.
+            return {"ok": False, "error": "auip_interaction_disabled"}
         frozen = attrs.get("_host_launch_candidates")
         if frozen is not None:
             # Only Host candidate objects can cross this seam. Model JSON
@@ -1129,13 +1137,6 @@ class AuipLaunchCoordinator:
         key = (str(session_id or "").strip(), str(turn_id or "").strip())
         return self._deferred.pop(key, None) is not None
 
-    def cancel_all_deferred(self) -> int:
-        """Retire every not-yet-launched continuation, e.g. when AI entry is turned off."""
-
-        count = len(self._deferred)
-        self._deferred.clear()
-        return count
-
     def authorize_prepare(
         self,
         *,
@@ -1145,7 +1146,8 @@ class AuipLaunchCoordinator:
     ) -> bool:
         request = self._launch_requests.get(str(request_id or ""))
         return bool(
-            request is not None
+            ai_interaction_enabled()
+            and request is not None
             and request.session_id == str(session_id or "")
             and request.artifact_id == str(artifact_id or "")
         )
@@ -1324,6 +1326,11 @@ class AuipLaunchCoordinator:
         candidate: AuipLaunchCandidate,
         mode: str,
     ) -> dict[str, Any]:
+        if not ai_interaction_enabled():
+            # Reached by selections, deferred Work results and Attention cards
+            # that were created before the switch was turned off.
+            await self._announce_failure(session_id, "auip_interaction_disabled")
+            return {"ok": False, "error": "auip_interaction_disabled"}
         if candidate.project_id:
             try:
                 self.work_roster.destination.available_project(candidate.project_id)

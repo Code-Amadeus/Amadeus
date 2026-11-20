@@ -1,0 +1,307 @@
+{
+  "schema": "amadeus.historical-static-default.v1",
+  "sourceReportSha256": "f1278660136b490271d96c802f2ca34e93a15676d5319691255f611c152ee5fe",
+  "record": {
+    "run": "default-2048-sampled-fixed-warm-v1",
+    "condition": "default-static-2048",
+    "revision": "c569a0f25a5534a2a673d159d746bc99adb2c421",
+    "memory": {
+      "run": "default-2048-sampled-fixed-warm-v1",
+      "textureBudgetMiB": 2048,
+      "videoEnabled": false,
+      "onlyClip": null,
+      "seconds": 190,
+      "validNativeSamples": 58,
+      "invalidNativeSamples": 0,
+      "all": {
+        "privateWorkingSetMiB": {
+          "mean": 1807.8069773706898,
+          "min": 1090.1875,
+          "max": 2291.8359375,
+          "p95": 2213.640625
+        },
+        "privateCommitMiB": {
+          "mean": 3437.569234913793,
+          "min": 1587.8125,
+          "max": 4077.296875,
+          "p95": 3991.69140625
+        },
+        "gpuDedicatedMiB": {
+          "mean": 1450.5319908405172,
+          "min": 340.95703125,
+          "max": 1749.6328125,
+          "p95": 1744.48046875
+        },
+        "gpuSharedMiB": {
+          "mean": 70.20265355603448,
+          "min": 21.359375,
+          "max": 163.94921875,
+          "p95": 163.94921875
+        },
+        "adapterDedicatedMiB": {
+          "mean": 4070.942147090517,
+          "min": 2961.3671875,
+          "max": 4370.04296875,
+          "p95": 4364.890625
+        },
+        "adapterSharedMiB": {
+          "mean": 165.5364358836207,
+          "min": 116.6640625,
+          "max": 259.34765625,
+          "p95": 259.34765625
+        }
+      },
+      "after20Seconds": {
+        "privateWorkingSetMiB": {
+          "mean": 1861.6650390625,
+          "min": 1571.47265625,
+          "max": 2291.8359375,
+          "p95": 2213.640625
+        },
+        "privateCommitMiB": {
+          "mean": 3603.4527493990386,
+          "min": 2793.99609375,
+          "max": 4077.296875,
+          "p95": 3991.69140625
+        },
+        "gpuDedicatedMiB": {
+          "mean": 1560.5103665865386,
+          "min": 933.72265625,
+          "max": 1749.6328125,
+          "p95": 1744.48046875
+        },
+        "gpuSharedMiB": {
+          "mean": 64.61470853365384,
+          "min": 21.359375,
+          "max": 163.94921875,
+          "p95": 163.94921875
+        },
+        "adapterDedicatedMiB": {
+          "mean": 4180.920522836538,
+          "min": 3554.1328125,
+          "max": 4370.04296875,
+          "p95": 4364.890625
+        },
+        "adapterSharedMiB": {
+          "mean": 159.94103064903845,
+          "min": 116.6640625,
+          "max": 259.34765625,
+          "p95": 259.34765625
+        }
+      },
+      "nativeCounterErrors": [],
+      "misses": 16,
+      "journeyMisses": 16,
+      "missesAfter20Seconds": 1,
+      "finalTextureStats": {
+        "residentCpuBytes": 1073614416,
+        "residentGpuBytes": 1073614416,
+        "residentBytes": 2147228832,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 85677632,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1527,
+        "transientBytes": 0,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 0,
+        "loads": 7088,
+        "refetches": 3418,
+        "evictions": 5561,
+        "failures": 0,
+        "pressure": 0,
+        "fetchAttempts": 7088,
+        "fetchCompleted": 7088,
+        "fetchedPayloadBytes": 2474794060,
+        "transcodeAttempts": 0,
+        "transcodesCompleted": 0,
+        "transcodeMs": 0,
+        "textureUploads": 7311,
+        "textureUploadMs": 656.6999997347593,
+        "cacheHits": 7088,
+        "cacheMisses": 0,
+        "cacheReadFailures": 0,
+        "cacheWrites": 0,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 0,
+        "cachePendingWrites": 0,
+        "cacheCompressedBytes": 2474794060,
+        "cacheWorkerRestarts": 0,
+        "cacheWorkerFailures": 0,
+        "cacheWritesDisabled": false,
+        "cacheWriteCoolingDown": false,
+        "cacheDecodeCoolingDown": false,
+        "displayMiss": 17
+      },
+      "finalVideo": {},
+      "release": {
+        "textureStats": {
+          "residentCpuBytes": 0,
+          "residentGpuBytes": 0,
+          "residentBytes": 0,
+          "budgetBytes": 2147483648,
+          "pinnedBytes": 0,
+          "pinnedOverageBytes": 0,
+          "residentFrames": 0,
+          "transientBytes": 0,
+          "maxInFlight": 3,
+          "entries": 0,
+          "queued": 0,
+          "inFlight": 0,
+          "loads": 7088,
+          "refetches": 3418,
+          "evictions": 5561,
+          "failures": 0,
+          "pressure": 0,
+          "fetchAttempts": 7088,
+          "fetchCompleted": 7088,
+          "fetchedPayloadBytes": 2474794060,
+          "transcodeAttempts": 0,
+          "transcodesCompleted": 0,
+          "transcodeMs": 0,
+          "textureUploads": 7311,
+          "textureUploadMs": 656.6999997347593,
+          "cacheHits": 7088,
+          "cacheMisses": 0,
+          "cacheReadFailures": 0,
+          "cacheWrites": 0,
+          "cacheWriteFailures": 0,
+          "cacheWriteSkipped": 0,
+          "cachePendingWrites": 0,
+          "cacheCompressedBytes": 2474794060,
+          "cacheWorkerRestarts": 0,
+          "cacheWorkerFailures": 0,
+          "cacheWritesDisabled": false,
+          "cacheWriteCoolingDown": false,
+          "cacheDecodeCoolingDown": false,
+          "displayMiss": 17
+        },
+        "videoActive": 0
+      },
+      "counterSourceSha256": {
+        "memory_run.mjs": "beaa2fb89e76090efcb850b0ffd0108af206db7e104177ecdd56d2748de4bff9",
+        "gpu_memory.ps1": "0927abfd1ccd352bad558cc3d095d7f95e1a65f6fac71ebf8333ab433d97b8b0"
+      },
+      "productSourceSha256": {
+        "render/web/renderer.js": "ad0f707ad9b4d5fefdadb395d107fdebc8aa726b5bc6145a81622e1dd4e93f67",
+        "render/web/render_budget.js": "56931d0ac92faaa51de0ec374183f3ae7939389baf933f6b38c158d58169b07a",
+        "render/web/frame_store.js": "2fc8a9e96f51b1a9f064f38344ca8fd1bc053ec9c8f039170dff31a652adac82",
+        "render/web/frame_texture_backend.js": "9b4422f4a7a31dd61c07961304717374d249c3929a83f072d966f88e8f901211",
+        "render/web/wallpaper_scene.js": "efc0767dba2cfecf63354ec3a6b7bcfabfefea7a862629c213deae404845745c",
+        "render/web/wallpaper_engine_bridge.js": "8877dd53ffe292bc11bfa75837b1c01a3d8085e05f7a9770f378eff2c3dc7cf9",
+        "render/web/wallpaper_engine.html": "512eafc20e7a3a43b04f021b2415679d5f16e35aef7e58be07079385ff944081",
+        "render/web/vendor/pixi.min.js": "712a3e1943b062a907d86c5bb56b67c7b32a3f03b3654768b00b7016d30a24c6",
+        "render/web/vendor/pixi-basis-ktx2.global.js": "3efa57b3bdb50aeaf29bfe8640e9b2cb526bd5f1462bc3a56fb4696813ce1655",
+        "render/server.py": "236d1ef272c58968a050322792f3f561d1f6159ab682b36b76bac353c02e0b1c",
+        "render/spriteforge_animator.py": "f0d6f4f8a51700f490d9f3968a6448648b207f8d253d3424305003aa25185412",
+        "wallpaper/wallpaper_engine_bridge.py": "44c9c2745415d41ea6e8890e20c5c3e286becb27e30b6ef290908dbe364d294a",
+        "wallpaper/scene_assets.py": "937b4f9594a9b0ee17be891df1b416184b9b5ee81eede0ac60e9fc5f36289aba",
+        "tools/probes/wallpaper_memory_host.py": "06c690e089f8dced592885f1fe53a1b3f891e5f75e943188394cf5f23e709063",
+        "electron/tests/fpsTextures.probe.mjs": "ebdc14818df44b76154f502217efdf3f9919b0cb166d4d536a1570624d4cde88",
+        "electron/tests/textureProbe.mjs": "2d4720ed348a02efb05be7a86679a39eb26c647b2739678c21a49e24f9f1d895",
+        "electron/tests/textureResidencyProbe.mjs": "eb70bbfcf952a2809ea7964c987a6f0db0b3cddeea44650c08655466255538d8",
+        "electron/tests/tagPreviewProbe.mjs": "8f7e515b9cb5c96bd86704e84187cac526f036d70358930e2fa578566315957f",
+        "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+        "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+        "tools/probes/bc7-cache/decode.mjs": "f91378026e290314db49ec67eec69e38b16b06ec596cdab63fc8a9fc14ec42b9",
+        "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+        "render/texture_cache.py": "e652cc9a7c9891e36b2a1e509302d12bb58b31bea49db6b5cbca3b865c93b544",
+        "render/web/texture_cache.js": "c6b1e3646f5265ad87f80fd815a9b1885d2f6436588ed61d280405469cff6ef7",
+        "render/web/texture_cache_worker.mjs": "6ada74876239afad0df80f7b31c0835565b19c8af938870b745aa41fab7a798b",
+        "render/web/texture_cache_codec.mjs": "6fdf931cef8e739c986092fdbe26deca1359ddf9ea04c4ffc2c1dde343be0af0",
+        "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+      },
+      "limitations": [
+        "Steady window excludes the first 20 seconds; mixed routes still include transitions.",
+        "Private working set is private resident RAM; private commit is committed virtual memory.",
+        "GPU process dedicated/shared counters can include shared allocations and have known driver/OS caveats.",
+        "Adapter counters include other applications; use them to cross-check direction and release, not as isolated app usage."
+      ]
+    },
+    "cpu": {
+      "samples": 96,
+      "observedSeconds": 190.003,
+      "cpuSeconds": {
+        "renderer": 40.000795,
+        "gpu": 35.326297,
+        "other": 31.173485,
+        "host": 20.15625
+      },
+      "cpuOneCorePercent": {
+        "renderer": 21.052717588669655,
+        "gpu": 18.59249432903691,
+        "other": 16.40683831307927,
+        "host": 10.608385130761095
+      },
+      "totalCpuOneCorePercent": 66.66043536154692,
+      "rendererPrivateMiB": {
+        "mean": 1310.1331787109375,
+        "p95": 1539.84375,
+        "max": 1610.46484375
+      },
+      "gpuProcessPrivateMiB": {
+        "mean": 1787.9374593098958,
+        "p95": 2138.9921875,
+        "max": 2179.9609375
+      },
+      "frameStoreResidentMiB": {
+        "mean": 1898.094484647115,
+        "p95": 2047.9216918945312,
+        "max": 2047.9373779296875
+      }
+    },
+    "options": {
+      "mode": "sampled",
+      "fps": 60,
+      "sampling": true,
+      "durationSeconds": 190,
+      "sampleSeconds": 2,
+      "seed": 103,
+      "profile": "custom",
+      "scenario": false,
+      "companion": false,
+      "contextLoss": false,
+      "help": false,
+      "textureBudgetMiB": 2048,
+      "diskCache": true,
+      "cacheProfile": "output/diagnostics/frame-balance-20261013/default-2048-sampled-fixed-warm-v1-cache",
+      "highPerformanceGpu": true,
+      "expectGpu": "NVIDIA",
+      "fixedRoute": true,
+      "gpuMemory": true,
+      "output": "output/diagnostics/frame-balance-20261013/default-2048-sampled-fixed-warm-v1"
+    },
+    "nonStartupMissEvents": [
+      {
+        "kind": "miss",
+        "t": 111107,
+        "phase": "route-1-speaking_long",
+        "label": "speaking_long",
+        "logical": 5,
+        "displayed": 0
+      }
+    ],
+    "observedRendererMeans": {
+      "managedTextures": 1221.2093023255813,
+      "residentFrames": 1461.4302325581396,
+      "potentialResidentGpuMiB": 1007.749739003736
+    },
+    "rawSha256": {
+      "metadata.json": "37c89fd72f8bc73e87803f79ca576fa93bf6a368450dd4b012aaf7cf2fca714d",
+      "summary.json": "eec8f53486ae33dac2c02ec8a814412a36ea23fddabc74974095dd15fc1e450c",
+      "samples.ndjson": "4a051552901aa4c2c32e1da0887bf5dd655bb955d5373da2082cd3a8bfa6e695",
+      "events.ndjson": "815a87a382de646cf3277330eb333d6754052d1c4c99cd4cadd06d12ecc38365",
+      "journey.ndjson": "2803da3832c7542c98f3f37d2ba38e1ccbbbf52676dfbc63e028445d8effa349"
+    },
+    "nativeRawSha256": {
+      "gpu-memory.ndjson": "533e5425d68cc792a213aa940bb5b581910903d68e775157ee6c0a2c31026fde",
+      "launcher.json": "114946da10ccd724a5f546a251dd81ec5c7dc7d41de15bd6500c0a9463950c3f"
+    }
+  },
+  "interpretation": {
+    "gc": "No override appears in the run options; default 3600/600 is inferred from the unchanged product implementation, not a directly recorded GC-state sample.",
+    "comparison": "Historical 190-second fixed route, warm for that route only. The final candidate runs are 600-second full-material routes on later source. Do not calculate a matched before/after effect across those workloads.",
+    "scope": "Existing measurement, copied without changing metric or evidence hash values. Local output paths made repository-relative."
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "repository": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+  "commit": "b444dd8b452a914f68cdba439cc3e79a9a1e53cf",
+  "normalization": "UTF-8 text with LF line endings",
+  "adaptations": "Validator module help and SCHEMA_PATH only; rules from MANIFEST_NAME onward are identical.",
+  "files": [
+    {
+      "source_path": "schemas/amadeus-extension.v0.schema.json",
+      "host_path": "server/extensions/amadeus-extension.v0.schema.json",
+      "source_sha256": "d8a47722fe2a154b5d92c0411f21f4e06bd29885c18d374ba934feb8dc9641f7",
+      "host_sha256": "d8a47722fe2a154b5d92c0411f21f4e06bd29885c18d374ba934feb8dc9641f7"
+    },
+    {
+      "source_path": "schemas/amadeus-extension.v1.schema.json",
+      "host_path": "server/extensions/amadeus-extension.v1.schema.json",
+      "source_sha256": "210ea6835b9c41b1f9a236a2a0929468f591205d7c203beff998b802b7907548",
+      "host_sha256": "210ea6835b9c41b1f9a236a2a0929468f591205d7c203beff998b802b7907548"
+    },
+    {
+      "source_path": "tools/validate_manifest.py",
+      "host_path": "server/extensions/manifest.py",
+      "source_sha256": "79b7aa5634910ecb2998f39c43d32741193d740a5098311a60f31cf88e6ae727",
+      "host_sha256": "a5374f94cadd646d6b5a56ab6404fc5ff59807158c30215883f1483c2fa852a2"
+    },
+    {
+      "source_path": "schemas/theme-tokens.v0.json",
+      "host_path": "server/extensions/theme-tokens.v0.json",
+      "source_sha256": "deffcdb549add19f09e49bdf5036b6d856c3f324f983947b3e9a7b83c611c9e1",
+      "host_sha256": "deffcdb549add19f09e49bdf5036b6d856c3f324f983947b3e9a7b83c611c9e1"
+    },
+    {
+      "source_path": "examples/desktop-theme/amadeus-extension.json",
+      "host_path": "tests/fixtures/extension_protocol_theme.json",
+      "source_sha256": "96176438799107a018a75d2666f114480dee6fbce74c7d908413e9b9aa95ad01",
+      "host_sha256": "96176438799107a018a75d2666f114480dee6fbce74c7d908413e9b9aa95ad01"
+    },
+    {
+      "source_path": "tests/fixtures/theme-color-literals.json",
+      "host_path": "tests/fixtures/extension_theme_colors.json",
+      "source_sha256": "0ee4b9056a0701f590cda88676c306055264264e3a9d969f3e66f29ce6aaee73",
+      "host_sha256": "0ee4b9056a0701f590cda88676c306055264264e3a9d969f3e66f29ce6aaee73"
+    }
+  ],
+  "sdk": {
+    "name": "amadeus-extension-sdk",
+    "version": "0.1.0",
+    "filename": "amadeus_extension_sdk-0.1.0-py3-none-any.whl",
+    "sha256": "274bd66b81932c8ea50f39f58e7bf91530a8015196acfcf9bcfd77fa2d8b8084",
+    "source_commit": "49449a0f3572e74ac7269129c02c5b9a9e685bef",
+    "source_files": [
+      {
+        "path": "sdk/python/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      },
+      {
+        "path": "sdk/python/README.md",
+        "sha256": "1cb26d27113d77ede88f7e66cf428fee321e327c69cb9827d07809a4cc53b82e"
+      },
+      {
+        "path": "sdk/python/pyproject.toml",
+        "sha256": "306aa6f6462d8857eaf15efcf1c2f18078d9bc49a6a64906c2bb5b3285d13fe3"
+      },
+      {
+        "path": "sdk/python/src/amadeus_extension/__init__.py",
+        "sha256": "ff1bc57092b1f153933fb40f3fce224805e070d0bb09cabdcabd374d7c48600e"
+      },
+      {
+        "path": "sdk/python/src/amadeus_extension/runner.py",
+        "sha256": "dcb856bb1efdc290d7897be72570e835e7729cb904b56928ab0523bfd98dbfb9"
+      }
+    ]
+  }
+}

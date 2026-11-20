@@ -1,0 +1,12 @@
+{
+  "license": "MIT-0",
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.csv-audit-skill",
+  "version": "0.1.0",
+  "display_name": {"en": "CSV audit Skill", "zh-CN": "CSV 数据审核 Skill"},
+  "description": {"en": "Check small CSV inputs against packaged quality rules and produce a structured audit.", "zh-CN": "按随包质量规则检查小型 CSV 输入并生成结构化审核结果。"},
+  "author": {"name": "Amadeus contributors"},
+  "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32", "darwin", "linux"]},
+  "runtime": {"kind": "none"},
+  "contributes": {"skill": [{"id": "audit", "contract": "amadeus.skill/v0", "path": "skills/csv-audit", "title": {"en": "CSV audit", "zh-CN": "CSV 数据审核"}}]}
+}

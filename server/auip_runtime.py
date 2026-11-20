@@ -49,8 +49,9 @@ OPERATOR_STATUSES = frozenset({"idle", "thinking", "awaiting_receipt", "error"})
 def ai_interaction_enabled() -> bool:
     """Read the user's live AI application interaction choice.
 
-    Off withdraws only model participation: AppSession identity, manual use,
-    receipts and Host checks keep running so accepted facts stay truthful.
+    This is the choice itself.  While it is off, no new AUIP session may be
+    started by Amadeus, but sessions already active keep running until the
+    last one ends (see ``AuipRuntime.ai_interaction_in_effect``).
     """
 
     return bool(getattr(settings, "AUIP_INTERACTION_ENABLED", True))
@@ -305,7 +306,7 @@ class AuipRuntime:
                 and not ai_interaction_enabled()
             ):
                 # A ticket may predate the user turning interaction off; the
-                # app still opens, but Amadeus joins it only as a spectator.
+                # app still opens, but Amadeus may join it only as a spectator.
                 mode = "observe"
             return self._register_parsed(
                 parsed,
@@ -1142,15 +1143,23 @@ class AuipRuntime:
             session.updated_at = time.time()
             return {"ok": True, **session.public_snapshot()}
 
-    def active_session_ids(self) -> tuple[str, ...]:
-        """Return every AppSession that can still accept participation."""
+    def has_active_session(self) -> bool:
+        """Report whether any AppSession can still accept participation."""
 
         with self._lock:
-            return tuple(
-                app_session_id
-                for app_session_id, session in self._sessions.items()
-                if session.status == "active"
+            return any(
+                session.status == "active" for session in self._sessions.values()
             )
+
+    def ai_interaction_in_effect(self) -> bool:
+        """Say whether AUIP evaluation and participation still run.
+
+        Turning the switch off while AppSessions are active is *pending off*:
+        evaluation and participation continue for those sessions and end with
+        the last one.  With none active, off takes effect immediately.
+        """
+
+        return ai_interaction_enabled() or self.has_active_session()
 
     def get(self, app_session_id: str) -> dict[str, Any]:
         with self._lock:

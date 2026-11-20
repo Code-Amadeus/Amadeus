@@ -1,0 +1,60 @@
+{
+  "schema": "amadeus.convergence-host-permissions.v1",
+  "date": "2026-10-07",
+  "revision": "d21c9f7e82bcbc66c3fa9114aa70773e601d30e5",
+  "instrument_changes": "Existing native approval probe adds --decision allow_once|deny; default remains allow_once.",
+  "scope": "Real Codex app-server native approval callback -> Host permission service -> same native turn, via direct provider.run.",
+  "command_template": "python -X utf8 tools/e2e_codex_app_server_permission.py --chat-provider deepseek --decision <allow_once|deny> --report-dir <isolated-report-dir> --keep-temp --provider-timeout 300 --approval-timeout 120",
+  "safety": "Unique task-owned runtime and external target; resolved cleanup paths validated against those owned directory fences. No user project modified.",
+  "observations": [
+    {
+      "source_report": "codex_app_server_permission_20261006T170620Z_36a7cc.json",
+      "source_sha256": "d8104a1167a052d3c365e99555d7ccf9f756c73e60228242f918e9d3e6e87207",
+      "decision": "deny",
+      "status": "passed",
+      "checks": {
+        "native_requests_became_actionable_cards": true,
+        "host_decisions_were_accepted": true,
+        "same_run_continued": true,
+        "same_work_item_attempt": true,
+        "permissions_are_durable_denied": true,
+        "denied_effect_did_not_happen": true,
+        "card_closed_after_resolution": true,
+        "native_turn_terminated": true
+      },
+      "native_permission_request_count": 1,
+      "host_permission_request_count": 1,
+      "target_content": "",
+      "cleanup": {
+        "external_removed": true
+      }
+    },
+    {
+      "source_report": "codex_app_server_permission_20261006T171125Z_391fae.json",
+      "source_sha256": "a1a88694c54c9119190a4bb35d36734c543146e7b2727955b47aec900b14cd8f",
+      "decision": "allow_once",
+      "status": "passed",
+      "checks": {
+        "native_requests_became_actionable_cards": true,
+        "host_decisions_were_accepted": true,
+        "same_run_continued": true,
+        "same_work_item_attempt": true,
+        "permissions_are_durable_allowed": true,
+        "approved_effect_happened": true,
+        "card_closed_after_resolution": true,
+        "terminal_succeeded": true
+      },
+      "native_permission_request_count": 1,
+      "host_permission_request_count": 1,
+      "target_content": "APPROVED\n",
+      "cleanup": {
+        "external_removed": true
+      }
+    }
+  ],
+  "limits": [
+    "One live run per decision; not a reliability distribution.",
+    "No natural-language Chat routing or desktop permission-button click was exercised.",
+    "The retained isolated runtime was not deleted; only the external target was removed."
+  ]
+}

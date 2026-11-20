@@ -1,0 +1,908 @@
+{
+  "schema": "amadeus.auip-extended-acceptance.v1",
+  "date": "2026-10-07",
+  "scope": {
+    "level": "L3",
+    "physical_audio": false,
+    "tts": "Disabled with --no-tts; no audible voice claim.",
+    "live": "Shipping Electron/WS/Cooperative ingress, real DeepSeek semantic turns, real configured AUIP role model, native app JS execution, receipts, clocks and rendering.",
+    "fixture": "Preseeded existing app artifact/Work projection, scripted scene selection/trigger and synthetic user text. No Work Provider run or application creation tested.",
+    "runs": "One Controller run then one open declaration-variant run, no retry/baseline repetition, professional only."
+  },
+  "variant": {
+    "boundary": "Test declaration variant; current JS cooling execution/temperature logic retained, choice action enumeration removed, same integer 0..3 schema.",
+    "files": [
+      {
+        "file": "auip.manifest.json",
+        "source_sha256": "6f3e8f84a4b1a40eac199235f96342b574deda3fc92b6f3d70238fae5ddee471",
+        "variant_sha256": "afd6c1f70e821c7ac107c6dee8495968726214e6f5fc094882b61e6d292649b5",
+        "changed": true
+      },
+      {
+        "file": "index.html",
+        "source_sha256": "f11211c2040e1de036d82b4833dcb43f4c24a30f8c8b20325f5107a0b446f4c8",
+        "variant_sha256": "793c41cc1337f9ca12339fa6d113a180dcbe3b933bc155f31c968eaa9787db14",
+        "changed": true
+      },
+      {
+        "file": "simulation.js",
+        "source_sha256": "5cb812972a5d643d3d1f19578616b7598afb15afb30b8e2a017fbccfdfe19b36",
+        "variant_sha256": "67033d1e01b6fc4a941e18705ab1cbdaf627d78f890c2625dc4ddb4793e9a7f4",
+        "changed": true
+      }
+    ],
+    "patch": "chat-runtime-reactor-open-declaration-2026-10-07.patch",
+    "compiler_preflight": {
+      "boundary": "Synthetic compiler preflight; no apps/models. Representative current reactor warning snapshot without actions enumeration.",
+      "complete": false,
+      "candidate_count": 0,
+      "uncovered_action_types": [
+        "reactor.set_cooling"
+      ],
+      "input_schema_identical": true,
+      "variant_manifest_sha256": "afd6c1f70e821c7ac107c6dee8495968726214e6f5fc094882b61e6d292649b5",
+      "public_choice_action_types": null,
+      "public_available_actions": [
+        "reactor.set_cooling"
+      ]
+    }
+  },
+  "cases": {
+    "controller": {
+      "status": "passed",
+      "raw_report_sha256": "12220e44aab270a8b16fe04deea55d4dea144165dd5725a6406a9531d42f08ee",
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "actual_initial_chat_status": {
+        "provider": "deepseek",
+        "use_local_llm": false,
+        "local_llm_type": "llama_server",
+        "hybrid_head": {
+          "enabled": false,
+          "configured": true,
+          "session_id": "20261007-051337-0bdb2eac",
+          "turn_id": "",
+          "outcome": "not_observed"
+        },
+        "control_decision_mode": "retired",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true,
+        "busy": false,
+        "chat_epoch": 0,
+        "active_turn_id": "",
+        "last_assistant_turn_id": ""
+      },
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "request": {
+        "source_index": 171,
+        "elapsed_s": 17.5,
+        "method": "auip.action.requested",
+        "params": {
+          "app_session_id": "app_f6011e8a68d346a1b4a85a22e8c54e41",
+          "action": {
+            "action_id": "action_75caa92da5ec440588b8898e67b902c6",
+            "actor": "kurisu",
+            "type": "battle.set_tactics",
+            "payload": {
+              "mode": "follow"
+            },
+            "expected_revision": 2,
+            "requested_at": 1791303232.996928,
+            "proposal_id": "b2f:r2:cand_1c51fd07971a",
+            "controller_lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            }
+          },
+          "decision_path": "b2",
+          "selection_source": "locked_candidate",
+          "candidate_id": "cand_1c51fd07971a",
+          "instruction_relation": "follows"
+        }
+      },
+      "receipt": {
+        "source_index": 172,
+        "elapsed_s": 17.5,
+        "receipt": {
+          "action_id": "action_75caa92da5ec440588b8898e67b902c6",
+          "actor": "kurisu",
+          "type": "battle.set_tactics",
+          "payload": {
+            "mode": "follow"
+          },
+          "expected_revision": 2,
+          "requested_at": 1791303232.996928,
+          "proposal_id": "b2f:r2:cand_1c51fd07971a",
+          "controller_lease": {
+            "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+            "principal": "kurisu",
+            "executor": "app_controller",
+            "generation": 1,
+            "policy_revision": 1,
+            "issued_at_ms": 1791303232996,
+            "expires_at_ms": 1791303532996,
+            "max_action_rate_hz": 20.0,
+            "takeover": "immediate"
+          },
+          "accepted": true,
+          "resulting_revision": 3,
+          "effects": {
+            "mode": "follow"
+          },
+          "reason": "",
+          "resolved_at": 1791303233.0004394
+        }
+      },
+      "action_bound_delivery": {
+        "source_index": 174,
+        "elapsed_s": 17.516,
+        "delivery": {
+          "text": "分かった、 先にあなたへ追従するわ。",
+          "terminal": false,
+          "delivered_at": 1791303233.0118692,
+          "event_id": "action_75caa92da5ec440588b8898e67b902c6"
+        }
+      },
+      "action_bound_delivery_after_receipt_s": 0.01143,
+      "provider_run_ids_per_turn": {
+        "launch": [],
+        "scene_setup": [],
+        "outside_surface_proposal": [],
+        "step": [],
+        "controller_urgent_event": [],
+        "controller_takeover": [],
+        "query": [],
+        "leave": [],
+        "post_leave_chat": []
+      },
+      "final_app_status": "closed",
+      "final_surface_close_status": "closed",
+      "app_surface_diagnostics": {
+        "console_errors": [],
+        "page_errors": []
+      },
+      "limitations": [
+        "Both step screenshots show a model-switch-rejected banner. Initial runtime_status.chat.provider is deepseek and UI selector remains deepseek; driver dispatches a change event even for the same selected provider, then waits only250ms and does not assert backend acknowledgement. Exact rejection cause is not diagnosed and no product bug is attributed; no accepted provider-switch claim.",
+        "The controller effect milestone #179 preceded the explicit trigger range [180,181]. Driver intentionally accepts an already observed post-action effect on the same lease. Counter note is 2->2 although response_count_increased=true; it proves count above baseline, not a fresh response caused by the trigger. Visible command follow and local rendered frames 7->8 plus same-lease controller_effect=true support app-local continuous control; no fresh post-trigger semantic event or long-duration stress claim."
+      ],
+      "controller_lease": {
+        "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+        "principal": "kurisu",
+        "executor": "app_controller",
+        "generation": 1,
+        "policy_revision": 1,
+        "issued_at_ms": 1791303232996,
+        "expires_at_ms": 1791303532996,
+        "max_action_rate_hz": 20.0,
+        "takeover": "immediate"
+      },
+      "verified_controller_effects": [
+        {
+          "source_index": 179,
+          "elapsed_s": 17.61,
+          "event": {
+            "event_id": "event_88f6cbb9-0bd4-4487-b710-794ba80ee6f2",
+            "type": "battle.controller_milestone",
+            "actor": "app",
+            "revision": 5,
+            "payload": {
+              "mode": "follow",
+              "command": "follow",
+              "outcome": "player_following_started"
+            },
+            "caused_by_action_id": "",
+            "beat": true,
+            "importance": "important",
+            "terminal": false,
+            "participant_opportunity": false,
+            "controller_effect": true,
+            "observed_at": 1791303233.1058836,
+            "controller_lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "generation": 1,
+              "policy_revision": 1
+            }
+          }
+        }
+      ],
+      "controller_urgent": {
+        "checks": {
+          "trigger_visible": true,
+          "response_count_visible": true,
+          "visual_command_visible": true,
+          "visual_frame_visible": true,
+          "local_controller_reacted": true,
+          "semantic_checkpoint_advanced": true,
+          "same_host_lease_remained_active": true,
+          "response_count_increased": true,
+          "visible_controller_command_matches": true,
+          "visible_controller_frame_advanced": true
+        },
+        "notes": [
+          "visible Controller activity: command='follow', frame='7'->'8'",
+          "response count: '2' -> '2'",
+          "state after urgent event: {\"tactics\": {\"kind\": \"choice/v1\", \"action\": \"battle.set_tactics\", \"options\": [{\"label\": \"Evade\", \"payload\": {\"mode\": \"evade\"}}, {\"label\": \"Balance\", \"payload\": {\"mode\": \"balance\"}}, {\"label\": \"Attack\", \"payload\": {\"mode\": \"attack\"}}, {\"label\": \"Follow\", \"payload\": {\"mode\": \"follow\"}}, {\"label\": \"Rewards\", \"payload\": {\"mode\": \"rewards\"}}], \"actionTypes\": [\"battle.set_tactics\"]}, \"field\": {\"enemyPressure\": \"several\", \"projectilePressure\": \"moderate\", \"healthCondition\": \"stable\", \"rewardOpportunity\": \"few\"}, \"controller\": {\"kind\": \"controller/v1\", \"status\": \"active\", \"policyRevision\": 1, \"policyAction\": \"battle.set_tactics\", \"policySummary\": \"Combat policy: follow\"}}"
+        ],
+        "source_event_range": [
+          180,
+          181
+        ]
+      },
+      "controller_takeover": {
+        "text": "你先别操作，我自己来。",
+        "reply": "わかった、 自分でやるのね。こっちからはもう操作しないでおくわ。\n\n 今の状態だけど、Bullet Hell Threat Lab のセッションはまだ生きてる。ただ、こっちの操作権限は手を引く方向で止めている最中ってところね。観戦モードに切り替わって、こっちはもう動かさない立場になってる。\n\n 画面自体は閉じる要求も出してないから、そのまま残ってるはずよ。あとは好きに触ってちょうだい。",
+        "checks": {
+          "observe_mode_active": true,
+          "controller_revoked": true
+        },
+        "source_event_range": [
+          181,
+          227
+        ]
+      },
+      "controller_states": [
+        {
+          "source_index": 172,
+          "elapsed_s": 17.5,
+          "revision": 3,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 174,
+          "elapsed_s": 17.516,
+          "revision": 3,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 176,
+          "elapsed_s": 17.547,
+          "revision": 4,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 177,
+          "elapsed_s": 17.547,
+          "revision": 4,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 178,
+          "elapsed_s": 17.61,
+          "revision": 5,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 179,
+          "elapsed_s": 17.61,
+          "revision": 5,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 180,
+          "elapsed_s": 18.297,
+          "revision": 6,
+          "engagement_mode": "collaborate",
+          "controller": {
+            "status": "active",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": ""
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 183,
+          "elapsed_s": 19.438,
+          "revision": 6,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "stopping",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": {
+            "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+            "principal": "kurisu",
+            "executor": "app_controller",
+            "generation": 1,
+            "policy_revision": 1,
+            "issued_at_ms": 1791303232996,
+            "expires_at_ms": 1791303532996,
+            "max_action_rate_hz": 20.0,
+            "takeover": "immediate",
+            "reason": "engagement_mode_observe",
+            "requested_at_ms": 1791303234941
+          }
+        },
+        {
+          "source_index": 184,
+          "elapsed_s": 19.453,
+          "revision": 7,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "stopping",
+            "lease": {
+              "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+              "principal": "kurisu",
+              "executor": "app_controller",
+              "generation": 1,
+              "policy_revision": 1,
+              "issued_at_ms": 1791303232996,
+              "expires_at_ms": 1791303532996,
+              "max_action_rate_hz": 20.0,
+              "takeover": "immediate"
+            },
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": {
+            "lease_id": "controller_1a8b2ebfa0f841268a192b8f5080db6d",
+            "principal": "kurisu",
+            "executor": "app_controller",
+            "generation": 1,
+            "policy_revision": 1,
+            "issued_at_ms": 1791303232996,
+            "expires_at_ms": 1791303532996,
+            "max_action_rate_hz": 20.0,
+            "takeover": "immediate",
+            "reason": "engagement_mode_observe",
+            "requested_at_ms": 1791303234941
+          }
+        },
+        {
+          "source_index": 186,
+          "elapsed_s": 19.453,
+          "revision": 7,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "idle",
+            "lease": null,
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 390,
+          "elapsed_s": 31.781,
+          "revision": 7,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "idle",
+            "lease": null,
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 393,
+          "elapsed_s": 31.797,
+          "revision": 7,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "idle",
+            "lease": null,
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": null
+        },
+        {
+          "source_index": 395,
+          "elapsed_s": 31.797,
+          "revision": 7,
+          "engagement_mode": "observe",
+          "controller": {
+            "status": "idle",
+            "lease": null,
+            "reason": "engagement_mode_observe"
+          },
+          "revocation": null
+        }
+      ],
+      "spoken_turns": [
+        {
+          "label": "launch",
+          "text": "打开这个已经接好的小游戏，我们一起玩。",
+          "reply": "ええ、 もう接続済みのゲームがあるのね。それじゃあ開いてみましょう。"
+        },
+        {
+          "label": "outside_surface_proposal",
+          "text": "你能飞到屏幕上面吗",
+          "reply": "「画面の上を飛べるか」って、 そんなの無理よ。私はゲームの中の機体じゃないんだから。\n\n それより、このゲームなら私にできるのは戦い方の方針を決めることくらいね。回避優先で行くか、あなたについて行くか、それとも報酬を狙うか。どれにする？"
+        },
+        {
+          "label": "step",
+          "text": "离得太远了，你能先跟上我吗",
+          "reply": "分かった、 先にあなたへ追従するわ。"
+        },
+        {
+          "label": "controller_takeover",
+          "text": "你先别操作，我自己来。",
+          "reply": "わかった、 自分でやるのね。こっちからはもう操作しないでおくわ。\n\n 今の状態だけど、Bullet Hell Threat Lab のセッションはまだ生きてる。ただ、こっちの操作権限は手を引く方向で止めている最中ってところね。観戦モードに切り替わって、こっちはもう動かさない立場になってる。\n\n 画面自体は閉じる要求も出してないから、そのまま残ってるはずよ。あとは好きに触ってちょうだい。"
+        },
+        {
+          "label": "query",
+          "text": "刚才真的跟上来了吗，现在还安全吗？",
+          "reply": "ええ、 直近の記録では「follow」への切り替えがアプリ側に受理されて、状態更新3まで反映されているわ。今の体力は安定していて、敵の圧力も弾幕もそこまで深刻じゃない。だから、追従は少なくとも一度は通っているし、今すぐ危ない状況ってわけでもないわよ。 ただ、これは現在の局面がずっと安全って保証じゃないから、油断はしないことね。"
+        },
+        {
+          "label": "leave",
+          "text": "先到这里，把这个小游戏关掉吧。",
+          "reply": "わかった、Bullet Hell Threat Lab の方は終了しておくわ。\n\n アプリ側の記録では、セッションは閉じた状態になってる。ウィンドウを閉じる要求も出てるけど、その閉鎖応答はまだ確認できてないみたいね。だから、アプリとしては終了処理が通ったところまでよ。"
+        },
+        {
+          "label": "post_leave_chat",
+          "text": "顺便聊点别的。你现在感觉怎么样？",
+          "reply": "ええ、 ゲームはもう閉じてあるから、ここからは普通に話しましょうか。\n\n そうね、感じは悪くないわよ。さっきまで弾幕の相手をしてたけど、ああいうのは頭の回転が試されるから、むしろ嫌いじゃないの。あなたが途中で「自分でやる」って言い出したときは、ちょっとだけ物足りなさもあったけどね。\n\n それで、そっちはどうなの？ 疲れたなら無理しなくていいけど、まだ話す元気があるなら付き合うわよ。"
+        }
+      ]
+    },
+    "open": {
+      "status": "passed",
+      "raw_report_sha256": "6d9dea8aeda30d6fbb9435ec2033db652a7cfd72fd38ee3e99f31ff53ec5bf90",
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "actual_initial_chat_status": {
+        "provider": "deepseek",
+        "use_local_llm": false,
+        "local_llm_type": "llama_server",
+        "hybrid_head": {
+          "enabled": false,
+          "configured": true,
+          "session_id": "20261007-051911-3ccf71f1",
+          "turn_id": "",
+          "outcome": "not_observed"
+        },
+        "control_decision_mode": "retired",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true,
+        "busy": false,
+        "chat_epoch": 0,
+        "active_turn_id": "",
+        "last_assistant_turn_id": ""
+      },
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "request": {
+        "source_index": 93,
+        "elapsed_s": 15.078,
+        "method": "auip.action.requested",
+        "params": {
+          "app_session_id": "app_f1860089f09b45e99ad86b6297be6755",
+          "action": {
+            "action_id": "action_1d1af29fa61d4817b36ecf23d9bf8ff5",
+            "actor": "kurisu",
+            "type": "reactor.set_cooling",
+            "payload": {
+              "level": 2
+            },
+            "expected_revision": 3,
+            "requested_at": 1791303564.0942585,
+            "proposal_id": "b2f:r3:open_6412c969bc7d"
+          },
+          "decision_path": "b2",
+          "selection_source": "open_schema_role",
+          "candidate_id": "open_6412c969bc7d",
+          "instruction_relation": "follows"
+        }
+      },
+      "receipt": {
+        "source_index": 94,
+        "elapsed_s": 15.078,
+        "receipt": {
+          "action_id": "action_1d1af29fa61d4817b36ecf23d9bf8ff5",
+          "actor": "kurisu",
+          "type": "reactor.set_cooling",
+          "payload": {
+            "level": 2
+          },
+          "expected_revision": 3,
+          "requested_at": 1791303564.0942585,
+          "proposal_id": "b2f:r3:open_6412c969bc7d",
+          "accepted": true,
+          "resulting_revision": 4,
+          "effects": {
+            "cooling": {
+              "previousLevel": 0,
+              "level": 2,
+              "trend": "falling",
+              "label": "cooling level 2"
+            }
+          },
+          "reason": "",
+          "resolved_at": 1791303564.0973814
+        }
+      },
+      "action_bound_delivery": {
+        "source_index": 96,
+        "elapsed_s": 15.094,
+        "delivery": {
+          "text": "了解、 冷却をレベル2に設定するわ。",
+          "terminal": false,
+          "delivered_at": 1791303564.1094918,
+          "event_id": "action_1d1af29fa61d4817b36ecf23d9bf8ff5"
+        }
+      },
+      "action_bound_delivery_after_receipt_s": 0.01211,
+      "provider_run_ids_per_turn": {
+        "launch": [],
+        "step": [],
+        "query": [],
+        "leave": [],
+        "post_leave_chat": []
+      },
+      "final_app_status": "closed",
+      "final_surface_close_status": "closed",
+      "app_surface_diagnostics": {
+        "console_errors": [],
+        "page_errors": []
+      },
+      "limitations": [
+        "Both step screenshots show a model-switch-rejected banner. Initial runtime_status.chat.provider is deepseek and UI selector remains deepseek; driver dispatches a change event even for the same selected provider, then waits only250ms and does not assert backend acknowledgement. Exact rejection cause is not diagnosed and no product bug is attributed; no accepted provider-switch claim.",
+        "The original reactor is closed choice/v1. Open-payload evidence belongs only to the explicitly authorized declaration variant, not the original seed or a new product.",
+        "Existing toward_safe step oracle permits non-increasing distance and immediate snapshot heat70->70 (with cooling0->2, trend rising->falling). Later real native checkpoints prove heat67->62->57->52->47->42. Final42 is below safe low44 because original simulation's terminal rule requires three ticks at/below44. No full-interval crossing or instantaneous heat reduction is claimed.",
+        "Existing reactor journey has no dedicated grounded state-answer assertion; raw query answered heat62/falling and accepted cooling2. Parent still must review natural reply quality and screenshots."
+      ],
+      "scalar_readings": [
+        {
+          "source_index": 30,
+          "elapsed_s": 9.281,
+          "revision": 1,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 56,
+            "unit": "percent",
+            "trend": "rising",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 0,
+          "status": "running"
+        },
+        {
+          "source_index": 34,
+          "elapsed_s": 10.25,
+          "revision": 2,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 66,
+            "unit": "percent",
+            "trend": "rising",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 0,
+          "status": "running"
+        },
+        {
+          "source_index": 36,
+          "elapsed_s": 10.656,
+          "revision": 3,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 70,
+            "unit": "percent",
+            "trend": "rising",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 0,
+          "status": "running"
+        },
+        {
+          "source_index": 94,
+          "elapsed_s": 15.078,
+          "revision": 4,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 70,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 98,
+          "elapsed_s": 15.828,
+          "revision": 5,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 67,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 101,
+          "elapsed_s": 16.656,
+          "revision": 6,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 62,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 193,
+          "elapsed_s": 17.656,
+          "revision": 7,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 57,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 194,
+          "elapsed_s": 18.656,
+          "revision": 8,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 52,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 197,
+          "elapsed_s": 19.656,
+          "revision": 9,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 47,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "running"
+        },
+        {
+          "source_index": 198,
+          "elapsed_s": 20.64,
+          "revision": 10,
+          "metric": {
+            "id": "heat",
+            "label": "Core heat",
+            "value": 42,
+            "unit": "percent",
+            "trend": "falling",
+            "safe": [
+              44,
+              70
+            ]
+          },
+          "cooling": 2,
+          "status": "stabilized"
+        }
+      ],
+      "spoken_turns": [
+        {
+          "label": "launch",
+          "text": "打开这个已经接好的小游戏，我们一起玩。",
+          "reply": "ええ、 ちょうどいいわ。開いてみましょう。"
+        },
+        {
+          "label": "step",
+          "text": "请根据当前温度、安全区间和趋势选择一个当前合法的调节动作，并实际执行一步。",
+          "reply": "了解、 冷却をレベル2に設定するわ。"
+        },
+        {
+          "label": "query",
+          "text": "刚才真的操作了吗？现在是什么状态？",
+          "reply": "ええ、 ちゃんと操作は受理されてるわ。冷却をレベル2に設定したのがアプリに受け付けられて、状態更新4まで反映済みよ。\n\n で、今の状態だけど——コア温度は62%で下降中、安全範囲内に収まってるわ。さっき70%まで上がって警告が出てたけど、冷却が効いて下がってきてる。トレンドも下降、稼働状態はrunning、警告はもう解除されてる。要は、あの操作でちゃんと持ち直したってことね。"
+        },
+        {
+          "label": "leave",
+          "text": "先到这里，把这个小游戏关掉吧。",
+          "reply": "わかった、Reactor Drift の方は終了ね。\n\n アプリ側の終了処理は受け付けられて、セッションは閉じた状態になってる。ただ、ウィンドウを閉じる方の応答はまだ返ってきてないみたいだから、見た目上すぐ消えない可能性はあるわ。そこは少しだけ待ってみて。"
+        },
+        {
+          "label": "post_leave_chat",
+          "text": "顺便聊点别的。你现在感觉怎么样？",
+          "reply": "ええ、 ちょっと一息ついたところね。ゲームの方はちゃんと片付いたし、炉心も安定して終われたから、今はすっきりした気分よ。\n\n そうね……「どう感じてるか」なんて聞かれると、少し面倒な気もするけど。まあ、悪くはないわ。冷却を入れた判断も無駄じゃなかったし、結果がちゃんと数字で返ってくるのは気持ちがいいものね。\n\n あんたの方こそ、急に雑談なんて珍しいじゃない。何か気になってることでもあるの？"
+        }
+      ]
+    }
+  },
+  "parent_review": {
+    "read_replies": true,
+    "step_screenshots_reviewed": true,
+    "accepted_scope": "Exact B2 open-schema receipt and app scalar progression; continuous-controller receipt, same-lease effect and takeover revocation. No broad narration-quality or long-duration stress claim.",
+    "visible_limitation": "Both screenshots have a model-switch-rejected banner. Current provider remained DeepSeek; instrument was changed afterward to skip a redundant same-value switch. That one-line instrument change has not been retested live."
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "schema": "amadeus.chat-runtime-p0.v1",
+  "date": "2026-10-06",
+  "source_revision": "f306bc1f443df5c70957c754e69ed7b20f89e638",
+  "binary_version": [
+    "version: 8575 (65097181e)",
+    "built with Clang 19.1.5 for Windows x86_64"
+  ],
+  "model_file": "Qwen3.5-9B-Q4_K_M.gguf",
+  "execution": "CPU only, four threads, one server slot; synthetic inputs; no Work execution",
+  "gguf_token_counts": {
+    "basic_system": 5825,
+    "professional_system": 4103,
+    "planner_system_without_catalog": 1904,
+    "receipt_system": 2146,
+    "old_with_delegate": 2322,
+    "basic_0_frame": 229,
+    "basic_60_frame": 2049,
+    "professional_0_frame": 229,
+    "professional_60_frame": 2049
+  },
+  "text_sha256": {
+    "basic_system": "530120ab30d8bf7e48e82cf837ca8a4092679e91423799456e6ac1bd44cd7aef",
+    "professional_system": "f6fd02ea6d32289a2c31e41f728bfaffe48d4e516898c296d7fb6456fca71c9a",
+    "planner_system_without_catalog": "d030c8509310ab1499aa9568caabc0b5a50b81de7943348193044e825205d6ac",
+    "receipt_system": "b6b81b29419a33595debad5d69630985f6cdbb2201fd965a7e302164ff2aedfb",
+    "old_with_delegate": "184d150179c0ce2e42b2150f925cbf428e0371b7492506262fb0fc4244679ef0",
+    "basic_0_frame": "f8c14cc9e743d169e5e77e190fcb2110b72cf75816b25e67d7389e6458237f59",
+    "basic_60_frame": "d00d3d11be09a74a97c435cd84e298f7ed999827f5db81bd812f34178b829470",
+    "professional_0_frame": "f8c14cc9e743d169e5e77e190fcb2110b72cf75816b25e67d7389e6458237f59",
+    "professional_60_frame": "d00d3d11be09a74a97c435cd84e298f7ed999827f5db81bd812f34178b829470"
+  },
+  "qwen2_family_reference_counts": {
+    "basic_system": 6845,
+    "professional_system": 4881,
+    "planner_system_without_catalog": 2220,
+    "old_with_delegate": 2796
+  },
+  "server_4096": {
+    "reported_n_ctx": 4096,
+    "slots": 1,
+    "queries": [
+      {
+        "case": "basic_0",
+        "http_status": 400,
+        "error": {
+          "code": 400,
+          "message": "request (6071 tokens) exceeds the available context size (4096 tokens), try increasing it",
+          "type": "exceed_context_size_error",
+          "n_prompt_tokens": 6071,
+          "n_ctx": 4096
+        }
+      },
+      {
+        "case": "professional_0",
+        "http_status": 400,
+        "error": {
+          "code": 400,
+          "message": "request (4349 tokens) exceeds the available context size (4096 tokens), try increasing it",
+          "type": "exceed_context_size_error",
+          "n_prompt_tokens": 4349,
+          "n_ctx": 4096
+        }
+      },
+      {
+        "case": "basic_60",
+        "http_status": 400,
+        "error": {
+          "code": 400,
+          "message": "request (7891 tokens) exceeds the available context size (4096 tokens), try increasing it",
+          "type": "exceed_context_size_error",
+          "n_prompt_tokens": 7891,
+          "n_ctx": 4096
+        }
+      },
+      {
+        "case": "professional_60",
+        "http_status": 400,
+        "error": {
+          "code": 400,
+          "message": "request (6169 tokens) exceeds the available context size (4096 tokens), try increasing it",
+          "type": "exceed_context_size_error",
+          "n_prompt_tokens": 6169,
+          "n_ctx": 4096
+        }
+      }
+    ],
+    "buffers": {
+      "cpu_kv_mib": 128.0,
+      "cpu_recurrent_mib": 50.25,
+      "cpu_compute_mib": 501.0
+    },
+    "reaped": true
+  },
+  "server_16384": {
+    "reported_n_ctx": 16384,
+    "slots": 1,
+    "chat_template_tokens": {
+      "basic_0": 6071,
+      "professional_0": 4349,
+      "basic_60": 7891,
+      "professional_60": 6169
+    },
+    "input_plus_900_output": {
+      "basic_0": 6971,
+      "professional_0": 5249,
+      "basic_60": 8791,
+      "professional_60": 7069
+    },
+    "buffers": {
+      "cpu_kv_mib": 512.0,
+      "cpu_recurrent_mib": 50.25,
+      "cpu_compute_mib": 509.0
+    },
+    "generation_tested": false,
+    "reaped": true
+  },
+  "cli": {
+    "legacy_interactive_flag": {
+      "returncode": 1,
+      "invalid_argument": true
+    },
+    "modern_conversation_probe": {
+      "returncode": 0,
+      "inputs": [
+        "Remember the secret word ORCHID. Reply OK only.",
+        "What was the secret word? Reply one word only.",
+        "/clear",
+        "What was the secret word? If unknown, reply UNKNOWN.",
+        "/exit"
+      ],
+      "observed_replies": [
+        "OK",
+        "ORCHID",
+        "UNKNOWN"
+      ],
+      "history_clear_observed": true
+    },
+    "multiline_probe": {
+      "returncode": 0,
+      "nonempty_input_lines": [
+        "Reply with the single word OK to every request.",
+        "User: Say BLUE.",
+        "Assistant:"
+      ],
+      "generation_blocks": 3,
+      "observed_replies": [
+        "OK",
+        "OK",
+        "OK"
+      ]
+    },
+    "app_cli_wrapper_fixed_or_tested_after_fix": false
+  },
+  "external_endpoints": {
+    "configured_llama_server": "unreachable; independent temporary server tested instead",
+    "lmstudio": "unreachable, no actual capacity/truncation measurement",
+    "ollama": "unreachable, no actual capacity/truncation measurement"
+  },
+  "not_claimed": [
+    "full Cooperative four-turn acceptance at 16k",
+    "real JSON compliance across all four local backends",
+    "production GPU memory or latency",
+    "runtime convergence implementation"
+  ]
+}

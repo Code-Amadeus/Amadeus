@@ -1,0 +1,25 @@
+{
+  "provider": "pi",
+  "contribution": "notes",
+  "calls": [
+    {
+      "tool": "save_note",
+      "arguments": {
+        "name": "author-check",
+        "text": "Synthetic Notes round trip"
+      }
+    },
+    {
+      "tool": "read_note",
+      "arguments": {
+        "name": "author-check"
+      },
+      "contains": "Synthetic Notes round trip"
+    },
+    {
+      "tool": "list_notes",
+      "arguments": {},
+      "contains": "author-check"
+    }
+  ]
+}

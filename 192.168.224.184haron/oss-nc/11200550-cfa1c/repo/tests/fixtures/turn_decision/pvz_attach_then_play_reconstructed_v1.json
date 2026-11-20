@@ -1,0 +1,42 @@
+{
+  "schema_version": "amadeus.turn-decision-replay.v1",
+  "evidence_status": "reconstructed_field_observation_not_runtime_trace",
+  "source_note": "The utterance is exact user evidence. The effective Work/AUIP witness shapes are a bounded reconstruction used to test structural detection; they are not claimed as the lost live trace.",
+  "turn": {
+    "dialogue_source_scope": "chat:field-pvz",
+    "utterance_id": "field-pvz-2026-09-02-1",
+    "turn_id": "field-pvz-2026-09-02-1",
+    "session_id": "field-pvz",
+    "transcript": "你可以自己接入它吗？然后等你做好了我们一起玩。"
+  },
+  "effective_actions": [
+    {
+      "type": "DELEGATE",
+      "attrs": {
+        "intent": "amend",
+        "task": "你可以自己接入它吗？然后等你做好了我们一起玩。",
+        "workspace_ref": "fixture-work-pvz",
+        "provider": "codex"
+      }
+    }
+  ],
+  "auip_decision": {
+    "status": "ok",
+    "action": "launch",
+    "timing": "after_work",
+    "mode": "collaborate",
+    "target": "delivery",
+    "work_relation": "same_goal"
+  },
+  "expected_shadow": {
+    "status": "observed_effects",
+    "effect_axes": [
+      "work",
+      "auip"
+    ],
+    "work_effect_count": 1,
+    "auip_effect_count": 1,
+    "dependency_condition": "requires_verified_outcome",
+    "dependency_predicate": "launchable_auip_delivery_exists"
+  }
+}

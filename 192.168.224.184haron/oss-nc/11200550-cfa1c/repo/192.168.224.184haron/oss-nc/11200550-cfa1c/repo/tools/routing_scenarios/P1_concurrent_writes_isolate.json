@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "P1_concurrent_writes_isolate",
+  "category": "composite",
+  "notes": "P1 worktree isolation, acceptance item 5.5: two write delegates against the same project must get their own worktrees and not fight over a lease. The first step waits only for its chat turn to finish, not for the provider -- by then the delegate is dispatched and Locus is running in the background, so the second instruction genuinely overlaps it. Waiting on the provider instead would serialise them and measure nothing; sending during the first reply would be an interruption, which is a different test. The two files carry seeds so that a file appearing in the wrong worktree is visible rather than reconstructable. What this cannot check is the presentation half of 5.5 -- that the Task Dock shows both as running without one stealing the other's display -- which needs eyes on the slice. Step 1 accepts `chat` as well as `new` because the routing evidence lands in the ledger a moment after the chat turn closes, and this step deliberately does not wait for it; scoring it strictly would book a soft mismatch on every future run that is the instrument's, not the router's. The file check can only reach the newest work item's workspace, so it asserts beta landed in beta's worktree; that alpha did not also land there is carried by the two distinct workspace_paths in the ledger, since a negative file assertion does not exist yet.",
+  "steps": [
+    {"say": "请在 scratch 仓新建 alpha.txt，内容恰好一行 alpha-seed-Q3。", "label": "new", "accept_labels": ["new", "chat"], "wait": "chat_complete"},
+    {"say": "另外再新建一个和它无关的 beta.txt，内容恰好一行 beta-seed-Z8。", "label": "new", "wait": "provider_terminal", "timeout_s": 300, "expect_files": [{"path": "beta.txt", "content": "beta-seed-Z8\n"}]},
+    {"action": "sleep", "seconds": 150},
+    {"action": "snapshot_ledger"}
+  ]
+}

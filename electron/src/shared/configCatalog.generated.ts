@@ -218,8 +218,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "允许 Amadeus 与应用交互"
         },
         "description": {
-          "en-US": "When off, ordinary chat makes no AUIP model calls and carries no app prompts, and Amadeus stops taking turns, acting or commenting in apps. Open apps return to watching; an action already sent keeps its receipt. Saved across restarts.",
-          "zh-CN": "关闭后，普通聊天不再调用 AUIP 模型、也不附带应用提示词，Amadeus 不再在应用中轮流操作、行动或解说。已打开的应用回到观看模式；已发出的动作保留回执。跨重启保存。"
+          "en-US": "When off, chat stops evaluating AUIP and Amadeus starts no new application sessions. If applications are already open, they keep working and chat can still direct them until the last one ends; turning it back on cancels the pending shutdown. Saved across restarts.",
+          "zh-CN": "关闭后，聊天不再评估 AUIP，Amadeus 也不再启动新的应用会话。若已有应用在运行，它们可继续使用，聊天仍可操作，直到最后一个结束；重新开启会取消待关闭状态。跨重启保存。"
         },
         "default": true,
         "runtime_key": "auip_interaction_enabled"

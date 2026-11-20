@@ -1,0 +1,63 @@
+{
+  "schema": "amadeus.retirement-python-verification.v1",
+  "date": "2026-10-07",
+  "scope": "One full isolated three-shard scan, then focused reruns of every failing suite; aggregate coverage, not one all-green invocation.",
+  "suites": 408,
+  "passed": 4672,
+  "skipped": 6,
+  "initial_failures": {
+    "test_release_tooling.py": {
+      "passed": 12,
+      "skipped": 0,
+      "collected": 13,
+      "seconds": 13.73,
+      "status": "FAIL(1)"
+    },
+    "test_session_activation.py": {
+      "passed": 47,
+      "skipped": 0,
+      "collected": 60,
+      "seconds": 3.98,
+      "status": "FAIL(1)"
+    },
+    "test_work_effect_executor.py": {
+      "passed": 34,
+      "skipped": 0,
+      "collected": 35,
+      "seconds": 5.07,
+      "status": "FAIL(1)"
+    },
+    "test_local_llm_profiles.py": {
+      "passed": 5,
+      "skipped": 0,
+      "collected": 6,
+      "seconds": 2.11,
+      "status": "FAIL(1)"
+    },
+    "test_cooperative_work_retract.py": {
+      "passed": 5,
+      "skipped": 0,
+      "collected": 11,
+      "seconds": 13.36,
+      "status": "FAIL(1)"
+    }
+  },
+  "resolved_suite_pass_counts": {
+    "test_release_tooling.py": 13,
+    "test_session_activation.py": 60,
+    "test_work_effect_executor.py": 35,
+    "test_local_llm_profiles.py": 6,
+    "test_cooperative_work_retract.py": 11
+  },
+  "all_remaining_suites_passed": true,
+  "final_collection": {
+    "returncode": 0,
+    "suites": 408,
+    "collected": 4683
+  },
+  "electron_passed": 213,
+  "typescript_build": "passed",
+  "ruff": "passed",
+  "architecture_views": 7,
+  "readme_overview_check": "passed"
+}

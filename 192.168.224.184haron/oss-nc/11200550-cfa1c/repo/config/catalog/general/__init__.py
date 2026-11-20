@@ -1,0 +1,1 @@
+"""Packaged general setting declarations."""

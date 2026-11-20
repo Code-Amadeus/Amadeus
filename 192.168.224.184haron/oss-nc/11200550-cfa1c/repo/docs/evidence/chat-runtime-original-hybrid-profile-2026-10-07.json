@@ -1,0 +1,211 @@
+{
+  "schema": "amadeus.original-hybrid-profile-evidence.v1",
+  "date": "2026-10-07",
+  "launcher": "start_hybrid_llm.bat -> llm.llama_server --foreground --profile hybrid",
+  "binary": "b8575 / 65097181e",
+  "model": "Qwen3.5-9B-Q4_K_M.gguf",
+  "gpu": "RTX 4070 Ti SUPER 16 GB",
+  "cuda_environment": {
+    "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+    "CUDA_VISIBLE_DEVICES": "1"
+  },
+  "native_args": [
+    "-m",
+    "Qwen3.5-9B-Q4_K_M.gguf",
+    "-ngl",
+    "99",
+    "--no-mmap",
+    "-t",
+    "4",
+    "-c",
+    "4096",
+    "--ubatch-size",
+    "512",
+    "--batch-size",
+    "2048",
+    "--cache-reuse",
+    "256",
+    "--reasoning-budget",
+    "0",
+    "--chat-template-kwargs",
+    "{\"enable_thinking\": false}",
+    "--port",
+    "<isolated-loopback-port>",
+    "--host",
+    "127.0.0.1",
+    "-a",
+    "qwen3.5-9b"
+  ],
+  "resolved_slots": 4,
+  "loaded_per_slot_context": 4096,
+  "sampling": "12 synthetic independent HTTP requests; close after first punctuation; 3-second inter-request gap.",
+  "local_http_first_content_seconds": {
+    "min": 0.2412,
+    "median": 0.3335,
+    "max": 0.4277
+  },
+  "http_samples": [
+    {
+      "index": 0,
+      "first_http_content_s": 0.3709,
+      "first_sentence_s": 0.4302,
+      "text": "穏やかに過ごしたい、"
+    },
+    {
+      "index": 1,
+      "first_http_content_s": 0.2412,
+      "first_sentence_s": 0.3524,
+      "text": "虹は光が水滴で屈折し、"
+    },
+    {
+      "index": 2,
+      "first_http_content_s": 0.3191,
+      "first_sentence_s": 0.3744,
+      "text": "convergence_result.txt、"
+    },
+    {
+      "index": 3,
+      "first_http_content_s": 0.3254,
+      "first_sentence_s": 0.3551,
+      "text": "完了か、"
+    },
+    {
+      "index": 4,
+      "first_http_content_s": 0.3615,
+      "first_sentence_s": 0.4307,
+      "text": "穏やかに過ごしたいのか、"
+    },
+    {
+      "index": 5,
+      "first_http_content_s": 0.3449,
+      "first_sentence_s": 0.5048,
+      "text": "虹は光が水滴で折れ曲がって見えるだけ、"
+    },
+    {
+      "index": 6,
+      "first_http_content_s": 0.4277,
+      "first_sentence_s": 0.4992,
+      "text": "[EMO normal]\n"
+    },
+    {
+      "index": 7,
+      "first_http_content_s": 0.3041,
+      "first_sentence_s": 0.3486,
+      "text": "完了状況か、"
+    },
+    {
+      "index": 8,
+      "first_http_content_s": 0.3494,
+      "first_sentence_s": 0.4038,
+      "text": "穏やかに過ごすか、"
+    },
+    {
+      "index": 9,
+      "first_http_content_s": 0.3416,
+      "first_sentence_s": 0.4195,
+      "text": "虹の成り立ちか、"
+    },
+    {
+      "index": 10,
+      "first_http_content_s": 0.3183,
+      "first_sentence_s": 0.3973,
+      "text": "プロジェクトの convergence_result.txt か、"
+    },
+    {
+      "index": 11,
+      "first_http_content_s": 0.2981,
+      "first_sentence_s": 0.333,
+      "text": "完了か、"
+    }
+  ],
+  "native_alive_before_cleanup": true,
+  "native_reaped": true,
+  "desktop_professional": {
+    "identity": {
+      "commit_sha": "75c424f3151117744d0a9fc00da4cbc5bdae0dd7",
+      "workspace_dirty": true,
+      "workspace_fingerprint": "6e105d1361b4ee9c964fb10e3781ae1877974c865e47f02f0a2820f58624af4e"
+    },
+    "chat_route": {
+      "selection": "professional",
+      "requested_selection": "professional",
+      "source": "cli",
+      "environment_overrides": {
+        "COOPERATIVE_CHAT_ENABLED": "1",
+        "COOPERATIVE_WORK_PLANNER_ENABLED": "1"
+      },
+      "actual": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "matches_request": true
+    },
+    "status": "passed",
+    "checks": {
+      "provider_selected": true,
+      "ordinary_reply_no_work": true,
+      "explanation_no_work": true,
+      "work_terminal_success": true,
+      "requested_artifact": true,
+      "only_requested_file": true,
+      "report_no_new_run": true,
+      "total_provider_runs": true,
+      "no_shell_commands": true,
+      "no_renderer_page_error": true,
+      "hybrid_local_presented": true
+    },
+    "work_provider": "codex",
+    "tool_names": [
+      "js"
+    ],
+    "process_reaped": true
+  },
+  "desktop_turns": [
+    {
+      "label": "ordinary",
+      "reply": "穏やかに過ごしたいのか、こんにちは。 穏やかな一日、いいわね。",
+      "timings": {
+        "first_chat_token_s": 1.265,
+        "chat_complete_s": 4.078
+      }
+    },
+    {
+      "label": "explain",
+      "reply": "虹ができるのか、はい、 虹は空気中の水滴に太陽光が入って屈折し、水滴の内側で反射してから出てくるときに、光が色ごとに分かれることでできるのよ。\n\n しかもその光は、水滴に入るときと出るときの二回屈折するから、赤は約42度、紫は約40度と、色ごとに違う角度で目に届くの。だから空に色の帯が見えるってわけ。",
+      "timings": {
+        "first_chat_token_s": 0.422,
+        "chat_complete_s": 1.938
+      }
+    },
+    {
+      "label": "single_work",
+      "reply": "プロジェクトの収束結果ファイルですね、ええ、それくらいなら引き受けるわ。 ただ、ファイル作成は成果物の変更だから、私の手元で直接どうこうする話じゃないのよ。",
+      "timings": {
+        "first_chat_token_s": 0.344,
+        "chat_complete_s": 4.235
+      }
+    },
+    {
+      "label": "report",
+      "reply": "完了か、ええ、 記録を確認するわね。\n\n 例の `convergence_result.txt` の作成だけど、担当のcodex側では実行自体は成功扱いになっているわ。状態は「review_ready」、つまり確認待ちの段階よ。\n\n ただ、完成度は「partial」で、まだ全部が整ったとは言い切れない表示になっているの。だから「完全に終わった」と断言はできないわね。少なくとも、こちらで把握できている記録としては、実行は成功、確認待ち、というところよ。",
+      "timings": {
+        "first_chat_token_s": 0.593,
+        "chat_complete_s": 1.843
+      }
+    }
+  ],
+  "launcher_regression_fix": {
+    "same_hybrid_command_with_original_env": true,
+    "pure_local_capacity_flags_apply_only_to_local_profile": true,
+    "focused_tests_passed": 37
+  },
+  "limitations": [
+    "Prior diagnostic runs used a different GPU (4070 Laptop), 16k context and explicit single slot; their failures do not characterize this BAT profile.",
+    "Local HTTP metric starts before POST and ends at first nonempty content delta; an emotion tag can be that delta. It is not audible speech.",
+    "Desktop metric begins immediately before filling/submitting the input and ends at receipt of chat.token, not actual renderer paint or audio.",
+    "One sample emitted only an emotion tag/newline; no incoherent text or server exit was observed in these 12 calls.",
+    "Original-profile basic, visual and physical TTS journeys remain to be verified."
+  ]
+}

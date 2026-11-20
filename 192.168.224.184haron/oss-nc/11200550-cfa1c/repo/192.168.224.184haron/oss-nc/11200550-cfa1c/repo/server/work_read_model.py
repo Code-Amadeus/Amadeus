@@ -1,0 +1,654 @@
+"""Read-only Work Ledger projections used by status, report, and UI surfaces.
+
+The store owns durable facts.  This module owns their interpretation as a
+current WorkItem or Project view.  It deliberately has no event bus and no
+mutation methods, so rendering a view cannot create work or change focus.
+"""
+
+from __future__ import annotations
+
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+from agent_host.work_ledger_store import WorkLedgerNotFound, WorkLedgerStore
+from agent_host.work_ledger_types import ArtifactRecord, PermissionRequestRecord, WorkItemRecord
+from server.auip_app_source import discover_approved_auip_app, discover_launchable_auip_app, discover_registered_auip_app
+from server.scratch_workspace import is_scratch_path
+from server.work_activity_snapshot import ACTIVITY_METADATA_KEY, activity_report_fields
+from server.permission_grants import active_grants, permission_projection
+from server.work_artifact_source import TEXT_SUFFIXES, latest_artifacts_by_path
+
+
+_ACTIVE_EXECUTION = frozenset({"queued", "running"})
+_UNRESOLVED_EXECUTION = frozenset({*_ACTIVE_EXECUTION, "orphaned"})
+
+
+class WorkReadModel:
+    """Project durable Work Ledger facts without acquiring write authority."""
+
+    def __init__(
+        self,
+        store: WorkLedgerStore,
+        *,
+        clock: Callable[[], float] = time.time,
+        is_unkept_draft: Callable[[str], bool],
+        is_desktop_export_permission: Callable[[PermissionRequestRecord], bool],
+        can_resume_authorized_export: Callable[[PermissionRequestRecord], bool],
+    ) -> None:
+        self.store = store
+        self._clock = clock
+        self._is_unkept_draft = is_unkept_draft
+        self._is_desktop_export_permission = is_desktop_export_permission
+        self._can_resume_authorized_export = can_resume_authorized_export
+
+    def detail(self, work_item_id: str) -> dict[str, Any]:
+        item = self.store.get_work_item(work_item_id)
+        if item is None:
+            raise WorkLedgerNotFound(f"unknown work item: {work_item_id}")
+        projected = self.project_item(item)
+        projected["operations"] = [
+            record.to_dict() for record in self.store.list_operations(work_item_id)
+        ]
+        projected["attempts"] = [
+            record.to_dict() for record in self.store.list_attempts(work_item_id)
+        ]
+        projected["artifacts"] = [
+            record.to_dict() for record in self.store.list_artifacts(work_item_id)
+        ]
+        projected["completionHistory"] = [
+            record.to_dict() for record in self.store.list_completions(work_item_id)
+        ]
+        projected["permissions"] = [
+            record.to_dict()
+            for record in self.store.list_permission_requests(work_item_id)
+        ]
+        projected["providerInputs"] = self.store.list_provider_inputs(work_item_id)
+        projected["inputRequirements"] = self.input_requirements(work_item_id)
+        return projected
+
+    def input_requirements(self, work_item_id: str, *, attempt_id: str = "", operations=None) -> list[dict]:
+        """Join accepted Work instructions to their original input delivery facts."""
+        attempt_ids = {str(attempt_id)} if attempt_id else set()
+        if attempt_id:
+            current = self.store.get_attempt(attempt_id)
+            if current is not None and current.work_item_id == work_item_id:
+                predecessor = self.store.get_recovery_predecessor(current)
+                if predecessor is not None:
+                    attempt_ids.add(predecessor.attempt_id)
+        requirements = [operation for operation in (
+            self.store.list_operations(work_item_id) if operations is None else operations)
+            if operation.metadata.get("work_input_id") and (not attempt_id
+                or operation.metadata.get("attempt_id") in attempt_ids)]
+        if not requirements:
+            return []
+        receipts = {row["input_id"]:row for row in self.store.list_provider_inputs(work_item_id)}
+        return [{"operation_id":operation.operation_id,
+            "input_id":operation.metadata["work_input_id"],
+            "attempt_id":operation.metadata["attempt_id"], "text":operation.instruction,
+            "delivery_state":receipts.get(operation.metadata["work_input_id"], {}).get("state", "unknown"),
+            "delivery_reason":receipts.get(operation.metadata["work_input_id"], {}).get("reason", "input_receipt_unavailable")}
+            for operation in requirements]
+
+    def project_status_snapshot(self, project_id: str) -> dict[str, Any] | None:
+        project = self.store.get_project(str(project_id or "").strip())
+        if project is None:
+            return None
+        projected = self.project_items(
+            self.store.list_work_items(project_id=project.project_id, limit=200)
+        )
+        current = [
+            item for item in projected if item.get("state") not in {"accepted", "archived"}
+        ]
+        running = [
+            item for item in current if item.get("execution") in _ACTIVE_EXECUTION
+        ]
+        needs_you = [
+            item for item in current if item.get("attention") not in {"", "none"}
+        ]
+        return {
+            "projectId": project.project_id,
+            "projectName": project.name or Path(project.canonical_path).name,
+            "state": project.state,
+            "counts": {
+                "current": len(current),
+                "running": len(running),
+                "needsYou": len(needs_you),
+                "history": max(0, len(projected) - len(current)),
+            },
+            "recent": projected[:5],
+        }
+
+    def project_apps(self, project_id: str, *, limit: int = 100) -> dict[str, Any]:
+        """List the current verified AUIP delivery for each Project WorkItem.
+
+        WorkItem is the durable product lineage. Artifact ids remain revision
+        identities, so this projection deliberately exposes one launchable
+        current revision per WorkItem instead of inventing a second catalog.
+        """
+
+        app_limit = max(1, min(int(limit), 200))
+        items = self.store.list_work_items(
+            project_id=str(project_id or "").strip(),
+            artifact_name="auip.manifest.json", limit=500,
+        )
+        apps: list[dict[str, Any]] = []
+        for item in items:
+            app = discover_launchable_auip_app(self.store, item.work_item_id)
+            if app is None:
+                continue
+            apps.append(self._app_summary(item, app, can_promote=False))
+            if len(apps) > app_limit:
+                break
+        return {
+            "apps": apps[:app_limit],
+            "complete": len(items) < 500 and len(apps) <= app_limit,
+        }
+
+    def draft_apps(self, *, limit: int = 5) -> dict[str, Any]:
+        """Return only the most recent launchable AUIP apps in unkept Drafts."""
+
+        app_limit = max(1, min(int(limit), 20))
+        scan_limit = 500
+        # Both workspace and approved-export apps require a recorded manifest.
+        # Narrow in SQL, preserving Work recency and all validation below;
+        # ordinary historical Work never needs filesystem inspection here.
+        items = self.store.list_work_items(
+            artifact_name="auip.manifest.json", limit=scan_limit,
+            include_presentation=False,
+        )
+        apps: list[dict[str, Any]] = []
+        for item in items:
+            if not self._is_unkept_draft(item.workspace_path):
+                continue
+            app = discover_launchable_auip_app(self.store, item.work_item_id)
+            if app is None:
+                continue
+            apps.append(self._app_summary(item, app, can_promote=True))
+            if len(apps) > app_limit:
+                break
+        return {
+            "apps": apps[:app_limit],
+            "complete": len(items) < scan_limit and len(apps) <= app_limit,
+            "recentLimit": app_limit,
+        }
+
+    def artifacts(self, *, project_id: str = "", limit: int = 5) -> dict[str, Any]:
+        """Independent recent file and application shelves over one ledger."""
+        item_limit = max(1, min(int(limit), 100 if project_id else 20))
+        catalog = (self.project_apps(project_id, limit=item_limit) if project_id
+                   else self.draft_apps(limit=item_limit))
+        scan_limit, file_limit = 500, 200
+        items = self.store.list_work_items(project_id=project_id, limit=scan_limit,
+            artifact_kinds=("business.file", "business.export"), include_presentation=False)
+        files = []
+        count = 0
+        complete = len(items) < scan_limit
+        for item in items:
+            if not project_id and not self._is_unkept_draft(item.workspace_path):
+                continue
+            # Only completed Host exports are deliveries. A pending/denied
+            # export cannot replace the last approved revision of that path.
+            records = latest_artifacts_by_path(self.store, [
+                row for row in self.store.list_artifacts(item.work_item_id)
+                if row.kind == "business.file"
+                or (row.kind == "business.export" and row.status == "approved")])
+            # A current workspace app may coexist with its approved export.
+            # Each owns its exact members; neither owns unrelated Work files.
+            workspace_app = discover_registered_auip_app(self.store, item.work_item_id)
+            members = set((workspace_app or {}).get("member_artifact_ids") or [])
+            exported_app = discover_approved_auip_app(self.store, item.work_item_id)
+            members.update((exported_app or {}).get("member_artifact_ids") or [])
+            records = [row for row in records if row.artifact_id not in members]
+            if not records:
+                continue
+            if count >= item_limit:
+                complete = False
+                break
+            count += 1
+            latest = self.store.latest_attempt(item.work_item_id, include_provider_branch=False)
+            common = {
+                "projectId": item.project_id, "workItemId": item.work_item_id,
+                "workTitle": item.title, "workState": item.state,
+                "execution": latest.execution_status if latest else "idle",
+                "updatedAt": self._iso_time(item.last_activity_at),
+            }
+            for record in records:
+                if len(files) >= file_limit:
+                    complete = False
+                    break
+                files.append({**common, **self._file_summary(record)})
+        return {"apps": catalog["apps"], "files": files,
+            "appsComplete": catalog["complete"], "filesComplete": complete,
+            "complete": complete and catalog["complete"], "recentLimit": item_limit}
+
+    @staticmethod
+    def _file_summary(record: ArtifactRecord) -> dict[str, Any]:
+        return {"artifactId": record.artifact_id,
+            "title": record.title or Path(record.path).name,
+            "relativePath": str(record.metadata.get("relative_path") or Path(record.path).name),
+            "artifactStatus": record.status, "artifactKind": record.kind, "sizeBytes": record.size_bytes,
+            "previewable": record.kind == "business.file" and record.status == "registered"
+                and Path(record.path).suffix.lower() in TEXT_SUFFIXES}
+
+    def _app_summary(
+        self,
+        item: WorkItemRecord,
+        app: dict[str, Any],
+        *,
+        can_promote: bool,
+    ) -> dict[str, Any]:
+        app_meta = app.get("app") if isinstance(app.get("app"), dict) else {}
+        attempts = {
+            attempt.attempt_id: attempt
+            for attempt in self.store.list_attempts(item.work_item_id)
+        }
+        contributing = [
+            attempts[attempt_id]
+            for attempt_id in app.get("contributing_attempt_ids") or []
+            if str(attempt_id or "") in attempts
+        ]
+        latest_attempt = max(
+            contributing,
+            key=lambda attempt: attempt.attempt_number,
+            default=(list(attempts.values())[-1] if attempts else None),
+        )
+        attempt_metadata = (
+            latest_attempt.metadata
+            if latest_attempt is not None and isinstance(latest_attempt.metadata, dict)
+            else {}
+        )
+        artifact = self.store.get_artifact(str(app.get("artifact_id") or ""))
+        stances = [str(value) for value in app.get("stances") or []]
+        return {
+            "projectId": item.project_id,
+            "workItemId": item.work_item_id,
+            "workTitle": item.title,
+            "artifactId": str(app.get("artifact_id") or ""),
+            "artifactRef": str(app.get("artifact_ref") or ""),
+            "files": [self._file_summary(record) for artifact_id in app.get("member_artifact_ids") or []
+                if (record := self.store.get_artifact(artifact_id)) is not None],
+            "appId": str(app_meta.get("id") or app.get("artifact_id") or ""),
+            "title": str(app_meta.get("title") or app.get("title") or "AUIP app"),
+            "version": str(app_meta.get("version") or "0"),
+            "objective": str(app_meta.get("objective") or ""),
+            "interactionSummary": str(app_meta.get("interactionSummary") or ""),
+            "modes": [
+                "observe",
+                *(["collaborate", "delegate"] if "participant" in stances else []),
+            ],
+            "revision": int(latest_attempt.attempt_number if latest_attempt else 0),
+            "updatedAt": self._iso_time(item.last_activity_at),
+            "workState": item.state,
+            "execution": str(latest_attempt.execution_status if latest_attempt else "idle"),
+            "artifactStatus": str(artifact.status if artifact is not None else "registered"),
+            "location": str(artifact.location if artifact is not None else "workspace"),
+            "sourceSessionId": str(
+                attempt_metadata.get("session_id")
+                or attempt_metadata.get("sessionId")
+                or attempt_metadata.get("chat_session_id")
+                or ""
+            ),
+            "canPromote": bool(
+                can_promote
+                and (
+                    latest_attempt is None
+                    or latest_attempt.execution_status not in _UNRESOLVED_EXECUTION
+                )
+            ),
+        }
+
+    @staticmethod
+    def default_focus_id(items: list[dict[str, Any]]) -> str:
+        candidates = [item for item in items if item.get("state") != "archived"]
+        if not candidates:
+            return ""
+
+        def rank(item: dict[str, Any]) -> int:
+            if item.get("attention") not in {None, "", "none"}:
+                return 0
+            if item.get("execution") in _ACTIVE_EXECUTION:
+                return 1
+            if item.get("state") in {"open", "review_ready"}:
+                return 2
+            return 3
+
+        # Input order is already last_activity DESC, so min preserves recency
+        # inside Needs-you/Running/Open priority buckets.
+        return str(min(candidates, key=rank).get("id") or "")
+
+    def project_item(self, item: WorkItemRecord) -> dict[str, Any]:
+        return self._project_item(item, self._workspace_facts(item))
+
+    def project_items(self, items: list[WorkItemRecord]) -> list[dict[str, Any]]:
+        # A synchronous projection reads shared workspace facts once. Nothing
+        # survives this call: later projections recheck deletion, moves and Draft
+        # retention. Per-attempt permissions and completion remain per-item reads.
+        workspaces: dict[str, tuple[bool, bool, bool]] = {}
+        projected: list[dict[str, Any]] = []
+        for item in items:
+            key = item.workspace_path if item.workspace_mode != "none" else ""
+            if key not in workspaces:
+                workspaces[key] = self._workspace_facts(item)
+            projected.append(self._project_item(item, workspaces[key]))
+        return projected
+
+    def _workspace_facts(self, item: WorkItemRecord) -> tuple[bool, bool, bool]:
+        if item.workspace_mode == "none":
+            return False, False, False
+        return (
+            Path(item.workspace_path).is_dir(),
+            is_scratch_path(item.workspace_path),
+            bool(self._is_unkept_draft(item.workspace_path)),
+        )
+
+    def _project_item(
+        self, item: WorkItemRecord, workspace_facts: tuple[bool, bool, bool]
+    ) -> dict[str, Any]:
+        workspace_exists, is_scratch, unkept_draft = workspace_facts
+        operations = self.store.list_operations(item.work_item_id)
+        latest_attempt = self.store.latest_attempt(item.work_item_id, include_provider_branch=False)
+        latest_operation = (
+            self.store.get_operation(latest_attempt.operation_id)
+            if latest_attempt is not None and latest_attempt.operation_id
+            else operations[-1] if operations else None
+        )
+        completion = self.store.latest_completion(item.work_item_id)
+        completion_matches = bool(
+            completion
+            and latest_attempt
+            and completion.attempt_id == latest_attempt.attempt_id
+        )
+        execution = latest_attempt.execution_status if latest_attempt else "idle"
+        completeness = completion.completeness if completion_matches else "unknown"
+        attention = completion.attention if completion_matches else "none"
+        permissions = (self.store.list_permission_requests(
+            item.work_item_id, attempt_id=latest_attempt.attempt_id)
+            if latest_attempt is not None else [])
+        pending_permissions = [request for request in permissions if request.status == "pending"]
+        latest_permission = pending_permissions[-1] if pending_permissions else None
+        retry_authorizations = (
+            [
+                request
+                for request in permissions
+                if request.status in {"denied", "expired"}
+                and "allow_once" not in request.options
+                and request.metadata.get("kind") == "provider_permission"
+                and str(request.metadata.get("provider") or "").strip().lower()
+                == latest_attempt.provider.strip().lower()
+                and request.metadata.get("diagnostic_only") is True
+                and request.metadata.get("retry_required") is True
+            ]
+            if latest_attempt is not None
+            else []
+        )
+        retry_authorization = retry_authorizations[-1] if retry_authorizations else None
+        recoverable_exports = (
+            [
+                request
+                for request in permissions
+                if request.status == "allowed" and self._is_desktop_export_permission(request)
+                and self._can_resume_authorized_export(request)
+            ]
+            if latest_attempt is not None
+            else []
+        )
+        recoverable_export = recoverable_exports[-1] if recoverable_exports else None
+        has_workspace = item.workspace_mode != "none"
+        if execution == "orphaned" or (has_workspace and not workspace_exists):
+            attention = "error"
+        elif pending_permissions:
+            attention = "permission"
+        elif recoverable_export is not None:
+            attention = "conflict"
+        if item.state == "accepted":
+            attention = "none"
+        attempt_metadata = (
+            latest_attempt.metadata
+            if latest_attempt and isinstance(latest_attempt.metadata, dict)
+            else {}
+        )
+        provider_result = (
+            attempt_metadata.get("provider_result")
+            if isinstance(attempt_metadata.get("provider_result"), dict)
+            else {}
+        )
+        session_id = str(
+            attempt_metadata.get("session_id")
+            or provider_result.get("session_id")
+            or provider_result.get("sessionId")
+            or ""
+        ).strip()
+        activity_snapshot = (
+            attempt_metadata.get(ACTIVITY_METADATA_KEY)
+            if isinstance(attempt_metadata.get(ACTIVITY_METADATA_KEY), dict)
+            else {}
+        )
+        activity_fields = (
+            activity_report_fields(
+                activity_snapshot,
+                execution_status=execution,
+                created_at=latest_attempt.created_at,
+                started_at=latest_attempt.started_at,
+                finished_at=latest_attempt.finished_at,
+                now=float(self._clock()),
+            )
+            if latest_attempt is not None
+            else {}
+        )
+        activity_projection = {
+            "phase": str(activity_fields.get("activity_phase") or "idle"),
+            "elapsedSeconds": float(activity_fields.get("activity_elapsed_seconds") or 0.0),
+            "silentSeconds": float(activity_fields.get("activity_silent_seconds") or 0.0),
+            "lastEventAt": self._optional_iso(activity_fields.get("activity_last_event_at")),
+            "lastProviderEventAt": self._optional_iso(
+                activity_fields.get("activity_last_provider_event_at")
+            ),
+            "lastSemanticProgressAt": self._optional_iso(
+                activity_fields.get("activity_last_semantic_progress_at")
+            ),
+            "lastDirectionalUpdateAt": self._optional_iso(
+                activity_fields.get("activity_last_directional_update_at")
+            ),
+            "lastEventType": str(activity_fields.get("activity_last_event_type") or ""),
+            "semanticSummary": str(activity_fields.get("activity_semantic_summary") or ""),
+            "semanticSource": str(activity_fields.get("activity_semantic_source") or ""),
+            "semanticVerified": activity_fields.get("activity_semantic_verified") is True,
+            "semanticMilestone": str(activity_fields.get("activity_semantic_milestone") or ""),
+            "directionSummary": str(activity_fields.get("activity_direction_summary") or ""),
+            "directionSource": str(activity_fields.get("activity_direction_source") or ""),
+            "milestones": dict(activity_fields.get("activity_milestones") or {}),
+            "lastTool": str(activity_fields.get("activity_last_tool") or ""),
+            "toolCount": int(activity_fields.get("activity_tool_count") or 0),
+            "artifactCount": int(activity_fields.get("activity_artifact_count") or 0),
+            "liveness": dict(activity_fields.get("activity_liveness") or {}),
+            "steering": dict(activity_fields.get("activity_steering") or {}),
+            "uncertainty": str(activity_fields.get("activity_uncertainty") or ""),
+        }
+        provider_liveness = (
+            attempt_metadata.get("provider_liveness")
+            if isinstance(attempt_metadata.get("provider_liveness"), dict)
+            else {}
+        )
+        if execution in _ACTIVE_EXECUTION:
+            liveness = str(provider_liveness.get("state") or "active")
+        elif execution == "orphaned":
+            liveness = str(provider_liveness.get("state") or "orphaned")
+        elif latest_attempt is not None:
+            liveness = "terminal"
+        else:
+            liveness = "idle"
+        try:
+            silent_for_seconds = max(0.0, float(provider_liveness.get("silence_s") or 0.0))
+        except (TypeError, ValueError):
+            silent_for_seconds = 0.0
+        if liveness not in {"stalled", "cancel_pending"}:
+            silent_for_seconds = 0.0
+        try:
+            last_provider_event_at = float(
+                provider_liveness.get("last_provider_event_at") or 0.0
+            )
+        except (TypeError, ValueError):
+            last_provider_event_at = 0.0
+        git_delta = (
+            attempt_metadata.get("git_delta")
+            if isinstance(attempt_metadata.get("git_delta"), dict)
+            else {}
+        )
+        git_baseline = (
+            attempt_metadata.get("git_baseline")
+            if isinstance(attempt_metadata.get("git_baseline"), dict)
+            else {}
+        )
+        git_branch = str(
+            item.branch or git_delta.get("current_branch") or git_baseline.get("branch") or ""
+        )
+        base_revision = str(item.base_revision or git_baseline.get("head") or "")
+        workspace_name = (
+            Path(item.workspace_path).name or item.workspace_mode if has_workspace else ""
+        )
+        metadata = dict(item.metadata or {})
+        project = self.store.get_project(item.project_id)
+        project_name = (
+            "" if unkept_draft or not has_workspace else str(project.name if project else "")
+        )
+        if not has_workspace:
+            kind = "no workspace"
+        elif is_scratch:
+            kind = "draft" if unkept_draft else "draft · kept"
+        elif item.workspace_mode == "worktree":
+            kind = "worktree"
+        else:
+            kind = "main directory"
+        workspace_label = (
+            "No filesystem workspace"
+            if not has_workspace
+            else f"{kind} · {workspace_name}"
+            + (f" · Git branch {git_branch}" if git_branch else "")
+        )
+        lease = self.store.get_writer_lease(latest_attempt.attempt_id) if latest_attempt else None
+        workspace_policy = (
+            metadata.get("workspace_policy")
+            if isinstance(metadata.get("workspace_policy"), dict)
+            else {}
+        )
+        artifact_counts = self.store.artifact_counts(item.work_item_id)
+        business_artifact_count = artifact_counts["business"]
+        return {
+            "id": item.work_item_id,
+            "workItemId": item.work_item_id,
+            "projectId": item.project_id,
+            "projectName": project_name,
+            "projectState": (
+                "" if unkept_draft or not has_workspace else str(project.state if project else "")
+            ),
+            "title": item.title,
+            "goal": item.goal,
+            "state": item.state,
+            "execution": execution,
+            "activity": activity_projection,
+            "liveness": liveness,
+            "livenessStage": str(provider_liveness.get("stage") or ""),
+            "probeStatus": str(provider_liveness.get("probe_status") or ""),
+            "silentForSeconds": silent_for_seconds,
+            "lastProviderEventAt": (
+                self._iso_time(last_provider_event_at) if last_provider_event_at > 0 else ""
+            ),
+            "completion": completeness,
+            "attention": attention,
+            "workspaceMode": item.workspace_mode,
+            "workspacePath": item.workspace_path,
+            "workspaceExists": workspace_exists,
+            "workspaceLabel": workspace_label,
+            "isScratch": is_scratch,
+            "canPromoteToProject": bool(
+                unkept_draft and execution != "orphaned"
+            ),
+            "canReopen": bool(
+                item.state in {"accepted", "archived", "closed"}
+                and (workspace_exists or not has_workspace)
+                and execution not in _UNRESOLVED_EXECUTION
+            ),
+            "branch": git_branch,
+            "baseRevision": base_revision,
+            "updatedAt": self._iso_time(item.last_activity_at),
+            "currentRunId": latest_attempt.provider_run_id if latest_attempt else "",
+            "runId": latest_attempt.provider_run_id if latest_attempt else "",
+            "attemptId": latest_attempt.attempt_id if latest_attempt else "",
+            "attemptNumber": latest_attempt.attempt_number if latest_attempt else 0,
+            # Existing Host-owned attempt identity, exposed only so UI views can
+            # distinguish this conversation from older conversations. It is not
+            # a new routing or lifecycle authority.
+            "sessionId": session_id,
+            # This identifies the Operation that opened the execution. Active
+            # amendments remain separate requirements on that same Attempt.
+            "operationId": latest_operation.operation_id if latest_operation else "",
+            "operationNumber": latest_operation.operation_number if latest_operation else 0,
+            "operationIntent": latest_operation.intent if latest_operation else "",
+            "operationCount": len(operations),
+            "inputRequirements":self.input_requirements(item.work_item_id,
+                attempt_id=latest_attempt.attempt_id if latest_attempt else "", operations=operations),
+            "provider": (
+                latest_attempt.provider
+                if latest_attempt
+                else str(metadata.get("provider") or "")
+            ),
+            "mode": latest_attempt.mode if latest_attempt else "",
+            "canRetry": bool(
+                latest_attempt
+                and not pending_permissions
+                and recoverable_export is None
+                and execution in {"failed", "cancelled"}
+                and item.state in {"open", "review_ready"}
+            ),
+            "retryAuthorizationRequestId": (
+                retry_authorization.request_id if retry_authorization is not None else ""
+            ),
+            "canResume": bool(
+                latest_attempt
+                and not pending_permissions
+                and recoverable_export is None
+                and execution == "orphaned"
+                and bool(latest_attempt.provider_run_id)
+                and attempt_metadata.get("runtime_resumable") is True
+                and str(provider_liveness.get("state") or "").strip().lower()
+                != "cancel_pending"
+                and item.state in {"open", "review_ready"}
+            ),
+            "artifactCount": business_artifact_count,
+            "businessArtifactCount": business_artifact_count,
+            "runtimeArtifactCount": artifact_counts["runtime"],
+            "pendingPermissionCount": len(pending_permissions),
+            "pendingPermissionRequestId": (
+                latest_permission.request_id if latest_permission is not None else ""
+            ),
+            "permissionRequest": permission_projection(latest_permission) if latest_permission else None,
+            "activePermissionGrants": active_grants(permissions) if execution in _ACTIVE_EXECUTION else [],
+            "recoverableExportRequestId": (
+                recoverable_export.request_id if recoverable_export is not None else ""
+            ),
+            "completionRationale": completion.rationale if completion_matches else "",
+            "workspacePolicy": workspace_policy,
+            "isolation": (
+                "single writer" if bool(workspace_policy.get("write_intent")) else "shared read-only"
+            ),
+            "selectionReason": str(
+                workspace_policy.get("reason") or "Legacy workspace binding."
+            ),
+            "writerLeaseStatus": lease.status if lease is not None else "",
+        }
+
+    @classmethod
+    def _optional_iso(cls, value: Any) -> str:
+        try:
+            timestamp = float(value or 0.0)
+        except (TypeError, ValueError):
+            return ""
+        return cls._iso_time(timestamp) if timestamp > 0 else ""
+
+    @staticmethod
+    def _iso_time(timestamp: float) -> str:
+        return datetime.fromtimestamp(
+            float(timestamp), tz=timezone.utc
+        ).isoformat(timespec="seconds")

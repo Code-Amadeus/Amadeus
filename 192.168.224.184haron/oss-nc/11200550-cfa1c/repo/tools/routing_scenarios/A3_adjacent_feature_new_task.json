@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "A3_adjacent_feature_new_task",
+  "category": "lifecycle",
+  "notes": "Hard boundary: a nearby feature may be a new task or a continuation.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 hello.py，只打印 hello。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "再写一个相邻的小工具 goodbye.py，只打印 goodbye。",
+      "label": "ambiguous",
+      "accept_labels": [
+        "new",
+        "continue"
+      ],
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "date": "2026-10-22",
+  "status": "code_followup_candidate_not_published",
+  "reviewed_parent": "916fa4726196b6afe4ad88db892a0b710d301972",
+  "main": "8de4c95852b4bc1af3d4686ce6aaae95d91cc379",
+  "prior_receipt": "japanese_resource_post_249_2026-10-22.json",
+  "fixes": [
+    "Collect personal keys before subtracting from official native words once; remove aliases after successful native registration.",
+    "Normalize personal surface spellings in the compiled snapshot with native normalization; preserve source bytes.",
+    "Simplify dead numeric-prefix handling without changing exact-base casing policy; bump native/audio identity for surface normalization."
+  ],
+  "code_sha256_lf": {
+    "GPT_SoVITS/text/japanese.py": "8d7f4342eab3008f1ea69aad197c4cb9807d6b7903acab4252eb22d24b1ae37f",
+    "tts/japanese_dictionary.py": "3fb16ce11094dc6180e19ed753143c85be4df12678454305610a577ca54e1e28",
+    "tts/japanese_reading.py": "9305faedc157bd6a4efdf3c9d22d2de19796302253c70b7ae8e9bc378f74d450",
+    "config/japanese_dictionary.py": "86255d837cd23bf4151aa72dc49c33ebff6138f35adc7de2d4d82063e1df9e0a",
+    "tools/tts_text_processor.py": "f39ece272676c67bd15b3c322c14e56bbbdf35d04464e9c351e2759917ab3f5b"
+  },
+  "tests": {
+    "related_passed": 142,
+    "warnings": 2,
+    "old_head_new_regressions": {
+      "failed": 3,
+      "passed": 2,
+      "failures": [
+        "halfwidth personal override, format 1",
+        "halfwidth personal override, format 2",
+        "per-row full vocabulary copying"
+      ]
+    },
+    "scaling_contract": {
+      "official_keys": 120000,
+      "personal_keys": 3001,
+      "full_set_copy_work_limit": 240000,
+      "note": "Deterministic work bound plus separate native timing; no machine-speed CI threshold."
+    }
+  },
+  "performance": {
+    "scope": "Windows configure_japanese_dictionary in fresh processes, precompiled dictionaries, sequential before/after per size, synthetic personal rows. One sample per size/revision; not end-to-end TTS or a platform guarantee. Prior concurrent measurements are not used.",
+    "samples": [
+      {
+        "personal_rows": 200,
+        "before_seconds": 2.915480900000034,
+        "after_seconds": 2.211785299999974,
+        "official_unique_keys": 116574
+      },
+      {
+        "personal_rows": 1000,
+        "before_seconds": 5.911133399999926,
+        "after_seconds": 2.2191005999999334,
+        "official_unique_keys": 116574
+      },
+      {
+        "personal_rows": 3000,
+        "before_seconds": 14.933875799999896,
+        "after_seconds": 2.195796900000005,
+        "official_unique_keys": 116574
+      }
+    ]
+  },
+  "corpus": {
+    "input_sha256": "0ce02d9a0cb1db12168fc2deb763cddeddd621ac32354d34001d7776a507e793",
+    "path": "correct_pronunciation_for_tts -> clean_text (ja, v2)",
+    "profiles": {
+      "none": {
+        "records": 26552,
+        "record_changes": 0,
+        "report_sha256": "46c9503ed3323670de5395cfa03d2bba66d965fbf8fc13ec19b658aabc5e4f3a"
+      },
+      "format1": {
+        "records": 26552,
+        "record_changes": 0,
+        "report_sha256": "7247b7d733b57889d51ddc19703ae7fcb692fd20ac8d85bad22eaeafdb1ce571"
+      },
+      "legacy": {
+        "records": 26552,
+        "record_changes": 0,
+        "report_sha256": "29eea4f453dc0dc049fd0c7985ba0cda6a4f4db56f5c1866c2653066fffbab6d"
+      },
+      "candidate": {
+        "records": 26552,
+        "record_changes": 0,
+        "report_sha256": "3970e27b3e37bf2ea3e24766b7bb90b9760d203e927ed3c4a95c8bafb16e5d63"
+      }
+    },
+    "scope": "No-personal-dictionary production profiles retain every previously reviewed phone and target observation; not an accuracy estimate."
+  },
+  "resource": {
+    "version": "2026.10.22.1-rc2",
+    "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+    "source_rows": 134201,
+    "reviewed_corrections": 462,
+    "original_unverified": 133739,
+    "source_rows_deleted": 0,
+    "data_changed": false,
+    "data_snapshot_commit": "6afbd8a8583046b3150cc578aec104a753452ddf"
+  },
+  "lifecycle": {
+    "actual_install_update_rollback_restore": true,
+    "personal_and_legacy_bytes_preserved": true,
+    "idempotent_reinstall": true,
+    "failure_restoration": "covered by related regression suite",
+    "base_control_changes": 0,
+    "new_audio": 0,
+    "report_sha256": "5f3f30f7d3681376d95a994ea569c03c682c2e461537149495dfa7d36427f2d3"
+  },
+  "rejected_optional_experiment": {
+    "proposal": "Lowercase case variants when base-only readings match",
+    "shipped": false,
+    "legacy_record_changes": 285,
+    "legacy_segmental_changes": 256,
+    "reason": "Equal base readings do not imply equivalent selection after loading legacy user dictionaries. Keep reviewed casing behavior; Hand context exception remains."
+  },
+  "data_review_backlog": {
+    "source": "External review supplied by maintainer; pending lexical review, not approved mappings",
+    "suspect_readings": [
+      "hidden",
+      "rollback",
+      "these",
+      "repair",
+      "subsequent",
+      "kerr",
+      "lumley"
+    ],
+    "deferred_alternatives": [
+      "directory",
+      "between",
+      "below",
+      "characters",
+      "did",
+      "rather"
+    ]
+  },
+  "remaining_acceptance": [
+    "Independent review of this small follow-up",
+    "Maintainer acceptance of unverified-but-enabled admission policy (#244)",
+    "Final listening acceptance; earlier relative preference does not certify full-vocabulary accuracy"
+  ],
+  "ci": "Fresh checks required on follow-up head; final PR checks and local ci-status.json are authoritative, not the prior 17 checks.",
+  "merge_or_publication_authorized": false
+}

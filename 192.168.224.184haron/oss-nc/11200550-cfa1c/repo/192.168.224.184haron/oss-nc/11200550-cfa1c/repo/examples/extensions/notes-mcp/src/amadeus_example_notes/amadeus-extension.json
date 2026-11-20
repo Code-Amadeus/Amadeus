@@ -1,0 +1,12 @@
+{
+  "license": "MIT-0",
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.notes-mcp",
+  "version": "0.1.0",
+  "display_name": {"en": "Local notes MCP", "zh-CN": "本地笔记 MCP"},
+  "description": {"en": "List, read and save notes in this package's own data directory through selected Work Providers.", "zh-CN": "通过选定的 Work Provider 列出、读取和保存此扩展数据目录中的笔记。"},
+  "author": {"name": "Amadeus contributors"},
+  "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32"]},
+  "runtime": {"kind": "python", "requires_python": ">=3.12"},
+  "contributes": {"mcp_server": [{"id": "notes", "contract": "amadeus.mcp-server/v0", "transport": "stdio", "command": "${python}", "args": ["-I", "-m", "amadeus_example_notes"], "env": {"AMADEUS_NOTES_DIR": "${data}/notes"}}]}
+}

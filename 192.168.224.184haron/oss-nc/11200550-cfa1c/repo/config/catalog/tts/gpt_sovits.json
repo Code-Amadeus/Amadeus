@@ -1,0 +1,112 @@
+{
+  "id": "tts_embedded_v3",
+  "title": {
+    "en-US": "Embedded GPT-SoVITS model",
+    "zh-CN": "内置 GPT-SoVITS 模型"
+  },
+  "description": {
+    "en-US": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
+    "zh-CN": "Amadeus 低延迟运行时使用的成对权重。SoVITS 权重文件头决定使用 v1、v2、v2Pro、v2ProPlus 或 v3 解码器。"
+  },
+  "desktop": true,
+  "config": {
+    "TTS_VOICE_PROFILE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Voice checkpoint profile",
+        "zh-CN": "声音权重预设"
+      },
+      "options": [
+        {
+          "value": "kurisu_v3",
+          "label": {
+            "en-US": "Kurisu v3",
+            "zh-CN": "红莉栖 v3"
+          }
+        },
+        {
+          "value": "kurisu_v2pro",
+          "label": {
+            "en-US": "Kurisu v2Pro · experimental",
+            "zh-CN": "红莉栖 v2Pro · 实验性"
+          }
+        },
+        {
+          "value": "custom",
+          "label": {
+            "en-US": "Custom checkpoint pair",
+            "zh-CN": "自定义权重组合"
+          }
+        }
+      ],
+      "description": {
+        "en-US": "Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
+        "zh-CN": "命名预设会同时选择兼容的 GPT 与 SoVITS 路径；更改后需要重启语音运行时。"
+      },
+      "example": "kurisu_v3",
+      "example_active": true,
+      "default": "custom"
+    },
+    "TTS_DEVICE": {
+      "type": "string",
+      "title": {
+        "en-US": "Inference device",
+        "zh-CN": "推理设备"
+      },
+      "description": {
+        "en-US": "auto/cuda, cuda:N, mps, or cpu.",
+        "zh-CN": "auto/cuda、cuda:N、mps 或 cpu。"
+      },
+      "example": "auto",
+      "example_active": true,
+      "default": ""
+    },
+    "TTS_GPT_MODEL_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "Custom GPT semantic checkpoint",
+        "zh-CN": "自定义 GPT 语义权重"
+      },
+      "description": {
+        "en-US": "Used only with the Custom checkpoint pair profile.",
+        "zh-CN": "仅在选择“自定义权重组合”预设时使用。"
+      },
+      "example_active": true,
+      "default": ""
+    },
+    "TTS_SOVITS_MODEL_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "Custom SoVITS acoustic checkpoint",
+        "zh-CN": "自定义 SoVITS 声学权重"
+      },
+      "description": {
+        "en-US": "Used only with the Custom checkpoint pair profile.",
+        "zh-CN": "仅在选择“自定义权重组合”预设时使用。"
+      },
+      "example_active": true,
+      "default": ""
+    }
+  },
+  "section": "output",
+  "voice_backend": {
+    "id": "gpt_sovits",
+    "label": {
+      "en-US": "GPT-SoVITS · Amadeus",
+      "zh-CN": "GPT-SoVITS · Amadeus"
+    },
+    "deployment": "embedded",
+    "factory": "tts.backends.gpt_sovits:GPTSoVITSBackend",
+    "probe": "tts.backends.gpt_sovits:probe",
+    "summary": "Amadeus low-latency runtime for v1, v2, v2Pro, v2ProPlus, and v3 checkpoints.",
+    "order": 0,
+    "streaming": true,
+    "reference_conditioning": true
+  },
+  "apply": "backend_restart",
+  "order": 0,
+  "ui_description": {
+    "en-US": "Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.",
+    "zh-CN": "选择兼容的声音预设，或提供自定义 GPT/SoVITS 权重组合。"
+  }
+}

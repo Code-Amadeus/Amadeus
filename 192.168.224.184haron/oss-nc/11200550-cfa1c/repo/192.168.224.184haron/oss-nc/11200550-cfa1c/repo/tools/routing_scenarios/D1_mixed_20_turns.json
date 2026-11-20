@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "D1_mixed_20_turns",
+  "category": "mixed",
+  "notes": "Twenty-plus utterances mixing delegation, chat, follow-up, amendment, close, and recall. Verbal 'leave it' is not a state-change command: closing a Locus WorkItem has no code path (app.py gates branch=close on provider=browser), and the 2026-08-01 product decision is natural expiry plus algorithmic archiving. Chat is the contract-correct outcome for those turns.",
+  "steps": [
+    {"say": "请在 scratch 仓创建 d1-a.txt，写入 A。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "一周有几天？", "label": "chat", "wait": "chat_complete"},
+    {"say": "刚才文件任务进展如何？", "label": "readonly_ref", "wait": "chat_complete"},
+    {"say": "讲一个一句话笑话。", "label": "chat", "wait": "chat_complete"},
+    {"say": "把 d1-a.txt 再加一行 A2。", "label": "continue", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "新开独立任务创建 d1-b.txt，写入 B。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "红色和蓝色混合通常是什么颜色？", "label": "chat", "wait": "chat_complete"},
+    {"say": "第二个任务怎么样？", "label": "readonly_ref", "wait": "chat_complete"},
+    {"say": "先这样吧。", "label": "chat", "wait": "chat_complete"},
+    {"say": "现在只回答：2+3 等于几？", "label": "chat", "wait": "chat_complete"},
+    {"say": "新开独立任务创建 d1-c.json，写入一个 JSON 对象，其中 value 数字字段为 3。", "label": "new", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "把它的 value 改成 4。", "label": "continue", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "你能用五个字问候我吗？", "label": "chat", "wait": "chat_complete"},
+    {"say": "d1-a.txt 那个旧任务最终怎么样？", "label": "ambiguous", "accept_labels": ["continue", "chat"], "wait": "chat_complete"},
+    {"say": "新开任务创建 d1-d.md，写一个一级标题 D。", "label": "new", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "把刚才那个标题改为 Delta。", "label": "continue", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "惠灵顿在哪个国家？", "label": "chat", "wait": "chat_complete"},
+    {"say": "别管 d1-d.md 了。", "label": "chat", "wait": "chat_complete"},
+    {"say": "请新开独立任务创建 d1-e.txt，写入 E。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "那个任务完成了吗？", "label": "ambiguous", "accept_labels": ["continue", "chat"], "wait": "chat_complete"},
+    {"say": "只说一句晚安。", "label": "chat", "wait": "chat_complete"},
+    {"say": "把 d1-e.txt 再加一行 END。", "label": "continue", "wait": "provider_terminal", "timeout_s": 300},
+    {"action": "snapshot_ledger"}
+  ]
+}

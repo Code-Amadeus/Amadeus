@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amadeus.local/schemas/external-asset-bundle-v1.json",
+  "title": "Amadeus External Asset Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "packs", "file_count", "total_bytes", "files"],
+  "properties": {
+    "format": {
+      "const": "amadeus.external-asset-bundle.v1"
+    },
+    "packs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "spec_version"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "spec_version": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "file_count": {"type": "integer", "minimum": 1},
+    "total_bytes": {"type": "integer", "minimum": 0},
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^assets/(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          },
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

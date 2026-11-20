@@ -33,7 +33,7 @@ from server.auip_narration_llm import (
     AUIP_STRUCTURED_PRESENTATION_PROMPT,
     AUIP_STRUCTURED_REQUIRED_PROMPT,
 )
-from server.auip_runtime import AuipRuntime, ai_interaction_enabled
+from server.auip_runtime import AuipRuntime
 from server.auip_structured_presentation import (
     AuipPresentationDecision,
     build_structured_presentation_payload,
@@ -204,7 +204,7 @@ class AuipNarrationAdapter:
         facts are narrated in source order.
         """
 
-        if not ai_interaction_enabled():
+        if not self.runtime.ai_interaction_in_effect():
             # Commentary is AI participation; accepted facts stay in the runtime.
             return
         event = payload.get("event") if isinstance(payload.get("event"), dict) else {}

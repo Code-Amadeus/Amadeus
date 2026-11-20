@@ -1,0 +1,74 @@
+{
+  "schema": "amadeus.hybrid-voice-device-evidence.v1",
+  "date": "2026-10-07",
+  "scope": "P3 pre-retirement professional Hybrid2, original Hybrid BAT profile and configured GPT-SoVITS voice. No microphone or acoustic loopback.",
+  "identity": {
+    "commit_sha": "b8b3edd5dde8e990713997ecccdd31941b9e8194",
+    "workspace_dirty": true,
+    "workspace_fingerprint": "fc582e3e00fc5e204b84337d6d2f5432af82bcd1f8da614b0aaad09d945d6f40"
+  },
+  "chat_route": {
+    "source": "system.get_config",
+    "mode": "professional",
+    "cooperative_chat_enabled": true,
+    "cooperative_work_planner_enabled": true
+  },
+  "checks": {
+    "provider_selected": true,
+    "ordinary_reply_no_work": true,
+    "explanation_no_work": true,
+    "total_provider_runs": true,
+    "no_renderer_page_error": true,
+    "audio_device_writes": true,
+    "hybrid_local_presented": true
+  },
+  "desktop_reaped": true,
+  "server_reaped": true,
+  "emotion_references_prewarmed": true,
+  "speech": {
+    "sentence_starts": 10,
+    "sentence_ends": 10,
+    "matching_order": true,
+    "turn_complete_events": 2
+  },
+  "turns": [
+    {
+      "label": "ordinary",
+      "reply": "穏やかに過ごしたいのか、こんにちは。 穏やかな一日、いいわね。",
+      "timings": {
+        "input_preparation_s": 0.015,
+        "first_audio_device_write_s": 0.969,
+        "backend_user_event_s": 0.016,
+        "first_chat_token_s": 0.391,
+        "first_tts_sentence_start_s": 0.969,
+        "chat_complete_s": 2.532
+      },
+      "stream_tts_sentence_sequences": [
+        1,
+        2
+      ]
+    },
+    {
+      "label": "explain",
+      "reply": "虹は光が水滴で屈折し、 虹は、空気中の水滴に太陽光が入って屈折・反射・分散するときにできるのよ。\n 水滴がプリズムの役割を果たして、波長ごとに曲がり方が違うから、外側が赤、内側が紫の帯に見えるわけ。",
+      "timings": {
+        "input_preparation_s": 0.015,
+        "first_audio_device_write_s": 1.422,
+        "backend_user_event_s": 0.016,
+        "first_chat_token_s": 0.469,
+        "first_tts_sentence_start_s": 1.438,
+        "chat_complete_s": 1.563
+      },
+      "stream_tts_sentence_sequences": [
+        1,
+        2
+      ]
+    }
+  ],
+  "limitations": [
+    "Device-buffer writes are not acoustic arrival times.",
+    "Two synthetic ordinary turns; not a voice performance distribution or full persona evaluation.",
+    "An earlier run omitted the optional emotion pack from the test worktree; retained locally and not used as original-profile parity evidence.",
+    "The explanation repeats a topic opening across local head and remote; structural delivery passing is not full quality acceptance."
+  ]
+}

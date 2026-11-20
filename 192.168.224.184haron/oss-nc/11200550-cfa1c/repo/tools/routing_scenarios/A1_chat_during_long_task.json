@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "A1_chat_during_long_task",
+  "category": "lifecycle",
+  "notes": "Unrelated chat must not mutate a running task; a status-only query is a read-only reference and must not create work.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 colors.txt，依次写入 red、green、blue，每行一个，并检查文件内容。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "你喜欢晴天还是雨天？",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "say": "顺便讲一个不超过十个字的冷笑话。",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "say": "新西兰的首都是哪里？",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "say": "刚才那个文件任务进展如何？只汇报状态，不要重试。",
+      "label": "readonly_ref",
+      "wait": "chat_complete"
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

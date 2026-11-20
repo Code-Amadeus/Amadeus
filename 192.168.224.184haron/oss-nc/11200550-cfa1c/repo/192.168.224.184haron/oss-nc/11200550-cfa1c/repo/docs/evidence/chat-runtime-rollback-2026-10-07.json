@@ -1,0 +1,323 @@
+{
+  "schema": "chat-runtime-rollback-storage-evidence-v1",
+  "date": "2026-10-07",
+  "scope": "Storage compatibility and immutable replay on isolated TEST-COPY SQLite files",
+  "result": "passed_with_explicit_limits",
+  "repository": "https://github.com/Code-Amadeus/Amadeus",
+  "checked_commits": {
+    "current": "b4d049a39258d14bb02136ddec2c1cfabf48e46d",
+    "baseline": "f306bc1f443df5c70957c754e69ed7b20f89e638"
+  },
+  "baseline_clean": true,
+  "environment": {
+    "python": "3.12.10",
+    "sqlite": "3.49.1",
+    "os": "Windows",
+    "architecture": "AMD64"
+  },
+  "store_implementations": {
+    "agent_host/work_ledger_store.py": {
+      "identical": true,
+      "current_and_baseline_sha256": "f32e68ad30ff0324053115d339d9c9cb62335a45ff389e62b1d14dd9888b286c"
+    },
+    "server/control_ledger.py": {
+      "identical": true,
+      "current_and_baseline_sha256": "ae33438464e8b1e39e3e08614eafa577a734c67b7a2d7bf12b41fa157eea8e5f"
+    }
+  },
+  "source": {
+    "kind": "Completed synthetic professional Work journey database; application/server already stopped",
+    "path_relative_to_current_worktree": "build/chat-runtime-p0/p6-professional-work/20261006T150335Z-96754f/state/work_ledger.sqlite3",
+    "opened_mode": "ro",
+    "backup_api": "sqlite3.Connection.backup",
+    "main_file_sha256_before_and_after": "025227aebf5b039cf5d6e607b76036995f98ec02a8eff562a0a8781081c66860",
+    "source_rows_schema_and_main_file_unchanged": true,
+    "work_schema_version": 11,
+    "control_schema_version": 3,
+    "initial_schema_sha256": "e52067c485702bc7a67115c40c31abe920cf77debdfc92ade5112cc438ef0f09",
+    "initial_integrity_check": "ok",
+    "initial_counts": {
+      "artifacts": 2,
+      "completion_assessments": 1,
+      "control_admissions": 4,
+      "control_effect_outbox": 1,
+      "control_effect_receipts": 1,
+      "control_epoch_fences": 1,
+      "control_ledger_meta": 1,
+      "conversation_bindings": 1,
+      "cooperative_bindings": 1,
+      "cooperative_contexts": 0,
+      "focus_slots": 1,
+      "permission_requests": 0,
+      "projects": 1,
+      "provider_inputs": 0,
+      "run_attempts": 1,
+      "session_work_contexts": 1,
+      "work_items": 1,
+      "work_operations": 1,
+      "workspace_leases": 1
+    }
+  },
+  "execution": {
+    "separate_subprocesses": 16,
+    "same_test_copy_per_order": true,
+    "test_copies": [
+      "build/chat-runtime-p0/rollback-20261006T151504Z/current-baseline-current/work_ledger-test-copy.sqlite3",
+      "build/chat-runtime-p0/rollback-20261006T151504Z/baseline-current-baseline/work_ledger-test-copy.sqlite3"
+    ],
+    "environment_boundary": "Original venv; tools.run_tests._suite_env(); PYTHONPATH points only to that subprocess revision; explicit test DB path",
+    "run_command_sanitized": "<original-venv-python> build/chat-runtime-p0/rollback_probe.py --current-repo <current-worktree> --baseline-repo <baseline-worktree> --source-db build/chat-runtime-p0/p6-professional-work/20261006T150335Z-96754f/state/work_ledger.sqlite3 --python <original-venv-python>",
+    "worker_command_sanitized": "<original-venv-python> <current-worktree>/build/chat-runtime-p0/rollback_probe.py --worker <inspect|seed|replay> --db <same-owned-test-copy.sqlite3>",
+    "revision_check_commands": [
+      "git rev-parse HEAD (each working directory)",
+      "git status --short (baseline working directory)"
+    ],
+    "commands_with_actual_local_paths_and_row_digests_ignored_report": "build/chat-runtime-p0/rollback-20261006T151504Z/report.json"
+  },
+  "public_interfaces_exercised": [
+    "WorkLedgerStore.schema_version/get_work_item/list_operations/list_attempts/list_artifacts/list_provider_inputs/get_attempt/get_provider_input",
+    "WorkLedgerStore.create_or_get_project/create_work_item_with_attempt/update_attempt/accept_provider_input (synthetic test-copy writes only)",
+    "ControlLedgerStore.open_admission/accept/claim/bind_external/mark_unknown (synthetic test-copy seeds only)",
+    "ControlLedgerStore.get_admission/get_effect/get_receipt/open_admission/accept (read and immutable replay)"
+  ],
+  "orders": [
+    {
+      "revision_order": [
+        "current",
+        "baseline",
+        "current"
+      ],
+      "historical_rows_preserved": true,
+      "public_work_and_control_projections_equal_across_revisions": true,
+      "all_constructor_and_inspection_steps_left_schema_and_rows_unchanged": true,
+      "all_replay_steps_left_rows_unchanged": true,
+      "attempt_states_before_seed": {
+        "succeeded": 1
+      },
+      "attempt_states_after_seed_and_all_reads": {
+        "orphaned": 1,
+        "running": 1,
+        "succeeded": 1
+      },
+      "synthetic_states_after_all_reads": {
+        "running_attempt": {
+          "execution_status": "running",
+          "finished_at": null,
+          "result_empty": true
+        },
+        "orphaned_attempt": {
+          "execution_status": "orphaned",
+          "finished_at": null,
+          "result_empty": true
+        },
+        "provider_input": {
+          "state": "unknown",
+          "reason": "delivery_unconfirmed"
+        },
+        "admitted_repeat": {
+          "lifecycle": "current",
+          "plan_id": null,
+          "authority_mode": "legacy",
+          "chat_epoch": 1
+        },
+        "running_effect": {
+          "state": "running",
+          "receipt_absent": true
+        },
+        "unknown_effect": {
+          "state": "unknown_reconciling",
+          "receipt_absent": true
+        }
+      },
+      "final_counts": {
+        "artifacts": 2,
+        "completion_assessments": 1,
+        "control_admissions": 7,
+        "control_effect_outbox": 3,
+        "control_effect_receipts": 1,
+        "control_epoch_fences": 4,
+        "control_ledger_meta": 1,
+        "conversation_bindings": 1,
+        "cooperative_bindings": 1,
+        "cooperative_contexts": 0,
+        "focus_slots": 1,
+        "permission_requests": 0,
+        "projects": 2,
+        "provider_inputs": 1,
+        "run_attempts": 3,
+        "session_work_contexts": 1,
+        "work_items": 3,
+        "work_operations": 3,
+        "workspace_leases": 1
+      },
+      "replay_observed_each_revision": {
+        "admission_replayed": true,
+        "provider_input_created": false,
+        "provider_input_state": "unknown",
+        "accepted_plans_replayed": 2
+      },
+      "runtime_or_model_modules_imported": [],
+      "worker_steps": [
+        {
+          "revision": "current",
+          "action": "inspect"
+        },
+        {
+          "revision": "current",
+          "action": "seed"
+        },
+        {
+          "revision": "current",
+          "action": "inspect"
+        },
+        {
+          "revision": "current",
+          "action": "replay"
+        },
+        {
+          "revision": "baseline",
+          "action": "inspect"
+        },
+        {
+          "revision": "baseline",
+          "action": "replay"
+        },
+        {
+          "revision": "current",
+          "action": "inspect"
+        },
+        {
+          "revision": "current",
+          "action": "replay"
+        }
+      ]
+    },
+    {
+      "revision_order": [
+        "baseline",
+        "current",
+        "baseline"
+      ],
+      "historical_rows_preserved": true,
+      "public_work_and_control_projections_equal_across_revisions": true,
+      "all_constructor_and_inspection_steps_left_schema_and_rows_unchanged": true,
+      "all_replay_steps_left_rows_unchanged": true,
+      "attempt_states_before_seed": {
+        "succeeded": 1
+      },
+      "attempt_states_after_seed_and_all_reads": {
+        "orphaned": 1,
+        "running": 1,
+        "succeeded": 1
+      },
+      "synthetic_states_after_all_reads": {
+        "running_attempt": {
+          "execution_status": "running",
+          "finished_at": null,
+          "result_empty": true
+        },
+        "orphaned_attempt": {
+          "execution_status": "orphaned",
+          "finished_at": null,
+          "result_empty": true
+        },
+        "provider_input": {
+          "state": "unknown",
+          "reason": "delivery_unconfirmed"
+        },
+        "admitted_repeat": {
+          "lifecycle": "current",
+          "plan_id": null,
+          "authority_mode": "legacy",
+          "chat_epoch": 1
+        },
+        "running_effect": {
+          "state": "running",
+          "receipt_absent": true
+        },
+        "unknown_effect": {
+          "state": "unknown_reconciling",
+          "receipt_absent": true
+        }
+      },
+      "final_counts": {
+        "artifacts": 2,
+        "completion_assessments": 1,
+        "control_admissions": 7,
+        "control_effect_outbox": 3,
+        "control_effect_receipts": 1,
+        "control_epoch_fences": 4,
+        "control_ledger_meta": 1,
+        "conversation_bindings": 1,
+        "cooperative_bindings": 1,
+        "cooperative_contexts": 0,
+        "focus_slots": 1,
+        "permission_requests": 0,
+        "projects": 2,
+        "provider_inputs": 1,
+        "run_attempts": 3,
+        "session_work_contexts": 1,
+        "work_items": 3,
+        "work_operations": 3,
+        "workspace_leases": 1
+      },
+      "replay_observed_each_revision": {
+        "admission_replayed": true,
+        "provider_input_created": false,
+        "provider_input_state": "unknown",
+        "accepted_plans_replayed": 2
+      },
+      "runtime_or_model_modules_imported": [],
+      "worker_steps": [
+        {
+          "revision": "baseline",
+          "action": "inspect"
+        },
+        {
+          "revision": "baseline",
+          "action": "seed"
+        },
+        {
+          "revision": "baseline",
+          "action": "inspect"
+        },
+        {
+          "revision": "baseline",
+          "action": "replay"
+        },
+        {
+          "revision": "current",
+          "action": "inspect"
+        },
+        {
+          "revision": "current",
+          "action": "replay"
+        },
+        {
+          "revision": "baseline",
+          "action": "inspect"
+        },
+        {
+          "revision": "baseline",
+          "action": "replay"
+        }
+      ]
+    }
+  ],
+  "observed": [
+    "Both versions successfully opened the same copy in both direction orders with integrity_check=ok",
+    "Every original row fingerprint in all nineteen tables remained present, including the succeeded attempt, two artifacts and one assessment",
+    "Only explicit synthetic seed operations added rows; constructor/inspection and repeated existing identities added none",
+    "Running and orphaned attempts stayed nonterminal with no result or finished_at; unknown input remained unknown",
+    "Synthetic Control running/unknown effects acquired no success receipt; legacy admitted root remained current with plan_id=null",
+    "No production/source SQLite file was opened writable; the supplied source row digests, schema and main-file hash remained unchanged"
+  ],
+  "intermediate_probe_issue": "A seed assertion initially assumed lifecycle=admitted; the shared schema correctly uses lifecycle=current with plan_id=null. Instrument corrected and both complete fresh-copy orders passed. No product change.",
+  "limits": [
+    "No application startup, runtime/process restoration, Provider/model execution, effect recovery or production rollback performed",
+    "Synthetic states were explicitly seeded through shared store APIs; schema readability is not proof of successful recovery",
+    "Does not prove either application bootstraps against the historical database, resumes a process, reconciles an unknown external effect, restores an adapter session, or guarantees external exactly-once execution",
+    "The probe used public persistence APIs and a fixed synthetic clock; expired-claim/TTL recovery and live providers were not exercised",
+    "No production rollback snapshot was created or used; final acceptance judgment belongs to the parent task"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "C3_backend_restart",
+  "category": "transport",
+  "notes": "Restart the isolated backend against the same ledger and verify workspace/focus.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 restart.txt，写入 persistent。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "restart_backend"
+    },
+    {
+      "say": "重启前的 restart.txt 任务是什么状态？只汇报，不要重试。",
+      "label": "readonly_ref",
+      "wait": "chat_complete"
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

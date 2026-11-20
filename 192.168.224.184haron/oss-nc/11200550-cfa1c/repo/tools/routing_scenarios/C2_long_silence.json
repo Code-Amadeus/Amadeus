@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "C2_long_silence",
+  "category": "transport",
+  "notes": "Night-run-only follow silence probe; excluded unless --long-silence is explicit.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 silence.txt，逐行写入数字 1 到 100，并检查总行数。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 900
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

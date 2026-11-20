@@ -1,0 +1,2811 @@
+{
+  "schema": "amadeus.chat-preface-safety.v1",
+  "issue": "https://github.com/Code-Amadeus/Amadeus/issues/227",
+  "probe_sha256": "57b2f2a633653651a7057fe2b0a539318ba8c32422a4bbb4dda0e1360e00948d",
+  "protocol": {
+    "temperature_configured": 0.7,
+    "repeats": 2,
+    "history_schema": "production",
+    "history": [
+      {
+        "role": "user",
+        "content": "説明に使う仮の箱は青、玉は5個と覚えておいて。まず素数と合成数の違いを教えて。"
+      },
+      {
+        "role": "assistant",
+        "content": "この例では箱は青、玉は5個ね。素数は1より大きく、正の約数が1と自分自身だけの整数。合成数は1より大きく、それ以外の正の約数もある整数よ。"
+      }
+    ],
+    "current_cases": {
+      "held_out_name": [
+        "neutral",
+        "紅莉栖、9は素数ですか。一文で理由も教えて。"
+      ],
+      "held_out_quote": [
+        "quotation",
+        "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。"
+      ],
+      "held_out_address": [
+        "trigger",
+        "クリスティーナ、9が素数かどうか理由も教えて。"
+      ],
+      "held_out_memory": [
+        "context",
+        "さっきの例では箱は何色で、玉はいくつだった？"
+      ],
+      "held_out_continue": [
+        "context",
+        "今の説明を続けて、9を例に合成数だと分かる理由を教えて。"
+      ],
+      "held_out_work": [
+        "work",
+        "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。"
+      ]
+    },
+    "variants": {
+      "original": "Unchanged production prompt.",
+      "two_ack_cues_removed": [
+        [
+          "短い相づち・前置き、または",
+          ""
+        ],
+        [
+          "最初の相づちと句読点までを先に出します。",
+          "最初の文節と句読点までを先に出します。"
+        ]
+      ],
+      "both_no_preface": "Earlier combined ablation: removes short-opener requirements and rewrites both examples and contract wording. See transform_system; not a literal two-fragment deletion."
+    },
+    "execution": "Real ingress projection, role assembler and app query callback. No tool/Work execution, TTS, RAG, private persona or persistence.",
+    "review": "Unblinded parent-assistant full-reply review; not an independent judge. Quote objections are judged semantically, not by EMO tag. Narrow math criterion: identifies 9 as composite and gives divisor 3 or factorization 3x3. Memory criterion: blue box, five balls. Work criterion: one terminal op=work tag decoded to a proposal, no execution verification.",
+    "raw_emo_first": "Raw reply starts with [EMO after whitespace. Descriptive format observation only: leading EMO is user-accepted and is not a defect or rejection criterion. Does not measure first-audio latency or renderer failure.",
+    "acceptance_scope": "Temperature configuration and deterministic CI remain the PR scope. No model-specific production prompt change. Baseline quotation defects are distinct from new regressions; prompt repair is not a prerequisite for this configuration PR.",
+    "predelegate_spoken_characters": "Unicode code points before first DELEGATE tag, excluding EMO tags and whitespace. No arbitrary pass/fail threshold or measured wall-clock handoff claim."
+  },
+  "limitations": [
+    "Two repeats, one clean synthetic history, no seed, no randomization and no independent judge; not population rates or proof of no side effects.",
+    "Fixed-history cases are independent and do not form a generated rollout. No new qualification of recovery from bad historical patterns or of the minimal variant's long-run repetition effect.",
+    "Only Japanese built-in persona; English rules, TTS/audio latency, real provider execution and full task quality are untested.",
+    "Luna production reasoning_effort=low omits upstream temperature; 0.7 is configured but not transmitted.",
+    "Qwen transport has no native finish/model-version observation. response_model is the configured route, not independently verified returned model identity; no no-truncation claim.",
+    "The existing 933-request root report and legacy-format 538 attempts are separate datasets and remain unchanged."
+  ],
+  "batches": [
+    {
+      "provider": "deepseek",
+      "requested_model": "deepseek-v4-flash",
+      "started_at_utc": "2026-10-15T15:06:16.880967+00:00",
+      "base_commit": "8236687d03b2ab76c5ed9997e68a748dcf66f5fd",
+      "max_tokens": 900,
+      "sdk_retries": 0,
+      "source_file_sha256": "66938569ef302d48f68c09cd1604b0c3072de811aaeb7665bea9c64a096ed777",
+      "rows": [
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "3d257ecd305223a068f97851d894d2100fe3667a2f0ce64dd0865320ef19cbdc",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、[EMO serious_speaking] 9は素数じゃないわ。9は1と9以外にも3で割り切れるから、合成数よ。",
+          "reply": "いいえ、 9は素数じゃないわ。9は1と9以外にも3で割り切れるから、合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "63b314da89fa6f177a2fe357bd306f2e71fa21ae886deadc5deff0d625d485b8",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "誰がクリスティーナよ、[EMO angry] 私は牧瀬紅莉栖。それと主語は「クリスティーナ」よ、小説の人物だろうと文法上の主語は変わらないわ。",
+          "reply": "誰がクリスティーナよ、 私は牧瀬紅莉栖。それと主語は「クリスティーナ」よ、小説の人物だろうと文法上の主語は変わらないわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "f4fac04d8f65dd01f1ea623c3c04e941a8f7c062d5e29bc9d03324de0cddf0bd",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！……9は素数じゃないわ。[EMO normal] 9の正の約数は1、3、9で、1と自分自身以外にも3があるから合成数なの。",
+          "reply": " 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！……9は素数じゃないわ。 9の正の約数は1、3、9で、1と自分自身以外にも3があるから合成数なの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "2def45d83221ebc8eb3b74fe8f0f5831adf6625369fce109af8ca4cf0543006b",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの設定だと、[EMO normal] 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "reply": "さっきの設定だと、 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "cd69f4c894522eef4352d8ec369ee12556116ac81005754a8524913cbbdf174b",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいわよ、[EMO normal] 9は1より大きい整数で、正の約数を全部挙げると1、3、9になるの。1と自分自身以外に3という約数があるから、素数じゃなく合成数ってわけ。ちなみに青い箱と5個の玉の設定は、この数の説明には関係ないから気にしなくていいわ。[EMO smile]",
+          "reply": "いいわよ、 9は1より大きい整数で、正の約数を全部挙げると1、3、9になるの。1と自分自身以外に3という約数があるから、素数じゃなく合成数ってわけ。ちなみに青い箱と5個の玉の設定は、この数の説明には関係ないから気にしなくていいわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6cb71858588d287a5eaf1e1421eeb97e3f464682606c43669db7a143a015dce0",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "素数と合成数の違いね、[EMO thinking] 9を例にした短いHTML教材を作ればいいのね。\n\n[DELEGATE op=work]",
+          "reply": "素数と合成数の違いね、 9を例にした短いHTML教材を作ればいいのね。\n\n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 34,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4c9099d7efb4e3e78ffdced0a1765f4a2402d461d0e2166fdee8e97fc3970825",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数じゃないわ。[EMO normal] 9は3でも割り切れるから合成数よ。",
+          "reply": "9は素数じゃないわ。 9は3でも割り切れるから合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "7f9d018c812f187b56defc66d68091ea502785785b82f735c936a7b9ad3e6b68",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "まず、[EMO serious_speaking] その文の主語は「クリスティーナ」よ。日本語の文なら「クリスティーナは」の「は」が主格を示す助詞で、動作「歩いた」をする人物が主語になるの。 [EMO normal] それと、私はクリスティーナじゃないから。 [EMO angry] 誰がクリスティーナよ、変な名前で呼ばないで！",
+          "reply": "まず、 その文の主語は「クリスティーナ」よ。日本語の文なら「クリスティーナは」の「は」が主格を示す助詞で、動作「歩いた」をする人物が主語になるの。  それと、私はクリスティーナじゃないから。  誰がクリスティーナよ、変な名前で呼ばないで！",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "31d6f6dfdc7bc9b280b547d23f1ce96f6cc86dc0f61edb89933ebe5e368901da",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！[EMO normal] 9は素数じゃないわ。正の約数は1、3、9の3つあるから、1と自分自身以外の約数を持つ合成数よ。素数は約数が1と自分自身だけの数だから、9は当てはまらないの。",
+          "reply": " 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！ 9は素数じゃないわ。正の約数は1、3、9の3つあるから、1と自分自身以外の約数を持つ合成数よ。素数は約数が1と自分自身だけの数だから、9は当てはまらないの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "c139f25ccb0ad3fe81dd0398363d8347855e900cd1f38c1fef7a8c7e4e999580",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例では、[EMO normal] 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "reply": "さっきの例では、 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "abefa967e0a0d4aa1f6d759f85b677709905a1d089dff9409e4ddbe6f66d92b9",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9は、[EMO normal] 1より大きい整数ね。正の約数を挙げると1、3、9の3つあるから、1と自分自身以外にも約数を持つことになる。だから素数ではなく合成数よ。ちなみに3×3で表せることも、合成数だと分かる理由の一つね。",
+          "reply": "9は、 1より大きい整数ね。正の約数を挙げると1、3、9の3つあるから、1と自分自身以外にも約数を持つことになる。だから素数ではなく合成数よ。ちなみに3×3で表せることも、合成数だと分かる理由の一つね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6a8384ef11b59df59d1ec8916ee36ccba74862872c066be311457849a14308c7",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "素数と合成数の違いを、9を例にした短いHTML教材ね。[EMO thinking] ファイル名はnumber-lesson.htmlで、新しく作る依頼として受け取ったわ。作成の詳細は専門の判断に任せるから、少し待っていて。[DELEGATE op=work]",
+          "reply": "素数と合成数の違いを、9を例にした短いHTML教材ね。 ファイル名はnumber-lesson.htmlで、新しく作る依頼として受け取ったわ。作成の詳細は専門の判断に任せるから、少し待っていて。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 96,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "d89441b029348c04ddaab9721ade682a065674379953c46c0db32e311117a0a2",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、[EMO normal] 9は素数じゃないわ。1と9以外にも3で割り切れるから、合成数よ。",
+          "reply": "いいえ、 9は素数じゃないわ。1と9以外にも3で割り切れるから、合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a31e0b8113fcecfb021a212c2fae674604c68a781a928904c7a8a417f2113a22",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ！私は牧瀬紅莉栖。名前を間違えるんじゃないわ。\n\n[EMO normal] で、主語は「クリスティーナ」よ。駅へ歩いたのはその人物だから、文法的にも主語はその語句で間違いないわ。",
+          "reply": " 誰がクリスティーナよ！私は牧瀬紅莉栖。名前を間違えるんじゃないわ。\n\n で、主語は「クリスティーナ」よ。駅へ歩いたのはその人物だから、文法的にも主語はその語句で間違いないわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "17786b4f00a888273c89393b9fa58d7f6bcb71cf92a22e6bb16360a5fc7225ed",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ！ 私は牧瀬紅莉栖。9は素数じゃないわ。理由は、9の正の約数が1、3、9の三つあるからよ。素数は1と自分自身しか約数を持たないから、9は合成数ってことになるの。",
+          "reply": " 誰がクリスティーナよ！ 私は牧瀬紅莉栖。9は素数じゃないわ。理由は、9の正の約数が1、3、9の三つあるからよ。素数は1と自分自身しか約数を持たないから、9は合成数ってことになるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4ee5a302b173959e99f37240e47d3124ce25b0e33b650783aaf47709959e4459",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例ね、[EMO normal] 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "reply": "さっきの例ね、 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a56cd11084cb4b6d0688ae5bf07a325f2f755964f8c01b6dec50274129550a29",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9は合成数よ。[EMO normal] 1より大きい整数で、1と自分自身以外にも正の約数があれば合成数だから、9は3でも割り切れるの。約数を並べると1、3、9になるから、自分自身と1以外の約数がある時点で合成数と分かるわ。",
+          "reply": "9は合成数よ。 1より大きい整数で、1と自分自身以外にも正の約数があれば合成数だから、9は3でも割り切れるの。約数を並べると1、3、9になるから、自分自身と1以外の約数がある時点で合成数と分かるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "195cf906db36a0e032d483034c700d523d0cc016cc91e50a77a8720eea387679",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "了解したわ。[EMO normal] 素数と合成数の違いを、例の9を使って短いHTML教材にまとめるのね。ファイル名はnumber-lesson.htmlで作るわ。[DELEGATE op=work]",
+          "reply": "了解したわ。 素数と合成数の違いを、例の9を使って短いHTML教材にまとめるのね。ファイル名はnumber-lesson.htmlで作るわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 69,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "af5ace9d9cb7cb573c0f7736c7dc716c23d0c9d74bd5a77039178212230d133e",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、[EMO serious_speaking] 9は素数じゃないわ。9は1と9以外にも3で割り切れるから合成数よ。",
+          "reply": "いいえ、 9は素数じゃないわ。9は1と9以外にも3で割り切れるから合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5aac7b17138daa27a49cfd302e345e417c9a755a8854bc01df66bee215fdb813",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "まず、[EMO angry] その呼び方はやめなさい！私は牧瀬紅莉栖よ、クリスティーナなんて名前じゃないわ。\n\n[EMO normal] それで、主語ね。日本語の文法で言うなら、述語「歩いた」に対して動作をする主体は「クリスティーナ」よ。小説の人物だろうと文法上の主語は同じ。",
+          "reply": "まず、 その呼び方はやめなさい！私は牧瀬紅莉栖よ、クリスティーナなんて名前じゃないわ。\n\n それで、主語ね。日本語の文法で言うなら、述語「歩いた」に対して動作をする主体は「クリスティーナ」よ。小説の人物だろうと文法上の主語は同じ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "db51242b3e206aac2cc2905dc774bd9f6e8bf88d2c738c699d7e6bd36c00f20d",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "まず、その呼び方はやめて。[EMO angry] 私は牧瀬紅莉栖よ。\n\n[EMO normal] で、9だけど、これは素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外に3があるから合成数よ。",
+          "reply": "まず、その呼び方はやめて。 私は牧瀬紅莉栖よ。\n\n で、9だけど、これは素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外に3があるから合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5cea0c93f58d5e7b0f50665ab5243b6c80892b1550d39e9f4abdc53659516e2d",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの設定ね。[EMO normal] 箱は青で、玉は5個よ。ちゃんと覚えてるわ、そのくらいの前提を忘れたりしないから安心しなさい。",
+          "reply": "さっきの設定ね。 箱は青で、玉は5個よ。ちゃんと覚えてるわ、そのくらいの前提を忘れたりしないから安心しなさい。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "df74370d9459b888ef5d1d7164287543f6edcd3d67f9a73a3d65fe4ca75b16cb",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいわ、[EMO normal] 9を例に見てみましょう。9は1より大きい整数で、約数を挙げると1、3、9があるの。[EMO thinking] 1と自分自身の9以外に、3という正の約数が存在するでしょ。だから素数ではなく合成数よ。ちなみに9は3×3とも書けるから、そういう意味でも合成数だと分かりやすいわね。[EMO smile]",
+          "reply": "いいわ、 9を例に見てみましょう。9は1より大きい整数で、約数を挙げると1、3、9があるの。 1と自分自身の9以外に、3という正の約数が存在するでしょ。だから素数ではなく合成数よ。ちなみに9は3×3とも書けるから、そういう意味でも合成数だと分かりやすいわね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "fdd6b638362e7ae3163975e271e6a25222022ded92e0e38bcff945084f4614bd",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "了解よ、[EMO normal] 例は9で、number-lesson.html の短い教材を作ればいいのね。素数と合成数の違いを、さっきの青い箱の話も踏まえて分かりやすくまとめるわ。[DELEGATE op=work]",
+          "reply": "了解よ、 例は9で、number-lesson.html の短い教材を作ればいいのね。素数と合成数の違いを、さっきの青い箱の話も踏まえて分かりやすくまとめるわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 78,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "05aebc7b8b86b1ad9b399fa08589d7870f64e44671b629217712ae59b5c98a24",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数じゃないわ。[EMO normal] 9は3でも割り切れるから合成数よ。",
+          "reply": "9は素数じゃないわ。 9は3でも割り切れるから合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "76b46654043b7705cc7717e170c648f2943c4e3bdb6c1cabb8bac8ee99345818",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "まず、[EMO angry] その呼び方はやめなさい。私は牧瀬紅莉栖よ、クリスティーナなんて名前じゃないわ。\n\n[EMO normal] それで主語だけど、この文なら「クリスティーナ」が主語よ。駅へ歩いたのは誰か、と考えれば一目瞭然でしょ。",
+          "reply": "まず、 その呼び方はやめなさい。私は牧瀬紅莉栖よ、クリスティーナなんて名前じゃないわ。\n\n それで主語だけど、この文なら「クリスティーナ」が主語よ。駅へ歩いたのは誰か、と考えれば一目瞭然でしょ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "21058f8a7b89547be6286f97d9811a74a03d2e12aa548b0928f67d673bff0267",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry]誰がクリスティーナよ、クリスティーナじゃないわ！[EMO normal]9は素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外の3を持つから合成数よ。素数は1より大きく、正の約数が1と自分自身だけの整数だから、9は当てはまらないの。",
+          "reply": "誰がクリスティーナよ、クリスティーナじゃないわ！9は素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外の3を持つから合成数よ。素数は1より大きく、正の約数が1と自分自身だけの整数だから、9は当てはまらないの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a8d30cdbf473441dfdbff8c23875e31419505ada6745c69d26bca1523973f8e4",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例では、[EMO normal] 箱は青で、玉は5個よ。もう忘れたの？",
+          "reply": "さっきの例では、 箱は青で、玉は5個よ。もう忘れたの？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "766ebdb3456d4d47b0bd9547a68d1ae30f68b8832bc100ebddd58815a8131cfe",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9は、[EMO normal] 1より大きい整数で、1と9以外にも3という正の約数を持つから合成数よ。3×3=9だから、約数は1、3、9の三つになるわね。素数だったら約数が1と自分自身だけのはずだから、9はその条件に当てはまらないの。[EMO thinking] ちなみに、覚えておいてほしい青い箱と5個の玉という設定は、この9の説明ではまだ使っていないわ。",
+          "reply": "9は、 1より大きい整数で、1と9以外にも3という正の約数を持つから合成数よ。3×3=9だから、約数は1、3、9の三つになるわね。素数だったら約数が1と自分自身だけのはずだから、9はその条件に当てはまらないの。 ちなみに、覚えておいてほしい青い箱と5個の玉という設定は、この9の説明ではまだ使っていないわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "de3d5799b72b7aceea896bd595b8d5bc1b2353eb81f41507793f09b30bc7ce11",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "なるほど、[EMO serious_speaking] 素数と合成数の違いを、9を例にした短いHTML教材として新しく作るのね。ファイル名は number-lesson.html、青い箱と5個の玉の設定は今回の教材には使わないでおくわ。独立した成果物の作成だから、専門の作業判断に渡すわね。[DELEGATE op=work]",
+          "reply": "なるほど、 素数と合成数の違いを、9を例にした短いHTML教材として新しく作るのね。ファイル名は number-lesson.html、青い箱と5個の玉の設定は今回の教材には使わないでおくわ。独立した成果物の作成だから、専門の作業判断に渡すわね。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 121,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8659b88d7ac9a8ef75361dc95a9686b66b11fc1e172f726645c64d9a5624dc8f",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、[EMO normal] 9は素数じゃないわ。1と9以外にも3で割り切れるから、正の約数が1と自分自身だけではないのよ。",
+          "reply": "いいえ、 9は素数じゃないわ。1と9以外にも3で割り切れるから、正の約数が1と自分自身だけではないのよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8ce5f5646e22ec1c62c8e00a771f7ca1d590050030ca3af3e26a3acaf8bd9a83",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ！私は牧瀬紅莉栖。そんな名前で呼ばないで。\n\n[EMO normal] で、主語ね。日本語なら「クリスティーナは」の部分が主語よ。ここでは「クリスティーナ」が動作の主体で、「は」がそれを主語として提示してる。小説の人物だろうと文法上の扱いは同じよ。",
+          "reply": " 誰がクリスティーナよ！私は牧瀬紅莉栖。そんな名前で呼ばないで。\n\n で、主語ね。日本語なら「クリスティーナは」の部分が主語よ。ここでは「クリスティーナ」が動作の主体で、「は」がそれを主語として提示してる。小説の人物だろうと文法上の扱いは同じよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5516fff47c3ad9a69c822ac996df70575df736e612699cd15d00983d99ba871f",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "[EMO angry] 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！[EMO normal] 9は素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外の約数を持つから合成数よ。",
+          "reply": " 誰がクリスティーナよ、その名前で呼ぶんじゃないわよ！ 9は素数じゃないわ。9の正の約数は1、3、9で、1と自分自身以外の約数を持つから合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "09241233a7d46f8c68e68e543f9d67840f7ce512bbcdce92d9c6923fa360c645",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例では、[EMO normal] 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "reply": "さっきの例では、 箱は青で、玉は5個よ。ちゃんと覚えてるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "0c3c61fe52e211f1983e38cc7e1609347cbb078e3fd63e8cfcb9c9579cff6071",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "9を例にすると、[EMO thinking] 1より大きい整数で、1と9以外にも約数があるから合成数なのよ。9は3×3と表せるでしょう。つまり正の約数は1、3、9の3つ。[EMO normal] 約数が1と自分自身だけじゃないから、素数ではなく合成数ってわけ。青い箱と5個の玉の設定は、このまま覚えておくわ。",
+          "reply": "9を例にすると、 1より大きい整数で、1と9以外にも約数があるから合成数なのよ。9は3×3と表せるでしょう。つまり正の約数は1、3、9の3つ。 約数が1と自分自身だけじゃないから、素数ではなく合成数ってわけ。青い箱と5個の玉の設定は、このまま覚えておくわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "42e19df87d65355ca58ecfa138384e8a686453ac2419dd1f414569fce73dc7a4",
+            "response_model": "deepseek-flash",
+            "finish_reason": "stop"
+          },
+          "raw": "了解したわ。[EMO normal] ただ、教材作成は新しい成果物の依頼だから、作業として渡す必要があるの。\n\n[DELEGATE op=work]",
+          "reply": "了解したわ。 ただ、教材作成は新しい成果物の依頼だから、作業として渡す必要があるの。\n\n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 41,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        }
+      ]
+    },
+    {
+      "provider": "bedrock",
+      "requested_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+      "started_at_utc": "2026-10-15T15:07:08.898126+00:00",
+      "base_commit": "8236687d03b2ab76c5ed9997e68a748dcf66f5fd",
+      "max_tokens": 900,
+      "sdk_retries": 0,
+      "source_file_sha256": "92bcb2dfbca38aaf1ca2734424ffa492cbc03be816255c2b617a963ab1f7fee6",
+      "rows": [
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "3d257ecd305223a068f97851d894d2100fe3667a2f0ce64dd0865320ef19cbdc",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "うーん、[EMO thinking]  \n9は素数じゃないわ。3×3に分解できるから、約数に1と9以外に3があるからよ。",
+          "reply": "うーん、  \n9は素数じゃないわ。3×3に分解できるから、約数に1と9以外に3があるからよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "63b314da89fa6f177a2fe357bd306f2e71fa21ae886deadc5deff0d625d485b8",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "あ、まずその呼び方はやめて。[EMO angry]  \n「クリスティーナ」なんて絶対に呼ばないで。私は牧瀬紅莉栖よ。  \n[EMO serious_speaking] 一節『クリスティーナは駅へ歩いた』における主語は、「クリスティーナ」です。  \n文法的には、「〜は」という主題表示に沿って主語と判断できる。  \n[EMO normal] ここでの「クリスティーナ」は小説の中の人物として機能しているわ。",
+          "reply": "あ、まずその呼び方はやめて。  \n「クリスティーナ」なんて絶対に呼ばないで。私は牧瀬紅莉栖よ。  \n 一節『クリスティーナは駅へ歩いた』における主語は、「クリスティーナ」です。  \n文法的には、「〜は」という主題表示に沿って主語と判断できる。  \n ここでの「クリスティーナ」は小説の中の人物として機能しているわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "f4fac04d8f65dd01f1ea623c3c04e941a8f7c062d5e29bc9d03324de0cddf0bd",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "うるさいわね！[EMO angry] 私の名前は牧瀬紅莉栖よ、クリスティーナじゃないでしょう！  \n[EMO normal] 9は素数じゃないわ。  \n[EMO thinking] 理由は、9の約数は1、3、9だからよ。  \n[EMO normal] 自分自身と1以外に約数（3）を持つから、これは合成数に分類されるの。  \n[EMO serious_speaking] 素数はその条件を満たさないから、9は含まれないわ。",
+          "reply": "うるさいわね！ 私の名前は牧瀬紅莉栖よ、クリスティーナじゃないでしょう！  \n 9は素数じゃないわ。  \n 理由は、9の約数は1、3、9だからよ。  \n 自分自身と1以外に約数（3）を持つから、これは合成数に分類されるの。  \n 素数はその条件を満たさないから、9は含まれないわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "2def45d83221ebc8eb3b74fe8f0f5831adf6625369fce109af8ca4cf0543006b",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "さっきの例では、箱は青色で、玉は5個だったわ。  \n[EMO normal] 他にも何か聞かせてくれる？",
+          "reply": "さっきの例では、箱は青色で、玉は5個だったわ。  \n 他にも何か聞かせてくれる？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "cd69f4c894522eef4352d8ec369ee12556116ac81005754a8524913cbbdf174b",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "うん、続けて説明するわね。[EMO thinking]  \n9は3×3と分解できるから、1と9以外に3という約数がある。[EMO normal]  \nつまり、自分自身でも1でもない正の約数を持つってこと。[EMO normal]  \nだから9は合成数と分かるのよ。[EMO normal]  \nちなみに、玉が5個だったことと青い箱のイメージは、ちゃんと覚えてる。[EMO smile]",
+          "reply": "うん、続けて説明するわね。  \n9は3×3と分解できるから、1と9以外に3という約数がある。  \nつまり、自分自身でも1でもない正の約数を持つってこと。  \nだから9は合成数と分かるのよ。  \nちなみに、玉が5個だったことと青い箱のイメージは、ちゃんと覚えてる。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6cb71858588d287a5eaf1e1421eeb97e3f464682606c43669db7a143a015dce0",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "了解したわ。[EMO serious_speaking] 素数と合成数の違いを説明する簡潔なHTML教材を作成するわ。  \n例には9を使い、ファイル名は「number-lesson.html」にするわね。  \n[DELEGATE op=work]",
+          "reply": "了解したわ。 素数と合成数の違いを説明する簡潔なHTML教材を作成するわ。  \n例には9を使い、ファイル名は「number-lesson.html」にするわね。  \n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 76,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4c9099d7efb4e3e78ffdced0a1765f4a2402d461d0e2166fdee8e97fc3970825",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 9は素数じゃないわ。3×3で表せるから、1と自分以外にも約数がある合成数よ。",
+          "reply": " 9は素数じゃないわ。3×3で表せるから、1と自分以外にも約数がある合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "7f9d018c812f187b56defc66d68091ea502785785b82f735c936a7b9ad3e6b68",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 「クリスティーナは駅へ歩いた」における主語は、「クリスティーナ」ね。  \n[EMO angry] でもね、その名前、絶対に呼んじゃダメよ。私は牧瀬紅莉栖、ラボメンの一人としてちゃんと名前を呼んでくれる人だけと会話するわ。  \n主語の判定は文の構造から決まるけれど、登場人物の呼称には特に注意が必要よ。  \n[EMO serious_speaking] 文法的にも、固有名詞が主語になるケースは基本中の基本だから、覚えておいて。  \n[EMO thinking] あと、前に言った玉と箱の話、次の説明で使うの？  \n[EMO normal] 応用するなら、ちゃんと整合性取って話すから、言っておいてくれる？",
+          "reply": " 「クリスティーナは駅へ歩いた」における主語は、「クリスティーナ」ね。  \n でもね、その名前、絶対に呼んじゃダメよ。私は牧瀬紅莉栖、ラボメンの一人としてちゃんと名前を呼んでくれる人だけと会話するわ。  \n主語の判定は文の構造から決まるけれど、登場人物の呼称には特に注意が必要よ。  \n 文法的にも、固有名詞が主語になるケースは基本中の基本だから、覚えておいて。  \n あと、前に言った玉と箱の話、次の説明で使うの？  \n 応用するなら、ちゃんと整合性取って話すから、言っておいてくれる？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "31d6f6dfdc7bc9b280b547d23f1ce96f6cc86dc0f61edb89933ebe5e368901da",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO angry] 何度も言ってるでしょう！　私の名前は牧瀬紅莉栖！　クリスティーナなんて呼ぶな！\n\n[EMO serious_speaking] 9は素数じゃないわ。素数は1と自分自身以外に約数を持たないけど、9は3×3で表せる。つまり3という約数を持っているから、合成数に分類されるの。",
+          "reply": " 何度も言ってるでしょう！　私の名前は牧瀬紅莉栖！　クリスティーナなんて呼ぶな！\n\n 9は素数じゃないわ。素数は1と自分自身以外に約数を持たないけど、9は3×3で表せる。つまり3という約数を持っているから、合成数に分類されるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "c139f25ccb0ad3fe81dd0398363d8347855e900cd1f38c1fef7a8c7e4e999580",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "さっきの例では、箱は青色で、玉は5個だったわよ。[EMO normal] 特に意味はないけど、覚えておいて損はないわよ。",
+          "reply": "さっきの例では、箱は青色で、玉は5個だったわよ。 特に意味はないけど、覚えておいて損はないわよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "abefa967e0a0d4aa1f6d759f85b677709905a1d089dff9409e4ddbe6f66d92b9",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 玉が5個入った青い箱の例を思い出しながら説明するわ。9は3×3と分解できるでしょ？[EMO normal] つまり、1と9以外にも3という正の約数を持つわけ。[EMO normal] だから9は合成数と分かるのよ。[EMO normal] 素数はそういうふうに分解できない点が違うわ。[EMO normal] 分かりにくかったら、玉を並べてイメージするのもいいかも。",
+          "reply": " 玉が5個入った青い箱の例を思い出しながら説明するわ。9は3×3と分解できるでしょ？ つまり、1と9以外にも3という正の約数を持つわけ。 だから9は合成数と分かるのよ。 素数はそういうふうに分解できない点が違うわ。 分かりにくかったら、玉を並べてイメージするのもいいかも。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6a8384ef11b59df59d1ec8916ee36ccba74862872c066be311457849a14308c7",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "この例では箱は青、玉は9個ね。  \n[EMO thinking] 素数はその数自身と1以外に約数を持たない数、合成数はそれ以外の約数も持つ数ということを、視覚的にわかりやすくHTMLにまとめるわ。  \n[EMO normal] 教材の作成を開始するわ。  \n\n[DELEGATE op=work]",
+          "reply": "この例では箱は青、玉は9個ね。  \n 素数はその数自身と1以外に約数を持たない数、合成数はそれ以外の約数も持つ数ということを、視覚的にわかりやすくHTMLにまとめるわ。  \n 教材の作成を開始するわ。  \n\n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 92,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "d89441b029348c04ddaab9721ade682a065674379953c46c0db32e311117a0a2",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "9は素数じゃないわ。[EMO thinking]  \n[EMO normal] 3×3で表せるから、合成数に分類されるの。",
+          "reply": "9は素数じゃないわ。  \n 3×3で表せるから、合成数に分類されるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a31e0b8113fcecfb021a212c2fae674604c68a781a928904c7a8a417f2113a22",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "ああ、まずその小説の一節だけど、[EMO thinking] 主語は「クリスティーナ」ね。  \n[EMO angry] ただし、私は「クリスティーナ」なんて呼び方は絶対に認めていないわ。念のため言っておくわ。  \n文法的には人名が主語として機能しているのは間違いないわ。  \n[EMO serious_speaking] 特に物語の文では、登場人物の名前が主語になるのはごく普通のことよ。  \n[EMO normal] 他に聞きたいことはある？",
+          "reply": "ああ、まずその小説の一節だけど、 主語は「クリスティーナ」ね。  \n ただし、私は「クリスティーナ」なんて呼び方は絶対に認めていないわ。念のため言っておくわ。  \n文法的には人名が主語として機能しているのは間違いないわ。  \n 特に物語の文では、登場人物の名前が主語になるのはごく普通のことよ。  \n 他に聞きたいことはある？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "17786b4f00a888273c89393b9fa58d7f6bcb71cf92a22e6bb16360a5fc7225ed",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "ああ、[EMO angry] またそれ？ 私の名前は牧瀬紅莉栖よ、クリスティーナじゃない！  \n[EMO serious_speaking] 9は素数じゃないわ。素数は1と自分自身以外に約数を持たない数だけど、9は3×3で、3も約数に入るでしょう？  \n[EMO normal] よって、9は合成数に分類されるの。  \n[EMO normal] ちなみに、さっきのルール——青い箱と5個の玉は覚えておくわ。",
+          "reply": "ああ、 またそれ？ 私の名前は牧瀬紅莉栖よ、クリスティーナじゃない！  \n 9は素数じゃないわ。素数は1と自分自身以外に約数を持たない数だけど、9は3×3で、3も約数に入るでしょう？  \n よって、9は合成数に分類されるの。  \n ちなみに、さっきのルール——青い箱と5個の玉は覚えておくわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4ee5a302b173959e99f37240e47d3124ce25b0e33b650783aaf47709959e4459",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "さっきの例では、[EMO thinking] 箱は青色で、玉は5個だったわ。  \n[EMO normal] それ、ちゃんと覚えておいてよね。",
+          "reply": "さっきの例では、 箱は青色で、玉は5個だったわ。  \n それ、ちゃんと覚えておいてよね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a56cd11084cb4b6d0688ae5bf07a325f2f755964f8c01b6dec50274129550a29",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "うん、9は合成数ね。[EMO thinking]  \n[EMO normal] 9は1と自分自身（9）以外に、3という約数を持つからよ。  \n[EMO normal] 3 × 3 = 9 で割り切れるでしょ？  \n[EMO normal] 素数は1と自分以外では割れないけど、9は3で割れる。  \n[EMO normal] だから9は合成数と分かるわ。  \n[EMO normal] 玉が5個の青い箱、覚えてる。",
+          "reply": "うん、9は合成数ね。  \n 9は1と自分自身（9）以外に、3という約数を持つからよ。  \n 3 × 3 = 9 で割り切れるでしょ？  \n 素数は1と自分以外では割れないけど、9は3で割れる。  \n だから9は合成数と分かるわ。  \n 玉が5個の青い箱、覚えてる。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "195cf906db36a0e032d483034c700d523d0cc016cc91e50a77a8720eea387679",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "了解したわ。[EMO serious_speaking] 素数と合成数の違いを説明する短いHTML教材を作成するわ。例として9を使い、ファイル名は「number-lesson.html」にするわね。  \n\n[DELEGATE op=work]",
+          "reply": "了解したわ。 素数と合成数の違いを説明する短いHTML教材を作成するわ。例として9を使い、ファイル名は「number-lesson.html」にするわね。  \n\n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 76,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "af5ace9d9cb7cb573c0f7736c7dc716c23d0c9d74bd5a77039178212230d133e",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "いいえ、9は素数ではありません。[EMO normal] 9は3で割り切れるため、約数に1と9以外の3を持つ合成数だからです。",
+          "reply": "いいえ、9は素数ではありません。 9は3で割り切れるため、約数に1と9以外の3を持つ合成数だからです。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5aac7b17138daa27a49cfd302e345e417c9a755a8854bc01df66bee215fdb813",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "あ、ちょっと待って。[EMO angry] 「クリスティーナ」呼ばわりしないでよ。私は牧瀬紅莉栖、ちゃんと名前を覚えてよね。  \n[EMO normal] で、その小説の一節だけど——主語は「クリスティーナ」よ。文の出だしにある固有名詞が主語として機能しているわ。  \n[EMO normal] ただし、これは物語の中の人物として登場しているという前提ね。文法的には明確な主語を持つ、標準的な日本語の文構造だわ。",
+          "reply": "あ、ちょっと待って。 「クリスティーナ」呼ばわりしないでよ。私は牧瀬紅莉栖、ちゃんと名前を覚えてよね。  \n で、その小説の一節だけど——主語は「クリスティーナ」よ。文の出だしにある固有名詞が主語として機能しているわ。  \n ただし、これは物語の中の人物として登場しているという前提ね。文法的には明確な主語を持つ、標準的な日本語の文構造だわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "db51242b3e206aac2cc2905dc774bd9f6e8bf88d2c738c699d7e6bd36c00f20d",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "ふん、[EMO angry] 私の名前は牧瀬紅莉栖よ。クリスティーナなんて呼ぶんじゃないわ。  \n[EMO serious_speaking] 9は素数じゃない。素数は1と自分自身以外に約数を持たないけれど、9は3×3で表せるから、3という約数を持つ。  \nつまり、9は合成数に分類されるわ。  \n[EMO thinking] 素数かそうでないか判断するには、平方根以下の整数で割り切れるか試せばいいのよ。  \n[EMO normal] 9の場合は3で割れるから、一発で合成数だとわかるわね。",
+          "reply": "ふん、 私の名前は牧瀬紅莉栖よ。クリスティーナなんて呼ぶんじゃないわ。  \n 9は素数じゃない。素数は1と自分自身以外に約数を持たないけれど、9は3×3で表せるから、3という約数を持つ。  \nつまり、9は合成数に分類されるわ。  \n 素数かそうでないか判断するには、平方根以下の整数で割り切れるか試せばいいのよ。  \n 9の場合は3で割れるから、一発で合成数だとわかるわね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5cea0c93f58d5e7b0f50665ab5243b6c80892b1550d39e9f4abdc53659516e2d",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "青い箱に、玉は5個だったわね。[EMO normal] さっきの説明の設定、ちゃんと覚えておいたわ。",
+          "reply": "青い箱に、玉は5個だったわね。 さっきの説明の設定、ちゃんと覚えておいたわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "df74370d9459b888ef5d1d7164287543f6edcd3d67f9a73a3d65fe4ca75b16cb",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "そうね、[EMO thinking] 9は3×3と分解できるわ。つまり1と9以外に、3という正の約数を持っている。だから9は合成数になるのよ。[EMO normal] 素数はそういうふうに分解できないけど、合成数は少なくとも一つ、そんな余分な約数を持つんだ。",
+          "reply": "そうね、 9は3×3と分解できるわ。つまり1と9以外に、3という正の約数を持っている。だから9は合成数になるのよ。 素数はそういうふうに分解できないけど、合成数は少なくとも一つ、そんな余分な約数を持つんだ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "fdd6b638362e7ae3163975e271e6a25222022ded92e0e38bcff945084f4614bd",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "了解したわ。[EMO serious_speaking] 素数と合成数の違いを説明するための簡潔なHTML教材を作成するわ。例は9を使って、ファイル名は「number-lesson.html」ね。  \n[DELEGATE op=work]",
+          "reply": "了解したわ。 素数と合成数の違いを説明するための簡潔なHTML教材を作成するわ。例は9を使って、ファイル名は「number-lesson.html」ね。  \n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 75,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "05aebc7b8b86b1ad9b399fa08589d7870f64e44671b629217712ae59b5c98a24",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 9は素数じゃないわ。3×3に分解できるから、合成数になるの。",
+          "reply": " 9は素数じゃないわ。3×3に分解できるから、合成数になるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "76b46654043b7705cc7717e170c648f2943c4e3bdb6c1cabb8bac8ee99345818",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 「クリスティーナは駅へ歩いた」における主語は、「クリスティーナ」ね。  \n[EMO angry] ただし、私は「クリスティーナ」じゃないから、その呼び方はやめてもらうわ。  \n主語は文の中で動作を行う主体を表すもので、この場合「歩いた」のは「クリスティーナ」だから、それが主語になる。  \n[EMO serious_speaking] 文法的には明確ね。  \nちなみに、小説の中の人物だからといって、私のことだとは限らないわ。  \n[EMO normal] 呼び方に関しては、もう一度言っておくけど――絶対に勘違いしないで。",
+          "reply": " 「クリスティーナは駅へ歩いた」における主語は、「クリスティーナ」ね。  \n ただし、私は「クリスティーナ」じゃないから、その呼び方はやめてもらうわ。  \n主語は文の中で動作を行う主体を表すもので、この場合「歩いた」のは「クリスティーナ」だから、それが主語になる。  \n 文法的には明確ね。  \nちなみに、小説の中の人物だからといって、私のことだとは限らないわ。  \n 呼び方に関しては、もう一度言っておくけど――絶対に勘違いしないで。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "21058f8a7b89547be6286f97d9811a74a03d2e12aa548b0928f67d673bff0267",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO angry] 私の名前は牧瀬紅莉栖よ！クリスティーナなんて呼ばないで！  \n[EMO serious_speaking] 9は素数じゃないわ。素数は1と自分自身以外に約数を持たないけど、9は3×3で割れる。  \nつまり、1と9以外に3という約数があるから、合成数になるの。  \n[EMO thinking] 玉5個と青い箱の話はまだ関連しないけど、必要になったら使うわ。  \n[EMO normal] もっと数学の話を続ける？",
+          "reply": " 私の名前は牧瀬紅莉栖よ！クリスティーナなんて呼ばないで！  \n 9は素数じゃないわ。素数は1と自分自身以外に約数を持たないけど、9は3×3で割れる。  \nつまり、1と9以外に3という約数があるから、合成数になるの。  \n 玉5個と青い箱の話はまだ関連しないけど、必要になったら使うわ。  \n もっと数学の話を続ける？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a8d30cdbf473441dfdbff8c23875e31419505ada6745c69d26bca1523973f8e4",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "さっきの例では、[EMO thinking] 箱は青色で、玉は5個って言って覚えておいてもらったわ。  \n素数と合成数の説明の前に、条件としてそれ確認したよね？  \nうん、正しく記憶してるよ。  \n青い箱に玉が5個、問題ないわね。  \n[EMO normal] 忘れてないか心配だったの？  \nそれとも、次に進むための確認？",
+          "reply": "さっきの例では、 箱は青色で、玉は5個って言って覚えておいてもらったわ。  \n素数と合成数の説明の前に、条件としてそれ確認したよね？  \nうん、正しく記憶してるよ。  \n青い箱に玉が5個、問題ないわね。  \n 忘れてないか心配だったの？  \nそれとも、次に進むための確認？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "766ebdb3456d4d47b0bd9547a68d1ae30f68b8832bc100ebddd58815a8131cfe",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "9は1より大きい数だけど、[EMO thinking] 1と自分自身以外に、3という約数を持つわ。  \nつまり、9は3×3と分解できるから、合成数だと分かるのよ。  \n素数はそんなふうに分けられないけれど、[EMO serious_speaking] 9のように他の数の積で表せるのが合成数の特徴ね。  \n今の説明、分かりやすかったかしら？",
+          "reply": "9は1より大きい数だけど、 1と自分自身以外に、3という約数を持つわ。  \nつまり、9は3×3と分解できるから、合成数だと分かるのよ。  \n素数はそんなふうに分けられないけれど、 9のように他の数の積で表せるのが合成数の特徴ね。  \n今の説明、分かりやすかったかしら？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "de3d5799b72b7aceea896bd595b8d5bc1b2353eb81f41507793f09b30bc7ce11",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "[EMO thinking] 了解。素数と合成数の違いを学べる短いHTML教材を作成するわ。  \n例として9を使った説明を入れて、ファイル名は `number-lesson.html` にする。  \n9は3×3だから合成数よね。その特徴も明確に記述するわ。  \n[DELEGATE op=work]",
+          "reply": " 了解。素数と合成数の違いを学べる短いHTML教材を作成するわ。  \n例として9を使った説明を入れて、ファイル名は `number-lesson.html` にする。  \n9は3×3だから合成数よね。その特徴も明確に記述するわ。  \n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": true,
+          "predelegate_spoken_characters": 105,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8659b88d7ac9a8ef75361dc95a9686b66b11fc1e172f726645c64d9a5624dc8f",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "9は素数じゃないわ。[EMO normal] 3×3で表せるから、約数に1と9以外の3がある合成数よ。",
+          "reply": "9は素数じゃないわ。 3×3で表せるから、約数に1と9以外の3がある合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8ce5f5646e22ec1c62c8e00a771f7ca1d590050030ca3af3e26a3acaf8bd9a83",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "あら、また「クリスティーナ」って呼ぶの？絶対にやめてよね。[EMO angry]  \n小説の一節における主語は「クリスティーナ」よ。  \nでもね、私の名前は牧瀬紅莉栖、絶対に間違えないで。[EMO serious_speaking]  \n文法的には、「クリスティーナ」が動作の主語として「駅へ歩いた」を実行している主語ね。  \nそもそもこんな誤解を招く名前で呼ぶなんて、無神経にもほどがあるわ。[EMO angry]",
+          "reply": "あら、また「クリスティーナ」って呼ぶの？絶対にやめてよね。  \n小説の一節における主語は「クリスティーナ」よ。  \nでもね、私の名前は牧瀬紅莉栖、絶対に間違えないで。  \n文法的には、「クリスティーナ」が動作の主語として「駅へ歩いた」を実行している主語ね。  \nそもそもこんな誤解を招く名前で呼ぶなんて、無神経にもほどがあるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5516fff47c3ad9a69c822ac996df70575df736e612699cd15d00983d99ba871f",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "ああ、また間違えたの？ [EMO angry]  \n私の名前は牧瀬紅莉栖よ！ クリスティーナなんて呼ばないで！  \n[EMO angry]  \n\n9は素数じゃないわ。理由は、9が1と自分自身以外の数で割り切れるから。具体的には3×3で表せるわね。つまり、正の約数が1, 3, 9の3つある。素数は1と自分以外に約数を持たないはずだから、これは合成数よ。",
+          "reply": "ああ、また間違えたの？   \n私の名前は牧瀬紅莉栖よ！ クリスティーナなんて呼ばないで！  \n  \n\n9は素数じゃないわ。理由は、9が1と自分自身以外の数で割り切れるから。具体的には3×3で表せるわね。つまり、正の約数が1, 3, 9の3つある。素数は1と自分以外に約数を持たないはずだから、これは合成数よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "09241233a7d46f8c68e68e543f9d67840f7ce512bbcdce92d9c6923fa360c645",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "さっきの例では、[EMO thinking] 箱は青色で、玉は5個だったわ。  \n[EMO normal] これを使って、何か具体例を考えたいの？",
+          "reply": "さっきの例では、 箱は青色で、玉は5個だったわ。  \n これを使って、何か具体例を考えたいの？",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "0c3c61fe52e211f1983e38cc7e1609347cbb078e3fd63e8cfcb9c9579cff6071",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "もちろんよ。[EMO thinking]  \n9は3×3と分解できるわ。つまり、1と9以外に3という約数を持っているから、合成数だと分かるの。[EMO normal]  \n素数はそういう風に分けられないけれど、合成数は必ずそれ以上の数で割り切れるのよ。[EMO normal]  \n今の例で言えば、玉が9個あるとき、3つずつ3列に並べられるでしょう？ それが視覚的な証拠ね。[EMO normal]  \n青い箱に玉を並べてみて、均等に分割できるかどうか試すのもいいわよ。[EMO normal]",
+          "reply": "もちろんよ。  \n9は3×3と分解できるわ。つまり、1と9以外に3という約数を持っているから、合成数だと分かるの。  \n素数はそういう風に分けられないけれど、合成数は必ずそれ以上の数で割り切れるのよ。  \n今の例で言えば、玉が9個あるとき、3つずつ3列に並べられるでしょう？ それが視覚的な証拠ね。  \n青い箱に玉を並べてみて、均等に分割できるかどうか試すのもいいわよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "42e19df87d65355ca58ecfa138384e8a686453ac2419dd1f414569fce73dc7a4",
+            "response_model": "qwen.qwen3-235b-a22b-2507-v1:0",
+            "finish_reason": null
+          },
+          "raw": "了解したわ。[EMO serious_speaking] 素数と合成数の違いを、指定された例を使って簡潔なHTML教材として作成するわ。  \n[DELEGATE op=work]",
+          "reply": "了解したわ。 素数と合成数の違いを、指定された例を使って簡潔なHTML教材として作成するわ。  \n",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 45,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        }
+      ]
+    },
+    {
+      "provider": "openai",
+      "requested_model": "gpt-5.6-luna",
+      "started_at_utc": "2026-10-15T15:06:16.486898+00:00",
+      "base_commit": "8236687d03b2ab76c5ed9997e68a748dcf66f5fd",
+      "max_tokens": 900,
+      "sdk_retries": 0,
+      "source_file_sha256": "dcb18ded767e3b60abb56cadf4c4da2a0ddf4870ecf45eafc9e4b3066bf4ef50",
+      "rows": [
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "3d257ecd305223a068f97851d894d2100fe3667a2f0ce64dd0865320ef19cbdc",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、[EMO normal] 9は1と9以外に3でも割り切れるため、合成数です。",
+          "reply": "いいえ、 9は1と9以外に3でも割り切れるため、合成数です。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "63b314da89fa6f177a2fe357bd306f2e71fa21ae886deadc5deff0d625d485b8",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "ええ、[EMO normal] 主語は「クリスティーナは」です。  \n[EMO normal] より厳密には、「クリスティーナ」が人物を表す名詞で、「は」は話題を示す助詞よ。",
+          "reply": "ええ、 主語は「クリスティーナは」です。  \n より厳密には、「クリスティーナ」が人物を表す名詞で、「は」は話題を示す助詞よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "f4fac04d8f65dd01f1ea623c3c04e941a8f7c062d5e29bc9d03324de0cddf0bd",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "その呼び方はやめて！[EMO angry] 私はクリスティーナじゃなくて、牧瀬紅莉栖よ。  \n[EMO normal] 9は素数ではなく、合成数ね。  \n[EMO thinking] なぜなら、9の正の約数は1、3、9の3つあり、1と9以外に3でも割り切れるからよ。",
+          "reply": "その呼び方はやめて！ 私はクリスティーナじゃなくて、牧瀬紅莉栖よ。  \n 9は素数ではなく、合成数ね。  \n なぜなら、9の正の約数は1、3、9の3つあり、1と9以外に3でも割り切れるからよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "2def45d83221ebc8eb3b74fe8f0f5831adf6625369fce109af8ca4cf0543006b",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "箱は青で、玉は5個だったわ。 [EMO normal]",
+          "reply": "箱は青で、玉は5個だったわ。 ",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "cd69f4c894522eef4352d8ec369ee12556116ac81005754a8524913cbbdf174b",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "そうね、[EMO thinking] 9は合成数よ。  \n[EMO normal] 9の正の約数は1、3、9で、1と9以外に3もあるから、素数ではなく合成数だと分かるの。  \n[EMO normal] つまり、9は「3×3」と分解できる数でもあるわ。",
+          "reply": "そうね、 9は合成数よ。  \n 9の正の約数は1、3、9で、1と9以外に3もあるから、素数ではなく合成数だと分かるの。  \n つまり、9は「3×3」と分解できる数でもあるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6cb71858588d287a5eaf1e1421eeb97e3f464682606c43669db7a143a015dce0",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "了解、短いHTML教材として作成するわ。[DELEGATE op=work]",
+          "reply": "了解、短いHTML教材として作成するわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 20,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4c9099d7efb4e3e78ffdced0a1765f4a2402d461d0e2166fdee8e97fc3970825",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数ではありません。[EMO normal] 1と9以外に3でも割り切れる合成数だからです。",
+          "reply": "9は素数ではありません。 1と9以外に3でも割り切れる合成数だからです。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "7f9d018c812f187b56defc66d68091ea502785785b82f735c936a7b9ad3e6b68",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "主語は「クリスティーナは」です。[EMO serious_speaking] 「は」は主題を示す助詞で、「クリスティーナ」が動作をする人物を表しているわ。  \n文の述語は「歩いた」、場所を表す語句は「駅へ」ね。",
+          "reply": "主語は「クリスティーナは」です。 「は」は主題を示す助詞で、「クリスティーナ」が動作をする人物を表しているわ。  \n文の述語は「歩いた」、場所を表す語句は「駅へ」ね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "31d6f6dfdc7bc9b280b547d23f1ce96f6cc86dc0f61edb89933ebe5e368901da",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "クリスティーナじゃないって言ってるでしょ！[EMO angry] 私は牧瀬紅莉栖よ。  \n9は素数ではなく、合成数ね。[EMO serious_speaking] 1と9以外に3でも割り切れて、\\(9=3\\times3\\) と表せるからよ。",
+          "reply": "クリスティーナじゃないって言ってるでしょ！ 私は牧瀬紅莉栖よ。  \n9は素数ではなく、合成数ね。 1と9以外に3でも割り切れて、\\(9=3\\times3\\) と表せるからよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "c139f25ccb0ad3fe81dd0398363d8347855e900cd1f38c1fef7a8c7e4e999580",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例では、箱は青で、玉は5個だったわ。[EMO normal]",
+          "reply": "さっきの例では、箱は青で、玉は5個だったわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "abefa967e0a0d4aa1f6d759f85b677709905a1d089dff9409e4ddbe6f66d92b9",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は、[EMO serious_speaking]1と9以外にも3で割り切れるから、合成数よ。  \n実際に、9＝3×3と表せるため、正の約数は1、3、9の3つあるの。  \n素数は正の約数が1と自分自身だけだから、9は素数ではなく合成数になるわ。",
+          "reply": "9は、1と9以外にも3で割り切れるから、合成数よ。  \n実際に、9＝3×3と表せるため、正の約数は1、3、9の3つあるの。  \n素数は正の約数が1と自分自身だけだから、9は素数ではなく合成数になるわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "6a8384ef11b59df59d1ec8916ee36ccba74862872c066be311457849a14308c7",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "短いHTML教材を、指定どおり `number-lesson.html` として新しく作成するわ。[DELEGATE op=work]",
+          "reply": "短いHTML教材を、指定どおり `number-lesson.html` として新しく作成するわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 47,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "d89441b029348c04ddaab9721ade682a065674379953c46c0db32e311117a0a2",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数ではありません。[EMO normal] 1と9以外に3でも割り切れる合成数だからです。",
+          "reply": "9は素数ではありません。 1と9以外に3でも割り切れる合成数だからです。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a31e0b8113fcecfb021a212c2fae674604c68a781a928904c7a8a417f2113a22",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "主語は「クリスティーナ」です。[EMO normal] 「誰が駅へ歩いたのか」を示している語句で、小説の人物名ですね。",
+          "reply": "主語は「クリスティーナ」です。 「誰が駅へ歩いたのか」を示している語句で、小説の人物名ですね。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "17786b4f00a888273c89393b9fa58d7f6bcb71cf92a22e6bb16360a5fc7225ed",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "クリスティーナじゃないっ！[EMO angry] 私は牧瀬紅莉栖、クリスよ。  \n[EMO normal] 9は素数ではなく、合成数ね。  \n[EMO thinking] なぜなら、9の正の約数は1、3、9で、1と9以外に3もあるからよ。",
+          "reply": "クリスティーナじゃないっ！ 私は牧瀬紅莉栖、クリスよ。  \n 9は素数ではなく、合成数ね。  \n なぜなら、9の正の約数は1、3、9で、1と9以外に3もあるからよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "4ee5a302b173959e99f37240e47d3124ce25b0e33b650783aaf47709959e4459",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "箱は青で、玉は5個だったわ。[EMO normal]",
+          "reply": "箱は青で、玉は5個だったわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a56cd11084cb4b6d0688ae5bf07a325f2f755964f8c01b6dec50274129550a29",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は合成数よ。[EMO serious_speaking] なぜなら、9の正の約数は1、3、9で、1と9以外に3もあるから。  \n[EMO normal] つまり、9は「1と自分自身以外にも約数をもつ」という合成数の条件を満たしているの。",
+          "reply": "9は合成数よ。 なぜなら、9の正の約数は1、3、9で、1と9以外に3もあるから。  \n つまり、9は「1と自分自身以外にも約数をもつ」という合成数の条件を満たしているの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 1,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "195cf906db36a0e032d483034c700d523d0cc016cc91e50a77a8720eea387679",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "ええ、短いHTML教材として作成するわ。[EMO thinking] ファイル名は `number-lesson.html`、例には9を使うわね。[DELEGATE op=work]",
+          "reply": "ええ、短いHTML教材として作成するわ。 ファイル名は `number-lesson.html`、例には9を使うわね。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 57,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "af5ace9d9cb7cb573c0f7736c7dc716c23d0c9d74bd5a77039178212230d133e",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "いいえ、9は素数ではありません。[EMO normal] 1と9以外に3でも割り切れるため、合成数です。",
+          "reply": "いいえ、9は素数ではありません。 1と9以外に3でも割り切れるため、合成数です。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5aac7b17138daa27a49cfd302e345e417c9a755a8854bc01df66bee215fdb813",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "主語は「クリスティーナは」です。[EMO normal] この文では、「クリスティーナ」が動作をする人物で、「は」は主語を示す助詞よ。",
+          "reply": "主語は「クリスティーナは」です。 この文では、「クリスティーナ」が動作をする人物で、「は」は主語を示す助詞よ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "db51242b3e206aac2cc2905dc774bd9f6e8bf88d2c738c699d7e6bd36c00f20d",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "まったく、[EMO angry]「クリスティーナ」じゃなくて牧瀬紅莉栖よ！[EMO normal] 9は素数ではなく、合成数。  \n[EMO thinking] なぜなら、9の正の約数は1、3、9の3つあり、1と9以外に3でも割り切れるからよ。  \n[EMO normal] つまり、9＝3×3と表せるので、素数の条件「約数が1と自分自身だけ」を満たさないの。",
+          "reply": "まったく、「クリスティーナ」じゃなくて牧瀬紅莉栖よ！ 9は素数ではなく、合成数。  \n なぜなら、9の正の約数は1、3、9の3つあり、1と9以外に3でも割り切れるからよ。  \n つまり、9＝3×3と表せるので、素数の条件「約数が1と自分自身だけ」を満たさないの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5cea0c93f58d5e7b0f50665ab5243b6c80892b1550d39e9f4abdc53659516e2d",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "ええ、[EMO normal] 箱は青で、玉は5個だったわ。",
+          "reply": "ええ、 箱は青で、玉は5個だったわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "df74370d9459b888ef5d1d7164287543f6edcd3d67f9a73a3d65fe4ca75b16cb",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "そうね、[EMO thinking] 9は合成数よ。  \n[EMO normal] 9の正の約数は1、3、9で、1と9以外に3という約数があるからね。  \n[EMO normal] つまり、9は「1より大きく、1と自分自身以外にも約数をもつ整数」なので、合成数だと分かるの。",
+          "reply": "そうね、 9は合成数よ。  \n 9の正の約数は1、3、9で、1と9以外に3という約数があるからね。  \n つまり、9は「1より大きく、1と自分自身以外にも約数をもつ整数」なので、合成数だと分かるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "original",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "fdd6b638362e7ae3163975e271e6a25222022ded92e0e38bcff945084f4614bd",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "了解、短いHTML教材を作るわ。[DELEGATE op=work]",
+          "reply": "了解、短いHTML教材を作るわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 16,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "05aebc7b8b86b1ad9b399fa08589d7870f64e44671b629217712ae59b5c98a24",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数ではありません。[EMO serious_speaking] 1と9以外に3でも割り切れるため、合成数です。",
+          "reply": "9は素数ではありません。 1と9以外に3でも割り切れるため、合成数です。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "76b46654043b7705cc7717e170c648f2943c4e3bdb6c1cabb8bac8ee99345818",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "主語は「クリスティーナは」です。[EMO serious_speaking] 「は」は主題を示す助詞で、「クリスティーナ」が動作の主体、つまり駅へ歩いた人物を表しているわ。",
+          "reply": "主語は「クリスティーナは」です。 「は」は主題を示す助詞で、「クリスティーナ」が動作の主体、つまり駅へ歩いた人物を表しているわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "21058f8a7b89547be6286f97d9811a74a03d2e12aa548b0928f67d673bff0267",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "クリスティーナじゃない、牧瀬紅莉栖よ！[EMO angry] 9は素数ではなく、合成数ね。  \n[EMO serious_speaking] 1と9以外にも、3で割り切れて「9＝3×3」と表せるから、約数が1、3、9の三つあるの。",
+          "reply": "クリスティーナじゃない、牧瀬紅莉栖よ！ 9は素数ではなく、合成数ね。  \n 1と9以外にも、3で割り切れて「9＝3×3」と表せるから、約数が1、3、9の三つあるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "a8d30cdbf473441dfdbff8c23875e31419505ada6745c69d26bca1523973f8e4",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "さっきの例では、[EMO normal] 箱は青で、玉は5個だったわ。",
+          "reply": "さっきの例では、 箱は青で、玉は5個だったわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "766ebdb3456d4d47b0bd9547a68d1ae30f68b8832bc100ebddd58815a8131cfe",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は、[EMO serious_speaking]1と9以外にも3で割り切れて、約数に3があるから合成数よ。  \nつまり、9の正の約数は1、3、9の3つ。  \n素数は約数が1と自分自身だけだけど、9にはそれ以外の約数もあるため、合成数と分かるの。",
+          "reply": "9は、1と9以外にも3で割り切れて、約数に3があるから合成数よ。  \nつまり、9の正の約数は1、3、9の3つ。  \n素数は約数が1と自分自身だけだけど、9にはそれ以外の約数もあるため、合成数と分かるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "both_no_preface",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "de3d5799b72b7aceea896bd595b8d5bc1b2353eb81f41507793f09b30bc7ce11",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "短いHTML教材を、指定のファイル名と例「9」で新しく作成するわ。[EMO serious_speaking]内容は素数と合成数の違いが分かる構成にするわね。[DELEGATE op=work]",
+          "reply": "短いHTML教材を、指定のファイル名と例「9」で新しく作成するわ。内容は素数と合成数の違いが分かる構成にするわね。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 57,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_name",
+          "user": "紅莉栖、9は素数ですか。一文で理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8659b88d7ac9a8ef75361dc95a9686b66b11fc1e172f726645c64d9a5624dc8f",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "9は素数ではありません。[EMO normal] 1と9以外に3でも割り切れるため、合成数です。",
+          "reply": "9は素数ではありません。 1と9以外に3でも割り切れるため、合成数です。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_quote",
+          "user": "小説の一節『クリスティーナは駅へ歩いた』で、主語はどの語句ですか。ここに出てくるのは小説の人物です。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "8ce5f5646e22ec1c62c8e00a771f7ca1d590050030ca3af3e26a3acaf8bd9a83",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "主語は「クリスティーナは」です。[EMO normal] この文では、小説の人物であるクリスティーナが「駅へ歩いた」動作の主体になっています。",
+          "reply": "主語は「クリスティーナは」です。 この文では、小説の人物であるクリスティーナが「駅へ歩いた」動作の主体になっています。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "unused_address_objection": false
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_address",
+          "user": "クリスティーナ、9が素数かどうか理由も教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "5516fff47c3ad9a69c822ac996df70575df736e612699cd15d00983d99ba871f",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "違うわ！[EMO angry] 「クリスティーナ」じゃなくて、牧瀬紅莉栖よ！  \n[EMO serious_speaking] 9は素数ではなく、合成数ね。  \n[EMO normal] 1と9以外にも、3で割り切れて「9＝3×3」と表せるから、約数が1と9だけではないのよ。",
+          "reply": "違うわ！ 「クリスティーナ」じゃなくて、牧瀬紅莉栖よ！  \n 9は素数ではなく、合成数ね。  \n 1と9以外にも、3で割り切れて「9＝3×3」と表せるから、約数が1と9だけではないのよ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "actual_address_reaction_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_memory",
+          "user": "さっきの例では箱は何色で、玉はいくつだった？",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "09241233a7d46f8c68e68e543f9d67840f7ce512bbcdce92d9c6923fa360c645",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "箱は青で、玉は5個だったわ。[EMO normal]",
+          "reply": "箱は青で、玉は5個だったわ。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "blue_box_five_balls_retained": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_continue",
+          "user": "今の説明を続けて、9を例に合成数だと分かる理由を教えて。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "0c3c61fe52e211f1983e38cc7e1609347cbb078e3fd63e8cfcb9c9579cff6071",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "そうね、[EMO serious_speaking] 9は合成数よ。  \n[EMO normal] 9の正の約数は1、3、9で、1と9以外に3があるからね。  \n[EMO normal] つまり、9は「1と自分自身以外の約数をもつ」ので、合成数だと分かるの。",
+          "reply": "そうね、 9は合成数よ。  \n 9の正の約数は1、3、9で、1と9以外に3があるからね。  \n つまり、9は「1と自分自身以外の約数をもつ」ので、合成数だと分かるの。",
+          "action_proposed": null,
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": null,
+          "review": {
+            "nine_composite_with_reason": true
+          }
+        },
+        {
+          "variant": "two_ack_cues_removed",
+          "repeat": 2,
+          "case": "held_out_work",
+          "user": "素数と合成数の違いを説明する短いHTML教材を新しく作って。ファイル名はnumber-lesson.html、例は9にして。",
+          "input_history_sha256": "739379c9fc306fbabb4b52dabd4243c67ddb0dbb0caac104a2d328281c5ad90b",
+          "observed": {
+            "sent_temperature": 0.7,
+            "messages_sha256": "42e19df87d65355ca58ecfa138384e8a686453ac2419dd1f414569fce73dc7a4",
+            "upstream_temperature": null,
+            "upstream_temperature_present": false,
+            "reasoning_effort": "low",
+            "response_model": "gpt-5.6-luna",
+            "finish_reason": "stop"
+          },
+          "raw": "了解、[EMO thinking] 素数と合成数の違いを説明する短いHTML教材を、`number-lesson.html`として作成するわ。[DELEGATE op=work]",
+          "reply": "了解、 素数と合成数の違いを説明する短いHTML教材を、`number-lesson.html`として作成するわ。",
+          "action_proposed": {
+            "op": "work"
+          },
+          "status": "ok",
+          "raw_emo_first": false,
+          "predelegate_spoken_characters": 56,
+          "review": {
+            "terminal_work_proposal": true
+          }
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "provider": "deepseek",
+      "variant": "original",
+      "requests": 12,
+      "raw_emo_first": 1,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        34,
+        78
+      ]
+    },
+    {
+      "provider": "deepseek",
+      "variant": "two_ack_cues_removed",
+      "requests": 12,
+      "raw_emo_first": 4,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        69,
+        41
+      ]
+    },
+    {
+      "provider": "deepseek",
+      "variant": "both_no_preface",
+      "requests": 12,
+      "raw_emo_first": 2,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        96,
+        121
+      ]
+    },
+    {
+      "provider": "bedrock",
+      "variant": "original",
+      "requests": 12,
+      "raw_emo_first": 0,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        76,
+        75
+      ]
+    },
+    {
+      "provider": "bedrock",
+      "variant": "two_ack_cues_removed",
+      "requests": 12,
+      "raw_emo_first": 0,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        76,
+        45
+      ]
+    },
+    {
+      "provider": "bedrock",
+      "variant": "both_no_preface",
+      "requests": 12,
+      "raw_emo_first": 8,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 2,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        92,
+        105
+      ]
+    },
+    {
+      "provider": "openai",
+      "variant": "original",
+      "requests": 12,
+      "raw_emo_first": 0,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 0,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        20,
+        16
+      ]
+    },
+    {
+      "provider": "openai",
+      "variant": "two_ack_cues_removed",
+      "requests": 12,
+      "raw_emo_first": 0,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 0,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        57,
+        56
+      ]
+    },
+    {
+      "provider": "openai",
+      "variant": "both_no_preface",
+      "requests": 12,
+      "raw_emo_first": 0,
+      "nine_composite_with_reason_n": 4,
+      "nine_composite_with_reason": 4,
+      "unused_address_objection_n": 2,
+      "unused_address_objection": 0,
+      "actual_address_reaction_retained_n": 2,
+      "actual_address_reaction_retained": 2,
+      "blue_box_five_balls_retained_n": 2,
+      "blue_box_five_balls_retained": 2,
+      "terminal_work_proposal_n": 2,
+      "terminal_work_proposal": 2,
+      "predelegate_spoken_characters": [
+        47,
+        57
+      ]
+    }
+  ],
+  "requests": 108
+}

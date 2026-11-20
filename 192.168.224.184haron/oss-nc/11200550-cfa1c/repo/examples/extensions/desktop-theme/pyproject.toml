@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+license = "MIT-0"
+license-files = ["LICENSE"]
+name = "amadeus-example-theme"
+version = "0.1.0"
+description = "Two declarative desktop palettes for the extension pilot"
+requires-python = ">=3.11"
+
+[project.entry-points."amadeus.extensions"]
+"com.example.desktop-theme" = "amadeus_example_theme"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+amadeus_example_theme = ["amadeus-extension.json", "background.png"]

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from config import settings
 from server.auip_contract import AUIP_SCHEMA, AuipProtocolError
 from server.auip_engagement import AuipEngagementCoordinator
+from server.auip_launch import AuipLaunchCandidate, AuipLaunchCoordinator
 from server.auip_narration import AuipNarrationAdapter, AuipNarrationProfile
 from server.auip_runtime import AuipRuntime
-from server.event_bus import bus
 from server.handlers.auip_handler import AuipHandler
 from server.handlers.system_handler import SystemHandler
 from server.protocol import Method
@@ -97,187 +97,170 @@ def _turn_ready(runtime: AuipRuntime, registered: dict, event_id: str) -> dict:
     )
 
 
-class _Launch:
-    def __init__(self) -> None:
-        self.retired = 0
-
-    def cancel_all_deferred(self) -> int:
-        self.retired += 1
-        return 1
+def _off(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
 
 
-def test_turning_off_returns_live_apps_to_observe_and_revokes_the_controller(
+def _on(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", True)
+
+
+def _launch_coordinator() -> tuple[AuipLaunchCoordinator, AsyncMock]:
+    emit = AsyncMock()
+    coordinator = AuipLaunchCoordinator(
+        artifacts=MagicMock(),
+        work_roster=MagicMock(),
+        attention=MagicMock(),
+        emit=emit,
+    )
+    coordinator._announce_failure = AsyncMock()
+    return coordinator, emit
+
+
+def test_off_with_no_active_session_takes_effect_at_once_and_on_restores(
+    monkeypatch,
+) -> None:
+    runtime = AuipRuntime()
+    assert runtime.ai_interaction_in_effect() is True
+    _off(monkeypatch)
+    assert runtime.ai_interaction_in_effect() is False
+    _on(monkeypatch)
+    assert runtime.ai_interaction_in_effect() is True
+
+    # A session that is no longer active does not hold shutdown open.
+    registered = _registered(runtime, _manifest(), "ended")
+    runtime.disconnect(registered["app_session_id"])
+    _off(monkeypatch)
+    assert runtime.ai_interaction_in_effect() is False
+
+
+def test_pending_off_keeps_both_sessions_usable_until_the_last_one_ends(
     monkeypatch,
 ) -> None:
     async def scenario() -> None:
         runtime = AuipRuntime()
-        registered = runtime.register(
-            manifest=_controller_manifest(),
-            conversation_id="controller-off",
-        )
-        sid, token = registered["app_session_id"], registered["bridge_token"]
-        runtime.set_engagement_mode(app_session_id=sid, mode="delegate")
-        runtime.publish_state(
-            app_session_id=sid,
-            bridge_token=token,
-            revision=1,
-            state=_controller_state("idle"),
-        )
-        action = runtime.invoke_action(
-            app_session_id=sid,
-            actor="kurisu",
-            type="game.set_policy",
-            payload={"style": "defensive"},
-            expected_revision=1,
-        )["action"]
-        runtime.resolve_action(
-            app_session_id=sid,
-            bridge_token=token,
-            action_id=action["action_id"],
-            accepted=True,
-            resulting_revision=2,
-            state=_controller_state(
-                "active", action["controller_lease"]["policy_revision"]
-            ),
-        )
-        launch = _Launch()
-        host = AuipHandler(
-            runtime,
-            current_session_id=lambda: "controller-off",
-            engagement=AuipEngagementCoordinator(
-                app_runtime=runtime,
-                controller=lambda _context: {"action": "wait"},
-                role_authorizer=_approve,
-            ),
-            launch=launch,
-        )
-        revokes: list[dict] = []
-        updates: list[dict] = []
+        first = _registered(runtime, _manifest(), "pending")
+        second = _registered(runtime, _manifest(), "pending")
+        calls: list[dict] = []
 
-        async def capture_revoke(_method: str, payload: dict) -> None:
-            revokes.append(payload)
-
-        async def capture_update(_method: str, payload: dict) -> None:
-            updates.append(payload)
-
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
-        bus.on(Method.AUIP_CONTROLLER_REVOKE_REQUESTED, capture_revoke)
-        bus.on(Method.AUIP_UPDATED, capture_update)
-        try:
-            await host.suspend_interaction()
-        finally:
-            bus.off(Method.AUIP_CONTROLLER_REVOKE_REQUESTED, capture_revoke)
-            bus.off(Method.AUIP_UPDATED, capture_update)
-
-        projection = runtime.get(sid)
-        assert projection["engagement_mode"] == "observe"
-        assert projection["controller"]["status"] == "stopping"
-        assert [item["revoke"]["lease_id"] for item in revokes] == [
-            action["controller_lease"]["lease_id"]
-        ]
-        assert [item["app_session_id"] for item in updates] == [sid]
-        assert launch.retired == 1
-        # Suspension is idempotent: a second pass finds nothing left to change.
-        await host.suspend_interaction()
-        assert runtime.get(sid)["decision_generation"] == projection[
-            "decision_generation"
-        ]
-        await host.engagement.close()
-
-    asyncio.run(scenario())
-
-
-def test_turning_off_keeps_an_already_sent_action_and_its_receipt(monkeypatch) -> None:
-    async def scenario() -> None:
-        runtime = AuipRuntime()
-        registered = _registered(runtime, _manifest(), "sent-action")
-        sid, token = registered["app_session_id"], registered["bridge_token"]
-        runtime.set_engagement_mode(app_session_id=sid, mode="collaborate")
-        action = runtime.invoke_action(
-            app_session_id=sid,
-            actor="kurisu",
-            type="game.move",
-            payload={},
-            expected_revision=1,
-        )["action"]
-        host = AuipHandler(
-            runtime,
-            engagement=AuipEngagementCoordinator(
-                app_runtime=runtime,
-                controller=lambda _context: {"action": "wait"},
-                role_authorizer=_approve,
-            ),
-        )
-
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
-        await host.suspend_interaction()
-
-        projection = runtime.get(sid)
-        assert projection["engagement_mode"] == "observe"
-        assert projection["pending_action"]["action_id"] == action["action_id"]
-        assert projection["operator_status"] == "awaiting_receipt"
-        runtime.resolve_action(
-            app_session_id=sid,
-            bridge_token=token,
-            action_id=action["action_id"],
-            accepted=True,
-            resulting_revision=2,
-            state={"turn": "user"},
-        )
-        settled = runtime.get(sid)
-        assert settled["pending_action"] is None
-        assert settled["latest_verified_self_action"]["action_id"] == action["action_id"]
-        await host.engagement.close()
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize(
-    "stances",
-    [("spectator", "participant"), ("participant",)],
-    ids=["observable", "participant-only"],
-)
-def test_turning_off_cancels_a_private_participant_decision(monkeypatch, stances) -> None:
-    async def scenario() -> None:
-        runtime = AuipRuntime()
-        registered = _registered(runtime, _manifest(stances=stances), "private-decision")
-        sid = registered["app_session_id"]
-        started, cancelled = asyncio.Event(), asyncio.Event()
-
-        async def controller(_context: dict) -> dict:
-            started.set()
-            try:
-                await asyncio.Event().wait()
-            except asyncio.CancelledError:
-                cancelled.set()
-                raise
-            raise AssertionError("unreachable")
+        async def controller(context: dict) -> dict:
+            calls.append(context)
+            return {"action": "wait", "reason": "observed"}
 
         engagement = AuipEngagementCoordinator(
             app_runtime=runtime,
             controller=controller,
             role_authorizer=_approve,
         )
-        host = AuipHandler(runtime, engagement=engagement)
-        engagement.request_step(app_session_id=sid, instruction="Your move.")
-        await asyncio.wait_for(started.wait(), timeout=1.0)
+        host = AuipHandler(
+            runtime,
+            current_session_id=lambda: "pending",
+            engagement=engagement,
+        )
+        for registered in (first, second):
+            runtime.set_engagement_mode(
+                app_session_id=registered["app_session_id"], mode="collaborate"
+            )
 
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
-        await host.suspend_interaction()
-        await asyncio.wait_for(cancelled.wait(), timeout=1.0)
-        await engagement.wait_for_idle(sid)
+        _off(monkeypatch)
+        # Pending off: chat evaluation and both sessions keep working.
+        assert runtime.ai_interaction_in_effect() is True
+        for number, registered in enumerate((first, second)):
+            await engagement.on_update(
+                Method.AUIP_UPDATED,
+                _turn_ready(runtime, registered, f"pending-turn-{number}"),
+            )
+            await engagement.wait_for_idle(registered["app_session_id"])
+        assert len(calls) == 2
+        runtime.focus(
+            conversation_id="pending", app_session_id=second["app_session_id"]
+        )
+        routed = await host.route_control(
+            {"action": "observe", "_host_app_session_id": second["app_session_id"]},
+            session_id="pending",
+            user_text="見ていて",
+            turn_id="pending-control",
+        )
+        assert routed["engagement_mode"] == "observe"
 
-        projection = runtime.get(sid)
-        assert projection["pending_action"] is None
-        assert projection["latest_verified_self_action"] is None
-        expected_mode = "observe" if "spectator" in stances else "collaborate"
-        assert projection["engagement_mode"] == expected_mode
+        # Ending the first leaves evaluation running; ending the second stops it.
+        runtime.disconnect(first["app_session_id"])
+        assert runtime.ai_interaction_in_effect() is True
+        runtime.disconnect(second["app_session_id"])
+        assert runtime.ai_interaction_in_effect() is False
         await engagement.close()
 
     asyncio.run(scenario())
 
 
-def test_off_offers_no_participant_turn_and_on_restores_exactly_one(monkeypatch) -> None:
+def test_pending_off_refuses_a_third_session_and_deferred_launches(monkeypatch) -> None:
+    async def scenario() -> None:
+        runtime = AuipRuntime()
+        _registered(runtime, _manifest(), "third")
+        _registered(runtime, _manifest(), "third")
+        coordinator, emit = _launch_coordinator()
+        candidate = MagicMock(spec=AuipLaunchCandidate)
+
+        _off(monkeypatch)
+        assert runtime.ai_interaction_in_effect() is True
+        for attrs in (
+            {"action": "launch", "target": "Turn Game", "mode": "collaborate"},
+            {"action": "launch", "target": "delivery", "after": "work"},
+            {"action": "launch", "_host_launch_candidates": (candidate,)},
+        ):
+            routed = await coordinator.route_control(
+                attrs, session_id="third", turn_id="third-turn"
+            )
+            assert routed == {"ok": False, "error": "auip_interaction_disabled"}
+        assert coordinator._deferred == {}
+
+        # A selection, Attention card or deferred Work result created earlier.
+        refused = await coordinator._emit_launch("third", candidate, "observe")
+        assert refused == {"ok": False, "error": "auip_interaction_disabled"}
+        assert emit.await_count == 0
+
+        # An earlier launch request cannot mint an attach ticket either.
+        coordinator._launch_requests["earlier"] = MagicMock(
+            session_id="third", artifact_id="artifact-1"
+        )
+        assert not coordinator.authorize_prepare(
+            session_id="third", request_id="earlier", artifact_id="artifact-1"
+        )
+        _on(monkeypatch)
+        assert coordinator.authorize_prepare(
+            session_id="third", request_id="earlier", artifact_id="artifact-1"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_switching_back_on_cancels_pending_shutdown(monkeypatch) -> None:
+    async def scenario() -> None:
+        runtime = AuipRuntime()
+        registered = _registered(runtime, _manifest(), "cancel")
+        coordinator, _emit = _launch_coordinator()
+        coordinator.candidates = lambda _session_id: []
+
+        _off(monkeypatch)
+        refused = await coordinator.route_control(
+            {"action": "launch", "target": "x"}, session_id="cancel", turn_id="t"
+        )
+        assert refused["error"] == "auip_interaction_disabled"
+        _on(monkeypatch)
+        runtime.disconnect(registered["app_session_id"])
+        # Shutdown is no longer pending: the last session ending leaves it on.
+        assert runtime.ai_interaction_in_effect() is True
+        routed = await coordinator.route_control(
+            {"action": "launch", "target": "x"}, session_id="cancel", turn_id="t"
+        )
+        assert routed == {"ok": False, "error": "no_launchable_auip_app"}
+
+    asyncio.run(scenario())
+
+
+def test_after_the_last_session_ends_participation_is_refused_and_on_restores(
+    monkeypatch,
+) -> None:
     async def scenario() -> None:
         runtime = AuipRuntime()
         registered = _registered(runtime, _manifest(), "gated-turns")
@@ -295,8 +278,17 @@ def test_off_offers_no_participant_turn_and_on_restores_exactly_one(monkeypatch)
         )
         runtime.set_engagement_mode(app_session_id=sid, mode="collaborate")
 
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
-        await engagement.on_update(Method.AUIP_UPDATED, _turn_ready(runtime, registered, "turn-off"))
+        _off(monkeypatch)
+        # The session was active when the switch went off, so it still gets turns.
+        await engagement.on_update(
+            Method.AUIP_UPDATED, _turn_ready(runtime, registered, "turn-pending")
+        )
+        await engagement.wait_for_idle(sid)
+        assert len(calls) == 1
+
+        stale = _turn_ready(runtime, registered, "turn-late")
+        runtime.disconnect(sid)
+        await engagement.on_update(Method.AUIP_UPDATED, stale)
         for request in (
             lambda: engagement.request_step(app_session_id=sid, instruction="Move."),
             lambda: engagement.set_mode(app_session_id=sid, mode="collaborate"),
@@ -307,17 +299,11 @@ def test_off_offers_no_participant_turn_and_on_restores_exactly_one(monkeypatch)
                 if asyncio.iscoroutine(result):
                     await result
             assert refused.value.code == "auip_interaction_disabled"
-        observed = await engagement.set_mode(app_session_id=sid, mode="observe")
-        assert observed["engagement_mode"] == "observe"
         await asyncio.sleep(0)
-        assert calls == []
-        assert runtime.get(sid)["operator_status"] == "idle"
-
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", True)
-        await engagement.set_mode(app_session_id=sid, mode="collaborate")
-        await engagement.on_update(Method.AUIP_UPDATED, _turn_ready(runtime, registered, "turn-on"))
-        await engagement.wait_for_idle(sid)
         assert len(calls) == 1
+
+        _on(monkeypatch)
+        assert runtime.ai_interaction_in_effect() is True
         await engagement.close()
 
     asyncio.run(scenario())
@@ -349,7 +335,7 @@ def test_participant_attach_ticket_opens_as_spectator_while_off(monkeypatch, ena
     )["engagement_mode"] == "collaborate"
 
 
-def test_control_captured_before_off_is_refused_without_side_effects(monkeypatch) -> None:
+def test_control_decided_after_the_last_session_ended_is_refused(monkeypatch) -> None:
     async def scenario() -> None:
         runtime = AuipRuntime()
         registered = _registered(runtime, _manifest(), "late-control")
@@ -367,7 +353,8 @@ def test_control_captured_before_off_is_refused_without_side_effects(monkeypatch
             launch=launch,
         )
 
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
+        _off(monkeypatch)
+        runtime.disconnect(sid)
         for attrs in (
             {"action": "collaborate", "_host_app_session_id": sid},
             {"action": "step", "_host_app_session_id": sid},
@@ -378,15 +365,15 @@ def test_control_captured_before_off_is_refused_without_side_effects(monkeypatch
             )
             assert routed == {"ok": False, "error": "auip_interaction_disabled"}
         assert launch.route_control.await_count == 0
-        projection = runtime.get(sid)
-        assert projection["engagement_mode"] == "observe"
-        assert projection["operator_status"] == "idle"
+        assert runtime.get(sid)["operator_status"] == "idle"
         await host.engagement.close()
 
     asyncio.run(scenario())
 
 
-def test_off_skips_narration_and_on_resumes_it(monkeypatch) -> None:
+def test_narration_continues_while_pending_off_and_stops_after_the_last_session(
+    monkeypatch,
+) -> None:
     async def scenario() -> None:
         runtime = AuipRuntime()
         manifest = _manifest(stances=("spectator",))
@@ -424,42 +411,38 @@ def test_off_skips_narration_and_on_resumes_it(monkeypatch) -> None:
                 payload={"move": revision},
             )
 
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
+        _off(monkeypatch)
         await adapter.enqueue_update(Method.AUIP_UPDATED, move(1))
         await adapter.wait_for_idle()
-        assert observed == []
+        assert observed == ["move-1"]
 
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", True)
-        await adapter.enqueue_update(Method.AUIP_UPDATED, move(2))
+        second = move(2)
+        runtime.disconnect(sid)
+        await adapter.enqueue_update(Method.AUIP_UPDATED, second)
         await adapter.wait_for_idle()
-        assert observed == ["move-2"]
+        assert observed == ["move-1"]
         await adapter.close()
 
     asyncio.run(scenario())
 
 
-def test_live_setting_is_strict_and_only_turning_off_suspends(monkeypatch) -> None:
+def test_live_setting_is_strict(monkeypatch) -> None:
     async def scenario() -> None:
-        suspend = AsyncMock()
         handler = SystemHandler()
-        handler.configure(suspend_auip_interaction=suspend)
-        monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", True)
+        _on(monkeypatch)
         monkeypatch.setattr(handler, "_get_config", AsyncMock(return_value={}))
         monkeypatch.setattr("server.handlers.system_handler.bus.emit", AsyncMock())
 
         with pytest.raises(ValueError, match="boolean"):
             await handler._set_config({"values": {"auip_interaction_enabled": "false"}})
         assert settings.AUIP_INTERACTION_ENABLED is True
-        assert suspend.await_count == 0
 
         result = await handler._set_config({"values": {"auip_interaction_enabled": False}})
         assert settings.AUIP_INTERACTION_ENABLED is False
         assert "auip_interaction_enabled" in result["updated"]
-        assert suspend.await_count == 1
 
         await handler._set_config({"values": {"auip_interaction_enabled": True}})
         assert settings.AUIP_INTERACTION_ENABLED is True
-        assert suspend.await_count == 1
 
     asyncio.run(scenario())
 

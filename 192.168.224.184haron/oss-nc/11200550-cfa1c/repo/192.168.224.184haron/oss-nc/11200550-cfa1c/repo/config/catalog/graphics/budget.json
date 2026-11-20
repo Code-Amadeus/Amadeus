@@ -1,0 +1,83 @@
+{
+  "id": "graphics_budget",
+  "title": {
+    "en-US": "Rendering budget",
+    "zh-CN": "渲染设置"
+  },
+  "description": {
+    "en-US": "Shared by character rendering and wallpaper surfaces.",
+    "zh-CN": "角色渲染和壁纸画面共用这些设置。"
+  },
+  "desktop": true,
+  "config": {
+    "GRAPHICS_PROFILE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Graphics profile",
+        "zh-CN": "图形预设"
+      },
+      "options": [
+        {
+          "value": "standard",
+          "label": {
+            "en-US": "Standard · 60 FPS, native pixel density",
+            "zh-CN": "标准 · 60 FPS，原生像素密度"
+          }
+        },
+        {
+          "value": "power_saving",
+          "label": {
+            "en-US": "Power saving · 30 FPS, up to 1.5× pixel density",
+            "zh-CN": "节能 · 30 FPS，像素密度最高 1.5×"
+          }
+        },
+        {
+          "value": "custom",
+          "label": {
+            "en-US": "Custom",
+            "zh-CN": "自定义"
+          }
+        }
+      ],
+      "description": {
+        "en-US": "Choose animation smoothness and GPU load. Custom values are preserved when using a preset.",
+        "zh-CN": "按动画流畅度与 GPU 负载选择预设；切换预设不会清除自定义数值。"
+      },
+      "example_active": true,
+      "default": "standard"
+    },
+    "RENDER_MAX_FPS": {
+      "type": "integer",
+      "title": {
+        "en-US": "Frame-rate limit",
+        "zh-CN": "帧率上限"
+      },
+      "min": 10,
+      "max": 240,
+      "step": 1,
+      "description": {
+        "en-US": "10–240 FPS. This is a ceiling, not a guaranteed frame rate.",
+        "zh-CN": "范围 10–240 FPS。这是上限，不代表实际能达到的帧率。"
+      },
+      "example_active": true,
+      "default": 30
+    },
+    "RENDER_MAX_RESOLUTION": {
+      "type": "number",
+      "title": {
+        "en-US": "Pixel-density limit",
+        "zh-CN": "像素密度上限"
+      },
+      "min": 0.25,
+      "max": 4,
+      "step": 0.25,
+      "description": {
+        "en-US": "0.25–4.0×, capped by the display’s native pixel density. Lower values reduce GPU work but may soften the image.",
+        "zh-CN": "范围 0.25–4.0×，不超过显示器原生像素密度。调低可减少 GPU 负载，但画面可能变模糊。"
+      },
+      "example_active": true,
+      "default": 1.5
+    }
+  },
+  "apply": "backend_restart"
+}

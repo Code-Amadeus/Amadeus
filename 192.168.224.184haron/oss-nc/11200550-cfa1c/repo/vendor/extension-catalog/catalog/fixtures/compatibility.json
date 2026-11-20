@@ -1,0 +1,145 @@
+{
+  "capabilities": {
+    "delivery": [
+      "python-wheel"
+    ],
+    "runtime": [
+      "none",
+      "python"
+    ],
+    "contributions": [
+      {
+        "kind": "voice_backend",
+        "role": "tts",
+        "contract": "amadeus.voice.tts/v0"
+      },
+      {
+        "kind": "mcp_server",
+        "role": "",
+        "contract": "amadeus.mcp-server/v0"
+      },
+      {
+        "kind": "skill",
+        "role": "",
+        "contract": "amadeus.skill/v0"
+      },
+      {
+        "kind": "theme",
+        "role": "",
+        "contract": "amadeus.ui.theme/v0"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "current",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "",
+            "contract": "amadeus.skill/v0"
+          }
+        ]
+      },
+      "compatible": true
+    },
+    {
+      "name": "unknown-kind",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "future",
+            "role": "",
+            "contract": "amadeus.skill/v0"
+          }
+        ]
+      },
+      "compatible": false
+    },
+    {
+      "name": "unknown-contract",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "",
+            "contract": "amadeus.skill/v99"
+          }
+        ]
+      },
+      "compatible": false
+    },
+    {
+      "name": "unknown-role",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "future",
+            "contract": "amadeus.skill/v0"
+          }
+        ]
+      },
+      "compatible": false
+    },
+    {
+      "name": "unknown-delivery",
+      "compatibility": {
+        "delivery": "future",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "",
+            "contract": "amadeus.skill/v0"
+          }
+        ]
+      },
+      "compatible": false
+    },
+    {
+      "name": "unknown-runtime",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "future",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "",
+            "contract": "amadeus.skill/v0"
+          }
+        ]
+      },
+      "compatible": false
+    },
+    {
+      "name": "mixed-package",
+      "compatibility": {
+        "delivery": "python-wheel",
+        "runtime": "none",
+        "contributions": [
+          {
+            "kind": "skill",
+            "role": "",
+            "contract": "amadeus.skill/v0"
+          },
+          {
+            "kind": "future",
+            "role": "",
+            "contract": "future/v0"
+          }
+        ]
+      },
+      "compatible": false
+    }
+  ]
+}

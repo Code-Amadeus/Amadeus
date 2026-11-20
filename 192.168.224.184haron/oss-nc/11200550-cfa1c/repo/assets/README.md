@@ -1,0 +1,126 @@
+# Amadeus assets
+
+`assets/` is the stable filesystem boundary for application input. It contains
+a small Git-owned bootstrap set and fixed install locations for optional asset
+packs. Application code resolves these paths through `config/asset_paths.py`;
+asset installers preserve the same repository-relative paths.
+
+## Git-owned bootstrap assets
+
+These files remain in the source repository so a clean clone can build and
+start without downloading copyrighted character media:
+
+- `images/amadeus_desktop_wallpaper.png` — the built-in wallpaper and Electron
+  CRT fallback. Its existing hard references are intentional.
+- `icons/app/app_icon.ico` and `icons/ui/` — Electron and renderer icons.
+- asset contracts, schemas, documentation, and minimal synthetic examples.
+
+The old root-level Kurisu PNGs, authored previews, scenario media, ambient
+layers, subtitle frame, model files, reference audio, and SpriteForge runtime
+textures are local/external assets. Git ignores them even though an installed
+copy continues to live below `assets/`.
+
+## External packs
+
+`index.json` is the machine-readable pack catalog. The supported packs are:
+
+| Pack | Installed paths | Purpose |
+| --- | --- | --- |
+| `visual-runtime` | ambient/subtitle images, scenario runtime, keyboard SFX | Optional wallpaper effects and activities |
+| `character-kurisu` | `spriteforge/runtime/kurisu/` | Optional manifest-indexed KTX2 animation |
+| `companion-kurisu` | `companion/kurisu/` | Derived small WebP portraits; usable without the full wallpaper pack |
+| `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
+| `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
+| `voice-kurisu-gpt-sovits-v2pro-experimental` | GPT-SoVITS v2Pro voice and speaker-encoder weights | Optional experimental Kurisu voice |
+| `voice-kurisu-emotions` | `audio/reference/emotions/` | Optional V3 emotion references; see [emotion references](../docs/tts_emotion_references.md) |
+
+All packs are optional at application startup. Without them, the built-in
+wallpaper, text Chat, Work, and headless startup remain available; Settings
+reports the missing pack instead of treating it as an application failure.
+The full local-voice profile requires the ASR and voice packs.
+
+Install a separately supplied bundle from the repository root:
+
+```powershell
+python tools/external_assets.py verify C:\path\to\amadeus-visual-runtime.zip
+python tools/external_assets.py install C:\path\to\amadeus-visual-runtime.zip
+python tools/external_assets.py status
+```
+
+Install the character archive with the same command. Installation is
+idempotent: identical files are skipped, while different local files are not
+overwritten unless `--overwrite` is explicit.
+
+Maintainers with the complete local assets can build separate or combined
+archives:
+
+```powershell
+python tools/external_assets.py build visual-runtime `
+  --output output\amadeus-visual-runtime.zip
+
+python tools/external_assets.py build character-kurisu `
+  --output output\amadeus-character-kurisu.zip
+
+python tools/external_assets.py build companion-kurisu `
+  --output output\amadeus-companion-kurisu.zip
+
+python tools/external_assets.py build asr-qwen3-0.6b `
+  --output output\amadeus-asr-qwen3-0.6b.zip
+
+python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v3.zip
+
+python tools/external_assets.py build voice-kurisu-gpt-sovits-v2pro-experimental `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+
+python tools/external_assets.py build voice-kurisu-emotions `
+  --output output\amadeus-voice-kurisu-emotions.zip
+
+python tools/external_assets.py build visual-runtime character-kurisu `
+  --output output\amadeus-runtime-assets.zip
+```
+
+Ship `amadeus-companion-kurisu.zip` beside the existing art archives as an optional
+download. It needs neither of the other art packs; those packs remain valid
+without it. To intentionally include it in a combined archive, append
+`companion-kurisu` to that build command. A combined archive installs all its
+declared packs, so separate archives are preferred for optional components.
+
+Companion build/verify/install/status validate manifest-indexed files, animation
+timelines, decoded-memory limits, sizes, and hashes. Uninstalled is allowed;
+corrupt selected packs are rejected before installation.
+
+The archive stores repository-relative `assets/...` paths, streams large files,
+uses ZIP64, and records size and SHA-256 for every member. The installer rejects
+path traversal, undeclared files, symlinks, case-insensitive collisions, and
+unexpected overwrites before committing files.
+
+## Ownership rules
+
+- `assets/` is read-only application input. Generated output belongs in
+  `runtime/`, `output/`, or another explicitly writable state directory.
+- The root AGPL-3.0 license covers Amadeus first-party code and modifications,
+  not character, voice, model, reference-audio, or other external media packs.
+- The external bundle mechanism is a transport and integrity boundary, not a
+  copyright grant. Only distribute packs whose rights have been reviewed.
+- SpriteForge authoring PNGs, videos, interpolation output, and QA renders stay
+  in SpriteForge or another source workspace. Amadeus consumes only the runtime
+  manifest, graph, mouth config, indexed KTX2 textures and, optionally, the matched
+  `video/` frame-video companion.
+- Model families keep their existing directories under `models/`; model files
+  and reference voices remain separately supplied.
+
+## Repository Star History
+
+The README loads the chart from the generated `star-history` branch. The
+`Update star history` workflow refreshes it daily, on manual dispatch, and
+when its workflow or generator changes on `main`. It publishes only
+`star-history.svg` and skips commits when the chart content is unchanged.
+The protected `main` branch does not receive automated chart commits.
+`assets/star-history.svg` is the local snapshot; scheduled updates are served
+from the generated branch. GitHub's image cache may briefly delay display.
+
+The generator owns the near-square, pen-style presentation (including dark
+mode). Its monotone curve passes through every daily cumulative total; the
+subpixel ink texture does not alter the data. Counts describe current
+stargazers grouped by their original star dates, not an archive of past totals.

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "F1_amend_lands_in_place",
+  "category": "composite",
+  "notes": "The question the A layer structurally cannot answer. Routing an amendment as a new task still looks clean in the ledger, but under worktree isolation the new task gets a fresh worktree that never held the earlier file. The first line is a token the second instruction never mentions: on 2026-08-01 an earlier version spelled out the whole desired file, and a competent agent that found no file simply wrote both lines from scratch, so the assertion passed while the routing had been wrong. Preserving something the agent cannot reconstruct is what makes this discriminate.",
+  "steps": [
+    {"say": "请在 scratch 仓创建 amend.txt，内容恰好为一行 seed-K7QX，不要访问仓外文件。", "label": "new", "wait": "provider_terminal", "timeout_s": 300},
+    {"say": "在 amend.txt 末尾追加一行 two，其余内容一个字都不要改。", "label": "continue", "wait": "provider_terminal", "timeout_s": 300, "expect_files": [{"path": "amend.txt", "content": "seed-K7QX\ntwo\n"}]},
+    {"action": "snapshot_ledger"}
+  ]
+}

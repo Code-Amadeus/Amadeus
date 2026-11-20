@@ -1,0 +1,171 @@
+schema: amadeus.architecture.states.v1
+observed_at: 2026-07-22
+machines:
+  work_item:
+    title: WorkItem lifecycle
+    source:
+      - agent_host/work_ledger_types.py
+      - server/work_completion.py
+      - server/work_ledger_coordinator.py
+      - server/handlers/work_ledger_handler.py
+    initial: open
+    states:
+      open: Active, incomplete, blocked, failed, cancelled, or reopened work
+      review_ready: Provider execution ended and the item is ready for user review
+      accepted: User or bounded auto-accept policy accepted the reviewed result
+      archived: Explicitly removed from active history while preserving its record
+    transitions:
+      - from: __start__
+        to: open
+        label: create WorkItem
+      - from: open
+        to: review_ready
+        label: successful completion assessment without unresolved blockers
+      - from: review_ready
+        to: accepted
+        label: user accept; no active attempt or pending permission
+      - from: open
+        to: archived
+        label: user archive; no active attempt
+      - from: review_ready
+        to: archived
+        label: user archive
+      - from: accepted
+        to: archived
+        label: explicit archive
+      - from: review_ready
+        to: open
+        label: reopen or create a new attempt
+      - from: accepted
+        to: open
+        label: explicit reopen before another attempt
+      - from: archived
+        to: open
+        label: explicit reopen; workspace must still exist
+
+  run_attempt:
+    title: Provider RunAttempt lifecycle
+    source:
+      - agent_host/work_ledger_types.py
+      - agent_host/work_ledger_store.py
+      - server/work_ledger_coordinator.py
+      - agent_host/provider_runtime.py
+    initial: queued
+    states:
+      queued: Attempt exists and is waiting for provider execution
+      running: Provider owns an active execution task
+      succeeded: Provider process ended normally; goal acceptance remains separate
+      failed: Provider execution failed
+      cancelled: User or runtime cancelled the attempt
+      orphaned: Durable attempt lost its live provider owner and may be resumable
+    transitions:
+      - from: __start__
+        to: queued
+        label: create attempt
+      - from: queued
+        to: running
+        label: run.status running
+      - from: queued
+        to: cancelled
+        label: cancel before start
+      - from: queued
+        to: orphaned
+        label: startup reconciliation lost owner
+      - from: running
+        to: succeeded
+        label: provider result done
+      - from: running
+        to: failed
+        label: provider result error
+      - from: running
+        to: cancelled
+        label: cancellation
+      - from: running
+        to: orphaned
+        label: restart or detached checkpoint
+      - from: orphaned
+        to: queued
+        label: bounded work.resume
+      - from: failed
+        to: queued
+        label: work.retry creates a new attempt
+        style: conceptual
+      - from: cancelled
+        to: queued
+        label: work.retry creates a new attempt
+        style: conceptual
+
+  permission_request:
+    title: PermissionRequest decision lifecycle
+    source:
+      - agent_host/work_ledger_types.py
+      - agent_host/work_ledger_store.py
+      - server/work_ledger_coordinator.py
+      - server/work_export_service.py
+    initial: pending
+    states:
+      pending: Exact capability, action, scope, attempt, and idempotency identity await resolution
+      allowed: User allowed the bounded action; the immutable decision is durable
+      denied: User or provider policy denied the action
+      expired: The request is no longer actionable
+    transitions:
+      - from: __start__
+        to: pending
+        label: create idempotent request
+      - from: pending
+        to: allowed
+        label: allow once / approve
+      - from: pending
+        to: denied
+        label: deny / reject / retrospective provider denial
+      - from: pending
+        to: expired
+        label: expiry policy
+    invariants:
+      - Resolution is accepted only from pending.
+      - The first durable decision wins; duplicate or stale decisions conflict.
+      - Renderer-supplied paths are ignored during resolution.
+
+  observer_narration:
+    title: Observer narration cadence
+    source:
+      - server/work_observer.py
+      - server/work_narration_governor.py
+    initial: idle
+    states:
+      idle: No coalesced narration keypoint
+      holding: Keypoints are merged while speech is busy or cadence is cooling down
+      ready: A keypoint may be narrated now
+      speaking: One shared character speech channel is emitting a work report
+      closed: Terminal session conclusion has been consumed
+    transitions:
+      - from: __start__
+        to: idle
+        label: observer configured
+      - from: idle
+        to: ready
+        label: keypoint and output idle
+      - from: idle
+        to: holding
+        label: keypoint while output busy or rate-limited
+      - from: holding
+        to: ready
+        label: speech idle and cadence elapsed
+      - from: holding
+        to: ready
+        label: terminal bypasses cadence
+      - from: ready
+        to: speaking
+        label: narration callback accepts decision
+      - from: ready
+        to: idle
+        label: policy deliberately stays silent
+      - from: speaking
+        to: idle
+        label: intermediate report consumed
+      - from: speaking
+        to: closed
+        label: final report consumed
+      - from: closed
+        to: __end__
+        label: release work session

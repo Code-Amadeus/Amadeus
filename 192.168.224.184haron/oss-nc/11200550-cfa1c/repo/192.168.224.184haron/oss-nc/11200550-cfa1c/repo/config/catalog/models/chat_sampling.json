@@ -1,0 +1,27 @@
+{
+  "id": "chat_sampling",
+  "title": {
+    "en-US": "Main Chat sampling",
+    "zh-CN": "主对话采样"
+  },
+  "description": {
+    "en-US": "Environment configuration for role replies. Planner and control decisions keep their own sampling.",
+    "zh-CN": "角色回复的环境变量配置。规划和控制决策保留各自的采样设置。"
+  },
+  "desktop": false,
+  "apply": "backend_restart",
+  "config": {
+    "COOPERATIVE_CHAT_TEMPERATURE": {
+      "type": "number",
+      "title": {
+        "en-US": "Role reply temperature",
+        "zh-CN": "角色回复温度"
+      },
+      "default": 0.7,
+      "min": 0,
+      "max": 2,
+      "step": 0.1,
+      "example_active": true
+    }
+  }
+}

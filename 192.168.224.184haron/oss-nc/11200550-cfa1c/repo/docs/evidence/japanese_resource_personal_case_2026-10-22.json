@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-22",
+  "status": "personal_case_followup_not_published",
+  "reviewed_parent": "69368c195b129d41bf301c7cb0022851d4305138",
+  "main": "8de4c95852b4bc1af3d4686ce6aaae95d91cc379",
+  "prior_receipt": "japanese_resource_personal_followup_2026-10-22.json",
+  "change": "Normalize personal surfaces with normalize_latin_case before native width normalization, matching text input; bump native/audio identity to v11.",
+  "compatibility": "Previously ineffective halfwidth/title-case personal entries may start taking effect after upgrade. Source user.csv bytes are preserved. Native case-owned names retain their spelling.",
+  "tests": {
+    "related_passed": 148,
+    "existing_deprecation_warnings": 2,
+    "new_native_regressions": 6,
+    "old_implementation_failures": 6,
+    "cases": [
+      "official alias, format-1 native and format-2 native words",
+      "halfwidth and fullwidth personal surfaces",
+      "Menu/menu/MENU, Existing/existing/EXISTING and Okabe/okabe/OKABE",
+      "Disney exact base spelling, explicit personal override",
+      "initial compile and cached reload; source bytes unchanged"
+    ],
+    "suite": "Same prior Japanese/resource/Qwen related suite plus six parametrized native regression cases."
+  },
+  "code_sha256_lf": {
+    "GPT_SoVITS/text/japanese.py": "8d7f4342eab3008f1ea69aad197c4cb9807d6b7903acab4252eb22d24b1ae37f",
+    "tts/japanese_dictionary.py": "9e218c93389884226d5593a0d55a184e64442ea11a1b371cd2f55fd1d6c5686f",
+    "tts/japanese_reading.py": "9305faedc157bd6a4efdf3c9d22d2de19796302253c70b7ae8e9bc378f74d450",
+    "config/japanese_dictionary.py": "86255d837cd23bf4151aa72dc49c33ebff6138f35adc7de2d4d82063e1df9e0a",
+    "tools/tts_text_processor.py": "f39ece272676c67bd15b3c322c14e56bbbdf35d04464e9c351e2759917ab3f5b"
+  },
+  "corpus": {
+    "input_sha256": "0ce02d9a0cb1db12168fc2deb763cddeddd621ac32354d34001d7776a507e793",
+    "path": "correct_pronunciation_for_tts -> clean_text (ja, v2)",
+    "profiles": {
+      "none": {
+        "records": 26552,
+        "changes": 0,
+        "cache_identity_changed": true,
+        "report_sha256": "10d3f988815f99f1d55a7ffde1d4f5a52b6a874620c0fa2784b6717982c56d20"
+      },
+      "format1": {
+        "records": 26552,
+        "changes": 0,
+        "cache_identity_changed": true,
+        "report_sha256": "60a1d9758978c23fa341f179cd8bc7415aa7efa17fef881f1f37a4296330974b"
+      },
+      "legacy": {
+        "records": 26552,
+        "changes": 0,
+        "cache_identity_changed": true,
+        "report_sha256": "6637d0151419ef9e412c8c3da5b7a0a3810a643c367206cf7feb829273900a18"
+      },
+      "candidate": {
+        "records": 26552,
+        "changes": 0,
+        "cache_identity_changed": true,
+        "report_sha256": "66da78b6c2f95bd8232e50b59b2def48f462f14d73783525f2c99792546a6c37"
+      }
+    },
+    "scope": "Four no-personal profiles reproduce every prior phone/target record; no daily error-rate or acoustic accuracy claim."
+  },
+  "performance": {
+    "personal_rows": 10000,
+    "official_unique_keys": 116574,
+    "configure_seconds": 2.2546134999997776,
+    "scope": "Windows fresh process, precompiled rc2 and synthetic personal rows, one measurement. Not end-to-end TTS or a cross-platform timing guarantee. Deterministic copy-work regression remains in the related suite."
+  },
+  "resource": {
+    "version": "2026.10.22.1-rc2",
+    "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+    "source_rows": 134201,
+    "reviewed_corrections": 462,
+    "original_unverified": 133739,
+    "source_rows_deleted": 0,
+    "data_changed": false,
+    "data_snapshot_commit": "6afbd8a8583046b3150cc578aec104a753452ddf"
+  },
+  "lifecycle": "Installation/rollback/failure recovery contracts passed in the related suite; actual full-pack lifecycle on 69368c19 is retained as historical evidence. Builder, installer and resource bytes are unchanged.",
+  "remaining_acceptance": [
+    "Maintainer acceptance of unverified-but-enabled admission policy (#244)",
+    "Final listening acceptance; no new audio generated",
+    "Review of this final personal-case patch"
+  ],
+  "remaining_data_review": "Hand contextual exception and frequency-priority lexical backlog unchanged; no new mappings approved.",
+  "ci": "Fresh checks required on this follow-up head; final PR checks and local ci-status.json qualify the exact commit, not earlier green runs.",
+  "merge_or_publication_authorized": false
+}

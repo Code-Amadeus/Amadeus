@@ -1,0 +1,183 @@
+{
+  "schema": "amadeus.local-message-capacity.v1",
+  "date": "2026-10-07",
+  "model": "Qwen3.5-9B-Q4_K_M.gguf",
+  "binary": "b8575 (65097181e)",
+  "base_revision": "acc2d0580e48d108b7a1a1aba8f8edae259a0bfe",
+  "client_sha256": "15e834676d413865ab8792473e5d0fa0e0dcd988cb44bedec2cceec6cec2b9c1",
+  "scope": "Synthetic capacity/transport probes; not full Cooperative acceptance, Work, or latency benchmark",
+  "runs": {
+    "4k_cpu": {
+      "context": 4096,
+      "reaped": true,
+      "cases": [
+        {
+          "case": "basic_0",
+          "message_port": true,
+          "seconds": 1.812,
+          "result": {
+            "error": "RuntimeError: Local context is too small: 6071 input + 24 output tokens exceeds the loaded 4096-token context. Increase the server context (LOCAL_LLM_CLI_CONTEXT for managed llama-server) or start a shorter conversation. No messages were truncated."
+          }
+        },
+        {
+          "case": "professional_0",
+          "message_port": true,
+          "seconds": 0.078,
+          "result": {
+            "error": "RuntimeError: Local context is too small: 4349 input + 24 output tokens exceeds the loaded 4096-token context. Increase the server context (LOCAL_LLM_CLI_CONTEXT for managed llama-server) or start a shorter conversation. No messages were truncated."
+          }
+        },
+        {
+          "case": "basic_60",
+          "message_port": true,
+          "seconds": 0.078,
+          "result": {
+            "error": "RuntimeError: Local context is too small: 7891 input + 24 output tokens exceeds the loaded 4096-token context. Increase the server context (LOCAL_LLM_CLI_CONTEXT for managed llama-server) or start a shorter conversation. No messages were truncated."
+          }
+        },
+        {
+          "case": "professional_60",
+          "message_port": true,
+          "seconds": 0.062,
+          "result": {
+            "error": "RuntimeError: Local context is too small: 6169 input + 24 output tokens exceeds the loaded 4096-token context. Increase the server context (LOCAL_LLM_CLI_CONTEXT for managed llama-server) or start a shorter conversation. No messages were truncated."
+          }
+        }
+      ]
+    },
+    "16k_cpu": {
+      "context": 16384,
+      "reaped": true,
+      "cases": [
+        {
+          "case": "basic_0",
+          "message_port": true,
+          "seconds": 177.594,
+          "result": {
+            "budget": {
+              "input_tokens": 6071,
+              "output_tokens": 24,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 私は牧瀬紅莉栖です。何かご用件はありますか？",
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "professional_0",
+          "message_port": true,
+          "seconds": 123.422,
+          "result": {
+            "budget": {
+              "input_tokens": 4349,
+              "output_tokens": 24,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 私は牧瀬紅莉栖です。何かご用件はありますか？",
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "basic_60",
+          "message_port": true,
+          "seconds": 73.828,
+          "result": {
+            "budget": {
+              "input_tokens": 7891,
+              "output_tokens": 24,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 久しぶりね。[EMO smile] 天気の良い日、散歩に行く",
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "professional_60",
+          "message_port": true,
+          "seconds": 71.984,
+          "result": {
+            "budget": {
+              "input_tokens": 6169,
+              "output_tokens": 24,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 久しぶりね。\n[EMO normal] 天気の良い日、散歩",
+            "reply_is_json_object": false
+          }
+        }
+      ]
+    },
+    "16k_gpu_format": {
+      "context": 16384,
+      "reaped": true,
+      "cases": [
+        {
+          "case": "basic_0",
+          "message_port": true,
+          "seconds": 5.875,
+          "result": {
+            "budget": {
+              "input_tokens": 6071,
+              "output_tokens": 128,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 私は牧瀬紅莉栖です。何かお手伝いしましょうか？",
+            "json_output": true,
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "professional_0",
+          "message_port": true,
+          "seconds": 3.156,
+          "result": {
+            "budget": {
+              "input_tokens": 4349,
+              "output_tokens": 128,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 私、牧瀬紅莉栖です。何かご用件はありますか？",
+            "json_output": false,
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "basic_60",
+          "message_port": true,
+          "seconds": 4.234,
+          "result": {
+            "budget": {
+              "input_tokens": 7891,
+              "output_tokens": 128,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 久しぶりね。\n[EMO normal] 天気の良い日、散歩なんて素敵なお出かけね。\n[EMO normal] 科学者として言えば、適度な運動は脳内の血流を促進し、認知機能の向上にもつながるわ。\n[EMO normal] 自然の中を歩くことで、五感も刺激されるし、気分もリフレッシュできるはず。\n[EMO normal] 楽しんできてね。",
+            "json_output": true,
+            "reply_is_json_object": false
+          }
+        },
+        {
+          "case": "professional_60",
+          "message_port": true,
+          "seconds": 4.875,
+          "result": {
+            "budget": {
+              "input_tokens": 6169,
+              "output_tokens": 128,
+              "context_tokens": 16384
+            },
+            "reply": "こんにちは、[EMO normal] 久しぶりね。\n[EMO thinking] なんだか、会話の履歴が少し奇妙に繰り返されているようだけど、気にしないわ。\n今日は本当に良い天気ね、[EMO smile] 散歩に行こうか？\nどこへ行くの？\n[EMO normal] 公園でも、街の風景でも、好きなところを選べばいいのよ。\n[EMO normal] 科学者としての頭脳を休めるには、適度な運動と新鮮な空気が一番効果的だって、昔から言われているわ。\n[EMO normal]",
+            "json_output": false,
+            "reply_is_json_object": false
+          }
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "16k fits these samples, not arbitrary future histories or RAG.",
+    "Basic replies on this binary/model remained plain text even with response_format=json_object; basic contract gate remains open.",
+    "128-token professional samples can end at output limit; they do not prove complete-turn semantics.",
+    "LM Studio and Ollama have no live endpoint in this checkout environment."
+  ]
+}
