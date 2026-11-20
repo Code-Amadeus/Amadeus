@@ -1,0 +1,55 @@
+name: Optional character RAG
+
+on:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - core/character_rag.py
+      - core/chat_runtime.py
+      - config/local_model_loading.py
+      - config/settings.py
+      - server/handlers/system_handler.py
+      - llm/client.py
+      - electron/src/main/desktopSettings.ts
+      - examples/character-rag/**
+      - tools/character_rag.py
+      - tests/test_character_rag*.py
+      - tests/fixtures/character_rag_retrieval.json
+      - .github/workflows/character-rag.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-rag:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      TTS_DEVICE: cpu
+      AMADEUS_E2E_NO_TTS: "1"
+      AMADEUS_TEST_CHARACTER_RAG: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+      - name: Install the optional retrieval capability with the existing CPU build
+        run: |
+          python -m pip install uv==0.12.8
+          uv sync --locked --extra rag --extra torch-cpu --extra dev
+      - name: Explicitly prepare the starter index and embedding cache
+        run: uv run --locked --no-sync python -m tools.character_rag build --source examples/character-rag
+      - name: Verify offline retrieval and chat integration
+        run: >-
+          uv run --locked --no-sync python -m pytest -q
+          tests/test_character_rag.py tests/test_character_rag_retrieval.py
+          tests/test_local_model_loading.py tests/test_prompt_language_contract.py
+          tests/test_system_settings.py tests/test_profile_contract.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: character-rag-retrieval
+          path: .amadeus/character-rag/retrieval-check.json
+          include-hidden-files: true

@@ -1,0 +1,22 @@
+{
+  "LICENSE": "a44a6081c73ad75f0255bb2bb5cab74ef1829565a895a24e53a4f11290ab7655",
+  "MANIFEST.in": "b9b04249cc847e06fd05907c3b4faa3a1165c858ad86ac9221d61afa000af236",
+  "pyproject.toml": "073b776779667e112aa809df94f0dcc5b1caa3cdd031f0f9f01af29749b5df14",
+  "qwen_asr/__init__.py": "26897071129fd175b1851cb3407be711f79b912efaefb9dc4a19fe3e88427e94",
+  "qwen_asr/__main__.py": "4a340eacab567a4c5ce672d38b9b8c695088947d7e2759299266076db8791c8d",
+  "qwen_asr/cli/demo.py": "e129ab41de33554091786b9bf3e6c18f8a65a17ff9eb738149b5f54354d881b8",
+  "qwen_asr/cli/demo_streaming.py": "5c92e769c8b4b5dd5b2a95ab2c218c1cf476ecff86ac48863d28d0a4c9f02fa3",
+  "qwen_asr/cli/serve.py": "d599a02e977b05d9bd625d539e39889060822c64cfd1c12b614ece62c3c42c80",
+  "qwen_asr/core/transformers_backend/__init__.py": "6de5cac018e0c994e04e855ef7fe9ed142383e88ffdcdf80463cbc7d5028b21d",
+  "qwen_asr/core/transformers_backend/configuration_qwen3_asr.py": "acf6c3f1cb3dc1ea0df621a11f7df6ccca109be73b6bf51508b5052942f5bec1",
+  "qwen_asr/core/transformers_backend/modeling_qwen3_asr.py": "2fb5d98da1933748f5117ee05ce4e7150c9ead8154fb8e25f7af3968b853adc7",
+  "qwen_asr/core/transformers_backend/processing_qwen3_asr.py": "a61f1fbfc06e3dfc63a2b8d15e3b29e98b032792c3fb7d0e01c04ca9c2181ffb",
+  "qwen_asr/core/vllm_backend/__init__.py": "45401be955b08e1135df6ec40f5c1dc05951b17868366f8d0bf0df06cf9e7720",
+  "qwen_asr/core/vllm_backend/qwen3_asr.py": "dad51cde09bef35fae5304ba1e5d4cc02a199845128d9bbb7717c4206584aa60",
+  "qwen_asr/inference/assets/korean_dict_jieba.dict": "cc157a9ab78f92bf11ed98a69b285768d6627cf5cd57a581e6c06693effce37d",
+  "qwen_asr/inference/qwen3_asr.py": "0b1770f8e907b6c5a0a1e9ebce037cb63f48555f3cd15eaf6ea2078e9df41a7b",
+  "qwen_asr/inference/qwen3_forced_aligner.py": "fb586127507c5980d11c6d848b530e652afad3ae0707cba6eb0c90377b2a2111",
+  "qwen_asr/inference/utils.py": "b37fb4140e6d9be85f2ecb1552ed16136eb98a57f44b402f8b0b213cb6df2a82",
+  "README.md": "48c012c0551a0e46c5fd3f45f8dfc3b27f20d4f8bc8caaa50c29056bf16790b3",
+  "setup.cfg": "1c473cbaee8da5fc46e7f0158794af5cea4414c34a3cf3f180c2001f5e38bd3e"
+}

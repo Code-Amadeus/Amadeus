@@ -204,6 +204,9 @@ class AuipNarrationAdapter:
         facts are narrated in source order.
         """
 
+        if not self.runtime.ai_interaction_in_effect():
+            # Commentary is AI participation; accepted facts stay in the runtime.
+            return
         event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
         app_session_id = str(payload.get("app_session_id") or "").strip()
         controller = (

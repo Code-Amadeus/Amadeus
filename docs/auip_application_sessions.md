@@ -91,6 +91,38 @@ The role may interpret the user's intent or narrate a verified transition, but
 its prose is never proof that an action ran. Completion belongs to the
 Host-accepted receipt path.
 
+## Turning AI application interaction off
+
+**Settings → Providers → AI application interaction** is one persisted, global
+switch (`AUIP_INTERACTION_ENABLED`, default on). It applies to the running
+backend immediately and is saved across restarts. It withdraws model
+participation only; it is not the `AUIP_CONTROL_DECISION_ENABLED` control-path
+selector, which chooses between the current and legacy proposal paths.
+
+Turning it off while no AppSession is active takes effect at once. With any
+AppSession active, the switch is **pending off**: Main Chat keeps its usual AUIP
+evaluation on every turn, and every session that was active can continue, so a
+user can still direct a running game from chat. The Host starts no new AppSession
+while shutdown is pending, including a launch requested earlier or deferred until
+Work finishes. When the last active AppSession ends, the switch takes effect.
+Turning it back on during that period cancels the pending shutdown.
+
+Once it has taken effect:
+
+- ordinary chat makes no AUIP entry or control model call and receives no app
+  launch candidates or focused-app context, even when historical projects,
+  launchable apps or active Work exist;
+- Amadeus takes no participant turns, issues no automatic or controller
+  actions, and adds no AUIP narration; requests to collaborate or delegate are
+  refused with `auip_interaction_disabled`, and so is a control decided before
+  the last session ended;
+- creating apps through Work, opening them, and using them by hand remain
+  available, along with AppSession identity, permission checks and receipts.
+  An attach ticket issued earlier opens a spectator-capable app in observe mode.
+
+Turning it back on restores entry, participation and narration for later turns
+with no replay.
+
 ## Disconnect and recovery behavior
 
 A lost application connection becomes a visible `disconnected` AppSession

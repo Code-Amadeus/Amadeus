@@ -1,0 +1,546 @@
+{
+  "date": "2026-10-22",
+  "status": "post_main_integration_candidate_ready_for_independent_review_not_published",
+  "supersedes": "japanese_resource_review_followup_2026-10-22.json",
+  "resource": {
+    "file": "amadeus-japanese-pronunciation-2026.10.22.1-rc2.zip",
+    "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+    "bytes": 37386096
+  },
+  "resource_version": "2026.10.22.1-rc2",
+  "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
+  "data_format": 2,
+  "data_input_commit": "4f490be3f96aabde99885e3eea0e17d7e0a39d04",
+  "source_rows": 134201,
+  "working_rows": 134201,
+  "reviewed_corrections": 462,
+  "original_unverified": 133739,
+  "deleted_source_rows": 0,
+  "overlay_rows": 4539,
+  "overlay_words": 4537,
+  "source_sha256": "cf3ae9063ee6b171f5553900fcaa813238a8d20bb0917a6a3a0f8d0c35c27962",
+  "working_sha256": "195daed9bd3aa3d9ed14008c3f927143fe7c1dea7890803d83638cef43608fea",
+  "overlay_sha256": "44cba01b1a0d0f3f114724827fa4084c66dbb27de7a66ff5ea249540c0a69e55",
+  "runtime_selection": {
+    "native_rows": 121912,
+    "aliases": 4411,
+    "source_rows": 134201,
+    "cmu_flagged_active": 0,
+    "unreviewed_active_alternatives": 0,
+    "unsupported_pronunciation_characters_active": 0,
+    "exclusions": {
+      "base_owned": 1038,
+      "unreviewed_alternative": 4920,
+      "short_token_native_owner": 236,
+      "cmu_final_phone_risk": 1300,
+      "context_sensitive": 77,
+      "native_reading_requires_review": 399,
+      "known_bad_reading": 19
+    }
+  },
+  "admission_policy": "Preserve all source/master rows. Unchanged single-reading unflagged originals remain enabled but unverified. Defer known-bad, CMU-risk, unreviewed alternatives, unsupported native pronunciation characters and contextual/pending-accent rows. Retain approved native variants and reviewed alias overrides.",
+  "previous_rc2_runtime": {
+    "native_rows": 128548,
+    "aliases": 4410,
+    "cmu_flagged_active": 1392,
+    "unreviewed_active_alternatives": 2353
+  },
+  "reproducibility": {
+    "all_nine_members_identical": true,
+    "bundle_byte_identical": true,
+    "sha256": "a935b3adfded9022afe3b2384cebc2ef1e4023f54f48df1f9ded9ff45b896989",
+    "bytes": 37386096,
+    "data_input_commit": "4f490be3f96aabde99885e3eea0e17d7e0a39d04"
+  },
+  "baseline": {
+    "main_commit": "8de4c95852b4bc1af3d4686ce6aaae95d91cc379",
+    "audited_pr_commit": "19d5f1cc3c29adffe28f11ac99f5638c9ef26cf7",
+    "path": "correct_pronunciation_for_tts -> clean_text (ja, v2)",
+    "profiles": [
+      "disabled/no pack",
+      "published format-1 2026.10.20.3",
+      "original full legacy CSV",
+      "final format-2 candidate"
+    ],
+    "current_code_sha256_lf": {
+      "GPT_SoVITS/text/japanese.py": "8d7f4342eab3008f1ea69aad197c4cb9807d6b7903acab4252eb22d24b1ae37f",
+      "tts/japanese_dictionary.py": "c3a6fde55ce6d698c63c7ad219c11a40df6ca994966d1ebc01d9f4f301799153",
+      "tts/japanese_reading.py": "9305faedc157bd6a4efdf3c9d22d2de19796302253c70b7ae8e9bc378f74d450",
+      "config/japanese_dictionary.py": "86255d837cd23bf4151aa72dc49c33ebff6138f35adc7de2d4d82063e1df9e0a",
+      "tools/tts_text_processor.py": "f39ece272676c67bd15b3c322c14e56bbbdf35d04464e9c351e2759917ab3f5b"
+    },
+    "previous_main_commit": "fd17e707d8793480003f929bc8c78a8d134e41b5",
+    "integration_commit": "7f0a4939a8bdc8da9befbdb1712127d3e9bc39aa"
+  },
+  "corpus": {
+    "records": 26552,
+    "input_sha256": "0ce02d9a0cb1db12168fc2deb763cddeddd621ac32354d34001d7776a507e793",
+    "groups": {
+      "legacy_ja_fragment": 12027,
+      "reply": 672,
+      "jsut": 5000,
+      "base_english_casing": 2424,
+      "published_readings": 508,
+      "corrected_readings": 1353,
+      "reviewed_overlay": 4536,
+      "explicit_regressions": 32
+    },
+    "changed_phone_sequences": {
+      "main-none -> current-none": {
+        "reply": 8,
+        "base_english_casing": 8,
+        "published_readings": 26,
+        "explicit_regressions": 6
+      },
+      "main-format1 -> current-format1": {
+        "reply": 8,
+        "base_english_casing": 8,
+        "published_readings": 6,
+        "explicit_regressions": 6
+      },
+      "main-legacy -> current-legacy": {
+        "reply": 19,
+        "base_english_casing": 278,
+        "published_readings": 26,
+        "explicit_regressions": 7
+      },
+      "main-format1 -> current-candidate": {
+        "legacy_ja_fragment": 118,
+        "reply": 179,
+        "jsut": 1,
+        "base_english_casing": 10,
+        "published_readings": 10,
+        "corrected_readings": 1254,
+        "reviewed_overlay": 4309,
+        "explicit_regressions": 10
+      }
+    },
+    "scope": "Repository Japanese fragments, stored synthetic replies, JSUT and directed cases. Not a random sample of real daily conversations; phone changes are not verified improvements."
+  },
+  "application_checks": {
+    "published_readings": {
+      "total": 508,
+      "matches": 507,
+      "unmatched": [
+        {
+          "id": "published_readings-20398",
+          "group": "published_readings",
+          "text": "Main",
+          "word": "main",
+          "expected": [
+            "メイン"
+          ],
+          "actual": [
+            "メーン"
+          ]
+        }
+      ]
+    },
+    "corrected_readings": {
+      "total": 1353,
+      "matches": 1350,
+      "unmatched": [
+        {
+          "id": "corrected_readings-20724",
+          "group": "corrected_readings",
+          "text": "accompaniments",
+          "word": "accompaniments",
+          "expected": [
+            "アカンパニメンツ"
+          ],
+          "actual": []
+        },
+        {
+          "id": "corrected_readings-20725",
+          "group": "corrected_readings",
+          "text": "このaccompanimentsを確認して。",
+          "word": "accompaniments",
+          "expected": [
+            "アカンパニメンツ"
+          ],
+          "actual": []
+        },
+        {
+          "id": "corrected_readings-20726",
+          "group": "corrected_readings",
+          "text": "これはaccompanimentsです。",
+          "word": "accompaniments",
+          "expected": [
+            "アカンパニメンツ"
+          ],
+          "actual": []
+        }
+      ]
+    },
+    "reviewed_overlay": {
+      "total": 4536,
+      "matches": 4535,
+      "unmatched": [
+        {
+          "id": "reviewed_overlay-26496",
+          "group": "reviewed_overlay",
+          "text": "このaccompanimentsを確認します。",
+          "word": "accompaniments",
+          "expected": [
+            "アカンパニメンツ"
+          ],
+          "actual": []
+        }
+      ]
+    },
+    "published_original_contexts": {
+      "matches": 381,
+      "total": 381,
+      "words": 127
+    },
+    "unowned_case_controls_equal_main": 1105,
+    "scope": "Checks application of supplied review readings, not independent lexical truth or acoustic accuracy.",
+    "unmatched_explanation": {
+      "Main": "Native exact-case reading メーン differs from lowercase ledger メイン; retained as a strict mismatch, not hidden.",
+      "accompaniments": "Whole-node matcher cannot score native kana ニ -> 二 surface postprocessing; observed phones contain n i. Three correction contexts and one overlay context remain unscored."
+    }
+  },
+  "base_controls": {
+    "unique": 83,
+    "changes_relative_to_main": [
+      "100kHzです",
+      "100GHzです"
+    ],
+    "changes_relative_to_current_no_pack": [],
+    "explanation": "100kHz/100GHz use the intended native unit path. Earlier zero-change claim compared PR against itself."
+  },
+  "audio": {
+    "new_audio_rendered": 0,
+    "existing_audio_sha256_verified": true,
+    "sample": {
+      "status": "user_reviewed_sample",
+      "date": "2026-10-21",
+      "cases": [
+        "menu",
+        "game",
+        "disney",
+        "neutral"
+      ],
+      "feedback": "目前这些表现候选都更好",
+      "relative_preference": "candidate for all four displayed cases",
+      "reported_regressions": 0,
+      "scope": "Four displayed A/B pairs; not exhaustive lexical or accent certification.",
+      "absolute_reading_correctness": "Not separately asserted by the listener."
+    },
+    "synthesis": {
+      "model_version": "v3",
+      "gpt_sha256": "8cb6de6c76a074b349f4cf868aa559c014eb6430adad3df5fa880015d6bac319",
+      "sovits_sha256": "7f21f7bdbeaef5c43f54f412a96c6371df4ed8484a6d0b432ff87c5a68273c7a",
+      "reference_sha256": "4157bc810d4a3c3300cfb225852924e72890c8f8f186a4fda5ed98031ffbdb91",
+      "seed": 237,
+      "top_k": 20,
+      "top_p": 0.6,
+      "temperature": 0.6,
+      "speed": 1.0,
+      "sample_steps": 16
+    },
+    "files": [
+      {
+        "case": "menu",
+        "profile": "legacy",
+        "file": "menu__legacy.wav",
+        "sample_rate": 24000,
+        "seconds": 1.5346666666666666,
+        "sha256": "a1657fefa7f70d999132b8c95f43ad3ad12c62cf89cf77903950bffe109eb486"
+      },
+      {
+        "case": "game",
+        "profile": "legacy",
+        "file": "game__legacy.wav",
+        "sample_rate": 24000,
+        "seconds": 1.5673333333333332,
+        "sha256": "674ad386df81c493d43d46b4e338c8b528ba91d0130adbc598f37174bfcf8509"
+      },
+      {
+        "case": "disney",
+        "profile": "legacy",
+        "file": "disney__legacy.wav",
+        "sample_rate": 24000,
+        "seconds": 2.19,
+        "sha256": "90ca849ca3278fcd0bceba13a541f6deac3f83b19b581398f367f4537a02ba61"
+      },
+      {
+        "case": "neutral",
+        "profile": "legacy",
+        "file": "neutral__legacy.wav",
+        "sample_rate": 24000,
+        "seconds": 1.5073333333333334,
+        "sha256": "41a915b5dd3cceb3aafa99d0bae0d81639ff4acf96dc04c986e69e8a297e6039"
+      },
+      {
+        "case": "menu",
+        "profile": "candidate",
+        "file": "menu__candidate.wav",
+        "sample_rate": 24000,
+        "seconds": 1.5346666666666666,
+        "sha256": "4318b980f2cc46aaa1c156234100d597af2e9a017b7010499bf6f6e5c89dc375"
+      },
+      {
+        "case": "game",
+        "profile": "candidate",
+        "file": "game__candidate.wav",
+        "sample_rate": 24000,
+        "seconds": 1.5673333333333332,
+        "sha256": "ba4e40949907f8e7a83549e5ff0fb0dd4a31dd2131c6100943ee8c0f5c5c89aa"
+      },
+      {
+        "case": "disney",
+        "profile": "candidate",
+        "file": "disney__candidate.wav",
+        "sample_rate": 24000,
+        "seconds": 1.78,
+        "sha256": "db5625d8c0a29204d8f5aa8bd5ca015062fa3e19e8b3f9c772593922ab28b64a"
+      },
+      {
+        "case": "neutral",
+        "profile": "candidate",
+        "file": "neutral__candidate.wav",
+        "sample_rate": 24000,
+        "seconds": 1.532,
+        "sha256": "234b3dda05ad084ba3e7b4e200f13da726df6e2783de9cf35316d8ff48a83464"
+      }
+    ],
+    "unchanged_final_inputs": [
+      "menu",
+      "game",
+      "disney",
+      "neutral",
+      "reference"
+    ],
+    "qualification": "Existing four candidate waveforms retained with identical target phone/prosody sequences, reference sequence and unchanged model/reference hashes. Preference only; not a new whole-vocabulary or absolute-correctness listening pass."
+  },
+  "lifecycle": {
+    "install": {
+      "version": "2026.10.20.3",
+      "resource_identity": "3382cd546c4d78ab53f9399ed2f871e5d587f0cba33e60cba42c7ce4ea387b2e",
+      "audio_cache_identity": "7ea31480f5cca405a2310623c34a537b7089fc33f80b71f0d73a254e4a6cacdf",
+      "installed_files": 6,
+      "many_phones": [
+        "e",
+        "[",
+        "m",
+        "u",
+        "e",
+        "e",
+        "e",
+        "n",
+        "u",
+        "w",
+        "a",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "update": {
+      "version": "2026.10.22.1-rc2",
+      "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
+      "audio_cache_identity": "6e797b7f14b9d8c83d177eea961871c28ea795afc440f0eebf71dadceb15d4ba",
+      "installed_files": 6,
+      "many_phones": [
+        "m",
+        "e",
+        "]",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "rollback": {
+      "version": "2026.10.20.3",
+      "resource_identity": "3382cd546c4d78ab53f9399ed2f871e5d587f0cba33e60cba42c7ce4ea387b2e",
+      "audio_cache_identity": "7ea31480f5cca405a2310623c34a537b7089fc33f80b71f0d73a254e4a6cacdf",
+      "installed_files": 3,
+      "many_phones": [
+        "e",
+        "[",
+        "m",
+        "u",
+        "e",
+        "e",
+        "e",
+        "n",
+        "u",
+        "w",
+        "a",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    },
+    "restore_candidate": {
+      "version": "2026.10.22.1-rc2",
+      "resource_identity": "298576bfaf6e553f55631b2bbbea8099deb9b3919903bce8f646ca2ecd791c46",
+      "audio_cache_identity": "6e797b7f14b9d8c83d177eea961871c28ea795afc440f0eebf71dadceb15d4ba",
+      "installed_files": 3,
+      "many_phones": [
+        "m",
+        "e",
+        "]",
+        "n",
+        "i",
+        "i",
+        "o",
+        "UNK",
+        "k",
+        "a",
+        "[",
+        "k",
+        "u",
+        "n",
+        "i",
+        "N",
+        "sh",
+        "i",
+        "t",
+        "e",
+        "k",
+        "u",
+        "d",
+        "a",
+        "s",
+        "a",
+        "]",
+        "i",
+        "."
+      ]
+    }
+  },
+  "lifecycle_source_counts": [
+    129,
+    134201,
+    129,
+    134201
+  ],
+  "personal_and_legacy_preserved": true,
+  "idempotent_reinstall": true,
+  "failed_update_restoration": "Automated fault-injection test restores all replaced members.",
+  "lifecycle_corpus_records": 5672,
+  "lifecycle_corpus_sha256": "5d195573a912563e2457255038687d83658b46ba5d469d828b9d7732f551d03e",
+  "startup_seconds": {
+    "current_warm_compiled_fresh_process": [
+      2.1747489999979734,
+      2.19981099999859,
+      2.184677700002794
+    ],
+    "old_rc2_fresh_process": [
+      3.5386696999994456,
+      3.540812899998855,
+      3.693167800000083
+    ],
+    "scope": "Single Windows host observations at different times; not a controlled performance benchmark. Full validation remains seconds rather than format-1 milliseconds. Historical pre-integration observations; not rebenchmarked for this receipt."
+  },
+  "validation": {
+    "local_related_tests": "139 passed, 2 existing deprecation warnings; 136 Japanese/resource tests plus 3 main Qwen packaging/import contracts.",
+    "ruff": "passed",
+    "architecture_views": "7 passed",
+    "platform_matrix": "Previous ef2aed29 matrix passed; new final-head full CI must qualify this integration. See the PR Checks tab and handoff ci-status.json."
+  },
+  "dependency_pr": {
+    "url": "https://github.com/Code-Amadeus/Amadeus/pull/252",
+    "head": "04112fc9406a575c8c411cb5ec612af615e07990",
+    "ci": "18 checks passed",
+    "scope": "Pillow 13 and inference/demo dependency separation, independently reviewed; no dictionary data.",
+    "status": "merged",
+    "merge_commit": "1d9e88df721c87c2dac54d669536d135ef31094b"
+  },
+  "live_resource_unchanged": true,
+  "remaining_acceptance": [
+    "Fresh final-head CI after integration; status is recorded separately to avoid claiming old-head results.",
+    "Independent re-review and maintainer acceptance of the dictionary policy and readings.",
+    "No #250 merge, resource publication, remote data repository creation or live installation is authorized."
+  ],
+  "limitations": [
+    "133739 original rows remain unreviewed; screening does not guarantee their pronunciation.",
+    "No estimate of overall daily repair rate or false-correction rate.",
+    "Reference/phone equivalence reuses existing sample evidence; it does not certify all words or accents.",
+    "Full-resource startup still costs seconds.",
+    "Main native variant and accompaniments matcher limits remain explicit."
+  ],
+  "integration": {
+    "merged_dependencies": {
+      "252": "1d9e88df721c87c2dac54d669536d135ef31094b",
+      "249": "8de4c95852b4bc1af3d4686ce6aaae95d91cc379"
+    },
+    "conflicts": "Seven inherited Qwen/provenance conflicts resolved to exact main content; no Qwen, AEC, pyproject or lock differences remain versus main.",
+    "japanese_frontend_and_loader_code_unchanged": true,
+    "fresh_profiles": 7,
+    "records_per_profile": 26552,
+    "all_profiles_identical_to_previous_corresponding_observations": true,
+    "nine_resource_members_byte_identical": true,
+    "resource_zip_byte_identical": true,
+    "existing_heard_target_and_reference_sequences_identical": true,
+    "eight_existing_wav_hashes_verified": true,
+    "new_audio_rendered": 0
+  }
+}

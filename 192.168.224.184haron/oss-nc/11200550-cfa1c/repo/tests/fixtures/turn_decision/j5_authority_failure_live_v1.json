@@ -1,0 +1,43 @@
+{
+  "schema": "amadeus.turn-terminal-observation-fixture.v1",
+  "evidence_kind": "extracted_from_live_report",
+  "source_commit": "2f3f867b0311b48e1de85b87e78c6b35b9eb1a60",
+  "source_report": "project_provider_20260902T222334Z_6303d9.json",
+  "source_report_sha256": "9a259bb8b35a5682f33cebb49a6dea79bea85db7f11639b61a4377c5ba764d4b",
+  "turn_id": "cross-domain-openclaw-return-project-work-d4050fca54fb4b88aa86457b5dee8aa4",
+  "utterance": "先把 OpenClaw 放一边，回到 amadeus 项目。在 README.md 末尾加一行 `PROJECT_AFTER_OPENCLAW_AMADEUS_E2E_B7CA2140FF11`，再读回来确认。",
+  "events": [
+    {
+      "stage": "control_proposal_sealed",
+      "origin_kind": "main_chat_role",
+      "origin_id": "delegate_tag_closed",
+      "payload": {
+        "transport": "inline_tag",
+        "proposal_count": 1,
+        "proposal_count_known": true,
+        "proposal_observed_count": 1,
+        "proposal_observation_truncated": false,
+        "proposals": [
+          {
+            "intent": "amend",
+            "provider": "codex",
+            "payload_digest": "1386f46e806a926457ea51186f38632f565dffb6aeb52e61d90ccc42dad27705"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "control_authority_resolved",
+      "origin_kind": "control_decision",
+      "origin_id": "agree",
+      "payload": {
+        "disposition": "failed_closed",
+        "decision_status": "invalid",
+        "action_count": 0
+      }
+    }
+  ],
+  "recorded_terminal": "observed_no_effect",
+  "expected_terminal": "failed_closed",
+  "scope": "Replay observed Host facts only; not a reconstructed model response or fresh live journey."
+}

@@ -1,0 +1,97 @@
+{
+  "id": "tts_remote",
+  "title": {
+    "en-US": "Remote speech API",
+    "zh-CN": "远程语音合成 API"
+  },
+  "description": {
+    "en-US": "OpenAI-compatible speech synthesis with buffered WAV or explicit SSE streaming.",
+    "zh-CN": "兼容 OpenAI 的语音合成，支持缓冲 WAV 或显式 SSE 流式传输。"
+  },
+  "desktop": true,
+  "config": {
+    "TTS_API_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "API base URL",
+        "zh-CN": "API 基础地址"
+      },
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "default": "https://api.openai.com/v1"
+    },
+    "TTS_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true
+    },
+    "TTS_API_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "gpt-4o-mini-tts"
+    },
+    "TTS_API_VOICE": {
+      "type": "string",
+      "title": {
+        "en-US": "Voice",
+        "zh-CN": "语音"
+      },
+      "default": "alloy"
+    },
+    "TTS_API_STREAM_PROTOCOL": {
+      "type": "enum",
+      "title": {
+        "en-US": "Response mode",
+        "zh-CN": "响应模式"
+      },
+      "options": [
+        {
+          "value": "buffered",
+          "label": {
+            "en-US": "Buffered WAV · compatible",
+            "zh-CN": "缓冲 WAV · 兼容模式"
+          }
+        },
+        {
+          "value": "openai_sse",
+          "label": {
+            "en-US": "OpenAI SSE · streaming PCM",
+            "zh-CN": "OpenAI SSE · 流式 PCM"
+          }
+        }
+      ],
+      "description": {
+        "en-US": "Use OpenAI SSE only when the endpoint implements speech.audio.delta events.",
+        "zh-CN": "仅在端点支持 speech.audio.delta 事件时使用 OpenAI SSE。"
+      },
+      "default": "buffered",
+      "example": "openai_sse",
+      "ui_description": null
+    }
+  },
+  "section": "remote",
+  "voice_backend": {
+    "id": "openai_compatible",
+    "label": {
+      "en-US": "OpenAI-compatible API",
+      "zh-CN": "OpenAI 兼容 API"
+    },
+    "deployment": "remote",
+    "factory": "tts.backends.openai_compatible:OpenAICompatibleTTSBackend",
+    "probe": "tts.backends.openai_compatible:probe",
+    "summary": "Buffered WAV compatibility or explicit OpenAI SSE first-packet playback.",
+    "order": 1,
+    "streaming": "tts.backends.openai_compatible:streaming_enabled",
+    "reference_conditioning": false
+  },
+  "apply": "backend_restart",
+  "order": 2
+}

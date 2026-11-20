@@ -1,0 +1,20 @@
+/* Reviewer palette study only; not a Host injection mechanism or app stylesheet. */
+.playfield {
+  background: linear-gradient(145deg, #12282b, #182e30);
+  color: #d8eee9;
+  box-shadow: inset 0 0 0 1px #31575a, 0 12px 28px #0003;
+}
+.playfield::before, .playfield::after { border-color: #648884; }
+.board-caption, .board-caption .am-label { color: #9cb9b4; }
+.tower-board { border-bottom-color: #466460; background: none; }
+.tower:hover, .tower.selected { background: #b0d1ca0a; }
+.tower.selected { box-shadow: inset 0 0 0 2px #6f9690; }
+.hanoi-app .tower:focus-visible { outline: 3px solid #6dffe2; }
+.tower-name { color: #b8ccc5; }
+.peg { background: linear-gradient(90deg, #36514e, #7d9188 46%, #48645e); box-shadow: 1px 0 #182e30; }
+.disk { border-radius: 6px; box-shadow: inset 0 1px #ffffff28, inset 0 -2px #0002; }
+.disk-1 { background: #a77868; }
+.disk-2 { background: #b3a078; }
+.disk-3 { background: #6f9690; }
+.feedback[data-tone="error"] { color: #e9a8a7; }
+.feedback[data-tone="success"] { color: #a5cbb7; }

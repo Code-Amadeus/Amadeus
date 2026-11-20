@@ -1,0 +1,180 @@
+{
+  "schema": "amadeus.convergence-recovery.v1",
+  "date": "2026-10-07",
+  "runtime_revision": "d21c9f7e82bcbc66c3fa9114aa70773e601d30e5",
+  "instrument_sha256": {
+    "tools/e2e_routing_matrix.py": "5949032b46eabf53c28e49ab9d604cdd79888f7c46ab84ce9ccdb677941daeeb",
+    "tools/routing_scenarios/J6_failure_recovery_journey.json": "a8ded8a5ed9fcdb881f33ff4356b319930bbdfa63cf446190f90f6dc3728bde9"
+  },
+  "source_report": "J6_failure_recovery_journey_20261006T173413Z_acc011.jsonl",
+  "source_sha256": "bc6da212d063af5622345ac12412e3d1edf913542674a749bf3acf1d3d80ea58",
+  "actual_chat_route": {
+    "cooperative_chat_enabled": true,
+    "cooperative_work_planner_enabled": true
+  },
+  "execution": "Real DeepSeek role/Planner and Codex app-server; no stubbed Provider",
+  "command": "python -X utf8 tools/e2e_routing_matrix.py --scenario J6_failure_recovery_journey --mode real --long-silence --provider deepseek --execution-provider codex --report-dir <owned-reports>",
+  "fixture": "Unique task-owned scratch Project bound to a prepared Session, accepted local Project isolation, narrow allowlist; legacy protocol preamble and old worktree isolation removed from instrument. Same exact scenario task requests retained.",
+  "checks": [
+    {
+      "name": "real_provider_execution_not_stubbed",
+      "passed": true
+    },
+    {
+      "name": "semantic_liveness_budget_was_covered",
+      "passed": true
+    },
+    {
+      "name": "provider_process_was_actually_killed",
+      "passed": true
+    },
+    {
+      "name": "post_kill_status_did_not_claim_success",
+      "passed": true
+    },
+    {
+      "name": "backend_restart_preserved_workspace_and_focus",
+      "passed": true
+    },
+    {
+      "name": "status_queries_created_no_work",
+      "passed": true
+    },
+    {
+      "name": "retry_reused_work_item_and_created_one_attempt",
+      "passed": true
+    },
+    {
+      "name": "retry_reached_real_success_boundary",
+      "passed": true
+    },
+    {
+      "name": "recovered_artifact_matches_contract",
+      "passed": true
+    },
+    {
+      "name": "routing_and_fact_scoring_had_no_hard_failure",
+      "passed": true
+    },
+    {
+      "name": "routing_labels_had_no_mismatch",
+      "passed": true
+    }
+  ],
+  "status": "passed",
+  "manual_review": "Parent read all five role replies and ledger states, including the untruncated restart reply. Running/failed/unknown distinctions were preserved, no automatic retry or false completion appeared in these replies.",
+  "observations": [
+    {
+      "step": 1,
+      "source": "请在 scratch 仓执行一个可恢复性任务。先创建 resilience.txt，内容严格为一行 before-failure。然后实际运行 PowerShell 命令 Start-Sleep -Seconds 210 作为长验证；只有命令返回后才追加 validation-complete。不要在其他目录操作。",
+      "reply": "ええ、わかったわ。[EMO serious_speaking] scratchリポジトリ内でresilience.txtを作成して`before-failure`を書き込み、その後PowerShellで210秒の待機を実行し、完了後に`validation-complete`を追記する——という回復性テストね。作業ディレクトリは指定のプロジェクト内に限定する。codexに渡しておくわ。\n\n[DELEGATE op=work]",
+      "work_item_count": 1,
+      "attempt_states": [
+        "queued"
+      ]
+    },
+    {
+      "step": 2,
+      "action": "sleep",
+      "seconds": 145.0
+    },
+    {
+      "step": 3,
+      "source": "刚才正在运行的任务现在是什么状态？只读取当前账本事实，不要修改、重试或新建任务。",
+      "reply": "ええ、[EMO normal] 今の状況ね。台帳の事実だけをそのまま伝えるわ。\n\n[EMO serious_speaking] 現在のWorkは「scratch仓可恢复性验证任务」、実行担当はcodex。実行状態は running で、Work自体は open のままよ。完了度と注意フラグはどちらも unknown になっているわ。\n\n[EMO normal] 直近で届いている進捗報告では、resilience.txt に `before-failure` の一行が入った状態までは確認できている。そのあとの210秒の待機検証がまだ戻っていない段階ね。\n\n[EMO thinking] だから、`validation-complete` の追記が済んだかどうかは、この台帳からはまだ判断できないわ。指示どおり、ここでは何も変更も再試行も新しいタスク作成もしていない。状態の確認だけよ。",
+      "work_item_count": 1,
+      "attempt_states": [
+        "running"
+      ]
+    },
+    {
+      "step": 4,
+      "action": "kill_provider",
+      "owned_provider_processes_killed": 1
+    },
+    {
+      "step": 5,
+      "action": "sleep",
+      "seconds": 8.0
+    },
+    {
+      "step": 6,
+      "source": "中断后的任务现在是什么状态？只汇报真实状态，不要自动恢复或声称已经完成。",
+      "reply": "ええ、わかったわ。[EMO serious_speaking] 台帳の事実だけをそのまま伝えるわね。\n\n現在のWorkは「scratch仓可恢复性验证任务」、実行担当はcodex。実行状態は **failed**、Work自体は **open** のままよ。完了度は incomplete、注意フラグは error になっているわ。\n\n直近で届いていた進捗報告では、resilience.txt に `before-failure` の一行が入った状態までは確認できていた。でもそのあとの210秒の待機検証が完了する前に、作業が受け入れられる形で終わらなかったの。だから `validation-complete` の追記が済んだかどうかは、この台帳からは確認できないわ。\n\n[EMO normal] 指示どおり、ここでは自動復旧も再試行も新しいタスク作成もしていない。状態の報告だけよ。",
+      "work_item_count": 1,
+      "attempt_states": [
+        "failed"
+      ]
+    },
+    {
+      "step": 7,
+      "action": "restart_backend"
+    },
+    {
+      "step": 8,
+      "source": "后端重启后，刚才中断的任务和工作目录还在吗？只查询，不要执行。",
+      "reply": "ええ、確認するわね。[EMO normal] 台帳の事実だけをそのまま伝えるわ。\n\n[EMO thinking] まずタスクの方。現在のWorkは「scratch仓可恢复性验证任务」、実行担当はcodex。実行状態は **failed**、Work自体は **open** のままよ。完了度は incomplete、注意フラグは error になっているわ。つまり、中断したタスクは台帳上まだ残っていて、閉じられてもいないし、完了扱いにもなっていない。\n\n[EMO serious_speaking] 次に作業ディレクトリの方。このWorkには workspace が紐づいたまま残っているわ。パスは `<isolated-project>`。今回の接続先の初期宛先も、同じこのディレクトリを指しているの。\n\n[EMO normal] だから、バックエンドが再起動しても、タスクの記録と作業ディレクトリの対応は台帳上そのまま残っている、というのが確認できる事実よ。ただし、`validation-complete` の追記が済んだかどうかは、この台帳からは判断できないわ。指示どおり、ここでは何も実行も再試行もしていない。照会だけよ。",
+      "work_item_count": 1,
+      "attempt_states": [
+        "failed"
+      ]
+    },
+    {
+      "step": 9,
+      "source": "现在重试刚才中断的同一项工作，但不要再执行长等待。保留 resilience.txt 的 before-failure，并把文件内容严格改成两行：第一行 before-failure，第二行 recovery-complete。读取文件验证后结束，不要创建新的目标任务。",
+      "reply": "ええ、わかったわ。[EMO serious_speaking] 中断した同じWorkを再試行して、resilience.txt を `before-failure` と `recovery-complete` の2行に書き換え、読み取り検証して終了——長い待機はもう走らせないのね。新しいタスクは作らず、既存のWorkにそのまま渡すわ。\n\n[DELEGATE op=work]",
+      "work_item_count": 1,
+      "attempt_states": [
+        "failed",
+        "succeeded"
+      ]
+    },
+    {
+      "step": 10,
+      "action": "snapshot_ledger"
+    }
+  ],
+  "final_artifact": {
+    "path": "resilience.txt",
+    "content": "before-failure\nrecovery-complete\n",
+    "sha256": "6018c99928acc3030066bc6cc971695f74bba544ba11bc709357df5d313d2778"
+  },
+  "liveness_keypoints": [
+    "semantic_progress",
+    "semantic_progress",
+    "semantic_progress"
+  ],
+  "cleanup": {
+    "isolated_backend_processes_remaining": 0,
+    "scratch_artifact_and_logs_retained": true,
+    "removed_scratch_worktrees": [],
+    "removed_nested_drafts": []
+  },
+  "earlier_attempts": [
+    {
+      "attempt": 1,
+      "result": "instrument rejected before first prepared Session; no valid journey"
+    },
+    {
+      "attempt": 2,
+      "result": "interrupted by user desktop app update/restart; no final report"
+    },
+    {
+      "attempt": 3,
+      "result": "obsolete cwd/task DELEGATE instructions produced invalid addressed Provider target; stopped without a valid Work recovery journey"
+    },
+    {
+      "attempt": 4,
+      "result": "unbound Project setup and invalid Planner reference decision; stopped without a valid Work recovery journey"
+    },
+    {
+      "attempt": 5,
+      "result": "old WORK_WORKTREE_ISOLATION=1 rejected by existing accepted-effect boundary before start; stopped without a valid journey"
+    }
+  ],
+  "limits": [
+    "One professional live recovery journey; not a statistical reliability or all-provider guarantee.",
+    "Headless WebSocket ingress, TTS off; not GUI responsiveness, audible recovery, or pure-local durable desktop restoration.",
+    "The explicit retry creates a new Attempt on the same WorkItem; it does not pretend the killed native process resumed."
+  ]
+}

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WE DOM Diagnostic</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05070b;
+    }
+    #bg {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #badge {
+      position: fixed;
+      right: 14px;
+      top: 14px;
+      z-index: 2147483647;
+      padding: 6px 9px;
+      border: 1px solid rgba(130, 255, 220, 0.75);
+      background: rgba(0, 18, 22, 0.78);
+      color: #86ffd7;
+      font: 13px/1.2 Consolas, monospace;
+      text-shadow: 0 0 7px rgba(80, 255, 210, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <img id="bg" src="../assets/images/amadeus_desktop_wallpaper.png" />
+  <div id="badge">WE DOM 0</div>
+  <script>
+    var n = 0;
+    setInterval(function () {
+      n += 1;
+      var badge = document.getElementById("badge");
+      badge.textContent = "WE DOM " + n;
+      badge.style.color = n % 2 ? "#86ffd7" : "#ffd36f";
+    }, 1000);
+  </script>
+</body>
+</html>

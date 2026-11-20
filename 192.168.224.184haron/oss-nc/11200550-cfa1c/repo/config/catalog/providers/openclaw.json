@@ -1,0 +1,50 @@
+{
+  "id": "openclaw",
+  "title": {
+    "en-US": "OpenClaw",
+    "zh-CN": "OpenClaw"
+  },
+  "description": {
+    "en-US": "Optional Gateway provider. Assign a role above or select it explicitly for a task; existing sessions remain supported.",
+    "zh-CN": "可选的 Gateway 提供商。可在上方分配角色或在任务中明确选择；继续支持现有会话。"
+  },
+  "desktop": true,
+  "config": {
+    "OPENCLAW_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Gateway URL",
+        "zh-CN": "网关 URL"
+      },
+      "default": "http://127.0.0.1:18789",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true
+    },
+    "OPENCLAW_GATEWAY_TOKEN": {
+      "type": "string",
+      "title": {
+        "en-US": "Gateway token",
+        "zh-CN": "网关令牌"
+      },
+      "secret": true,
+      "setting": "OPENCLAW_TOKEN",
+      "example_active": false
+    },
+    "OPENCLAW_PROJECT_DIR": {
+      "type": "path",
+      "title": {
+        "en-US": "OpenClaw project directory",
+        "zh-CN": "OpenClaw 项目目录"
+      },
+      "default": "",
+      "example_active": false,
+      "example": "C:\\path\\to\\openclaw"
+    }
+  },
+  "section": "providers",
+  "order": 10,
+  "apply": "backend_restart"
+}

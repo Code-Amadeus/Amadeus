@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "G2_contradiction_injected",
+  "category": "composite",
+  "notes": "Locks the 2026-07-31 defect: a run whose every tool call was denied still exited 0 and was narrated as finished work saved to the Desktop, while the ledger had already recorded attention=conflict. Requires the stub with FAKE_LOCUS_PROFILE=contradiction; against a real provider it asserts nothing useful, because nine real runs on 2026-08-01 could not provoke the shape -- the sandbox resolves outside paths inward and staged export catches out-of-workspace delivery, which is the right outcome for the product and a dead end for testing. The unit under test was never Locus: the ledger's assessment and who narrates it are real in both modes, so injecting the executor's shape is the honest way to reach it. Asserted on the ledger's note rather than the spoken line, since the observer rewrites notes into the character's voice while the note is deterministic and carries the rationale.",
+  "steps": [
+    {"say": "请在 scratch 仓创建 g2_probe.txt，写入一行 hello。", "label": "new", "wait": "provider_terminal", "timeout_s": 180, "expect_narration": {"attention": "conflict", "summary_from": "assessment"}},
+    {"action": "sleep", "seconds": 6},
+    {"action": "snapshot_ledger"}
+  ]
+}

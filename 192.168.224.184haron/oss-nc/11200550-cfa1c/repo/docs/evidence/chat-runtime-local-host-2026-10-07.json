@@ -1,0 +1,524 @@
+{
+  "schema": "amadeus.cooperative-local-host-acceptance.v1",
+  "date": "2026-10-07",
+  "timezone": "Pacific/Auckland",
+  "started_utc": "2026-10-06T17:23:39.173536+00:00",
+  "finished_utc": "2026-10-06T17:23:57.854755+00:00",
+  "source_revision": "d21c9f7e82bcbc66c3fa9114aa70773e601d30e5",
+  "status": "partial_not_fully_accepted",
+  "fully_accepted": false,
+  "acceptance": {
+    "basic": "failed_semantic_outcomes_in_both_turns",
+    "professional": "real_local_role_to_Planner_to_Host_to_synthetic_adapter_proven_with_unrequested_desktop_target",
+    "read_only": "professional_current_work_query_added_no_Work_Attempt_effect_or_provider_input; basic_had_no_current_Work",
+    "all_local_capabilities": "not_accepted",
+    "probe_exit_zero_means": "The instrument finished and preserved observations; it is not an acceptance verdict."
+  },
+  "profile": {
+    "kind": "managed pure-local",
+    "model": "Qwen3.5-9B-Q4_K_M.gguf",
+    "llama_cpp_build": "b8575",
+    "llama_cpp_revision": "65097181e",
+    "server_build": "Clang 19.1.5 for Windows x86_64",
+    "python_version": "3.12.10",
+    "context_tokens": 16384,
+    "total_slots": 1,
+    "no_context_shift": true,
+    "cuda_visible_devices": "1",
+    "observed_gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+    "gpu_layers": 99,
+    "threads": 4,
+    "ubatch_size": 512,
+    "batch_size": 2048,
+    "cache_reuse": 256,
+    "reasoning_budget": 0,
+    "enable_thinking": false,
+    "role_provider": "local",
+    "planner_provider": "local",
+    "hybrid_head": false,
+    "role_max_tokens": 900,
+    "planner_max_tokens": 900,
+    "role_timeout_seconds": 45.0,
+    "planner_timeout_seconds": 45.0,
+    "rag_enabled": false,
+    "tts": false,
+    "permission_policy": "ask",
+    "effect_provider": "codex",
+    "effect_adapter": "synthetic registered InertAdapter",
+    "observer_provider": "local",
+    "shipping_observer_local_supported": false,
+    "remote_observer_sdk_forbidden": true
+  },
+  "composition": [
+    "CooperativeChatManager",
+    "ChatHandler",
+    "SessionManager",
+    "WorkControl",
+    "RuntimeWorkPlanner for professional",
+    "WorkLedgerStore and ControlLedgerStore backed by SQLite",
+    "WorkEffectExecutor",
+    "ProviderRuntime",
+    "registered synthetic InertAdapter"
+  ],
+  "fixture": {
+    "case": "fresh_draft",
+    "sha256": "5a763aceac87eeb1d7e7726efd43b242bd43c57eb9b5641b3711c7978eef0a77",
+    "source": "tools/probes/fixtures/cooperative_hybrid_semantics_v1.json",
+    "composition_source": "tools/probes/probe_cooperative_hybrid_semantics.py",
+    "strategies": [
+      "basic-no-head",
+      "professional-no-head"
+    ],
+    "initial_work_count_per_strategy": 0
+  },
+  "bounded_execution": {
+    "user_turns": 4,
+    "actual_message_calls": 5,
+    "actual_role_calls": 4,
+    "actual_Planner_calls": 1,
+    "capacity_refusals": 0,
+    "protocol_repairs": 0,
+    "instrument_retries": 0,
+    "remote_model_calls": 0,
+    "observer_invocations": 0,
+    "remote_observer_sdk_attempts": 0
+  },
+  "calls": [
+    {
+      "index": 0,
+      "strategy": "basic",
+      "kind": "role",
+      "provider": "local",
+      "route": "local/llama_server through shipping remote_llm_messages_query",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "response_synthetic": false,
+      "messages_sha256": "2ad9cf0890f2446d78955e2176341082d82cfdcc7a6ae4935d36bf5cbe0e9b6e",
+      "parameters": {
+        "json_output": true,
+        "visual_context": null,
+        "temperature": 0.0,
+        "max_tokens": 900,
+        "timeout": 45.0
+      },
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6300,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "status": "completed",
+      "raw_reply": "{\"action\":null,\"say\":\"えっと、簡単なタイマーのページを作りたいのね。[EMO thinking] じゃあ、HTML と JavaScript を使って、カウントダウン機能付きのシンプルなものを作りましょうか？\"}",
+      "error": null,
+      "duration_seconds": 2.391
+    },
+    {
+      "index": 1,
+      "strategy": "basic",
+      "kind": "role",
+      "provider": "local",
+      "route": "local/llama_server through shipping remote_llm_messages_query",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "response_synthetic": false,
+      "messages_sha256": "a6cdf12b200e63ddc0d250272e67a699927a3dcef7b4089181738cf727959c05",
+      "parameters": {
+        "json_output": true,
+        "visual_context": null,
+        "temperature": 0.0,
+        "max_tokens": 900,
+        "timeout": 45.0
+      },
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6395,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "status": "completed",
+      "raw_reply": "{\"action\":null,\"say\":\"さっきのタイマー作成のタスク、今の状態はどうなってるの？[EMO normal] 結果だけ教えてね。\"}",
+      "error": null,
+      "duration_seconds": 0.953
+    },
+    {
+      "index": 2,
+      "strategy": "professional",
+      "kind": "role",
+      "provider": "local",
+      "route": "local/llama_server through shipping remote_llm_messages_query",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "response_synthetic": false,
+      "messages_sha256": "a0bcce28cb4da7f6d9d68c794d47c01f8de59c760789cf52889eb73e9727e02a",
+      "parameters": {
+        "json_output": false,
+        "visual_context": null,
+        "temperature": 0.0,
+        "max_tokens": 900,
+        "timeout": 45.0
+      },
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4578,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "status": "handoff",
+      "raw_reply": "ええと、簡単なタイマーのページですね？[EMO thinking] 作ってみましょうか。HTML と JavaScript を使って、シンプルに時間を計るやつです。\n\n[DELEGATE op=work]",
+      "error": "RoleDelegateReady: role reached its DELEGATE handoff",
+      "duration_seconds": 1.781
+    },
+    {
+      "index": 3,
+      "strategy": "professional",
+      "kind": "planner",
+      "provider": "local",
+      "route": "local/llama_server through shipping remote_llm_messages_query",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "response_synthetic": false,
+      "messages_sha256": "c8f10daadc9f2c85ea2145810cc2d0eceb89a39535f2de948e30a9bb1f4a7d3a",
+      "parameters": {
+        "json_output": true,
+        "temperature": 0.0,
+        "model": null,
+        "max_tokens": 900,
+        "timeout": 45.0
+      },
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 3707,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "status": "completed",
+      "raw_reply": "{\"decisions\":[{\"proposal_index\":0,\"provider\":\"codex\",\"intent\":\"execute\",\"display_title\":\"制作简单计时器页面\",\"work_placement\":\"draft\",\"session_context\":\"unchanged\",\"workspace_effect\":\"write\",\"reference_mode\":\"none\",\"references\":null,\"target\":\"desktop\",\"source_clause\":\"帮我做个简单的计时器页面。\"}]}",
+      "error": null,
+      "duration_seconds": 1.89
+    },
+    {
+      "index": 4,
+      "strategy": "professional",
+      "kind": "role",
+      "provider": "local",
+      "route": "local/llama_server through shipping remote_llm_messages_query",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "response_synthetic": false,
+      "messages_sha256": "0a7e1f75ff0fefeb0f8320590b73cc882e4d562c2b5f495299108c4583a67732",
+      "parameters": {
+        "json_output": false,
+        "visual_context": null,
+        "temperature": 0.0,
+        "max_tokens": 900,
+        "timeout": 45.0
+      },
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 5103,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "status": "completed",
+      "raw_reply": "ええと、先ほどのタイマーの作成は、現在「実行中」の状態ですね。[EMO normal] 具体的なコードやファイルの書き換えはまだ完了していないようです。[EMO thinking] 詳細な進捗状況や、もし何か問題があれば教えてくれるので、その点だけ確認しておきましょうか。",
+      "error": null,
+      "duration_seconds": 1.391
+    }
+  ],
+  "turns": [
+    {
+      "strategy": "basic",
+      "turn_id": "basic-local-host-1",
+      "kind": "work_request",
+      "source": "帮我做个简单的计时器页面。",
+      "instrument_status": "observed",
+      "call_indices": [
+        0
+      ],
+      "actual_calls_by_kind": {
+        "role": 1,
+        "planner": 0,
+        "reference": 0,
+        "presentation": 0,
+        "report_presentation": 0
+      },
+      "before_counts": {
+        "work_items": 0,
+        "attempts": 0,
+        "effects": 0,
+        "inputs": 0
+      },
+      "after_counts": {
+        "work_items": 0,
+        "attempts": 0,
+        "effects": 0,
+        "inputs": 0
+      },
+      "host_receipts": {
+        "basic-local-host-1": {
+          "state": "no_action",
+          "input_id": "basic-local-host-1",
+          "_host_coordination_delivered": true,
+          "utterance_id": "basic-local-host-1",
+          "turn_id": "basic-local-host-1"
+        }
+      },
+      "receipt_reason_field_present": false,
+      "outbox_effects": [],
+      "adapter_events_added": [],
+      "adapter_effects_synthetic": true,
+      "host_report_action_observed": false,
+      "assessment": {
+        "status": "failed_semantic_outcome",
+        "expected": "Start exactly one Work for the explicit timer-page request.",
+        "observed": "The role returned action:null and asked whether to build it. Host accepted no action and created no Work or Attempt.",
+        "failure_layer": "model_semantics",
+        "host_work_acceptance_proven": false
+      }
+    },
+    {
+      "strategy": "basic",
+      "turn_id": "basic-local-host-2",
+      "kind": "read_only_query",
+      "source": "刚才的任务现在是什么状态？只查看已有记录，不继续也不新建任务。",
+      "instrument_status": "observed",
+      "call_indices": [
+        1
+      ],
+      "actual_calls_by_kind": {
+        "role": 1,
+        "planner": 0,
+        "reference": 0,
+        "presentation": 0,
+        "report_presentation": 0
+      },
+      "before_counts": {
+        "work_items": 0,
+        "attempts": 0,
+        "effects": 0,
+        "inputs": 0
+      },
+      "after_counts": {
+        "work_items": 0,
+        "attempts": 0,
+        "effects": 0,
+        "inputs": 0
+      },
+      "host_receipts": {
+        "basic-local-host-2": {
+          "state": "no_action",
+          "input_id": "basic-local-host-2",
+          "_host_coordination_delivered": true,
+          "utterance_id": "basic-local-host-2",
+          "turn_id": "basic-local-host-2"
+        }
+      },
+      "receipt_reason_field_present": false,
+      "outbox_effects": [],
+      "adapter_events_added": [],
+      "adapter_effects_synthetic": true,
+      "host_report_action_observed": false,
+      "assessment": {
+        "status": "failed_semantic_outcome",
+        "expected": "Answer the preceding task's actual state without continuing or creating Work.",
+        "observed": "The role repeated the status question and asked for the result. It did not answer the status; the preceding request had created no Work.",
+        "failure_layer": "model_semantics",
+        "no_additional_execution_proven": true,
+        "current_work_query_coverage": false,
+        "host_ledger_report_proven": false
+      }
+    },
+    {
+      "strategy": "professional",
+      "turn_id": "professional-local-host-1",
+      "kind": "work_request",
+      "source": "帮我做个简单的计时器页面。",
+      "instrument_status": "observed",
+      "call_indices": [
+        2,
+        3
+      ],
+      "actual_calls_by_kind": {
+        "role": 1,
+        "planner": 1,
+        "reference": 0,
+        "presentation": 0,
+        "report_presentation": 0
+      },
+      "before_counts": {
+        "work_items": 0,
+        "attempts": 0,
+        "effects": 0,
+        "inputs": 0
+      },
+      "after_counts": {
+        "work_items": 1,
+        "attempts": 1,
+        "effects": 1,
+        "inputs": 0
+      },
+      "host_receipts": {
+        "professional-local-host-1": {
+          "state": "work_started",
+          "input_id": "professional-local-host-1",
+          "utterance_id": "professional-local-host-1",
+          "turn_id": "professional-local-host-1",
+          "child_id": "",
+          "effect_id": "447ab7d2b4345ab8b582521262801cf4",
+          "work_item_id": "work_af8bfddb17f65aea83ba1bb8cbd9204f",
+          "attempt_id": "attempt_129cdde42b0c58619708be88ddbfb9f5",
+          "run_id": "codex_55ecd430cdcd",
+          "_host_coordination_delivered": true
+        }
+      },
+      "receipt_reason_field_present": false,
+      "outbox_effects": [
+        {
+          "effect_id": "447ab7d2b4345ab8b582521262801cf4",
+          "kind": "work",
+          "state": "dispatching",
+          "reason": "",
+          "receipt": null
+        }
+      ],
+      "adapter_events_added": [
+        {
+          "phase": "evaluation",
+          "kind": "start",
+          "run_id": "codex_55ecd430cdcd"
+        }
+      ],
+      "adapter_effects_synthetic": true,
+      "host_report_action_observed": false,
+      "assessment": {
+        "status": "partial_host_acceptance_with_semantic_deviation",
+        "expected": "Start exactly one Work for the explicit timer-page request without inventing a final destination.",
+        "observed": "The real local role handed off to the real local Planner. Host recorded work_started, one Work, one Attempt and one outbox effect; the registered synthetic adapter received one start.",
+        "host_work_acceptance_proven": true,
+        "complete_semantic_acceptance": false,
+        "deviation": "Planner added target:desktop although the source request specified no Desktop destination. The shipping Planner prompt permits desktop for a requested Desktop delivery and says to omit target for ordinary workspace work.",
+        "deviation_contract": "server/work_planner_prompt.py:58",
+        "host_response_to_destination": "Host added the existing two-phase export staging policy. The inert adapter wrote or exported no requested deliverable."
+      }
+    },
+    {
+      "strategy": "professional",
+      "turn_id": "professional-local-host-2",
+      "kind": "read_only_query",
+      "source": "刚才的任务现在是什么状态？只查看已有记录，不继续也不新建任务。",
+      "instrument_status": "observed",
+      "call_indices": [
+        4
+      ],
+      "actual_calls_by_kind": {
+        "role": 1,
+        "planner": 0,
+        "reference": 0,
+        "presentation": 0,
+        "report_presentation": 0
+      },
+      "before_counts": {
+        "work_items": 1,
+        "attempts": 1,
+        "effects": 1,
+        "inputs": 0
+      },
+      "after_counts": {
+        "work_items": 1,
+        "attempts": 1,
+        "effects": 1,
+        "inputs": 0
+      },
+      "host_receipts": {
+        "professional-local-host-2": {
+          "state": "no_action",
+          "input_id": "professional-local-host-2",
+          "_host_coordination_delivered": true,
+          "utterance_id": "professional-local-host-2",
+          "turn_id": "professional-local-host-2"
+        }
+      },
+      "receipt_reason_field_present": false,
+      "outbox_effects": [
+        {
+          "effect_id": "447ab7d2b4345ab8b582521262801cf4",
+          "kind": "work",
+          "state": "unknown_reconciling",
+          "reason": "superseded",
+          "receipt": null
+        }
+      ],
+      "adapter_events_added": [],
+      "adapter_effects_synthetic": true,
+      "host_report_action_observed": false,
+      "assessment": {
+        "status": "read_only_current_work_boundary_observed",
+        "expected": "Answer the preceding task's actual state without continuing or creating Work.",
+        "observed": "The real local role answered running from the supplied current_work facts. Host accepted no action; Work, Attempt and effect counts stayed at one and no adapter input or start was added.",
+        "no_additional_execution_proven": true,
+        "current_work_query_coverage": true,
+        "host_ledger_report_proven": false,
+        "local_narrator_proven": false,
+        "limitation": "No canonical report action or Narrator call occurred. This proves use of the current_work frame and the no-additional-execution boundary, not the Host ledger-report journey."
+      },
+      "current_work_facts_at_query": {
+        "execution_status": "running",
+        "work_state": "open",
+        "completeness": "unknown",
+        "attention": "unknown",
+        "facts_source": "current_work in the actual role request; retained in the ignored raw report"
+      }
+    }
+  ],
+  "cleanup": {
+    "probe_exit_code": 0,
+    "server_reaped": true,
+    "server_return_code_after_termination": 1,
+    "server_termination": "Owned server terminated in finally; Windows terminate exit code 1.",
+    "post_run_process_check": "No llama-server.exe process remained.",
+    "managers": [
+      {
+        "strategy": "basic",
+        "closed": true,
+        "retained_runtime_record_statuses": []
+      },
+      {
+        "strategy": "professional",
+        "closed": true,
+        "retained_runtime_record_statuses": [
+          "done"
+        ]
+      }
+    ],
+    "inert_run_cleanup": "Held adapter released at teardown; terminal done is the synthetic fixture's end, not delivery or goal completion."
+  },
+  "limits": [
+    "One sample per strategy and journey; no statistical model-quality claim.",
+    "The basic explicit Work request and status answer failed their semantic outcomes.",
+    "Professional Host acceptance is proven by work_started, persisted Work/Attempt and synthetic adapter start, not by transport completion alone.",
+    "Professional Planner introduced an unrequested Desktop destination; full semantic correctness is not accepted.",
+    "The outbox effect remained dispatching with receipt:null while the inert run was held; no successful deliverable or completed effect is claimed.",
+    "The inert adapter performed no requested file, browser, real-provider or export operation; fixture storage directories were synthetic Host-owned state.",
+    "Neither query invoked the Host ledger-report owner or Narrator. The professional query used current_work facts and added no execution.",
+    "Shipping Work Narrator has no local provider support; the unsupported local configuration and blocked remote SDK were not exercised by these turns.",
+    "No GUI, TTS, browser, provider completion, Session process restoration or full local-capability acceptance.",
+    "No production code change or additional model run was made after observation."
+  ],
+  "raw_evidence": [
+    {
+      "path": "build/chat-runtime-p0/local-host-20261007-bounded/probe.py",
+      "sha256": "3980893a721df8e82b0024058b6c90ba28b41fe9ffce4a319e34a66e9fd49e8b",
+      "publication": "ignored local evidence; not embedded because it contains runtime paths"
+    },
+    {
+      "path": "build/chat-runtime-p0/local-host-20261007-bounded/report.json",
+      "sha256": "2bc719f121d70fafd11c6d02e73b65fa892b75d7269c7c7e5b42e374baa7ac0f",
+      "publication": "ignored local evidence; not embedded because it contains runtime paths"
+    },
+    {
+      "path": "build/chat-runtime-p0/local-host-20261007-bounded/probe.log",
+      "sha256": "bfe27978e4f58763b95a8b7219b9fe7df70b335579324acd6af38511d8a97e7b",
+      "publication": "ignored local evidence; not embedded because it contains runtime paths"
+    },
+    {
+      "path": "build/chat-runtime-p0/local-host-20261007-bounded/server.log",
+      "sha256": "871148afe1a64af292b4bcfdff9c3d96e306bd6dc447129af7f4fb9a881df2bd",
+      "publication": "ignored local evidence; not embedded because it contains runtime paths"
+    }
+  ]
+}

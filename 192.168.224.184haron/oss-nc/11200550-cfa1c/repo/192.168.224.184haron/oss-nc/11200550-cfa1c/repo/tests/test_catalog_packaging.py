@@ -1,0 +1,81 @@
+"""Exercise the real wheel rules with a new, previously unknown catalog folder."""
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tomllib
+import zipfile
+
+
+def test_wheel_contains_and_loads_catalog_in_new_nested_folder(tmp_path):
+    root = Path(__file__).parents[1]
+    project = tmp_path / 'source'
+    project.mkdir()
+    shutil.copy2(root / 'pyproject.toml', project / 'pyproject.toml')
+    metadata = tomllib.loads((project / 'pyproject.toml').read_text(encoding='utf-8'))
+    # Keep the actual package selection and data rules, without copying models,
+    # local credentials, or unrelated runtime code into this build fixture.
+    for name in metadata['tool']['setuptools']['packages']:
+        package = project.joinpath(*name.split('.'))
+        package.mkdir(parents=True, exist_ok=True)
+        (package / '__init__.py').write_text('', encoding='utf-8')
+    shutil.copytree(root / 'config/catalog', project / 'config/catalog', dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('__pycache__'))
+    shutil.copy2(root / 'config/environment.py', project / 'config/environment.py')
+    for name in ('manifest.py', 'amadeus-extension.v0.schema.json', 'amadeus-extension.v1.schema.json', 'theme-tokens.v0.json'):
+        shutil.copy2(root / 'server/extensions' / name, project / 'server/extensions' / name)
+    relative = Path('config/catalog/new_capability/nested/fixture.json')
+    (project / relative).parent.mkdir(parents=True)
+    (project / relative).write_text(json.dumps({
+        'id': 'packaging_fixture', 'config': {'PACKAGE_FIXTURE': {'type': 'string', 'default': 'loaded'}},
+    }), encoding='utf-8')
+    output = tmp_path / 'wheel'
+    subprocess.run([sys.executable, '-c',
+                    'from setuptools.build_meta import build_wheel; import sys; build_wheel(sys.argv[1])',
+                    str(output)], cwd=project, check=True, capture_output=True, text=True)
+    installed = tmp_path / 'installed'
+    with zipfile.ZipFile(next(output.glob('*.whl'))) as wheel:
+        assert relative.as_posix() in wheel.namelist()
+        assert 'server/extensions/amadeus-extension.v0.schema.json' in wheel.namelist()
+        assert 'server/extensions/amadeus-extension.v1.schema.json' in wheel.namelist()
+        assert 'server/extensions/theme-tokens.v0.json' in wheel.namelist()
+        for file in (root / 'config/catalog').rglob('*.json'):
+            assert file.relative_to(root).as_posix() in wheel.namelist()
+        wheel.extractall(installed)
+    subprocess.run([sys.executable, '-I', '-c', '''
+import sys
+sys.path.insert(0, sys.argv[1])
+from config.catalog import read_catalog_environment
+from config.environment import EnvironmentReader
+assert read_catalog_environment(EnvironmentReader({}))['PACKAGE_FIXTURE'] == 'loaded'
+from server.extensions.manifest import _validator
+for schema in ('amadeus.extension/v0', 'amadeus.extension/v1'):
+    assert _validator(schema).is_valid({}) is False
+''', str(installed)], cwd=tmp_path, check=True, capture_output=True, text=True)
+
+
+def test_electron_helper_resource_selection_accepts_v0_and_v1_wheels(tmp_path):
+    from test_extension_authoring import package
+    from tools.probes.extension_release_shell import verify_checker_schemas
+
+    root = Path(__file__).parents[1]
+    resources = json.loads((root / "electron/package.json").read_text(encoding="utf-8"))["build"]["extraResources"]
+    selection = next(item for item in resources if item["to"] == "extension-host")
+    source = (root / "electron" / selection["from"]).resolve()
+    bundled = tmp_path / "resources/extension-host"
+    for pattern in selection["filter"]:
+        for file in source.glob(pattern):
+            if file.is_file():
+                destination = bundled / file.relative_to(source)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file, destination)
+    _, _, wheel = package(tmp_path)
+    result = verify_checker_schemas(bundled, wheel)
+    assert set(result) == {"amadeus.extension/v0", "amadeus.extension/v1"}
+    assert all(item["ok"] for item in result.values())
+    # Prove that source checkout files cannot hide a missing resource in the bundle.
+    (bundled / "server/extensions/amadeus-extension.v1.schema.json").unlink()
+    import pytest
+    with pytest.raises(AssertionError):
+        verify_checker_schemas(bundled, wheel)

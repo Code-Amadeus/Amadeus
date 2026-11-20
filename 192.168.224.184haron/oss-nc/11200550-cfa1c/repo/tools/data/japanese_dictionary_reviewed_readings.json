@@ -1,0 +1,399 @@
+{
+  "version": "2026.10.20.3",
+  "checked_on": "2026-10-20",
+  "review_method": "Individually selected lexical candidate readings; model-assisted comparison with CMU phones and Japanese loanword usage. Not independent human sign-off.",
+  "limitations": "Lexical admission only. Independent maintainer/lexical review and listening/accent acceptance remain pending. Absent words/readings are not authorized for the official candidate; preserved source/corrections are research evidence, not automatic approval.",
+  "cmudict_path": "GPT_SoVITS/text/cmudict.rep",
+  "cmudict_sha256": "0e601d017d6e6f958443d41cd8922b4cd7598b3ba2056253a33f3e5a35f38494",
+  "readings": {
+    "abstraction": [
+      "アブストラクション"
+    ],
+    "acceptance": [
+      "アクセプタンス"
+    ],
+    "accepted": [
+      "アクセプテッド"
+    ],
+    "acronym": [
+      "アクロニム"
+    ],
+    "actual": [
+      "アクチュアル"
+    ],
+    "adapter": [
+      "アダプター"
+    ],
+    "agent": [
+      "エージェント"
+    ],
+    "airline": [
+      "エアライン"
+    ],
+    "alpha": [
+      "アルファ"
+    ],
+    "amadeus": [
+      "アマデウス"
+    ],
+    "application": [
+      "アプリケーション"
+    ],
+    "applicator": [
+      "アプリケーター"
+    ],
+    "auto": [
+      "オート"
+    ],
+    "backend": [
+      "バックエンド"
+    ],
+    "bank": [
+      "バンク"
+    ],
+    "both": [
+      "ボース"
+    ],
+    "branch": [
+      "ブランチ"
+    ],
+    "browser": [
+      "ブラウザー"
+    ],
+    "build": [
+      "ビルド"
+    ],
+    "cache": [
+      "キャッシュ"
+    ],
+    "cannot": [
+      "キャノット"
+    ],
+    "changes": [
+      "チェンジズ"
+    ],
+    "chat": [
+      "チャット"
+    ],
+    "checks": [
+      "チェックス"
+    ],
+    "code": [
+      "コード"
+    ],
+    "companion": [
+      "コンパニオン"
+    ],
+    "complete": [
+      "コンプリート"
+    ],
+    "component": [
+      "コンポーネント"
+    ],
+    "components": [
+      "コンポーネンツ"
+    ],
+    "con": [
+      "コン"
+    ],
+    "configuration": [
+      "コンフィギュレーション"
+    ],
+    "contract": [
+      "コントラクト"
+    ],
+    "conversation": [
+      "コンバーセーション"
+    ],
+    "core": [
+      "コア"
+    ],
+    "desktop": [
+      "デスクトップ"
+    ],
+    "developer": [
+      "デベロッパー"
+    ],
+    "direct": [
+      "ダイレクト"
+    ],
+    "docs": [
+      "ドックス"
+    ],
+    "does": [
+      "ダズ"
+    ],
+    "each": [
+      "イーチ"
+    ],
+    "exact": [
+      "エグザクト"
+    ],
+    "execution": [
+      "エグゼキューション"
+    ],
+    "existing": [
+      "エグジスティング"
+    ],
+    "explicit": [
+      "エクスプリシット"
+    ],
+    "extension": [
+      "エクステンション"
+    ],
+    "external": [
+      "エクスターナル"
+    ],
+    "extra": [
+      "エクストラ"
+    ],
+    "files": [
+      "ファイルズ"
+    ],
+    "first": [
+      "ファースト"
+    ],
+    "flash": [
+      "フラッシュ"
+    ],
+    "follower": [
+      "フォロワー"
+    ],
+    "game": [
+      "ゲーム"
+    ],
+    "graph": [
+      "グラフ"
+    ],
+    "handler": [
+      "ハンドラー"
+    ],
+    "has": [
+      "ハズ"
+    ],
+    "host": [
+      "ホスト"
+    ],
+    "icon": [
+      "アイコン"
+    ],
+    "identity": [
+      "アイデンティティ"
+    ],
+    "including": [
+      "インクルーディング"
+    ],
+    "inference": [
+      "インファレンス"
+    ],
+    "install": [
+      "インストール"
+    ],
+    "into": [
+      "イントゥ"
+    ],
+    "ion": [
+      "イオン"
+    ],
+    "its": [
+      "イッツ"
+    ],
+    "japanese": [
+      "ジャパニーズ"
+    ],
+    "keep": [
+      "キープ"
+    ],
+    "key": [
+      "キー"
+    ],
+    "learner": [
+      "ラーナー"
+    ],
+    "let's": [
+      "レッツ"
+    ],
+    "locked": [
+      "ロックト"
+    ],
+    "main": [
+      "メイン"
+    ],
+    "manifest": [
+      "マニフェスト"
+    ],
+    "may": [
+      "メイ"
+    ],
+    "mode": [
+      "モード"
+    ],
+    "native": [
+      "ネイティブ"
+    ],
+    "official": [
+      "オフィシャル"
+    ],
+    "one": [
+      "ワン"
+    ],
+    "optional": [
+      "オプショナル"
+    ],
+    "original": [
+      "オリジナル"
+    ],
+    "other": [
+      "アザー"
+    ],
+    "output": [
+      "アウトプット"
+    ],
+    "pack": [
+      "パック"
+    ],
+    "package": [
+      "パッケージ"
+    ],
+    "passed": [
+      "パスト"
+    ],
+    "per": [
+      "パー"
+    ],
+    "playback": [
+      "プレイバック"
+    ],
+    "policy": [
+      "ポリシー"
+    ],
+    "probe": [
+      "プローブ"
+    ],
+    "profiles": [
+      "プロファイルズ"
+    ],
+    "prompt": [
+      "プロンプト"
+    ],
+    "proposer": [
+      "プロポーザー"
+    ],
+    "provider": [
+      "プロバイダー"
+    ],
+    "python": [
+      "パイソン"
+    ],
+    "rag": [
+      "ラグ"
+    ],
+    "real": [
+      "リアル"
+    ],
+    "reliably": [
+      "リライアブリー"
+    ],
+    "remain": [
+      "リメイン"
+    ],
+    "remains": [
+      "リメインズ"
+    ],
+    "render": [
+      "レンダー"
+    ],
+    "request": [
+      "リクエスト"
+    ],
+    "restart": [
+      "リスタート"
+    ],
+    "retain": [
+      "リテイン"
+    ],
+    "selected": [
+      "セレクテッド"
+    ],
+    "selection": [
+      "セレクション"
+    ],
+    "semantic": [
+      "セマンティック"
+    ],
+    "settings": [
+      "セッティングス"
+    ],
+    "shared": [
+      "シェアード"
+    ],
+    "smoke": [
+      "スモーク"
+    ],
+    "snapshot": [
+      "スナップショット"
+    ],
+    "source": [
+      "ソース"
+    ],
+    "speech": [
+      "スピーチ"
+    ],
+    "startup": [
+      "スタートアップ"
+    ],
+    "status": [
+      "ステータス"
+    ],
+    "still": [
+      "スティル"
+    ],
+    "sync": [
+      "シンク"
+    ],
+    "tests": [
+      "テスツ"
+    ],
+    "their": [
+      "ゼア"
+    ],
+    "then": [
+      "ゼン"
+    ],
+    "through": [
+      "スルー"
+    ],
+    "tools": [
+      "ツールズ"
+    ],
+    "torch": [
+      "トーチ"
+    ],
+    "unchanged": [
+      "アンチェンジド"
+    ],
+    "user": [
+      "ユーザー"
+    ],
+    "wake": [
+      "ウェイク"
+    ],
+    "wallpaper": [
+      "ウォールペーパー"
+    ],
+    "was": [
+      "ワズ"
+    ],
+    "when": [
+      "ウェン",
+      "ホエン"
+    ],
+    "window": [
+      "ウィンドウ"
+    ],
+    "without": [
+      "ウィザウト",
+      "ウィズアウト"
+    ]
+  }
+}

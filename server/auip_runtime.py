@@ -46,6 +46,17 @@ ENGAGEMENT_MODES = frozenset({"observe", "collaborate", "delegate"})
 OPERATOR_STATUSES = frozenset({"idle", "thinking", "awaiting_receipt", "error"})
 
 
+def ai_interaction_enabled() -> bool:
+    """Read the user's live AI application interaction choice.
+
+    This is the choice itself.  While it is off, no new AUIP session may be
+    started by Amadeus, but sessions already active keep running until the
+    last one ends (see ``AuipRuntime.ai_interaction_in_effect``).
+    """
+
+    return bool(getattr(settings, "AUIP_INTERACTION_ENABLED", True))
+
+
 @dataclass(frozen=True, slots=True)
 class _ContextProjectionLine:
     """One keyed role-context fact before budget packing."""
@@ -288,11 +299,20 @@ class AuipRuntime:
             binding = self._attach_tickets.pop(clean_ticket, None)
             if binding is None:
                 raise AuipProtocolError("invalid_attach_ticket")
+            mode = binding.engagement_mode
+            if (
+                mode != "observe"
+                and "spectator" in parsed.stances
+                and not ai_interaction_enabled()
+            ):
+                # A ticket may predate the user turning interaction off; the
+                # app still opens, but Amadeus may join it only as a spectator.
+                mode = "observe"
             return self._register_parsed(
                 parsed,
                 conversation_id=binding.conversation_id,
                 artifact_ref=binding.artifact_ref,
-                initial_engagement_mode=binding.engagement_mode,
+                initial_engagement_mode=mode,
                 host_surface_id=binding.host_surface_id,
             )
 
@@ -1122,6 +1142,24 @@ class AuipRuntime:
             self._focused_by_conversation[conversation] = session.app_session_id
             session.updated_at = time.time()
             return {"ok": True, **session.public_snapshot()}
+
+    def has_active_session(self) -> bool:
+        """Report whether any AppSession can still accept participation."""
+
+        with self._lock:
+            return any(
+                session.status == "active" for session in self._sessions.values()
+            )
+
+    def ai_interaction_in_effect(self) -> bool:
+        """Say whether AUIP evaluation and participation still run.
+
+        Turning the switch off while AppSessions are active is *pending off*:
+        evaluation and participation continue for those sessions and end with
+        the last one.  With none active, off takes effect immediately.
+        """
+
+        return ai_interaction_enabled() or self.has_active_session()
 
     def get(self, app_session_id: str) -> dict[str, Any]:
         with self._lock:

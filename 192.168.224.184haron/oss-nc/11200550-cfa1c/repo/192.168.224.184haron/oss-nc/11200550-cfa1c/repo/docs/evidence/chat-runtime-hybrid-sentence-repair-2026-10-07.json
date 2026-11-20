@@ -1,0 +1,274 @@
+{
+  "schema": "amadeus.hybrid-first-sentence-repair.v1",
+  "date": "2026-10-07",
+  "diagnosis": "Current head reused a legacy punctuation set that treated Japanese comma and semicolons as sentence terminators. English period was missing.",
+  "retained_fix": "Use existing STRONG_SENTENCE_ENDINGS; no model call, config, prompt or authority changes. Preserve chunked presentation tags and close the local producer after the first actual sentence boundary.",
+  "retirement_followup": "Removed uncalled hybrid_llm_stream (old remote-first-sentence skipping dual producer) and its exclusive second-stage benchmark. Preserved _extract_token/_SENTINEL because the live Bedrock messages transport imports them.",
+  "verification": {
+    "hybrid_contract_tests": 21,
+    "messages_backend_tests": 115,
+    "total_passed": 136,
+    "corpus_instrument_tests": 19,
+    "normal_role_prompt_changed": false
+  },
+  "rechecks": [
+    {
+      "stage": "hybrid-sentence-recheck",
+      "retained_change": true,
+      "raw_report_sha256": "caf9fc5baf214051cd1ae56b1588d37347a2e661ae651ccdf5f8905a1f99d9fa",
+      "cases": [
+        {
+          "case": "early_02_science",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "[EMO normal] 実験の対照群か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_02_science",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 実験の「対照群」か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_07_embarrassment",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "[EMO normal] 认真工作、か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_07_embarrassment",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 頑張る姿か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_08_explanation",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "相关不等于因果、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_08_explanation",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 関連と因果は違う、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "mid_12_science",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "不查项目、メモリか、[EMO normal] なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "mid_12_science",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "不查项目、内存と持久化の違いね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_comfort",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "[EMO normal] 試験の結果、残念ね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_comfort",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "試験の結果、残念ね、[EMO normal]",
+          "head_status": "completed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_long_reply",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "[EMO normal] 科学実験の「対照群」「無作為化」「反復実験」か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_long_reply",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "科学実験の「対照群」か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        }
+      ],
+      "server_reaped": true
+    },
+    {
+      "stage": "hybrid-language-recheck",
+      "retained_change": false,
+      "raw_report_sha256": "b1f7cb09854d3e887f8612856cb43fabf86d12a634ed0cc2850d47ea3b903879",
+      "cases": [
+        {
+          "case": "early_02_science",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "実験の対照群が必要な理由か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_02_science",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "実験の対照群が必要なことか、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_07_embarrassment",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "[EMO normal] 真面目に働く姿、確かに可愛いわね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_07_embarrassment",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 真面目に働く姿は、確かに可愛らしいね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_08_explanation",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "不用查文件、相关不等于因果呢。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "early_08_explanation",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 関連と因果の違いを一言で、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "mid_12_science",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "不查项目、メモリと永続化の違いね、[EMO normal]",
+          "head_status": "completed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "mid_12_science",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "不查项目、メモリと永続化ストレージの違いか、[EMO normal]",
+          "head_status": "completed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_comfort",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "試験の出来が悪くて悲しいね、[EMO normal] 大丈夫だよ、次はきっとできるから。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_comfort",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "[EMO normal] 試験で結果が出なかったの、残念ね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_long_reply",
+          "arm": "basic-head",
+          "status": "observed",
+          "head": "実験の対照群・無作為化・反復が解決する課題か、なるほどね。",
+          "head_status": "first_sentence_closed",
+          "routing_observed": [
+            "none"
+          ]
+        },
+        {
+          "case": "new_long_reply",
+          "arm": "professional-head",
+          "status": "observed",
+          "head": "科学実験の対照群や無作為化、反復実験の役割ですね、[EMO normal]",
+          "head_status": "completed",
+          "routing_observed": [
+            "none"
+          ]
+        }
+      ],
+      "server_reaped": true
+    }
+  ],
+  "quality_review": "Complete topic sentences now survive commas. Some native heads still copy Chinese from the user or end without complete punctuation, and merged replies can repeat an opening. A general output-language paraphrase prompt experiment did not consistently improve this and was reverted; no keyword rules or extra model pass were added.",
+  "scope": "Twelve selected real head-enabled turns after each candidate change; not a second full 188-turn matrix or a claim of complete Hybrid persona acceptance."
+}

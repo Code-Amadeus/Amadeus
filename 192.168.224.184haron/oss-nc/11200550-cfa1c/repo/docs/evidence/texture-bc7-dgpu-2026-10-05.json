@@ -1,0 +1,1996 @@
+{
+  "schema": "amadeus.bc7-dgpu-2026-10-05.v1",
+  "sourceCommit": "8d27d39",
+  "productionBase": "00670cb",
+  "sameSchedule": true,
+  "sameSourceHashes": true,
+  "build": {
+    "complete": true,
+    "frames": 7568,
+    "wallSeconds": 258.7744681,
+    "cpuSeconds": 457.375,
+    "workers": 2,
+    "transcodeMs": 63427.48060000064,
+    "compressMs": 352731.1856999992,
+    "sourceBytes": 2668156721,
+    "compressedBytes": 2630156701,
+    "rawBytes": 6092544800,
+    "indexSha256": "1f4001a977560197c869c78ab2c29409db4da8fc87f5efa3e9b48984ae99c786"
+  },
+  "scope": {
+    "gpu": "RTX 4070 Laptop 8188 MiB",
+    "driver": "581.57",
+    "fps": 60,
+    "profile": "standard",
+    "budgetBytes": 2147483648,
+    "modelsRunning": false,
+    "runsPerVariant": 1,
+    "secondsPerRun": 600,
+    "fixedRoute": true,
+    "diskCacheState": "prebuilt",
+    "osFileCache": "not cleared",
+    "productionDefaultsChanged": false
+  },
+  "sharedMetadata": {
+    "revision": "8d27d39e2c0d22c187b50efddf1bcda72f8753de",
+    "sourceSha256": {
+      "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+      "render/web/render_budget.js": "da695138384fb8303b9c339fab9e36ddfb4671c319045167eb6482856fc0e02d",
+      "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+      "render/web/frame_texture_backend.js": "32a5112ff24aa3a40564acf62e7de7947c8aac0d614d744352c9698504f994fb",
+      "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+      "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+      "render/web/wallpaper_engine.html": "be9913fd468703a237cc431b46502d60028c80a9c5ff3b51c3b8c8147a4bb08b",
+      "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+      "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+      "render/server.py": "0ffb252d6fd7ab443a98aa0983ec94e9c1b00b766113d614e6556eecdec36d1f",
+      "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+      "wallpaper/wallpaper_engine_bridge.py": "1d34d12f4b5d29f7d5458a1169e66a19958bf19dcc3e98e06cc5085dda43c84e",
+      "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+      "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+      "electron/tests/fpsTextures.probe.mjs": "cc7c1bd9af861f7e2e4d230b160851937dcf21a280785a57a97aaffa38d986c1",
+      "electron/tests/textureProbe.mjs": "d8de0134525e3f93ffb525f47e373ac305e431274b10a2e0bb6167a3f05d2063",
+      "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+      "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+      "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+      "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+      "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64"
+    },
+    "versions": {
+      "node": "24.18.1",
+      "electron": "44.0.0",
+      "chrome": "152.0.7977.54",
+      "python": "3.12.10"
+    },
+    "pack": {
+      "id": "kurisu",
+      "version": "2026.08.29-mouth1",
+      "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+      "available": true
+    },
+    "options": {
+      "fps": 60,
+      "durationSeconds": 600,
+      "sampleSeconds": 2,
+      "seed": 103,
+      "scenario": false,
+      "companion": true,
+      "contextLoss": true,
+      "fixedRoute": true,
+      "highPerformanceGpu": true,
+      "textureDisposal": true
+    },
+    "settings": {
+      "renderMaxFps": 60,
+      "renderMaxResolution": null,
+      "graphicsProfile": "standard"
+    },
+    "offscreenFrameRate": 60,
+    "platform": {
+      "os": "win32",
+      "release": "10.0.26200",
+      "architecture": "x64"
+    },
+    "instrumentation": {
+      "legacyMisses": true,
+      "legacyLoads": false,
+      "textureStats": true,
+      "transcodes": true,
+      "fixedRoute": true
+    },
+    "offscreen": true,
+    "cpuProfiling": false,
+    "observed": {
+      "resolution": [
+        1
+      ],
+      "dpr": [
+        1
+      ],
+      "rawTickerMaxFps": [
+        0
+      ],
+      "configuredMaxFps": [
+        60
+      ],
+      "offscreenFrameRate": [
+        60
+      ]
+    },
+    "gpuModels": [
+      "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    ]
+  },
+  "schedule": [
+    {
+      "at": 0,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 8,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 9.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 17.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 18.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 28.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 42.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 43.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 51.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 67.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 68.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 76.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 78,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 84,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 92,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 100,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 101.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 109.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 110.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 120.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 134.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 135.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 143.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 159.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 160.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 168.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 170,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 176,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 184,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 192,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 193.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 201.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 202.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 212.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 226.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 227.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 235.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 251.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 252.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 260.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 262,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 268,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 276,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 284,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 285.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 293.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 294.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 304.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 318.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 319.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 327.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 343.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 344.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 352.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 354,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 360,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 368,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 376,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 377.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 385.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 386.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 396.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 410.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 411.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 419.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 435.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 436.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 444.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 446,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 452,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 460,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 468,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 469.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 477.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 478.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 488.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 502.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 503.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    },
+    {
+      "at": 511.6,
+      "label": "idle_closed_eye",
+      "speaking": false
+    },
+    {
+      "at": 527.6,
+      "label": "thinking_trans",
+      "speaking": false
+    },
+    {
+      "at": 528.8,
+      "label": "thinking_speaking2",
+      "speaking": true
+    },
+    {
+      "at": 536.8,
+      "label": "sad_trans",
+      "speaking": false
+    },
+    {
+      "at": 538,
+      "label": "sad_speaking",
+      "speaking": true
+    },
+    {
+      "at": 544,
+      "label": "idle2",
+      "speaking": false
+    },
+    {
+      "at": 552,
+      "label": "idle",
+      "speaking": false
+    },
+    {
+      "at": 560,
+      "label": "trans_smile",
+      "speaking": false
+    },
+    {
+      "at": 561.2,
+      "label": "smile_speaking",
+      "speaking": true
+    },
+    {
+      "at": 569.2,
+      "label": "speaking_trans",
+      "speaking": false
+    },
+    {
+      "at": 570.4,
+      "label": "speaking_long",
+      "speaking": true
+    },
+    {
+      "at": 580.4,
+      "label": "idle_side_butterfly",
+      "speaking": false
+    },
+    {
+      "at": 594.4,
+      "label": "closed_eye_trans",
+      "speaking": false
+    },
+    {
+      "at": 595.6,
+      "label": "speaking_closed_eye_2",
+      "speaking": true
+    }
+  ],
+  "runs": {
+    "baseline": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 305,
+        "sampledDurationMs": 609199
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 125493248,
+            "peak": 1767485440,
+            "final": 1434435584,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1343004672,
+              "max": 1514217472,
+              "mean": 1412218880.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 168218624,
+            "peak": 1799626752,
+            "final": 1464250368,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1372094464,
+              "max": 1541910528,
+              "mean": 1442507264.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 334319616,
+            "peak": 2224476160,
+            "final": 1789685760,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1530683392,
+              "max": 1805017088,
+              "mean": 1677237760.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 202063872,
+            "peak": 938680320,
+            "final": 697442304,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 695918592,
+              "max": 857731072,
+              "mean": 755577600.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 33271808,
+            "peak": 34017280,
+            "final": 33964032,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 33943552,
+              "max": 34017280,
+              "mean": 33970432.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 47783936,
+            "peak": 49012736,
+            "final": 48988160,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 48971776,
+              "max": 49012736,
+              "mean": 48987648.0,
+              "sampleCount": 16
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 35910,
+          "p50Ms": 16.699999999982538,
+          "p95Ms": 16.70000000006985,
+          "p99Ms": 16.800000000017462,
+          "maxMs": 33.29999999998836,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 35910,
+          "p50Ms": 16.700000000186265,
+          "p95Ms": 18,
+          "p99Ms": 18.5,
+          "maxMs": 36.89999999944121,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 600,
+          "actualSeconds": 600.034
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179756141,
+            "alphaSum": 94557020,
+            "hash": "3e5b9dc0",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179756141,
+            "alphaSum": 94557020,
+            "hash": "3e5b9dc0",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179756141,
+            "alphaSum": 94557020,
+            "hash": "3e5b9dc0",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179756141,
+            "alphaSum": 94557020,
+            "hash": "3e5b9dc0",
+            "glErrors": []
+          }
+        }
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "full": {
+        "startMs": 12,
+        "endMs": 600032,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 381.985063,
+            "measuredWallSeconds": 600.02,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 63.66205509816341
+          },
+          "gpu": {
+            "cpuSeconds": 104.21546400000001,
+            "measuredWallSeconds": 600.02,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 17.368665044498517
+          },
+          "other": {
+            "cpuSeconds": 148.56101599999997,
+            "measuredWallSeconds": 600.02,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 24.759344021865935
+          },
+          "host": {
+            "cpuSeconds": 51.859375,
+            "measuredWallSeconds": 600.02,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 8.642941068631046
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 0,
+            "final": 26338,
+            "delta": 26338
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 0,
+            "final": 317909.30000000075,
+            "delta": 317909.30000000075
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "misses": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "failures": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "unsupported": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "inflateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "validateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 3,
+            "final": 26355,
+            "delta": 26352
+          },
+          "refetches": {
+            "initial": 0,
+            "final": 22201,
+            "delta": 22201
+          },
+          "evictions": {
+            "initial": 0,
+            "final": 24848,
+            "delta": 24848
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 1,
+            "final": 784,
+            "delta": 783
+          },
+          "textureUploads": {
+            "initial": 0,
+            "final": 26692,
+            "delta": 26692
+          },
+          "textureUploadMs": {
+            "initial": 0,
+            "final": 1953.9999999590218,
+            "delta": 1953.9999999590218
+          }
+        }
+      },
+      "last300": {
+        "startMs": 300049,
+        "endMs": 600032,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 191.94326700000002,
+            "measuredWallSeconds": 299.983,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 63.98471480050537
+          },
+          "gpu": {
+            "cpuSeconds": 52.469564000000005,
+            "measuredWallSeconds": 299.983,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 17.490845814596163
+          },
+          "other": {
+            "cpuSeconds": 80.661857,
+            "measuredWallSeconds": 299.983,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 26.888809365864063
+          },
+          "host": {
+            "cpuSeconds": 26.484375,
+            "measuredWallSeconds": 299.983,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 8.828625288766363
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 13529,
+            "final": 26338,
+            "delta": 12809
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 158415.00000001583,
+            "final": 317909.30000000075,
+            "delta": 159494.2999999849
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "misses": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "failures": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "unsupported": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "inflateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "validateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 13536,
+            "final": 26355,
+            "delta": 12819
+          },
+          "refetches": {
+            "initial": 9382,
+            "final": 22201,
+            "delta": 12819
+          },
+          "evictions": {
+            "initial": 12121,
+            "final": 24848,
+            "delta": 12727
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 268,
+            "final": 784,
+            "delta": 516
+          },
+          "textureUploads": {
+            "initial": 13686,
+            "final": 26692,
+            "delta": 13006
+          },
+          "textureUploadMs": {
+            "initial": 994.5999999344349,
+            "final": 1953.9999999590218,
+            "delta": 959.4000000245869
+          }
+        }
+      },
+      "journeyMisses": 783,
+      "observedTextureFormats": [
+        36492
+      ],
+      "bc7Cache": null,
+      "deviceMemoryMiB": {
+        "scope": "whole NVIDIA GPU, includes other applications",
+        "samples": 289,
+        "peak": 1805.0,
+        "mean": 1181.6159169550174,
+        "final": 1290.0
+      },
+      "sampling": false,
+      "routeMaxDelayMs": 62.00000000001182,
+      "missesByPhase": {
+        "route-0-idle": 23,
+        "route-0-speaking_long": 1,
+        "route-0-thinking_trans": 55,
+        "route-0-idle2": 1,
+        "route-1-closed_eye_trans": 49,
+        "route-1-speaking_closed_eye_2": 2,
+        "route-1-thinking_trans": 59,
+        "route-1-sad_trans": 30,
+        "route-1-idle2": 1,
+        "route-2-closed_eye_trans": 38,
+        "route-2-speaking_closed_eye_2": 1,
+        "route-2-thinking_trans": 4,
+        "route-2-sad_trans": 3,
+        "route-3-closed_eye_trans": 55,
+        "route-3-speaking_closed_eye_2": 3,
+        "route-3-idle_closed_eye": 64,
+        "route-3-thinking_trans": 37,
+        "route-3-sad_trans": 29,
+        "route-4-closed_eye_trans": 57,
+        "route-4-speaking_closed_eye_2": 1,
+        "route-4-thinking_trans": 56,
+        "route-4-sad_trans": 30,
+        "route-4-idle2": 1,
+        "route-5-speaking_long": 1,
+        "route-5-idle_side_butterfly": 1,
+        "route-5-closed_eye_trans": 40,
+        "route-5-speaking_closed_eye_2": 4,
+        "route-5-thinking_trans": 49,
+        "route-5-sad_trans": 24,
+        "route-5-idle2": 1,
+        "route-6-closed_eye_trans": 59,
+        "route-6-speaking_closed_eye_2": 4
+      },
+      "measuredProcessCpuLast300Seconds": 351.55906300000004,
+      "observedSampling": {
+        "samplingEnabled": [
+          false
+        ],
+        "sampleFps": []
+      }
+    },
+    "sampled": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 305,
+        "sampledDurationMs": 609249
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 123314176,
+            "peak": 1672724480,
+            "final": 1415102464,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1343651840,
+              "max": 1467777024,
+              "mean": 1401771895.4666667,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 166526976,
+            "peak": 1706979328,
+            "final": 1446666240,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1373495296,
+              "max": 1498361856,
+              "mean": 1432711987.2,
+              "sampleCount": 15
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 332308480,
+            "peak": 2367049728,
+            "final": 1880846336,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1842618368,
+              "max": 1903378432,
+              "mean": 1872834013.8666666,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 204996608,
+            "peak": 700014592,
+            "final": 344117248,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 341004288,
+              "max": 411512832,
+              "mean": 377487086.93333334,
+              "sampleCount": 15
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 32935936,
+            "peak": 33878016,
+            "final": 33878016,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 33804288,
+              "max": 33878016,
+              "mean": 33843609.6,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 47738880,
+            "peak": 48889856,
+            "final": 48889856,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 48848896,
+              "max": 48889856,
+              "mean": 48870741.333333336,
+              "sampleCount": 15
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 35913,
+          "p50Ms": 16.699999999982538,
+          "p95Ms": 16.70000000006985,
+          "p99Ms": 16.800000000017462,
+          "maxMs": 16.800000000046566,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 35912,
+          "p50Ms": 16.700000000186265,
+          "p95Ms": 17.90000000037253,
+          "p99Ms": 18.399999999441206,
+          "maxMs": 33.5,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 600,
+          "actualSeconds": 600.067
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 180077067,
+            "alphaSum": 94563281,
+            "hash": "42485c8b",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 180077067,
+            "alphaSum": 94563281,
+            "hash": "42485c8b",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 180077067,
+            "alphaSum": 94563281,
+            "hash": "42485c8b",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 180077067,
+            "alphaSum": 94563281,
+            "hash": "42485c8b",
+            "glErrors": []
+          }
+        }
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "full": {
+        "startMs": 11,
+        "endMs": 600064,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 315.284042,
+            "measuredWallSeconds": 600.053,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 52.5426990615829
+          },
+          "gpu": {
+            "cpuSeconds": 99.42217000000001,
+            "measuredWallSeconds": 596.0749999999999,
+            "measuredIntervals": 298,
+            "missingIntervals": 2,
+            "meanSingleCorePercent": 16.679473220651765
+          },
+          "other": {
+            "cpuSeconds": 132.14245800000006,
+            "measuredWallSeconds": 600.053,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 22.02179774119954
+          },
+          "host": {
+            "cpuSeconds": 41.453125,
+            "measuredWallSeconds": 600.053,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 6.908243938452103
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 0,
+            "final": 21842,
+            "delta": 21842
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 0,
+            "final": 242579.00000004098,
+            "delta": 242579.00000004098
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "misses": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "failures": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "unsupported": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "inflateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "validateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 3,
+            "final": 21843,
+            "delta": 21840
+          },
+          "refetches": {
+            "initial": 0,
+            "final": 18173,
+            "delta": 18173
+          },
+          "evictions": {
+            "initial": 0,
+            "final": 20476,
+            "delta": 20476
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 1,
+            "final": 82,
+            "delta": 81
+          },
+          "textureUploads": {
+            "initial": 0,
+            "final": 22977,
+            "delta": 22977
+          },
+          "textureUploadMs": {
+            "initial": 0,
+            "final": 1506.1999999685213,
+            "delta": 1506.1999999685213
+          }
+        }
+      },
+      "last300": {
+        "startMs": 300011,
+        "endMs": 600064,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 154.276361,
+            "measuredWallSeconds": 300.0529999999998,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 51.41637010794763
+          },
+          "gpu": {
+            "cpuSeconds": 49.32926100000001,
+            "measuredWallSeconds": 300.0529999999998,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 16.44018256774638
+          },
+          "other": {
+            "cpuSeconds": 69.05986899999996,
+            "measuredWallSeconds": 300.0529999999998,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 23.01589019273262
+          },
+          "host": {
+            "cpuSeconds": 20.71875,
+            "measuredWallSeconds": 300.0529999999998,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 6.905030111346999
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 11088,
+            "final": 21842,
+            "delta": 10754
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 124977.80000003614,
+            "final": 242579.00000004098,
+            "delta": 117601.20000000484
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "misses": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "failures": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "unsupported": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "inflateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          },
+          "validateMs": {
+            "initial": null,
+            "final": null,
+            "delta": null
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 11089,
+            "final": 21843,
+            "delta": 10754
+          },
+          "refetches": {
+            "initial": 7419,
+            "final": 18173,
+            "delta": 10754
+          },
+          "evictions": {
+            "initial": 9725,
+            "final": 20476,
+            "delta": 10751
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 33,
+            "final": 82,
+            "delta": 49
+          },
+          "textureUploads": {
+            "initial": 11570,
+            "final": 22977,
+            "delta": 11407
+          },
+          "textureUploadMs": {
+            "initial": 790.6000000014901,
+            "final": 1506.1999999685213,
+            "delta": 715.5999999670312
+          }
+        }
+      },
+      "journeyMisses": 81,
+      "observedTextureFormats": [
+        36492
+      ],
+      "bc7Cache": null,
+      "deviceMemoryMiB": {
+        "scope": "whole NVIDIA GPU, includes other applications",
+        "samples": 289,
+        "peak": 1927.0,
+        "mean": 1659.8754325259515,
+        "final": 1716.0
+      },
+      "sampling": true,
+      "routeMaxDelayMs": 62.99999999998818,
+      "missesByPhase": {
+        "route-0-idle": 22,
+        "route-0-idle_side_butterfly": 1,
+        "route-0-thinking_trans": 2,
+        "route-0-idle2": 1,
+        "route-1-idle_side_butterfly": 1,
+        "route-1-idle2": 1,
+        "route-2-speaking_long": 1,
+        "route-2-idle_side_butterfly": 1,
+        "route-2-idle2": 1,
+        "route-3-speaking_long": 1,
+        "route-3-idle_closed_eye": 46,
+        "route-3-idle2": 1,
+        "route-4-idle2": 2
+      },
+      "measuredProcessCpuLast300Seconds": 293.384241,
+      "observedSampling": {
+        "samplingEnabled": [
+          true
+        ],
+        "sampleFps": [
+          60
+        ]
+      }
+    },
+    "cached": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 305,
+        "sampledDurationMs": 609204
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 147243008,
+            "peak": 1776939008,
+            "final": 1466908672,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1380368384,
+              "max": 1517666304,
+              "mean": 1450219776.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 190365696,
+            "peak": 1773584384,
+            "final": 1461669888,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1374420992,
+              "max": 1510961152,
+              "mean": 1444476672.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 353820672,
+            "peak": 2413350912,
+            "final": 1849737216,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1791254528,
+              "max": 2067353600,
+              "mean": 1862113280.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 211509248,
+            "peak": 708882432,
+            "final": 329011200,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 329011200,
+              "max": 419540992,
+              "mean": 381511680.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 32845824,
+            "peak": 34361344,
+            "final": 33992704,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 33902592,
+              "max": 33992704,
+              "mean": 33948672.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 47603712,
+            "peak": 49119232,
+            "final": 49119232,
+            "sampleCount": 301,
+            "missingSamples": 0,
+            "tail": {
+              "min": 48992256,
+              "max": 49119232,
+              "mean": 49089280.0,
+              "sampleCount": 16
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 35911,
+          "p50Ms": 16.699999999982538,
+          "p95Ms": 16.70000000006985,
+          "p99Ms": 16.800000000017462,
+          "maxMs": 16.800000000046566,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 35910,
+          "p50Ms": 16.700000000186265,
+          "p95Ms": 17.90000000037253,
+          "p99Ms": 18.399999999441206,
+          "maxMs": 32.60000000055879,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 600,
+          "actualSeconds": 600.022
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 178873674,
+            "alphaSum": 94619298,
+            "hash": "d26960a7",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 178873674,
+            "alphaSum": 94619298,
+            "hash": "d26960a7",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179940416,
+            "alphaSum": 94548455,
+            "hash": "3993b114",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 764,
+            "height": 1028,
+            "rgbSum": 179940416,
+            "alphaSum": 94548455,
+            "hash": "3993b114",
+            "glErrors": []
+          }
+        }
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "full": {
+        "startMs": 9,
+        "endMs": 600018,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 125.063209,
+            "measuredWallSeconds": 600.0089999999996,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 20.843555513333982
+          },
+          "gpu": {
+            "cpuSeconds": 103.99169099999999,
+            "measuredWallSeconds": 600.0089999999996,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 17.33168852467214
+          },
+          "other": {
+            "cpuSeconds": 135.37737299999992,
+            "measuredWallSeconds": 600.0089999999996,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 22.56255706164408
+          },
+          "host": {
+            "cpuSeconds": 50.46875,
+            "measuredWallSeconds": 600.0089999999996,
+            "measuredIntervals": 300,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 8.411332163350888
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": 0,
+            "final": 21838,
+            "delta": 21838
+          },
+          "misses": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "unsupported": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "inflateMs": {
+            "initial": 0,
+            "final": 22376.700000008568,
+            "delta": 22376.700000008568
+          },
+          "validateMs": {
+            "initial": 0,
+            "final": 15048.600000025705,
+            "delta": 15048.600000025705
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 3,
+            "final": 21839,
+            "delta": 21836
+          },
+          "refetches": {
+            "initial": 0,
+            "final": 18169,
+            "delta": 18169
+          },
+          "evictions": {
+            "initial": 0,
+            "final": 20472,
+            "delta": 20472
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 1,
+            "final": 54,
+            "delta": 53
+          },
+          "textureUploads": {
+            "initial": 0,
+            "final": 22963,
+            "delta": 22963
+          },
+          "textureUploadMs": {
+            "initial": 0,
+            "final": 1663.3999999780208,
+            "delta": 1663.3999999780208
+          }
+        }
+      },
+      "last300": {
+        "startMs": 300048,
+        "endMs": 600018,
+        "cpu": {
+          "renderer": {
+            "cpuSeconds": 62.794002,
+            "measuredWallSeconds": 299.9700000000001,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 20.93342734273427
+          },
+          "gpu": {
+            "cpuSeconds": 52.502147,
+            "measuredWallSeconds": 299.9700000000001,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 17.50246591325799
+          },
+          "other": {
+            "cpuSeconds": 72.00905500000002,
+            "measuredWallSeconds": 299.9700000000001,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 24.005418875220855
+          },
+          "host": {
+            "cpuSeconds": 25.078125,
+            "measuredWallSeconds": 299.9700000000001,
+            "measuredIntervals": 150,
+            "missingIntervals": 0,
+            "meanSingleCorePercent": 8.360211021102108
+          }
+        },
+        "transcodes": {
+          "completed": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "elapsedMs": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          }
+        },
+        "cache": {
+          "hits": {
+            "initial": 11090,
+            "final": 21838,
+            "delta": 10748
+          },
+          "misses": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "unsupported": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "inflateMs": {
+            "initial": 10976.600000044331,
+            "final": 22376.700000008568,
+            "delta": 11400.099999964237
+          },
+          "validateMs": {
+            "initial": 7578.699999970384,
+            "final": 15048.600000025705,
+            "delta": 7469.900000055321
+          }
+        },
+        "store": {
+          "loads": {
+            "initial": 11091,
+            "final": 21839,
+            "delta": 10748
+          },
+          "refetches": {
+            "initial": 7421,
+            "final": 18169,
+            "delta": 10748
+          },
+          "evictions": {
+            "initial": 9727,
+            "final": 20472,
+            "delta": 10745
+          },
+          "failures": {
+            "initial": 0,
+            "final": 0,
+            "delta": 0
+          },
+          "displayMiss": {
+            "initial": 17,
+            "final": 54,
+            "delta": 37
+          },
+          "textureUploads": {
+            "initial": 11563,
+            "final": 22963,
+            "delta": 11400
+          },
+          "textureUploadMs": {
+            "initial": 849.9000000348315,
+            "final": 1663.3999999780208,
+            "delta": 813.4999999431893
+          }
+        }
+      },
+      "journeyMisses": 53,
+      "observedTextureFormats": [
+        36492
+      ],
+      "bc7Cache": {
+        "indexSha256": "1f4001a977560197c869c78ab2c29409db4da8fc87f5efa3e9b48984ae99c786",
+        "entries": 7568,
+        "compression": "zstd-15",
+        "cacheState": "prebuilt; verified before navigation",
+        "scope": "experimental read path; no automatic runtime cache generation"
+      },
+      "deviceMemoryMiB": {
+        "scope": "whole NVIDIA GPU, includes other applications",
+        "samples": 289,
+        "peak": 1995.0,
+        "mean": 1711.8131487889273,
+        "final": 1760.0
+      },
+      "sampling": true,
+      "routeMaxDelayMs": 63.99999999999295,
+      "missesByPhase": {
+        "route-0-idle": 15,
+        "route-0-thinking_trans": 1,
+        "route-3-idle_closed_eye": 37
+      },
+      "measuredProcessCpuLast300Seconds": 212.383329,
+      "observedSampling": {
+        "samplingEnabled": [
+          true
+        ],
+        "sampleFps": [
+          60
+        ]
+      }
+    }
+  }
+}

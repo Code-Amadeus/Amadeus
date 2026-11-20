@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WE Canvas2D Diagnostic</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05070b;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #badge {
+      position: fixed;
+      right: 14px;
+      top: 14px;
+      z-index: 2147483647;
+      padding: 6px 9px;
+      border: 1px solid rgba(130, 255, 220, 0.75);
+      background: rgba(0, 18, 22, 0.78);
+      color: #86ffd7;
+      font: 13px/1.2 Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="badge">WE 2D 0</div>
+  <script>
+    var canvas = document.getElementById("canvas");
+    var ctx = canvas.getContext("2d");
+    var img = new Image();
+    var n = 0;
+    img.src = "../assets/images/amadeus_desktop_wallpaper.png";
+    function resize() {
+      canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
+      canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
+    }
+    function draw() {
+      if (!ctx) return;
+      ctx.fillStyle = "#05070b";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (img.complete && img.naturalWidth) {
+        var scale = Math.max(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
+        var w = img.naturalWidth * scale;
+        var h = img.naturalHeight * scale;
+        ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      }
+      requestAnimationFrame(draw);
+    }
+    window.addEventListener("resize", resize);
+    resize();
+    draw();
+    setInterval(function () {
+      n += 1;
+      document.getElementById("badge").textContent = "WE 2D " + n;
+    }, 1000);
+  </script>
+</body>
+</html>

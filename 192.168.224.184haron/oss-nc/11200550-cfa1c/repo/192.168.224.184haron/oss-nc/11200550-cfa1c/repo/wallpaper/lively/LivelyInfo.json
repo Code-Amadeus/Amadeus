@@ -1,0 +1,13 @@
+{
+  "AppVersion": "1.0.0.0",
+  "Title": "Amadeus Desktop Agent",
+  "Thumbnail": "",
+  "Preview": "",
+  "Desc": "Amadeus web wallpaper bridge for the local SpriteForge runtime.",
+  "Author": "Lucas",
+  "License": "",
+  "Contact": "",
+  "Type": 1,
+  "FileName": "index.html",
+  "Arguments": null
+}

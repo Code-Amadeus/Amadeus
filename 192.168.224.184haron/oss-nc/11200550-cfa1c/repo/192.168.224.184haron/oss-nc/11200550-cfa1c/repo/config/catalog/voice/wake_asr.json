@@ -1,0 +1,93 @@
+{
+  "id": "wake_asr",
+  "title": {
+    "en-US": "Wake recognition",
+    "zh-CN": "唤醒识别"
+  },
+  "description": {
+    "en-US": "Independent always-on recognizer; it may use a different local backend from Conversation recognition.",
+    "zh-CN": "独立的常驻唤醒识别器，可以使用与对话识别不同的本地后端。"
+  },
+  "desktop": true,
+  "config": {
+    "WAKE_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Wake service",
+        "zh-CN": "唤醒服务"
+      },
+      "default": false,
+      "desktop_default": { "value": true, "platforms": ["win32"] },
+      "example_active": true
+    },
+    "WAKE_PHRASES": {
+      "type": "string",
+      "title": {
+        "en-US": "Wake phrases",
+        "zh-CN": "唤醒词"
+      },
+      "default": "hi amadeus,hey amadeus,hello amadeus,high amadeus,hi amadues,hey amadues,hello amadues,high amadues,hi amadius,hey amadius,hello amadius,hi i'm as,hi im as,hi ims,hi i'ms,hi i am as,嗨阿玛迪斯,嘿阿玛迪斯,你好阿玛迪斯,嗨阿马迪斯,嘿阿马迪斯,你好阿马迪斯,ハイアマデウス,ヘイアマデウス,アマデウス",
+      "example_active": false,
+      "example": "Hey Amadeus,Hi Amadeus"
+    },
+    "WAKE_AUTO_SEND_TO_CHAT": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Send command to Chat",
+        "zh-CN": "将指令发送至聊天"
+      },
+      "default": true,
+      "example_active": true
+    },
+    "WAKE_ASR_BACKEND": {
+      "type": "enum",
+      "title": {
+        "en-US": "Wake backend",
+        "zh-CN": "唤醒后端"
+      },
+      "default": "sense_voice",
+      "options": [
+        "sense_voice",
+        "qwen3_asr"
+      ],
+      "example_active": true
+    },
+    "WAKE_SENSEVOICE_LANGUAGES": {
+      "type": "string",
+      "title": {
+        "en-US": "Wake languages",
+        "zh-CN": "唤醒语言"
+      },
+      "default": "en",
+      "example_active": true
+    },
+    "SENSEVOICE_LANGUAGE": {
+      "type": "enum",
+      "title": {
+        "en-US": "SenseVoice conversation language",
+        "zh-CN": "SenseVoice 对话语言"
+      },
+      "default": "en",
+      "options": [
+        "auto",
+        "en",
+        "zh",
+        "ja",
+        "yue",
+        "ko"
+      ],
+      "example_active": true
+    },
+    "SENSEVOICE_MODEL_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "SenseVoice model path",
+        "zh-CN": "SenseVoice 模型路径"
+      },
+      "default": "",
+      "example_active": false,
+      "example": "C:\\path\\to\\SenseVoiceSmall"
+    }
+  },
+  "apply": "backend_restart"
+}

@@ -1,0 +1,67 @@
+{
+  "id": "tts_mimo",
+  "title": {
+    "en-US": "MiMo speech API (Xiaomi)",
+    "zh-CN": "MiMo 语音 API（小米）"
+  },
+  "description": {
+    "en-US": "MiMo chat-completions synthesis with PCM16 SSE streaming.",
+    "zh-CN": "使用 PCM16 SSE 流的 MiMo chat-completions 语音合成。"
+  },
+  "desktop": true,
+  "config": {
+    "MIMO_TTS_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "API base URL",
+        "zh-CN": "API 基础地址"
+      },
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "default": "https://api.xiaomimimo.com/v1"
+    },
+    "MIMO_TTS_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true
+    },
+    "MIMO_TTS_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "mimo-v2.5-tts"
+    },
+    "MIMO_TTS_VOICE": {
+      "type": "string",
+      "title": {
+        "en-US": "Voice",
+        "zh-CN": "语音"
+      },
+      "default": "冰糖"
+    }
+  },
+  "section": "remote",
+  "voice_backend": {
+    "id": "mimo",
+    "label": {
+      "en-US": "MiMo TTS (Xiaomi)",
+      "zh-CN": "MiMo 语音合成（小米）"
+    },
+    "deployment": "remote",
+    "factory": "tts.backends.mimo:MiMoTTSBackend",
+    "probe": "tts.backends.mimo:probe",
+    "summary": "MiMo chat-completions speech synthesis; PCM16 SSE streaming on mimo-v2.5-tts.",
+    "order": 2,
+    "streaming": true,
+    "reference_conditioning": false
+  },
+  "apply": "backend_restart",
+  "order": 3
+}

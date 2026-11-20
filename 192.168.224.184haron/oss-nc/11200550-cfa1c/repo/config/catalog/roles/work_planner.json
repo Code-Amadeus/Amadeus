@@ -1,0 +1,30 @@
+{
+  "id": "work_planner",
+  "title": {
+    "en-US": "Work planner / router",
+    "zh-CN": "工作规划与路由"
+  },
+  "description": {
+    "en-US": "Plans and routes cooperative Work; an empty model inherits the main conversation model.",
+    "zh-CN": "规划并路由协作任务；模型留空时继承主对话模型。"
+  },
+  "desktop": true,
+  "config": {
+    "COOPERATIVE_WORK_PLANNER_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "description": {
+        "en-US": "Leave blank to inherit the main conversation model.",
+        "zh-CN": "留空以继承主对话模型。"
+      },
+      "default": "",
+      "example_active": true
+    }
+  },
+  "section": "roles",
+  "order": 1,
+  "apply": "backend_restart"
+}

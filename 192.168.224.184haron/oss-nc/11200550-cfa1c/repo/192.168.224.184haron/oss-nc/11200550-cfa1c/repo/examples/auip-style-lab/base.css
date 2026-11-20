@@ -1,0 +1,44 @@
+/* Amadeus artifact visual language v0. Experimental, opt-in, no layout template. */
+.am-app {
+  --am-bg: #07171b;
+  --am-surface: #0c2429;
+  --am-text: #d8eee9;
+  --am-muted: #9cb9b4;
+  --am-accent: #6dffe2;
+  --am-line: #31575a;
+  --am-control-line: #648884;
+  --am-positive: #9ce1b0;
+  --am-warn: #edc783;
+  --am-error: #ffacb8;
+  --am-mono: Consolas, 'Cascadia Mono', 'Microsoft YaHei UI', monospace;
+  box-sizing: border-box;
+  color: var(--am-text);
+  background: var(--am-bg);
+  font: 16px/1.6 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  color-scheme: dark;
+}
+.am-app *, .am-app *::before, .am-app *::after { box-sizing: inherit; }
+.am-app .am-label { color: var(--am-muted); font: 12px/1.5 var(--am-mono); }
+.am-app .am-number { font-family: var(--am-mono); font-variant-numeric: tabular-nums; }
+.am-app .am-muted { color: var(--am-muted); }
+.am-app .am-rule { border: 0; border-top: 1px solid var(--am-line); }
+.am-app .am-button, .am-app .am-select, .am-app .am-input {
+  min-height: 36px; padding: 7px 14px; border: 1px solid var(--am-control-line);
+  border-radius: 7px; background: var(--am-surface); color: var(--am-text);
+  font: inherit; font-size: 14px; transition: background 140ms, border-color 140ms;
+}
+.am-app .am-button { cursor: pointer; }
+.am-app .am-button:hover:not(:disabled) { border-color: var(--am-accent); background: #123c3d; }
+.am-app .am-button[data-primary] { background: var(--am-accent); color: #07171b; border-color: var(--am-accent); }
+.am-app .am-button[data-primary]:hover:not(:disabled) { background: #a3ffeb; }
+.am-app .am-button[aria-pressed="true"] { border-color: var(--am-accent); background: #164642; }
+.am-app .am-button:disabled { opacity: .52; cursor: default; }
+.am-app :focus-visible { outline: 2px solid var(--am-accent); outline-offset: 4px; }
+.am-app input[type="range"] { accent-color: var(--am-accent); min-height: 36px; cursor: pointer; }
+.am-app .am-status { display: inline-flex; align-items: center; gap: 8px; font: 12px/1.5 var(--am-mono); color: var(--am-muted); }
+.am-app .am-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.am-app .am-status[data-active] { color: var(--am-accent); }
+@media (pointer: coarse) { .am-app .am-button, .am-app .am-select, .am-app .am-input { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .am-app *, .am-app *::before, .am-app *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

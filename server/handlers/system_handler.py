@@ -720,6 +720,7 @@ class SystemHandler(RequestHandler):
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
             "work_permission_auto_approve": settings.WORK_PERMISSION_AUTO_APPROVE,
+            "auip_interaction_enabled": settings.AUIP_INTERACTION_ENABLED,
             "graphics": {
                 "profile": settings.GRAPHICS_PROFILE,
                 "custom_max_fps": settings.RENDER_MAX_FPS,
@@ -853,6 +854,9 @@ class SystemHandler(RequestHandler):
         if "work_permission_auto_approve" in values:
             settings.WORK_PERMISSION_AUTO_APPROVE = values["work_permission_auto_approve"]
             updated.append("work_permission_auto_approve")
+        if "auip_interaction_enabled" in values:
+            settings.AUIP_INTERACTION_ENABLED = values["auip_interaction_enabled"]
+            updated.append("auip_interaction_enabled")
         if CHARACTER_PROMPT_SETTING in values:
             updated.extend(set_character_prompt(values[CHARACTER_PROMPT_SETTING]))
         if "asr_backend" in values:

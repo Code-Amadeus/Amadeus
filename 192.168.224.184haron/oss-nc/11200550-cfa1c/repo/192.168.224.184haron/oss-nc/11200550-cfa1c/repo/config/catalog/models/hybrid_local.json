@@ -1,0 +1,39 @@
+{
+  "id": "hybrid_local",
+  "title": {
+    "en-US": "Hybrid local head",
+    "zh-CN": "混合模式本地头部"
+  },
+  "description": {
+    "en-US": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible.",
+    "zh-CN": "共享的快速首句端点。Hybrid 搭配 Bedrock，Hybrid2 搭配 DeepSeek，Hybrid3 搭配 OpenAI 兼容服务。"
+  },
+  "desktop": true,
+  "config": {
+    "HYBRID_LOCAL_LLM_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Head endpoint",
+        "zh-CN": "首句端点"
+      },
+      "computed_default": true,
+      "example": "http://127.0.0.1:8080/v1",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true
+    },
+    "HYBRID_LOCAL_LLM_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Head model",
+        "zh-CN": "首句模型"
+      },
+      "computed_default": true,
+      "example": "",
+      "example_active": true
+    }
+  },
+  "apply": "backend_restart"
+}

@@ -1,0 +1,98 @@
+import type { CatalogRequest, CatalogReply } from '../shared/extensionCatalog.js'
+/**
+ * Preload script — exposes minimal backend IPC to the renderer via contextBridge.
+ */
+
+import { contextBridge, ipcRenderer } from 'electron'
+import type { BackendStartupFailure } from '../shared/characterStartup.js'
+import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import type { DesktopThemeState } from '../shared/extensionTheme.js'
+
+type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
+type WorkPreviewListener = (payload: Record<string, unknown>) => void
+
+contextBridge.exposeInMainWorld('amadeus', {
+  getBackendConnection: (): Promise<{
+    url: string
+    protocols: string[]
+    instanceNonce: string
+    authScheme: string
+  } | null> => ipcRenderer.invoke('get-backend-connection'),
+  restartBackend: (): Promise<boolean> => ipcRenderer.invoke('restart-backend'),
+  getBackendStartupFailure: (): Promise<BackendStartupFailure | null> => ipcRenderer.invoke('backend-startup.failure'),
+  recoverCharacterStartup: (): Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }> => ipcRenderer.invoke('backend-startup.recover-character'),
+  getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
+  getDesktopTheme: (): Promise<DesktopThemeState | null> => ipcRenderer.invoke('desktop-theme.get'),
+  onDesktopThemeChanged: (listener: () => void): (() => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('desktop-theme.changed', handler)
+    return () => ipcRenderer.removeListener('desktop-theme.changed', handler)
+  },
+  setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
+  getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),
+  updateDesktopSettings: (update: {
+    values?: Record<string, string | boolean | null>
+    secrets?: Record<string, string | null>
+  }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.update', update),
+  markDesktopSettingsApplied: (revisions: Record<string, number>): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.mark-applied', revisions),
+  upsertMcpConnection: (update: {
+    connection: {
+      id?: string
+      name: string
+      enabled?: boolean
+      transport: 'stdio' | 'http'
+      providerIds?: string[]
+      command?: string
+      arguments?: string[]
+      cwd?: string
+      url?: string
+      bearerTokenEnvVar?: string
+    }
+    environment?: Record<string, string | null>
+    clearEnvironment?: boolean
+  }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.upsert', update),
+  removeMcpConnection: (connectionId: string): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.remove', connectionId),
+  extensionCatalog: (request: CatalogRequest): Promise<CatalogReply> => ipcRenderer.invoke('extensions.catalog', request),
+  getExtensionIcon: (id: string): Promise<string | null> => ipcRenderer.invoke('extensions.icon', id),
+  installExtension: (): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.install'),
+  updateExtension: (update: ExtensionUpdate): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.update', update),
+  removeExtension: (id: string, options?: ExtensionRemovalOptions): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.remove', id, options),
+  getChatAvatars: (): Promise<{ user: string; assistant: string } | null> => ipcRenderer.invoke('chat-avatars.get'),
+  selectChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; cancelled: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.select', role),
+  clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),
+  focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
+  selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
+  selectVisualFile: (kind: 'model' | 'core', startPath?: string): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('visual-file.select', kind, startPath),
+  selectVNFile: (kind: 'game' | 'agent' | 'hook' | 'script', startPath?: string): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('vn-file.select', kind, startPath),
+  openVNHelp: (page: 'agent' | 'scripts'): Promise<void> => ipcRenderer.invoke('vn-help.open', page),
+  openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
+  closeElectronSlice: (backendStopError?: string): Promise<boolean> => ipcRenderer.invoke('electron-slice.close', backendStopError),
+  openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('auip-app.open', launchUrl, hostSurfaceId, workItemId),
+  closeAuipApp: (hostSurfaceId: string, appSessionId?: string): Promise<{ ok: boolean; status: string; detail: string }> => ipcRenderer.invoke('auip-app.close', hostSurfaceId, appSessionId),
+  openWorkOverlay: (): Promise<boolean> => ipcRenderer.invoke('work-overlay.open'),
+  closeWorkOverlay: (): Promise<boolean> => ipcRenderer.invoke('work-overlay.close'),
+  setWorkOverlayMouseIgnore: (ignore: boolean): Promise<boolean> => ipcRenderer.invoke('work-overlay.set-mouse-ignore', ignore),
+  setWorkOverlayPanelBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<boolean> => ipcRenderer.invoke('work-overlay.set-panel-bounds', bounds),
+  setWorkOverlayHitRegions: (bounds: Array<{ x: number; y: number; width: number; height: number }>): Promise<boolean> => ipcRenderer.invoke('work-overlay.set-hit-regions', bounds),
+  openWorkPreview: (descriptor: Record<string, unknown>) => ipcRenderer.invoke('work-preview.open', descriptor),
+  updateWorkPreview: (descriptor: Record<string, unknown>) => ipcRenderer.invoke('work-preview.update', descriptor),
+  getWorkPreview: (previewId: string) => ipcRenderer.invoke('work-preview.get', previewId),
+  reloadWorkPreview: (previewId: string) => ipcRenderer.invoke('work-preview.reload', previewId),
+  closeWorkPreview: (previewId: string) => ipcRenderer.invoke('work-preview.close', previewId),
+  setWorkPreviewBounds: (previewId: string, bounds: WorkPreviewBounds): Promise<boolean> => ipcRenderer.invoke('work-preview.set-bounds', previewId, bounds),
+  onWorkPreviewDescriptor: (listener: WorkPreviewListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) => listener(payload)
+    ipcRenderer.on('work-preview.descriptor', handler)
+    return () => ipcRenderer.removeListener('work-preview.descriptor', handler)
+  },
+  onWorkPreviewLoadState: (listener: WorkPreviewListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) => listener(payload)
+    ipcRenderer.on('work-preview.load-state', handler)
+    return () => ipcRenderer.removeListener('work-preview.load-state', handler)
+  },
+  onWorkPreviewCloseRequested: (listener: WorkPreviewListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) => listener(payload)
+    ipcRenderer.on('work-preview.close-requested', handler)
+    return () => ipcRenderer.removeListener('work-preview.close-requested', handler)
+  },
+})

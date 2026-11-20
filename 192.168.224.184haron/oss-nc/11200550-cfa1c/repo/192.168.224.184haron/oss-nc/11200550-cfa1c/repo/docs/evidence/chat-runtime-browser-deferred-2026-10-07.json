@@ -1,0 +1,171 @@
+{
+  "schema": "amadeus.convergence-browser-disposition.v1",
+  "date": "2026-10-07",
+  "revision": "d21c9f7e82bcbc66c3fa9114aa70773e601d30e5",
+  "baseline": "f306bc1f443df5c70957c754e69ed7b20f89e638",
+  "scope_decision": "User explicitly limits this retirement to Browser regression observation and issue recording; existing Browser/OpenClaw repair or redesign is deferred. A regression proven to be introduced by this convergence remains in scope.",
+  "source_report": "project_provider_20261006T164407Z_acf734.json",
+  "source_sha256": "f3e75f4c848da1278cdedccd583a992dadcba8d2e704c0ee202107a6f2206ba7",
+  "command": "python -m tools.probes.probe_project_provider_matrix --cross-domain-canary --provider deepseek --execution-provider codex --chat-timeout 120 --provider-timeout 240",
+  "actual_result": {
+    "status": "failed",
+    "checks": [
+      {
+        "name": "cross-domain-focus-project",
+        "ok": false,
+        "errors": [
+          "Session did not bind the amadeus Project"
+        ],
+        "cascade_from": []
+      },
+      {
+        "name": "cross-domain-browser-open",
+        "ok": false,
+        "errors": [
+          "Browser work mutated the Session's Project binding"
+        ],
+        "cascade_from": [
+          "cross-domain-focus-project"
+        ]
+      },
+      {
+        "name": "cross-domain-browser-continue",
+        "ok": false,
+        "errors": [
+          "Browser continuation mutated the Project binding"
+        ],
+        "cascade_from": [
+          "cross-domain-browser-open"
+        ]
+      },
+      {
+        "name": "cross-domain-return-project-work",
+        "ok": false,
+        "errors": [
+          "ledger intent is not amend"
+        ],
+        "cascade_from": [
+          "cross-domain-browser-continue"
+        ]
+      },
+      {
+        "name": "cross-domain-openclaw-active-steer",
+        "ok": false,
+        "errors": [
+          "mid-run OpenClaw amendment created a second delivery attempt",
+          "OpenClaw steer was not observed as queued then applied",
+          "OpenClaw result does not prove one replacement native run",
+          "aborted OpenClaw terminal leaked into the replacement result",
+          "steered OpenClaw task did not report the detail-page fact"
+        ],
+        "cascade_from": [
+          "cross-domain-return-project-work"
+        ]
+      },
+      {
+        "name": "cross-domain-openclaw-completed-followup",
+        "ok": false,
+        "errors": [
+          "completed OpenClaw follow-up did not create one new outer run",
+          "completed OpenClaw follow-up did not succeed",
+          "completed follow-up did not create exactly one new Operation/Attempt",
+          "completed follow-up was not attached through WorkItem lineage",
+          "completed OpenClaw follow-up lost the observed page fact"
+        ],
+        "cascade_from": [
+          "cross-domain-openclaw-active-steer"
+        ]
+      },
+      {
+        "name": "cross-domain-openclaw-return-project-work",
+        "ok": false,
+        "errors": [
+          "expected exactly one new WorkItem",
+          "ledger WorkItem is missing",
+          "ledger attempt is missing",
+          "canonical UI projection row is missing",
+          "workspace escaped disposable root",
+          "workspace entered source checkout",
+          "WorkItem cwd is not the expected project",
+          "provider run.created cwd disagrees with the WorkItem workspace",
+          "Git common-dir does not belong to the disposable repository",
+          "ledger attempt was not marked succeeded",
+          "ledger intent is not amend",
+          "UI execution is not succeeded",
+          "UI has no terminal completion assessment",
+          "UI completion rationale is empty",
+          "UI says the disposable workspace is missing",
+          "UI exposes no business artifact",
+          "UI exposes no durable activity snapshot",
+          "UI activity phase is not review-ready: None",
+          "UI activity did not retain the real result boundary: None",
+          "overlapping unaccepted Project work did not surface a conflict"
+        ],
+        "cascade_from": [
+          "cross-domain-openclaw-completed-followup"
+        ]
+      },
+      {
+        "name": "cross-domain-openclaw-session-cleanup",
+        "ok": true,
+        "errors": [],
+        "cascade_from": [
+          "cross-domain-openclaw-active-steer"
+        ]
+      },
+      {
+        "name": "source-checkout-untouched",
+        "ok": true,
+        "errors": [],
+        "cascade_from": []
+      }
+    ]
+  },
+  "observations": [
+    "The initial Project switch produced a scope-change selection card which the instrument did not answer; Session Project binding remained empty.",
+    "Browser open and continue both completed, with one Browser WorkItem and two Attempts. Their Project-binding checks still failed after the unresolved initial step.",
+    "The first return to Project wrote and read the expected marker, but the ledger intent was execute where the frozen journey expected amend.",
+    "OpenClaw active steering did not expose queued/applied stages and did not produce the requested replacement detail fact. Its transport/root cause was not established.",
+    "The completed OpenClaw follow-up was rejected with planned_work_acceptance_rejected.",
+    "The final Project return wrote the expected marker as an amend on the existing Project WorkItem; the instrument expected a new WorkItem, causing cascading row/projection failures. This semantic mismatch has not been resolved or rescored."
+  ],
+  "baseline_evidence": {
+    "scope_change": {
+      "path": "server/cooperative_chat_ingress.py",
+      "symbol": "request_scope_change",
+      "candidate_line": 1048,
+      "ast_identical_to_baseline": true,
+      "limit": "Unchanged implementation does not prove the whole failing journey is unchanged."
+    },
+    "workspace_less_amend": {
+      "path": "server/work_control.py",
+      "symbol": "_validate_amend_start",
+      "line": 1037,
+      "ast_identical_to_baseline": true,
+      "guard": "workspace_mode != local is rejected before amendment dispatch",
+      "offline_observation": {
+        "initial_state": "work_started",
+        "workspace_mode": "none",
+        "workspace_path": "",
+        "predecessor_status": "succeeded",
+        "typed_session_persisted": true,
+        "amendment_state": "rejected",
+        "amendment_reason": "planned_work_acceptance_rejected",
+        "adapter_calls": 1,
+        "attempt_count": 1
+      },
+      "reproduction": "Real current Cooperative/Planner/WorkControl/ledger with synthetic semantic replies and an inert OpenClaw-shaped adapter; failed expected-start assertion twice. Baseline guards checked directly, not a clean-baseline runtime execution."
+    }
+  },
+  "disposition": "Deferred observations, not a passed Browser acceptance. No production Browser/OpenClaw changes or retained test changes were made from this investigation. No cross-strategy fallback added.",
+  "cleanup": {
+    "run_fence_removed": true,
+    "temporary_root_removed": true,
+    "recoverable": false
+  },
+  "limits": [
+    "Seven of nine journey checks failed; the two passing checks concern cleanup and untouched source.",
+    "Only the local-only amendment guard was directly established to predate retirement; other failures remain unattributed.",
+    "Raw report was retained locally; temporary fixture and owned OpenClaw session were removed. No upstream report was published."
+  ]
+}

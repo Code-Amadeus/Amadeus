@@ -1,0 +1,47 @@
+{
+  "schema": "amadeus.character-management-desktop-acceptance.v1",
+  "date": "2026-10-08",
+  "code_revision": "053d6a185689fdbd4a1875a1268006153775d0dd",
+  "scope": "Actual Electron and Python backend, isolated model-less profile; M1 only",
+  "desktop_journey": {
+    "status": "passed",
+    "checks": {
+      "electron_started_backend": true,
+      "authenticated_runtime_status": true,
+      "authenticated_wallpaper_stop": true,
+      "chat_connected": true,
+      "backend_page_connected": true,
+      "startup_mode_saved_in_gui": true,
+      "settings_and_runtime_packages_rendered": true,
+      "b2_unavailable_is_visible": true,
+      "project_navigation_rendered": true,
+      "artifact_navigation_opened": true,
+      "default_identity_preserved": true,
+      "unicode_name_and_persona_limits_match_host": true,
+      "ui_creates_distinct_same_name_roles_without_switching": true,
+      "selection_validated_and_pending_until_restart": true,
+      "restart_activates_new_identity_and_own_history": true,
+      "foreign_session_shows_name_keeps_title_and_id_and_guides_without_switching": true,
+      "pending_restart_survives_leaving_and_returning_to_settings": true,
+      "edit_keeps_id_and_history_and_requires_explicit_restart": true,
+      "invalid_saved_role_exposes_offline_recovery": true,
+      "explicit_recovery_restores_kurisu_without_erasing_role_or_history": true,
+      "electron_and_backend_exited": true
+    }
+  },
+  "cold_start": {
+    "status": "passed",
+    "checks": {
+      "cold_failure_opens_gui_without_backend": true,
+      "failure_identifies_saved_character_not_other_error": true,
+      "explicit_recovery_starts_real_builtin_backend": true,
+      "recovery_preserves_missing_user_file": true,
+      "owned_processes_exit_cleanly": true
+    }
+  },
+  "test_instrument_correction": "The initial attempt treated the Save role button changing to Saving as a completed save. The corrected harness waits for the editor to close after the save acknowledgement. Product code was not changed.",
+  "limits": [
+    "No real model response, voice synthesis, or microphone input was exercised.",
+    "The separate Live2D branch was not merged into this tested revision."
+  ]
+}

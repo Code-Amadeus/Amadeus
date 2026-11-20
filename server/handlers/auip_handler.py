@@ -310,6 +310,11 @@ class AuipHandler(RequestHandler):
         performs no wording match and accepts no model-supplied AppSession id.
         """
 
+        if not self.runtime.ai_interaction_in_effect():
+            # A decision captured before the last session ended may still
+            # arrive; it is refused here, before any app or launch side
+            # effect, and presented through the ordinary rejection receipt.
+            return {"ok": False, "error": "auip_interaction_disabled"}
         projection = self.runtime.focused_projection(session_id)
         control = reconcile_active_auip_control(attrs, projection)
         action = str(control.get("action") or "").strip().lower()

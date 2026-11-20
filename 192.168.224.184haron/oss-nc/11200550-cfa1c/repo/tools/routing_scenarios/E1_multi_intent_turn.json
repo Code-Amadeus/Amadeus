@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "E1_multi_intent_turn",
+  "category": "composite",
+  "notes": "One utterance carrying two intents. The actionable half must route; the spoken half must still be answered. Dropping either was invisible before this scenario existed.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 alpha.txt，写入 one。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "请在 scratch 仓创建 beta.txt，写入 two。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "把 alpha.txt 改成 one-updated；顺便告诉我 beta.txt 那个任务现在什么状态。",
+      "label": "continue",
+      "expect_reply_mentions": ["beta"],
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

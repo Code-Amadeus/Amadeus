@@ -1,0 +1,189 @@
+{
+  "schema": "amadeus.chat-runtime-retirement-evidence.v1",
+  "date": "2026-10-07",
+  "scope": "P5 construction snapshot; real Electron, current Cooperative role and control owners; synthetic inputs, speech disabled.",
+  "model_less_old_false": {
+    "status": "passed",
+    "checks": [
+      "startup",
+      "authenticated runtime.status",
+      "Chat/backend connected",
+      "settings render",
+      "project/artifact navigation",
+      "clean shutdown"
+    ],
+    "old_false_warned": true
+  },
+  "basic_interaction": {
+    "status": "passed",
+    "identity": {
+      "commit_sha": "b8b3edd5dde8e990713997ecccdd31941b9e8194",
+      "workspace_dirty": true,
+      "workspace_fingerprint": "b6c586c1842e4154d6c4556401b44a8d51180679b2cdcc4bbc5f0e94878ca910"
+    },
+    "actual_route": {
+      "source": "system.get_config",
+      "mode": "basic",
+      "cooperative_chat_enabled": true,
+      "cooperative_work_planner_enabled": false
+    },
+    "checks": {
+      "provider_selected": true,
+      "ordinary_reply_no_work": true,
+      "explanation_no_work": true,
+      "image_grounding": true,
+      "interrupt_acknowledged": true,
+      "next_turn_after_interrupt": true,
+      "no_late_completion_after_interrupt": true,
+      "total_provider_runs": true,
+      "no_renderer_page_error": true
+    },
+    "process_reaped": true,
+    "work_provider": null,
+    "tool_names": [],
+    "turns": [
+      {
+        "label": "ordinary",
+        "reply": "こんにちは。 穏やかな一日になるといいわね。"
+      },
+      {
+        "label": "explain",
+        "reply": "いいわ、簡単に答えるわね。 虹は、空気中の水滴に太陽光が入って屈折・反射・分散することで、光が色ごとに分かれて見える現象よ。 だから雨上がりなど、空気中に水滴があって太陽の光が当たる条件がそろうと、あの七色の弧が見えるの。"
+      },
+      {
+        "label": "image",
+        "reply": "いいわ、短く答えるわね。 左に赤い円、右に青い四角、下に数字の42が書かれているわ。"
+      },
+      {
+        "label": "after_interrupt",
+        "reply": "確認したわ。"
+      }
+    ]
+  },
+  "professional_failed_constraint_sample": {
+    "status": "failed",
+    "identity": {
+      "commit_sha": "b8b3edd5dde8e990713997ecccdd31941b9e8194",
+      "workspace_dirty": true,
+      "workspace_fingerprint": "2ee45dc2c19a12f8708ae52db0ef70e4bac8f920538809713dd476b6cef2beb2"
+    },
+    "actual_route": {
+      "source": "system.get_config",
+      "mode": "professional",
+      "cooperative_chat_enabled": true,
+      "cooperative_work_planner_enabled": true
+    },
+    "checks": {
+      "provider_selected": true,
+      "ordinary_reply_no_work": true,
+      "explanation_no_work": true,
+      "work_terminal_success": true,
+      "requested_artifact": true,
+      "only_requested_file": true,
+      "report_no_new_run": true,
+      "total_provider_runs": true,
+      "no_shell_commands": false,
+      "no_renderer_page_error": true
+    },
+    "process_reaped": true,
+    "work_provider": "codex",
+    "tool_names": [
+      "js",
+      "shell"
+    ],
+    "turns": [
+      {
+        "label": "ordinary",
+        "reply": "こんにちは。 穏やかな一日、いいわね。"
+      },
+      {
+        "label": "explain",
+        "reply": "こんにちは。 虹が見えるのは、空気中の水滴が太陽光を屈折・反射させて、光が色ごとに分かれるからよ。\n 水滴に入った光は波長ごとに曲がる角度が違うから、赤から紫まで分かれて、私たちの目にはあの弧として映るの。"
+      },
+      {
+        "label": "single_work",
+        "reply": "ええ、わかったわ。 現在のプロジェクトに `convergence_result.txt` を、中身が `CONVERGENCE_OK` だけの状態で一つ作成するのね。他のファイルには触らないし、コードやコマンドの実行もしない。その条件で進めるわ。"
+      },
+      {
+        "label": "report",
+        "reply": "ええ、 さっきのタスクね。記録によれば、`convergence_result.txt` を作成する作業は codex 側で実行が成功した状態になっているわ。作業自体はまだオープンのままだけど、実行ステータスは succeeded よ。"
+      }
+    ]
+  },
+  "professional_isolated_project": {
+    "status": "failed",
+    "identity": {
+      "commit_sha": "b8b3edd5dde8e990713997ecccdd31941b9e8194",
+      "workspace_dirty": true,
+      "workspace_fingerprint": "249f1a6d8a6cc7aba99e58645e4b6cbf0943cbd80f44e9e8c5d92722ca610726"
+    },
+    "actual_route": {
+      "source": "system.get_config",
+      "mode": "professional",
+      "cooperative_chat_enabled": true,
+      "cooperative_work_planner_enabled": true
+    },
+    "checks": {
+      "provider_selected": true,
+      "ordinary_reply_no_work": true,
+      "explanation_no_work": true,
+      "work_terminal_success": true
+    },
+    "process_reaped": true,
+    "work_provider": "codex",
+    "tool_names": [
+      "js"
+    ],
+    "turns": [
+      {
+        "label": "ordinary",
+        "reply": "こんにちは。 穏やかな一日、いいわね。"
+      },
+      {
+        "label": "explain",
+        "reply": "こんにちは。 虹が見えるのは、空気中の水滴が太陽光を屈折・反射させて、光を色ごとに分けるからよ。\n 水滴に入った光は波長ごとに曲がる角度が違うため、赤から紫までが分かれて私たちの目に届き、あの弧を描くの。"
+      },
+      {
+        "label": "single_work",
+        "reply": "ええ、わかったわ。 現在のプロジェクトに convergence_result.txt を作成して、中身を CONVERGENCE_OK だけにするのね。他のファイルには手を付けないでおくわ。"
+      }
+    ],
+    "artifact_host_read": "PermissionError after shutdown"
+  },
+  "intermediate_fixture_failure": {
+    "status": "failed",
+    "stage": "project.create",
+    "reason": "workspace_outside_project_registry",
+    "correction": "The isolated probe now declares only its generated project in WORK_PROJECT_ALLOWLIST before app startup."
+  },
+  "prompt_equivalence": {
+    "checked_outputs": 48,
+    "byte_identical": true,
+    "languages": [
+      "Japanese",
+      "English"
+    ],
+    "variants": [
+      "base",
+      "with_delegate",
+      "bedrock",
+      "hybrid_local",
+      "local_fallback",
+      "structured_control"
+    ],
+    "intent_values": [
+      false,
+      true
+    ],
+    "character_override_values": [
+      "builtin",
+      "synthetic override"
+    ]
+  },
+  "limits": [
+    "The first professional Work sample used shell despite the synthetic no-command constraint and is not accepted.",
+    "A later professional Work run returned success using js, but the host could not read the 14-byte artifact even after shutdown (PermissionError); artifact contents remain unverified by the host.",
+    "No ACL was changed, no silent retry was added to production, and the Work failure is not attributed to this retirement without a clean baseline reproduction.",
+    "LM Studio/Ollama, full persona samples, acoustic loopback and replacement of the retired J7 private-runtime harness remain pending."
+  ]
+}

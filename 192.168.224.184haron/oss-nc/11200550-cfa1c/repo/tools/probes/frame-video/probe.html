@@ -1,0 +1,349 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Amadeus frame video experiment</title>
+<style>html,body{margin:0;background:transparent}canvas{display:block}</style>
+<script src="/render/web/vendor/pixi.min.js"></script>
+<script type="module">
+import { parseIvf } from './ivf.mjs';
+import { FrameDecoder } from './decoder.mjs';
+import { createVideoOutput, readCalibrationIdentity } from './pixi-output.mjs';
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const percentile = (values, p) => [...values].sort((a,b)=>a-b)[Math.min(values.length-1, Math.ceil(values.length*p)-1)] ?? null;
+const equalPixels = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
+const pixelSummary = pixels => {
+  let hash = 2166136261, nonzeroAlpha = 0, rgbSum = 0, alphaSum = 0;
+  for (let i = 0; i < pixels.length; i++) {
+    hash = Math.imul(hash ^ pixels[i], 16777619) >>> 0;
+    if (i % 4 === 3) { alphaSum += pixels[i]; if (pixels[i]) nonzeroAlpha++; }
+    else rgbSum += pixels[i];
+  }
+  return { fnv1a32: hash.toString(16).padStart(8, '0'), byteLength: pixels.length, rgbSum, alphaSum, nonzeroAlpha };
+};
+window.runProbe = async ({ seconds = 30, coldRuns = 20, hardware = 'prefer-hardware', capacity = 16,
+  contextLoss = true, identityRounds = 2, targets = null, stallMs = 0, stallEveryMs = 1000,
+  resetEveryMs = 0, shutdownMode = 'graceful', shutdownSettleMs = 250 } = {}) => {
+  const metadata = await (await fetch('/fixture/clip.json')).json(), layout = metadata.layout;
+  const separateAlpha = metadata.schema === 'amadeus.frame-video-split-experiment.v1';
+  const descriptors = separateAlpha ? Object.values(metadata.streams) : [metadata];
+  if (separateAlpha && (metadata.pairing !== 'sourceIndex' || !metadata.streams.color || !metadata.streams.alpha)) {
+    throw Error('Unsupported split-stream pairing');
+  }
+  // Fix the order explicitly: object insertion order is not stream authority.
+  if (separateAlpha) descriptors.splice(0, descriptors.length, metadata.streams.color, metadata.streams.alpha);
+  const streams = [];
+  for (const descriptor of descriptors) {
+    const video = descriptor.video;
+    if (!['clip.ivf', 'color.ivf', 'alpha.ivf'].includes(video)) throw Error('Unexpected fixture filename');
+    const bytes = await (await fetch('/fixture/' + video)).arrayBuffer();
+    const ivf = parseIvf(bytes, descriptor.index);
+    if (ivf.width !== layout.codedWidth || ivf.height !== layout.codedHeight || ivf.frames.length !== metadata.frames) {
+      throw Error('Coded dimensions/frame count mismatch');
+    }
+    const config = { codec: descriptor.codec, codedWidth: ivf.width, codedHeight: ivf.height,
+      hardwareAcceleration: hardware, optimizeForLatency: true, colorSpace: descriptor.colorSpace };
+    const support = await VideoDecoder.isConfigSupported(config);
+    if (!support.supported) throw Error('VP9 configuration unsupported');
+    streams.push({ ivf, config, support, descriptor });
+  }
+  if (separateAlpha && streams[0].ivf.frames.some((frame, i) => frame.key !== streams[1].ivf.frames[i].key)) {
+    throw Error('Split recovery keyframes differ');
+  }
+  const app = new PIXI.Application({ width: layout.width, height: layout.height, resolution: 1,
+    backgroundAlpha: 0, autoStart: false, antialias: false });
+  document.body.appendChild(app.view);
+  const gl = app.renderer.gl, debug = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null;
+  let output = createVideoOutput(PIXI, app.renderer, layout, { separateAlpha });
+  const sprite = new PIXI.Sprite(); app.stage.addChild(sprite);
+  const queues = streams.map(({ ivf, config }) => new FrameDecoder(ivf.frames, config, { capacity }));
+  const stop = () => queues.forEach(queue => queue.stop());
+  const start = index => queues.forEach(queue => queue.start(index));
+  const demand = index => queues.forEach(queue => queue.demand(index));
+  const paused = value => queues.forEach(queue => queue.setPaused(value));
+  const take = index => queues.every(queue => queue.ready.has(index)) ? queues.map(queue => queue.take(index)) : null;
+  const phases = [], checks = [], captures = [], identities = [], resourceSamples = [], events = [];
+  let phase = 'initial', phaseReadbacks = 0, phaseUploads = [], phaseUnpack = [];
+  const record = (name, data = {}) => {
+    const event = { name, phase, atEpochMs: Date.now(), atPerformanceMs: performance.now(), ...data };
+    events.push(event); console.info('FRAME_VIDEO_EVENT ' + JSON.stringify(event));
+    performance.mark('frame-video-' + name);
+  };
+  const snapshot = () => ({ queues: queues.map(queue => queue.snapshot()), output: output.snapshot() });
+  const check = (passed, name, evidence = {}) => { checks.push({ name, phase, passed: Boolean(passed), ...evidence }); };
+  const inPhase = async (name, action) => {
+    phase = name; phaseReadbacks = 0; phaseUploads = []; phaseUnpack = [];
+    queues.forEach(queue => queue.setPhase(name)); output.setPhase(name);
+    const initial = snapshot(), began = performance.now(); record('phase-start');
+    try { return await action(); }
+    finally {
+      record('phase-end');
+      phases.push({ name, elapsedMs: performance.now() - began, readbacks: phaseReadbacks, initial, final: snapshot(),
+        uploads: { count: phaseUploads.length, p50Ms: percentile(phaseUploads, .5), p99Ms: percentile(phaseUploads, .99),
+          unpackSubmitP99Ms: percentile(phaseUnpack, .99) } });
+    }
+  };
+  const waitFor = async index => {
+    const deadline = performance.now() + 5000;
+    while (!queues.every(queue => queue.ready.has(index))) {
+      const error = queues.find(queue => queue.error)?.error;
+      if (error) throw error;
+      if (performance.now() >= deadline) throw Error('No paired frame ' + index + ' within 5 seconds');
+      await delay(0);
+    }
+    return take(index);
+  };
+  const display = frames => {
+    try {
+      const timing = output.present(...frames);
+      if (timing) { sprite.texture = timing.texture; phaseUploads.push(timing.uploadMs); phaseUnpack.push(timing.unpackSubmitMs); }
+      app.renderer.render(app.stage);
+      return Boolean(timing);
+    } finally { frames.forEach((frame, i) => queues[i].release(frame)); }
+  };
+  const readPixels = (texture = output.texture) => {
+    if (phase === 'playback') throw Error('Diagnostic readback attempted in playback');
+    phaseReadbacks++;
+    return app.renderer.extract.pixels(texture);
+  };
+  const inspectIdentity = (expected, reason) => {
+    if (metadata.reference.sourceKind !== 'synthetic-alpha-ramp') return null;
+    const alphaIdentityMarker = metadata.reference.alphaIdentityMarker === true;
+    const identity = readCalibrationIdentity(readPixels(), layout.width, layout.height, { alphaIdentityMarker });
+    const evidence = { expected, reason, ...identity };
+    identities.push(evidence);
+    check(identity.valid && identity.sourceIndex === expected, 'calibration frame identity', evidence);
+    if (alphaIdentityMarker) check(identity.alphaMatchesColor && identity.alphaSourceIndex === expected,
+      'calibration alpha frame identity', evidence);
+    return identity;
+  };
+  const presentTarget = async (index, reason, reset = false) => {
+    if (reset) start(index); else demand(index);
+    const frames = await waitFor(index);
+    check(frames.every(frame => frame.timestamp === index), 'paired timestamp identity', { expected: index, reason,
+      timestamps: frames.map(frame => frame.timestamp) });
+    const presented = display(frames);
+    check(presented, 'target published', { expected: index, reason });
+    inspectIdentity(index, reason);
+  };
+  const preserve = (name, before, after) => check(equalPixels(before, after) && pixelSummary(before).nonzeroAlpha > 0,
+    name, { exactByteComparison: true, before: pixelSummary(before), after: pixelSummary(after) });
+  const partial = { metadata, phases, checks, identities, resourceSamples, events, cleanup: {} };
+  window.frameVideoPartial = partial;
+  let result;
+  try {
+    const cold = [];
+    await inPhase('cold', async () => {
+      for (let i = 0; i < coldRuns; i++) {
+        const began = performance.now(); start(metadata.headFrames);
+        display(await waitFor(metadata.headFrames)); cold.push(performance.now() - began); stop();
+      }
+    });
+    let decodeMs;
+    await inPhase('decode', async () => {
+      start(0); const began = performance.now();
+      for (let i = 0; i < metadata.frames; i++) {
+        demand(i); const frames = await waitFor(i); frames.forEach((frame, stream) => queues[stream].release(frame));
+      }
+      decodeMs = performance.now() - began; stop();
+    });
+    const captureIndices = [...new Set([0, metadata.headFrames - 1, metadata.headFrames, Math.floor(metadata.frames / 2), metadata.frames - 1])];
+    await inPhase('captures', async () => {
+      for (const i of captureIndices) {
+        await presentTarget(i, 'capture', true);
+        phaseReadbacks++;
+        captures.push({ sourceIndex: i, png: app.renderer.extract.canvas(output.texture).toDataURL('image/png') });
+        stop();
+      }
+    });
+    const target = metadata.headFrames, alternate = (target + 1) % metadata.frames;
+    let holdPreserved = false;
+    await inPhase('output-lifetime', async () => {
+      await presentTarget(target, 'lifetime baseline', true);
+      const before = readPixels(); stop(); app.renderer.render(app.stage);
+      preserve('display survives decoder stop', before, readPixels());
+      output.hold(true); start(alternate);
+      const suppressed = !display(await waitFor(alternate)); stop();
+      const held = readPixels(); holdPreserved = suppressed && equalPixels(before, held);
+      preserve('hold ignores a different decoded target', before, held);
+      check(suppressed, 'hold suppressed upload');
+      output.hold(false);
+      await presentTarget(target, 'same-target reset', true);
+      preserve('same-target reset pixels', before, readPixels());
+      queues.forEach(queue => queue.fail(Error('Probe injected decoder failure')));
+      app.renderer.render(app.stage);
+      preserve('display survives decoder failure', before, readPixels());
+      await presentTarget(target, 'decoder failure recovery', true);
+      preserve('decoder recovery pixels', before, readPixels()); stop();
+      paused(true); const submittedBeforePause = queues.map(queue => queue.stats.submitted);
+      start(alternate); demand(alternate);
+      await delay(50);
+      check(queues.every((queue, i) => queue.stats.submitted === submittedBeforePause[i] && queue.outstanding === 0 && !queue.ready.size),
+        'paused supply remains empty', { queues: queues.map(queue => queue.snapshot()) });
+      app.renderer.render(app.stage); preserve('display survives supply stall', before, readPixels());
+      paused(false); stop();
+      const retainedTexture = output.texture, release = output.retain();
+      output.destroy(); app.renderer.render(app.stage);
+      preserve('retained display survives output owner destruction', before, readPixels(retainedTexture));
+      const retained = output.snapshot();
+      check(retained.liveOutputTextures === 1 && retained.liveUploadTextures === 0, 'only retained output remains', retained);
+      sprite.texture = PIXI.Texture.EMPTY; release(); release();
+      const released = output.snapshot();
+      check(released.liveOutputTextures === 0 && released.retainedOutputTextures === 0, 'retained output release is complete', released);
+      output = createVideoOutput(PIXI, app.renderer, layout, { separateAlpha }); output.setPhase(phase);
+      await presentTarget(target, 'new output owner', true);
+      preserve('new output owner recovers same pixels', before, readPixels()); stop();
+    });
+    await inPhase('context-recovery', async () => {
+      const extension = gl.getExtension('WEBGL_lose_context');
+      if (!contextLoss || !extension) {
+        partial.contextRecovery = { status: 'skipped', reason: contextLoss ? 'WEBGL_lose_context unavailable' : 'disabled by option' };
+        if (contextLoss) check(false, 'requested context loss is available', partial.contextRecovery);
+        return;
+      }
+      await presentTarget(target, 'context baseline', true);
+      const before = readPixels(); stop();
+      let lost = 0, restored = 0;
+      await new Promise((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); app.view.removeEventListener('webglcontextlost', onLost); app.view.removeEventListener('webglcontextrestored', onRestored); };
+        const onLost = event => { event.preventDefault(); lost++; record('context-lost'); };
+        const onRestored = () => { restored++; record('context-restored'); cleanup(); resolve(); };
+        const timer = setTimeout(() => { cleanup(); reject(Error('Context restoration timed out')); }, 10000);
+        app.view.addEventListener('webglcontextlost', onLost);
+        app.view.addEventListener('webglcontextrestored', onRestored);
+        // Pixi's installed loss handler requests restoration. Do not restore twice.
+        extension.loseContext();
+      });
+      sprite.texture = PIXI.Texture.EMPTY; output.destroy();
+      output = createVideoOutput(PIXI, app.renderer, layout, { separateAlpha }); output.setPhase(phase);
+      await presentTarget(target, 'context source reupload', true);
+      const after = readPixels(), glError = gl.getError();
+      preserve('context source reupload pixels', before, after);
+      check(lost === 1 && restored === 1 && !gl.isContextLost() && glError === 0, 'context restored without GL error',
+        { lost, restored, glError, isContextLost: gl.isContextLost() });
+      partial.contextRecovery = { status: 'exercised', lost, restored, exactPixels: equalPixels(before, after),
+        before: pixelSummary(before), after: pixelSummary(after), glError };
+      stop();
+    });
+    await inPhase('deterministic-targets', async () => {
+      const selected = targets ?? [0, metadata.headFrames - 1, metadata.headFrames, metadata.frames - 1, 0];
+      for (const i of selected) {
+        if (!Number.isInteger(i) || i < 0 || i >= metadata.frames) throw Error('Invalid deterministic target');
+        await presentTarget(i, 'deterministic target');
+      }
+      stop();
+    });
+    await inPhase('calibration-identities', async () => {
+      if (metadata.reference.sourceKind !== 'synthetic-alpha-ramp') return;
+      for (let round = 0; round < identityRounds; round++) {
+        for (let i = 0; i < metadata.frames; i++) {
+          const index = round % 2 ? metadata.frames - 1 - i : i;
+          await presentTarget(index, 'full calibration round ' + round);
+        }
+        stop();
+      }
+    });
+    let playback;
+    await inPhase('playback', async () => {
+      record('playback-start'); const timedStart = performance.now();
+      let lap = -1, displayedIndex = -1, misses = 0, ticks = 0, changes = 0, lastTarget = -1;
+      let firstMiss = null, maxMissMs = 0, nextSampleMs = 0, nextStallMs = stallEveryMs;
+      let stallEndsMs = null, stalls = 0, nextResetMs = resetEveryMs, resets = 0;
+      while (performance.now() - timedStart < seconds * 1000) {
+        const elapsed = performance.now() - timedStart;
+        const frameNumber = Math.floor(elapsed / metadata.frameIntervalMs);
+        const nextLap = Math.floor(frameNumber / metadata.frames), index = frameNumber % metadata.frames;
+        if (stallEndsMs !== null && elapsed >= stallEndsMs) { paused(false); stallEndsMs = null; record('supply-stall-end'); }
+        if (stallMs && elapsed >= nextStallMs && stallEndsMs === null) {
+          paused(true); stallEndsMs = elapsed + stallMs; nextStallMs = elapsed + stallEveryMs; stalls++;
+          record('supply-stall-start');
+        }
+        if (nextLap !== lap) { start(0); lap = nextLap; displayedIndex = -1; }
+        if (resetEveryMs && elapsed >= nextResetMs) {
+          start(index); displayedIndex = -1; resets++; nextResetMs = elapsed + resetEveryMs; record('same-clip-reset');
+        }
+        demand(index);
+        if (displayedIndex !== index) {
+          const frames = take(index);
+          if (frames && display(frames)) {
+            displayedIndex = index; changes++;
+            if (firstMiss !== null) { maxMissMs = Math.max(maxMissMs, performance.now() - firstMiss); firstMiss = null; }
+          } else { misses++; firstMiss ??= performance.now(); }
+        }
+        if (elapsed >= nextSampleMs) { resourceSamples.push({ elapsedMs: elapsed, ...snapshot() }); nextSampleMs = elapsed + 1000; }
+        lastTarget = index; ticks++;
+        const error = queues.find(queue => queue.error)?.error; if (error) throw error;
+        await delay(Math.max(0, ticks * 1000 / 60 - (performance.now() - timedStart)));
+      }
+      const elapsedMs = performance.now() - timedStart; record('playback-end');
+      if (firstMiss !== null) maxMissMs = Math.max(maxMissMs, performance.now() - firstMiss);
+      paused(false); stop(); resourceSamples.push({ elapsedMs, ...snapshot() });
+      playback = { requestedSeconds: seconds, seconds: elapsedMs / 1000, ticks, actualTickHz: ticks * 1000 / elapsedMs,
+        changes, misses, maxMissMs, loopsStarted: lap + 1, lastTarget, lastDisplayedIndex: displayedIndex, stalls, resets,
+        uploadP50Ms: percentile(phaseUploads, .5), uploadP99Ms: percentile(phaseUploads, .99),
+        unpackSubmitP99Ms: percentile(phaseUnpack, .99), diagnosticReadbacks: phaseReadbacks };
+      check(phaseReadbacks === 0, 'no diagnostic readbacks during playback');
+      check(resourceSamples.every(sample => sample.queues.every(q => q.liveFrames + q.outstanding <= capacity
+        && q.readyFrames <= q.liveFrames && q.pendingIdentities === q.outstanding)
+        && sample.output.liveOutputTextures === 2 && sample.output.borrowedVideoFrames === 0),
+        'sustained bounded ownership', { samples: resourceSamples.length, capacityPerStream: capacity, streams: queues.length });
+      check(queues.every(queue => queue.phaseStats.peakOutstanding <= capacity && queue.owned.size === 0),
+        'playback peak ownership and final release', { queues: queues.map(queue => queue.snapshot()) });
+      check(gl.getError() === 0, 'playback GL error state');
+    });
+    await inPhase('post-playback-identities', async () => {
+      check(playback.changes > 0, 'playback published at least one frame', { changes: playback.changes });
+      if (playback.lastDisplayedIndex >= 0) inspectIdentity(playback.lastDisplayedIndex, 'retained final playback output');
+      if (metadata.reference.sourceKind === 'synthetic-alpha-ramp') {
+        for (let i = 0; i < metadata.frames; i++) await presentTarget(i, 'post-playback calibration');
+        stop();
+      }
+    });
+    const totals = queues.map(queue => queue.stats);
+    result = { metadata: { clip: metadata.reference.clip, frames: metadata.frames, layout, sourceKind: metadata.reference.sourceKind,
+      videoSha256: metadata.videoSha256 ?? Object.fromEntries(Object.entries(metadata.streams).map(([key, value]) => [key, value.videoSha256])),
+      schema: metadata.schema, support: streams.map(stream => stream.support), gpu },
+      cold: { runs: coldRuns, valuesMs: cold, p50Ms: percentile(cold, .5), p99Ms: percentile(cold, .99) },
+      decode: { frames: metadata.frames, decodedVideoFrames: metadata.frames * queues.length, streams: queues.length, elapsedMs: decodeMs,
+        fps: metadata.frames * 1000 / decodeMs, decodedVideoFps: metadata.frames * queues.length * 1000 / decodeMs,
+        authoredRealtimeMultiple: metadata.frames * metadata.frameIntervalMs / decodeMs },
+      playback, lifecycle: { submitted: totals.reduce((sum, value) => sum + value.submitted, 0),
+        outputs: totals.reduce((sum, value) => sum + value.outputs, 0),
+        closed: totals.reduce((sum, value) => sum + value.closed, 0), liveFrames: queues.reduce((sum, queue) => sum + queue.owned.size, 0),
+        sessions: totals.reduce((sum, value) => sum + value.sessions, 0),
+        peakOwned: totals.reduce((sum, value) => sum + value.peakOwned, 0),
+        peakOutstanding: totals.reduce((sum, value) => sum + value.peakOutstanding, 0),
+        combinedPeaksArePerStreamSum: separateAlpha,
+        holdPreserved, outputTextures: 2, streams: queues.map(queue => queue.snapshot()) },
+      phases, checks, identities, resourceSamples, events, contextRecovery: partial.contextRecovery, cleanup: partial.cleanup, captures,
+      validation: { passed: checks.every(value => value.passed), contextRecovery: partial.contextRecovery,
+        calibration: metadata.reference.sourceKind === 'synthetic-alpha-ramp'
+        ? { status: 'exercised', checks: identities.length, rounds: identityRounds,
+          alphaIdentityMarker: metadata.reference.alphaIdentityMarker === true }
+        : { status: 'not-applicable', reason: 'No independent frame marker in authoring pixels' } },
+      limitations: ['Standalone decoder, not SpriteRenderer integration or a KTX2 performance comparison.',
+        'Upload timing measures synchronous JavaScript submission, not GPU completion or proof of no CPU readback.',
+        'Resource counts cover probe-owned VideoFrames and textures; driver allocations require external evidence.',
+        'Context recovery redecodes the source; GPU render texture contents cannot survive context loss.',
+        'P99 from a small startup sample is exploratory, not a production latency bound.',
+        'Raw decode rate is bounded by this queue and its polling overhead; not a codec-only maximum.'] };
+    return result;
+  } finally {
+    phase = 'shutdown'; record('page-cleanup-start');
+    stop(); paused(false); sprite.texture = PIXI.Texture.EMPTY;
+    partial.cleanup.beforeDestroy = snapshot();
+    if (shutdownMode === 'graceful' && !gl.isContextLost()) gl.finish();
+    output.destroy();
+    if (shutdownMode === 'graceful' && !gl.isContextLost()) gl.finish();
+    partial.cleanup.afterOutputDestroy = snapshot(); partial.cleanup.glErrorBeforeAppDestroy = gl.getError();
+    // Pixi's ContextSystem.destroy explicitly loses the context. Record that phase
+    // separately from BrowserWindow destruction instead of suppressing GPU logs.
+    app.destroy(true, { children: true, texture: false, baseTexture: false });
+    await delay(shutdownMode === 'graceful' ? shutdownSettleMs : 0);
+    partial.cleanup.afterAppDestroy = { isContextLost: gl.isContextLost(), atEpochMs: Date.now(), shutdownMode, shutdownSettleMs };
+    record('page-cleanup-end');
+    if (result) result.validation.passed &&= partial.cleanup.afterOutputDestroy.output.liveOutputTextures === 0
+      && partial.cleanup.afterOutputDestroy.queues.every(queue => queue.liveFrames === 0 && queue.outstanding === 0)
+      && partial.cleanup.glErrorBeforeAppDestroy === 0;
+  }
+};
+</script>

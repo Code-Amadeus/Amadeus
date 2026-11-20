@@ -199,6 +199,34 @@ export const catalogGroups: CatalogGroup[] = [
     }
   },
   {
+    "id": "auip_interaction",
+    "title": {
+      "en-US": "AI application interaction",
+      "zh-CN": "AI 应用交互"
+    },
+    "description": {
+      "en-US": "Choose whether Amadeus joins AUIP applications from conversation. Creating, opening and manually using apps stays available.",
+      "zh-CN": "选择 Amadeus 是否从对话中参与 AUIP 应用。创建、打开和手动使用应用始终可用。"
+    },
+    "desktop": true,
+    "apply": "host",
+    "config": {
+      "AUIP_INTERACTION_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Let Amadeus interact with applications",
+          "zh-CN": "允许 Amadeus 与应用交互"
+        },
+        "description": {
+          "en-US": "When off, chat stops evaluating AUIP and Amadeus starts no new application sessions. If applications are already open, they keep working and chat can still direct them until the last one ends; turning it back on cancels the pending shutdown. Saved across restarts.",
+          "zh-CN": "关闭后，聊天不再评估 AUIP，Amadeus 也不再启动新的应用会话。若已有应用在运行，它们可继续使用，聊天仍可操作，直到最后一个结束；重新开启会取消待关闭状态。跨重启保存。"
+        },
+        "default": true,
+        "runtime_key": "auip_interaction_enabled"
+      }
+    }
+  },
+  {
     "id": "auip_artifact_style",
     "title": {
       "en-US": "Artifact appearance",

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "A5_post_completion_amendment",
+  "category": "lifecycle",
+  "notes": "A post-completion change should retain auditable lineage.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 theme.txt，写入 color=blue。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "把刚才那个文件里的颜色改成 green。",
+      "label": "continue",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

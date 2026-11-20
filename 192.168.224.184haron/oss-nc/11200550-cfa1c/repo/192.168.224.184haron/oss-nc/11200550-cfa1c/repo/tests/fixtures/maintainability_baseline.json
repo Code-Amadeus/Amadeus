@@ -1,0 +1,32 @@
+{
+  "imports": {
+    "agent_host/adapters/browser_branch.py": [
+      "server.browser_branch_planner",
+      "server.provider_branch"
+    ],
+    "agent_host/pi_web_tools.py": [
+      "server.web_navigation"
+    ],
+    "agent_host/provider_runtime.py": [
+      "server.turn_decision_shadow"
+    ],
+    "config/asset_packages.py": [
+      "render.companion_pack",
+      "tts.reference_pack"
+    ],
+    "core/chat_history_projection.py": [
+      "server.interaction_branch"
+    ],
+    "core/chat_runtime.py": [
+      "server.turn_decision_shadow"
+    ],
+    "llm/character_prompts.py": [
+      "core.character_profiles"
+    ],
+    "llm/prompts.py": [
+      "agent_host.provider_roles",
+      "agent_host.provider_runtime",
+      "server.assistant_language"
+    ]
+  }
+}

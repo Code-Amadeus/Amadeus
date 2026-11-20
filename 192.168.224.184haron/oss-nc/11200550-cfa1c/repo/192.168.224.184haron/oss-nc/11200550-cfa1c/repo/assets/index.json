@@ -1,0 +1,188 @@
+{
+  "schema": "amadeus.asset-index.v2",
+  "asset_root": "assets",
+  "built_in": [
+    {
+      "id": "desktop-wallpaper",
+      "display_name": "Amadeus Desktop Wallpaper",
+      "paths": [
+        "images/amadeus_desktop_wallpaper.png"
+      ]
+    },
+    {
+      "id": "electron-icons",
+      "display_name": "Electron and UI Icons",
+      "trees": [
+        "icons"
+      ]
+    }
+  ],
+  "external_packs": [
+    {
+      "id": "japanese-pronunciation",
+      "display_name": "Japanese Pronunciation Extension",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["text/ja/english"],
+      "required": ["text/ja/english/userdict.csv", "text/ja/english/provenance.json",
+        "text/ja/english/NOTICE.md", "text/ja/english/GPT-SoVITS-MIT.txt",
+        "text/ja/english/CMUdict-BSD-2-Clause.txt", "text/ja/english/Amadeus-AGPL-3.0.txt"],
+      "validator": "japanese_dictionary"
+    },
+    {
+      "id": "voice-kurisu-emotions",
+      "display_name": "Kurisu V3 Emotion Reference Pack",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["audio/reference/emotions"],
+      "required": ["audio/reference/emotions/references.json"],
+      "validator": "tts_reference_pack"
+    },
+    {
+      "id": "companion-kurisu",
+      "display_name": "Kurisu Companion Lite",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["companion/kurisu"],
+      "required": [
+        "companion/kurisu/manifest.json"
+      ],
+      "validator": "companion_pack"
+    },
+    {
+      "id": "visual-runtime",
+      "display_name": "Visual Runtime Pack",
+      "spec_version": 1,
+      "paths": [
+        "images/amadeus_ambient_low_blend.png",
+        "images/amadeus_ambient_high_blend.png",
+        "images/subtitle_frame_big.png",
+        "audio/sfx/computer_use_keyboard_loop.wav"
+      ],
+      "trees": [
+        "scenarios/runtime"
+      ],
+      "required": [
+        "images/amadeus_ambient_low_blend.png",
+        "images/amadeus_ambient_high_blend.png",
+        "images/subtitle_frame_big.png",
+        "audio/sfx/computer_use_keyboard_loop.wav",
+        "scenarios/runtime/scenario_graph.json",
+        "scenarios/runtime/scenario_backplate.png"
+      ],
+      "validator": "visual_runtime"
+    },
+    {
+      "id": "character-kurisu",
+      "display_name": "Kurisu Character Pack",
+      "spec_version": 1,
+      "paths": [],
+      "trees": [
+        "spriteforge/runtime/kurisu"
+      ],
+      "required": [
+        "spriteforge/runtime/kurisu/runtime_manifest.json",
+        "spriteforge/runtime/kurisu/graph_config.json",
+        "spriteforge/runtime/kurisu/spriteforge_mouth_config.json"
+      ],
+      "validator": "character_pack"
+    },
+    {
+      "id": "asr-qwen3-0.6b",
+      "display_name": "Qwen3-ASR 0.6B Model Pack",
+      "spec_version": 1,
+      "paths": [],
+      "trees": [
+        "models/asr/qwen3-asr-0.6b"
+      ],
+      "required": [
+        "models/asr/qwen3-asr-0.6b/chat_template.json",
+        "models/asr/qwen3-asr-0.6b/config.json",
+        "models/asr/qwen3-asr-0.6b/generation_config.json",
+        "models/asr/qwen3-asr-0.6b/merges.txt",
+        "models/asr/qwen3-asr-0.6b/model.safetensors",
+        "models/asr/qwen3-asr-0.6b/preprocessor_config.json",
+        "models/asr/qwen3-asr-0.6b/tokenizer_config.json",
+        "models/asr/qwen3-asr-0.6b/vocab.json"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "voice-kurisu-gpt-sovits-v3",
+      "display_name": "Kurisu GPT-SoVITS v3 Voice Pack",
+      "spec_version": 1,
+      "paths": [
+        "models/gpt-sovits/pretrained/s2Gv3.pth",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/config.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/bigvgan_generator.pt",
+        "models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+        "audio/reference/kurisu_reference.wav",
+        "audio/reference/english_recording.wav"
+      ],
+      "trees": [],
+      "required": [
+        "models/gpt-sovits/pretrained/s2Gv3.pth",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/config.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/bigvgan_generator.pt",
+        "models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+        "audio/reference/kurisu_reference.wav",
+        "audio/reference/english_recording.wav"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "voice-kurisu-gpt-sovits-v2pro-experimental",
+      "display_name": "Kurisu GPT-SoVITS v2Pro Experimental Voice Pack",
+      "spec_version": 1,
+      "paths": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "trees": [],
+      "required": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "japanese-context-reading",
+      "display_name": "Japanese Context Reading Model (tsqyomi v5)",
+      "spec_version": 1,
+      "paths": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
+      ],
+      "trees": [],
+      "required": [
+        "text/ja/context-reading/model.onnx",
+        "text/ja/context-reading/tokenizer.json",
+        "text/ja/context-reading/metadata.json",
+        "text/ja/context-reading/provenance.json",
+        "text/ja/context-reading/NOTICE.md",
+        "text/ja/context-reading/MIT.txt"
+      ],
+      "validator": "required_files"
+    }
+  ]
+}

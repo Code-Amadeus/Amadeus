@@ -1,0 +1,157 @@
+{
+  "schema": "amadeus.provider-handoff-pi-evidence.v1",
+  "date": "2026-10-07",
+  "status": "passed_bounded_two_operation_observation",
+  "source_commit": "182976877da50aa40503d183656ab2bf706908b6",
+  "provider": {
+    "provider_id": "pi",
+    "transport": "native_rpc",
+    "version": "0.86.1",
+    "model_provider": "deepseek",
+    "model": "deepseek-v4-flash"
+  },
+  "provider_turns": 2,
+  "composition": "Real WorkControl.seal_many, WorkLedgerCoordinator, WorkEffectExecutor, PiAdapter and pinned native Pi RPC. Pass-through prompt/event recording; no mocked permissions, model replies or workspace validation.",
+  "raw_report_sha256": "d89c5b2767c5390b1ac14be22bb36b2adc1dc12aff8589fc1356abe0b346e7f0",
+  "runtime_source_sha256": "9e821298b8f3eb9892394b7001b1e6a7b0a1528638c0eca43a18d02d8e9858b8",
+  "checks": {
+    "exact_allowlist": true,
+    "real_registry_accepts_fixture": true,
+    "checkout_not_allowlisted": true,
+    "independent_project": true
+  },
+  "observations": [
+    {
+      "name": "A",
+      "source": "A：创建 alpha.txt，内容为 ALPHA 后跟一个换行。\nB：创建 beta.txt，内容为 BETA 后跟一个换行。\n全局约束：不使用 shell 或命令，只用文件工具或 JS；不得修改其他文件。",
+      "task": "A：创建 alpha.txt，内容为 ALPHA 后跟一个换行。",
+      "before": {
+        "seed.txt": {
+          "sha256": "33b32dce3bdde2646eaa60f05e066b994d713f8eb2656761c0538e88c5442692",
+          "text": "SEED\n"
+        }
+      },
+      "after": {
+        "alpha.txt": {
+          "sha256": "1921b918b15842c7fdb115078e610263fac85f159c1d8e0ecec3d89a0faa4005",
+          "text": "ALPHA\n"
+        },
+        "seed.txt": {
+          "sha256": "33b32dce3bdde2646eaa60f05e066b994d713f8eb2656761c0538e88c5442692",
+          "text": "SEED\n"
+        }
+      },
+      "checks": {
+        "task_preserved": true,
+        "selected_source_preserved": true,
+        "full_source_preserved": true,
+        "native_accepted_production_prompt": true,
+        "native_session_stored_production_prompt": true,
+        "terminal_done": true,
+        "only_assigned_file_changed": true,
+        "content_exact": true,
+        "no_shell_or_external_tools": true,
+        "no_permissions_requested": true,
+        "native_process_closed": true
+      },
+      "actual_tool_calls": [
+        {
+          "tool": "write",
+          "args": {
+            "path": "alpha.txt",
+            "content": "ALPHA\n"
+          }
+        },
+        {
+          "tool": "read",
+          "args": {
+            "path": "alpha.txt",
+            "offset": 1,
+            "limit": 10
+          }
+        }
+      ],
+      "passed": true,
+      "provider_terminal": {
+        "status": "done",
+        "result": "\nDone. `alpha.txt` was created at `<fixture>\\project\\alpha.txt` with content:\n\n```\nALPHA\n```\n\nThat is the five characters `ALPHA` followed by a single trailing newline (`\\n`). No shell commands were used, and no other files were created or modified.",
+        "error": null
+      }
+    },
+    {
+      "name": "B",
+      "source": "A：创建 alpha.txt，内容为 ALPHA 后跟一个换行。\nB：创建 beta.txt，内容为 BETA 后跟一个换行。\n全局约束：不使用 shell 或命令，只用文件工具或 JS；不得修改其他文件。",
+      "task": "B：创建 beta.txt，内容为 BETA 后跟一个换行。",
+      "before": {
+        "alpha.txt": {
+          "sha256": "1921b918b15842c7fdb115078e610263fac85f159c1d8e0ecec3d89a0faa4005",
+          "text": "ALPHA\n"
+        },
+        "seed.txt": {
+          "sha256": "33b32dce3bdde2646eaa60f05e066b994d713f8eb2656761c0538e88c5442692",
+          "text": "SEED\n"
+        }
+      },
+      "after": {
+        "alpha.txt": {
+          "sha256": "1921b918b15842c7fdb115078e610263fac85f159c1d8e0ecec3d89a0faa4005",
+          "text": "ALPHA\n"
+        },
+        "beta.txt": {
+          "sha256": "a0d89cbe67e84a23d7de399463e2e9a6fb702a6c8acaab0dcdf36b32c2656d82",
+          "text": "BETA\n"
+        },
+        "seed.txt": {
+          "sha256": "33b32dce3bdde2646eaa60f05e066b994d713f8eb2656761c0538e88c5442692",
+          "text": "SEED\n"
+        }
+      },
+      "checks": {
+        "task_preserved": true,
+        "selected_source_preserved": true,
+        "full_source_preserved": true,
+        "native_accepted_production_prompt": true,
+        "native_session_stored_production_prompt": true,
+        "terminal_done": true,
+        "only_assigned_file_changed": true,
+        "content_exact": true,
+        "no_shell_or_external_tools": true,
+        "no_permissions_requested": true,
+        "native_process_closed": true
+      },
+      "actual_tool_calls": [
+        {
+          "tool": "write",
+          "args": {
+            "path": "beta.txt",
+            "content": "BETA\n"
+          }
+        },
+        {
+          "tool": "read",
+          "args": {
+            "path": "beta.txt",
+            "offset": 1,
+            "limit": 10
+          }
+        }
+      ],
+      "passed": true,
+      "provider_terminal": {
+        "status": "done",
+        "result": "\nCreated `beta.txt` in the project directory.\n\n- Content: `BETA` followed by a newline (`\"BETA\\n\"`)\n- Method: file write tool only — no shell or commands used\n- Verification: read-back showed the single line `BETA`\n- No other files were modified",
+        "error": null
+      }
+    }
+  ],
+  "cleanup": {
+    "all_processes_closed": true,
+    "fixture_removed": true
+  },
+  "limitations": [
+    "Two assigned operations from one synthetic current message, executed sequentially in one isolated workspace.",
+    "Real default Pi model only; not a statistical guarantee across models, languages or tasks.",
+    "No live Planner, attached AUIP application, permission UI, concurrent execution or restart journey was exercised.",
+    "Natural-language task scoping is not an operating-system sandbox."
+  ]
+}

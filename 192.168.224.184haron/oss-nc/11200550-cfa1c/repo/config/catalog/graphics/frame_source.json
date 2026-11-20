@@ -1,0 +1,85 @@
+{
+  "id": "graphics_frame_source",
+  "title": {
+    "en-US": "Animation frame source",
+    "zh-CN": "动画帧源"
+  },
+  "description": {
+    "en-US": "Automatic uses the matched video package when the renderer supports it. Older packs keep the static BC7 path. Restart the backend and reopen render surfaces after saving.",
+    "zh-CN": "自动模式在素材包匹配且渲染设备支持时使用视频；旧包继续走静态 BC7 路线。保存后重启后端并重新打开渲染窗口。"
+  },
+  "desktop": true,
+  "apply": "backend_restart",
+  "config": {
+    "RENDER_FRAME_SOURCE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Frame source",
+        "zh-CN": "帧源选择"
+      },
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": {
+            "en-US": "Automatic · video when available",
+            "zh-CN": "自动 · 可用时优先视频"
+          }
+        },
+        {
+          "value": "static",
+          "label": {
+            "en-US": "Static frames · compatibility",
+            "zh-CN": "静态帧 · 兼容模式"
+          }
+        }
+      ],
+      "description": {
+        "en-US": "Without a compatible video package or decoder, automatic mode retains the existing static path and resource policy.",
+        "zh-CN": "没有兼容的视频包或解码器时，自动模式保留原有静态路径与资源策略。"
+      }
+    },
+    "RENDER_FRAME_BUDGET_MIB": {
+      "type": "enum",
+      "title": {
+        "en-US": "Frame cache budget",
+        "zh-CN": "帧缓存预算"
+      },
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": {
+            "en-US": "Automatic · video 384 MiB / static 2 GiB",
+            "zh-CN": "自动 · 视频 384 MiB / 静态 2 GiB"
+          }
+        },
+        {
+          "value": "384",
+          "label": {
+            "en-US": "384 MiB",
+            "zh-CN": "384 MiB"
+          }
+        },
+        {
+          "value": "768",
+          "label": {
+            "en-US": "768 MiB",
+            "zh-CN": "768 MiB"
+          }
+        },
+        {
+          "value": "2048",
+          "label": {
+            "en-US": "2048 MiB",
+            "zh-CN": "2048 MiB"
+          }
+        }
+      ],
+      "description": {
+        "en-US": "Bounds retained static-frame CPU and GPU payloads, not the entire application or decoder memory. Explicit overrides apply to both sources.",
+        "zh-CN": "限制静态帧保留的 CPU 与 GPU 数据，不代表整个应用或解码器的总内存。手动指定的预算对两种帧源都生效。"
+      }
+    }
+  }
+}

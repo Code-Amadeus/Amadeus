@@ -1,0 +1,141 @@
+{
+  "schema": "amadeus.auip/v0",
+  "app": {
+    "id": "gomoku-nine",
+    "title": "Gomoku Nine",
+    "version": "0.1.0",
+    "objective": "Create five consecutive stones before the opponent.",
+    "interactionSummary": "Can choose side, place, resign, and choose after a result. Example—participant=white, turn=black, user says '你先下'. Good: choose a stone and say '那我执黑先下.' Atomic game.take_first_move speaks from the resulting black role and places it in one receipt. Bad: say the old white role still governs while promising the first move, ask confirmation, or split side/place. '再来一盘' uses game.restart_round only after a result; while playing, say the round is not over and do nothing. Gomoku has no movement: for '往右走', say it is unsupported. After a result, '结束系列' uses game.finish_experience; '关掉游戏' is Host leave."
+  },
+  "events": {
+    "game.ready": {
+      "beat": true
+    },
+    "game.move_committed": {
+      "beat": true
+    },
+    "game.participant_turn_ready": {
+      "beat": false,
+      "participantOpportunity": true
+    },
+    "game.participants_configured": {
+      "beat": true
+    },
+    "game.reset": {
+      "beat": true
+    },
+    "game.round_finished": {
+      "beat": true,
+      "importance": "important"
+    },
+    "game.experience_finished": {
+      "beat": true,
+      "importance": "important",
+      "terminal": true
+    }
+  },
+  "actions": {
+    "game.place_stone": {
+      "description": "Place at payload x,y only when state.turn equals state.roleBindings.participant, state.winner is none, and state.board.rows[payload.y][payload.x] equals state.board.empty.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "x": {"type": "integer", "description": "Zero-based board column.", "minimum": 0, "maximum": 8},
+          "y": {"type": "integer", "description": "Zero-based board row.", "minimum": 0, "maximum": 8}
+        },
+        "required": ["x", "y"],
+        "additionalProperties": false
+      },
+      "preconditions": [
+        {
+          "kind": "action_available/v1",
+          "statePath": "actionAvailability"
+        },
+        {
+          "kind": "grid_cell_empty/v1",
+          "statePath": "board",
+          "xField": "x",
+          "yField": "y"
+        }
+      ]
+    },
+    "game.take_first_move": {
+      "description": "Atomically bind the participant to black and place one black stone at payload x,y. Legal only before any move when state.turn is black, state.roleBindings.participant is not black, state.winner is none, and the target cell is empty.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "x": {"type": "integer", "description": "Zero-based board column.", "minimum": 0, "maximum": 8},
+          "y": {"type": "integer", "description": "Zero-based board row.", "minimum": 0, "maximum": 8}
+        },
+        "required": ["x", "y"],
+        "additionalProperties": false
+      },
+      "preconditions": [
+        {
+          "kind": "action_available/v1",
+          "statePath": "actionAvailability"
+        },
+        {
+          "kind": "grid_cell_empty/v1",
+          "statePath": "board",
+          "xField": "x",
+          "yField": "y"
+        }
+      ]
+    },
+    "game.configure_participants": {
+      "description": "Change the role binding before the first move. Use only when payload participantSide differs from state.roleBindings.participant; when the participant already owns the current turn, choose game.place_stone instead.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "participantSide": {
+            "type": "string",
+            "description": "The new participant side; it must differ from the current state.roleBindings.participant value.",
+            "enum": ["black", "white"]
+          }
+        },
+        "required": ["participantSide"],
+        "additionalProperties": false
+      }
+    },
+    "game.resign": {
+      "description": "Resign the participant's bound side only while state.lifecycle is playing and no winner exists; this ends the current round but keeps the experience open for the post-round choice.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "game.restart_round": {
+      "description": "Start a new round with the accepted role binding only when state.lifecycle is round_finished.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "game.finish_experience": {
+      "description": "End this match series only when state.lifecycle is round_finished; this commits the series result but does not claim to close the operating-system window.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  "stances": [
+    "spectator",
+    "participant"
+  ],
+  "situationKinds": [
+    "action_availability/v1",
+    "grid/v1",
+    "choice/v1"
+  ]
+}
