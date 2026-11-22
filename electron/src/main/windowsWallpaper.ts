@@ -10,7 +10,7 @@ type HelperSession = { process: ChildProcess; ready: Promise<void>; done: Promis
 export type WindowsWallpaperStatus = 'preparing' | 'mounting' | 'active' | 'restoring' | 'idle'
 type WallpaperDependencies = {
   prepare: () => Promise<void>
-  launch: (url: string) => HelperSession
+  launch: (url: string, target?: string) => HelperSession
   exited?: (error?: unknown) => void
   status?: (status: WindowsWallpaperStatus) => void
 }
@@ -19,8 +19,8 @@ type WallpaperDependencies = {
 // starts/stops. Serialize duplicate ready events, explicit stops and shutdown.
 export class WindowsWallpaperSession {
   private tail: Promise<unknown> = Promise.resolve()
-  private current: { url: string; helper: HelperSession } | null = null
-  private pending: { url: string; result: Promise<void> } | null = null
+  private current: { url: string; target?: string; helper: HelperSession } | null = null
+  private pending: { url: string; target?: string; result: Promise<void> } | null = null
   private dependencies: WallpaperDependencies
 
   constructor(dependencies: WallpaperDependencies) { this.dependencies = dependencies }
@@ -33,16 +33,16 @@ export class WindowsWallpaperSession {
     return result
   }
 
-  start(url: string): Promise<void> {
-    if (this.pending?.url === url) return this.pending.result
+  start(url: string, target?: string): Promise<void> {
+    if (this.pending?.url === url && this.pending.target === target) return this.pending.result
     const result = this.enqueue(async () => {
-      if (this.current?.url === url) return
+      if (this.current?.url === url && this.current.target === target) return
       await this.stopCurrent()
       this.dependencies.status?.('preparing')
       await this.dependencies.prepare()
       this.dependencies.status?.('mounting')
-      const helper = this.dependencies.launch(url)
-      this.current = { url, helper }
+      const helper = this.dependencies.launch(url, target)
+      this.current = { url, target, helper }
       try { await helper.ready }
       catch (error) {
         await this.stopCurrent()
@@ -58,7 +58,7 @@ export class WindowsWallpaperSession {
       }
       void helper.done.then(() => ended(), ended)
     })
-    this.pending = { url, result }
+    this.pending = { url, target, result }
     // Only an in-flight start is shared. A repaired installation must be able
     // to retry the same URL, and an older attempt must not clear a newer one.
     const settled = () => { if (this.pending?.result === result) this.pending = null }
@@ -170,15 +170,16 @@ export function windowsWallpaperDependencies(projectRoot: string, resourcesPath:
       child.once('error', reject)
       child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Windows wallpaper setup failed: ${detail}`)))
     }),
-    launch: url => {
+    launch: (url, target) => {
       // Keep recovery outside libuv's kill-on-parent-exit Job. Retain the pipes
       // and exit wait so normal shutdown still waits for desktop restoration.
       // A detached venv python.exe can create a console in its interpreter child
       // despite windowsHide. Use the same runtime's windowed sibling when present.
+      // `target` is the GDI device name of the chosen wallpaper display.
       const windowed = path.join(path.dirname(python), 'pythonw.exe')
       const command = process.platform === 'win32' && path.basename(python).toLowerCase() === 'python.exe'
         && fs.existsSync(windowed) ? windowed : python
-      const child = spawn(command, ['-I', '-S', helper, 'run', url], {
+      const child = spawn(command, ['-I', '-S', helper, 'run', url, ...(target ? [target] : [])], {
         detached: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
       })
       let resolveReady: () => void

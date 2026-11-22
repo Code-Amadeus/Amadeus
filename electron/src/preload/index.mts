@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   getBackendStartupFailure: (): Promise<BackendStartupFailure | null> => ipcRenderer.invoke('backend-startup.failure'),
   recoverCharacterStartup: (): Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }> => ipcRenderer.invoke('backend-startup.recover-character'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
+  getWallpaperMonitors: (): Promise<{ monitors: Array<{ monitor: string; label: string; primary: boolean }> }> => ipcRenderer.invoke('wallpaper-monitors.get'),
   getDesktopTheme: (): Promise<DesktopThemeState | null> => ipcRenderer.invoke('desktop-theme.get'),
   onDesktopThemeChanged: (listener: () => void): (() => void) => {
     const handler = () => listener()

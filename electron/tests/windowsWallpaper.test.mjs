@@ -64,6 +64,12 @@ else:
       assert.equal(path.resolve(observed.executable), path.resolve(helperPython))
       assert.equal(path.resolve(observed.file), path.join(helperDir, 'helper.py'))
       assert.deepEqual(observed.args, ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html'])
+      const targeted = dependencies.launch('http://127.0.0.1:1234/wallpaper/lively/index.html', '\\\\.\\DISPLAY2')
+      await targeted.ready
+      targeted.process.stdin.end()
+      await targeted.done
+      assert.deepEqual(JSON.parse(await fs.readFile(trace, 'utf8')).args,
+        ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html', '\\\\.\\DISPLAY2'])
     } finally { await fs.rm(root, { recursive: true, force: true }) }
   })
 }
@@ -82,8 +88,8 @@ function fixture() {
   let mount
   const session = new WindowsWallpaperSession({
     prepare: async () => { events.push('prepare') },
-    launch: url => {
-      events.push(`launch ${url}`)
+    launch: (url, target) => {
+      events.push(['launch', url, target].filter(value => value !== undefined).join(' '))
       let restored
       return {
         process: { stdin: { end: () => { events.push('restore'); restored() } } },
@@ -130,6 +136,33 @@ test('a changed bridge restores the previous session before mounting again', asy
   await second
   await f.session.stop()
   assert.deepEqual(f.events, ['prepare', 'launch one', 'restore', 'prepare', 'launch two', 'restore'])
+})
+
+test('start with an unchanged display reuses the in-flight mount', async () => {
+  const f = fixture()
+  const first = f.session.start('one', 'display-a')
+  assert.equal(first, f.session.start('one', 'display-a'))
+  await new Promise(resolve => setImmediate(resolve))
+  f.mounted()
+  await first
+  await f.session.start('one', 'display-a')
+  await f.session.stop()
+  assert.deepEqual(f.events, ['prepare', 'launch one display-a', 'restore'])
+})
+
+test('a changed wallpaper display restores the previous session before mounting again', async () => {
+  const f = fixture()
+  const first = f.session.start('one', 'display-a')
+  await new Promise(resolve => setImmediate(resolve))
+  f.mounted()
+  await first
+  const second = f.session.start('one', 'display-b')
+  await new Promise(resolve => setImmediate(resolve))
+  f.mounted()
+  await second
+  await f.session.stop()
+  assert.deepEqual(f.events, ['prepare', 'launch one display-a', 'restore',
+    'prepare', 'launch one display-b', 'restore'])
 })
 
 test('mount failure waits for cleanup and remains visible to the caller', async () => {

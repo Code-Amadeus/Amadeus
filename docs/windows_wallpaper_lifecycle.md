@@ -60,8 +60,13 @@ The underlying Windows picture/slideshow is left intact. The original browser
 is selected before recreating the previous Lively scene; its image-update
 options are restored afterwards.
 
-In per-monitor mode only the primary display is taken over. Existing span or
-duplicate arrangements are preserved. Restoration uses monitor device IDs and
+In per-monitor mode only one display is taken over: the primary display by
+default, or the display the user picked in Settings
+(`AMADEUS_WALLPAPER_MONITOR`, a GDI device name such as `\\.\DISPLAY2`). An
+explicit choice is resolved against both Lively's screen list and Electron's
+display list before mounting; a missing or ambiguous match is reported and no
+other display is taken over. Existing span or duplicate arrangements are
+preserved. Restoration uses monitor device IDs and
 the original Lively project, not a screenshot of its last frame. It does not
 attempt to restore a video's exact playback timestamp.
 

@@ -686,6 +686,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [notice, setNotice] = useState('')
   const [visionWindows, setVisionWindows] = useState<VisionWindowItem[]>([])
   const [visionWindowsLoading, setVisionWindowsLoading] = useState(false)
+  const [wallpaperMonitors, setWallpaperMonitors] = useState<Array<{ monitor: string; label: string; primary: boolean }>>([])
 
   useLayoutEffect(() => { scrollArea.current?.scrollTo({ top: 0 }) }, [section, characterTab, modelsPage])
   useEffect(() => { if (presentation === 'settings') window.localStorage.setItem('amadeus.settings.section', section) }, [section, presentation])
@@ -734,6 +735,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   useEffect(() => {
     setRestartPending(Boolean(desktop?.restartRequired))
   }, [desktop?.restartRequired])
+
+  useEffect(() => {
+    let active = true
+    if (section !== 'general' || desktop?.platform !== 'win32' || !window.amadeus?.getWallpaperMonitors) return undefined
+    window.amadeus.getWallpaperMonitors()
+      .then(result => { if (active) setWallpaperMonitors(result?.monitors || []) })
+      .catch(() => { if (active) setWallpaperMonitors([]) })
+    return () => { active = false }
+  }, [section, desktop?.platform])
 
   const handleChange = useCallback(async (key: string, value: unknown) => {
     setSaving(key)
@@ -1352,7 +1362,19 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
               <div className="flex flex-col gap-5">
                 {desktop?.platform === 'win32' ? (
                   <SettingsGroup title={startupConfiguration.label} detail={startupConfiguration.description}>
-                    {startupConfiguration.fields.map(field => field.options ? <ComboCard key={field.key} icon="Setting" title={field.label}
+                    {startupConfiguration.fields.map(field => field.key === 'AMADEUS_WALLPAPER_MONITOR' ? (
+                      <ComboCard key={field.key} icon="Video" title={field.label}
+                        content={desktop.locked?.[field.key] ? 'Wallpaper display is controlled by your launch environment.' : field.description || ''}
+                        value={String(field.value ?? '')} disabled={saving === field.key || desktop.locked?.[field.key]}
+                        options={optionsWithCurrentValue([
+                          { value: '', label: 'Primary display (default)' },
+                          ...wallpaperMonitors.map(item => ({ value: item.monitor, label: item.label })),
+                        ], String(field.value ?? ''))} onChange={value => {
+                          void handleStartupSave(field, value, false)
+                            .then(() => setNotice('Wallpaper display saved; it applies to the next wallpaper session.'))
+                            .catch(() => { /* handleStartupSave displays the save error. */ })
+                        }} />
+                    ) : field.options ? <ComboCard key={field.key} icon="Setting" title={field.label}
                       content={desktop.locked?.[field.key] ? 'Startup mode is controlled by your launch environment.' : field.description || ''}
                       value={String(field.value ?? '')} disabled={saving === field.key || desktop.locked?.[field.key]}
                       options={field.value === undefined ? [{ value: '', label: 'Unknown' }, ...field.options] : field.options} onChange={value => {

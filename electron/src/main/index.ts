@@ -27,6 +27,7 @@ import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { enumerateWindowsWallpaperMonitors, resolveWallpaperTargetDisplay, WALLPAPER_MONITOR_SETTING, wallpaperMonitorOptions, wallpaperMonitorTarget, wallpaperTargetProblem, windowsWallpaperHelperScript } from './wallpaperTarget.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { markBackendCleanupUnconfirmed, prepareBackendCleanup, resolveBackendProjectRoot, stopOwnedBackend, verifyPreviousBackendCleanup } from './backendProcessTree.js'
@@ -734,8 +735,20 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   }
 }
 
+// The chosen wallpaper display is pinned for the whole session so every
+// wallpaper surface follows one identity. Without a choice the primary
+// display is used, exactly as before.
+let wallpaperSessionDisplayId: number | null = null
+
+function wallpaperDisplay(): Electron.Display {
+  if (wallpaperSessionDisplayId === null) return screen.getPrimaryDisplay()
+  const display = screen.getAllDisplays().find(candidate => candidate.id === wallpaperSessionDisplayId)
+  if (!display) throw new Error('The wallpaper display is no longer connected.')
+  return display
+}
+
 function electronSliceBounds(): Electron.Rectangle {
-  const display = screen.getPrimaryDisplay()
+  const display = wallpaperDisplay()
   const displayBounds = display.bounds
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     return displayBounds
@@ -744,7 +757,7 @@ function electronSliceBounds(): Electron.Rectangle {
 }
 
 function electronCanvasBounds(): Electron.Rectangle {
-  const displayBounds = screen.getPrimaryDisplay().bounds
+  const displayBounds = wallpaperDisplay().bounds
   const left = Math.floor(displayBounds.x + displayBounds.width * electronSliceLayout.x)
   const top = Math.floor(displayBounds.y + displayBounds.height * electronSliceLayout.y)
   const right = Math.ceil(left + displayBounds.width * electronSliceLayout.width)
@@ -983,12 +996,18 @@ function startElectronSliceDesktopMonitor(window: BrowserWindow): void {
 }
 
 function updateElectronSliceBounds(): void {
-  if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
-    electronSliceWindow.setBounds(electronSliceBounds(), false)
-  }
-  const canvasWindow = electronCanvasLifecycle.window
-  if (canvasWindow && !canvasWindow.isDestroyed()) {
-    canvasWindow.setBounds(electronCanvasBounds(), false)
+  try {
+    if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
+      electronSliceWindow.setBounds(electronSliceBounds(), false)
+    }
+    const canvasWindow = electronCanvasLifecycle.window
+    if (canvasWindow && !canvasWindow.isDestroyed()) {
+      canvasWindow.setBounds(electronCanvasBounds(), false)
+    }
+  } catch (error) {
+    // The chosen wallpaper display disappeared: end the managed session
+    // instead of sliding its surfaces onto another display.
+    void handleWindowsWallpaperHostExit(error)
   }
 }
 
@@ -1003,6 +1022,7 @@ function closeElectronSliceWindow(): void {
   electronSlicePlacementReady = false
   electronSliceShape = null
   electronSliceDocumentLoaded = false
+  wallpaperSessionDisplayId = null
 }
 
 function createElectronSliceWindow(rawBridge: unknown): boolean {
@@ -1146,14 +1166,13 @@ function workGlowUrl(): string {
 }
 
 function workOverlayBounds() {
-  const display = screen.getPrimaryDisplay()
-  return display.bounds
+  return wallpaperDisplay().bounds
 }
 
 function workSlicePanelBounds() {
   if (workOverlayPanelBounds) return workOverlayPanelBounds
 
-  const { x, y, width, height } = screen.getPrimaryDisplay().bounds
+  const { x, y, width, height } = wallpaperDisplay().bounds
   const panelWidth = Math.min(1500, Math.max(1120, width * 0.39))
   const panelHeight = Math.min(1070, Math.max(800, width * 0.2786))
   return {
@@ -1165,8 +1184,13 @@ function workSlicePanelBounds() {
 }
 
 function workOverlayActiveHitRegions(): Electron.Rectangle[] {
-  const regions = workOverlayHitRegions.length > 0 ? workOverlayHitRegions : [workSlicePanelBounds()]
-  return regions
+  try {
+    return workOverlayHitRegions.length > 0 ? workOverlayHitRegions : [workSlicePanelBounds()]
+  } catch {
+    // A gone wallpaper display tears the session down concurrently; the hit
+    // test must not crash on the last recorded regions meanwhile.
+    return workOverlayHitRegions
+  }
 }
 
 function setWorkOverlayMousePassthrough(ignore: boolean): void {
@@ -2221,6 +2245,21 @@ ipcMain.handle('desktop-theme.get', async event => {
   await extensionInstaller.refreshValidation()
   return extensionInstaller.themeState()
 })
+ipcMain.handle('wallpaper-monitors.get', async event => {
+  if (!isTrustedBackendRenderer(event.sender)) return { monitors: [] }
+  if (process.platform !== 'win32' || !windowsWallpaper) return { monitors: [] }
+  try {
+    const monitors = await enumerateWindowsWallpaperMonitors(getPythonCommand(),
+      windowsWallpaperHelperScript(PROJECT_ROOT, process.resourcesPath, app.isPackaged))
+    return {
+      monitors: wallpaperMonitorOptions(monitors, screen.getAllDisplays(),
+        display => screen.dipToScreenRect(null, display.bounds)),
+    }
+  } catch (error) {
+    console.error('[windows-wallpaper] display enumeration failed:', error)
+    return { monitors: [] }
+  }
+})
 ipcMain.handle('window-theme.set', (event, theme: unknown) => {
   if (!isTrustedBackendRenderer(event.sender)) return false
   return setMainWindowTheme(theme)
@@ -2542,7 +2581,27 @@ ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
     const descriptor = normalizeWallpaperBridge(bridge)
     if (!descriptor) return false
     try {
-      await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`)
+      const target = wallpaperMonitorTarget(
+        (desktopSettings.snapshot(process.env).startupValues as Record<string, string> | undefined)
+          ?.[WALLPAPER_MONITOR_SETTING])
+      let sessionDisplayId: number | null = null
+      if (target) {
+        // An explicit choice resolves to exactly one display or the session
+        // never mounts: no silent takeover of another monitor.
+        const monitors = await enumerateWindowsWallpaperMonitors(getPythonCommand(),
+          windowsWallpaperHelperScript(PROJECT_ROOT, process.resourcesPath, app.isPackaged))
+        const resolution = resolveWallpaperTargetDisplay(target, monitors, screen.getAllDisplays(),
+          display => screen.dipToScreenRect(null, display.bounds))
+        if (resolution.status !== 'resolved') {
+          throw new Error(wallpaperTargetProblem(resolution.status, target))
+        }
+        sessionDisplayId = resolution.display.id
+      }
+      // Each open re-pins the session display once its choice resolves; a
+      // cleared choice falls back to the primary display instead of reusing a
+      // stale session display.
+      wallpaperSessionDisplayId = sessionDisplayId
+      await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`, target)
     } catch (error) {
       await handleWindowsWallpaperHostExit(error)
       console.error('[windows-wallpaper] start failed:', error)
@@ -2798,7 +2857,7 @@ ipcMain.handle('work-overlay.set-mouse-ignore', (event, ignore: boolean) => {
 ipcMain.handle('work-overlay.set-panel-bounds', (event, bounds: Electron.Rectangle) => {
   if (!isWorkPanelRenderer(event.sender)) return false
   if (!bounds) return false
-  const display = screen.getPrimaryDisplay().bounds
+  const display = wallpaperDisplay().bounds
   const next = {
     x: Math.round(display.x + Number(bounds.x || 0)),
     y: Math.round(display.y + Number(bounds.y || 0)),
@@ -2813,7 +2872,7 @@ ipcMain.handle('work-overlay.set-panel-bounds', (event, bounds: Electron.Rectang
 ipcMain.handle('work-overlay.set-hit-regions', (event, boundsList: Electron.Rectangle[]) => {
   if (!isWorkPanelRenderer(event.sender)) return false
   if (!Array.isArray(boundsList)) return false
-  const display = screen.getPrimaryDisplay().bounds
+  const display = wallpaperDisplay().bounds
   const next = boundsList
     .map(bounds => ({
       x: Math.round(display.x + Number(bounds.x || 0)),

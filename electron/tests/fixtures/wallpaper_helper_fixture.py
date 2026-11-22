@@ -43,6 +43,9 @@ class FixtureHost:
     def primary_monitor(self):
         return "primary"
 
+    def resolve_monitor(self, target=None):
+        return target or "primary"
+
     def get_options(self):
         return self.options
 
