@@ -150,3 +150,35 @@ Their values remain in the provider process environment and are not written into
 command-line overrides. Only names explicitly configured on that connection are
 added; this does not restore arbitrary Host-environment forwarding. HTTP
 connections and their bearer-token binding are unchanged.
+
+## Codex native thread release
+
+Each Codex Work opens a native App Server thread, and a loaded thread owns the
+MCP runtime spawned for the connections bound to Codex above. That ownership is
+exclusive: a second owner created while the first is still loaded sees the bound
+data root as still in use. A Work therefore treats the native thread as the
+release unit. When the Work's last dependent Host run ends — on completion,
+cancellation, timeout or error — the adapter sends `thread/unsubscribe`, the
+managed `thread_unload_delay_secs=0` lets the App Server retire the thread and
+settle its MCP runtime, and `thread/loaded/list` confirms the unload before
+another Work may open an owner of the same connection. Thread open and release
+confirmation share one adapter critical section, so sequential Work can never
+bind the connection while teardown is unconfirmed.
+
+The outcome is reported in each run's `metadata.codex.thread_release` and a
+`native.release` event as `released`, `release_unconfirmed`, `release_failed`,
+`shared` (a sibling run still depends on the thread), `retained` (a turn whose
+submission acknowledgement was lost is never torn down), or `unsupported`
+(injected clients without the release API). These are cleanup facts that remain
+distinct from the business `done`/`cancelled`/`error` result: a terminal model
+turn alone is never treated as cleanup proof, and a failed release never
+overwrites a completed turn's outcome. An explicit session resume simply opens
+the thread again; a confirmed release means it reloads cleanly.
+
+The teardown ordering boundary is explicit. The App Server alone owns how its
+MCP children and any applications they launched exit; the Host performs only
+protocol release and never reaches into the server process tree, kills
+descendants, deletes locks, replays input, or fabricates cleanup records. Where
+the App Server's unload is abrupt, `thread_release=released` still reports only
+that ownership was released — the absence of graceful server-side cleanup
+remains upstream behavior, not a fabricated success.
