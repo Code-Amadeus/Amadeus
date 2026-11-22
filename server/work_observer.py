@@ -39,6 +39,14 @@ from server.work_narration_governor import (
 
 logger = logging.getLogger(__name__)
 
+# Speech receipts that prove a line reached the person.  The Observer's own
+# narration enqueue returns queued/queued_legacy_sink; a foreground_published
+# receipt means the Cooperative Chat turn's role publisher already carried the
+# reply through display, history, and voice on the active turn.
+_DELIVERED_SPEECH_STATUSES = frozenset(
+    {"queued", "queued_legacy_sink", "foreground_published"}
+)
+
 
 @dataclass(slots=True)
 class ObserverSession:
@@ -107,10 +115,10 @@ class ObserverSession:
         for decision in reversed(self.decisions):
             if decision.get("speak") is not True:
                 continue
-            if str(decision.get("speech_status") or "").strip().lower() not in {
-                "queued",
-                "queued_legacy_sink",
-            }:
+            if (
+                str(decision.get("speech_status") or "").strip().lower()
+                not in _DELIVERED_SPEECH_STATUSES
+            ):
                 continue
             text = str(
                 decision.get("display_text")
@@ -137,7 +145,7 @@ class ObserverSession:
         return any(
             decision.get("speak") is True
             and str(decision.get("speech_status") or "").strip().lower()
-            in {"queued", "queued_legacy_sink"}
+            in _DELIVERED_SPEECH_STATUSES
             and expected.intersection(
                 str(value)
                 for value in decision.get("narration_keypoints") or []
@@ -422,7 +430,7 @@ class WorkObserverCoordinator:
         session.add_decision(
             {
                 **decision,
-                "speak": speech_status in {"queued", "queued_legacy_sink"},
+                "speak": speech_status in _DELIVERED_SPEECH_STATUSES,
                 "speech_status": speech_status,
             }
         )
