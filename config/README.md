@@ -209,6 +209,11 @@ startup environment.
 default. The 30 FPS fast-transition timing tradeoff remains opt-in. Changing
 sampling requires a backend restart and reopening render surfaces.
 
+`RENDER_POSE_FADE_MS` (default 200) cross-fades the displayed frame into the
+next clip whenever the pose graph has no authored transition for the switch —
+the post-speech pose release back to idle is the common case. `0` restores
+the previous hard cut. Reopen render surfaces after changing it.
+
 Migration from an older `.env.example`: an existing
 `RENDER_TEXTURE_SAMPLING=false` remains an explicit override, even if it was
 copied from that template. Remove/comment that line to use the new startup

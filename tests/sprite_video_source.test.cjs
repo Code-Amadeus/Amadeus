@@ -64,6 +64,7 @@ function fixture(t, { sampling = true, fps = 30, auto = true } = {}) {
     app: { ticker, screen: { width: 1000, height: 800 }, renderer: {} },
     renderBudget: budget.resolveRenderBudget({ maxFps: fps, textureSampling: sampling }),
     frameRateController: controller,
+    poseFadeMs: 0,
     Math: seededMath,
     PIXI: { Container: Display, Sprite: Display, Graphics: Display, Texture: { EMPTY: { height: 1 } } },
     window: { RenderBudget: budget, FrameTextureBackend: { createFrameTextureBackend: () => backend },

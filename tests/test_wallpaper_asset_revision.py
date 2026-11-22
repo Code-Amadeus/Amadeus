@@ -135,6 +135,7 @@ def test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
         "graphicsProfile": [wallpaper_engine_bridge.GRAPHICS_PROFILE],
         "renderMaxFps": [str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_FPS)],
         "renderTextureSampling": [str(int(wallpaper_engine_bridge.RENDER_TEXTURE_SAMPLING))],
+        "renderPoseFadeMs": [str(wallpaper_engine_bridge.RENDER_POSE_FADE_MS)],
         "bridgePort": ["17797"],
         "sliceHost": ["electron"],
     }

@@ -296,6 +296,7 @@ type WallpaperBridgeDescriptor = {
   renderMaxFps: number
   renderTextureSampling: boolean
   renderMaxResolution: number | null
+  renderPoseFadeMs: number | null
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
 
@@ -698,6 +699,9 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   const renderMaxResolution = value.renderMaxResolution == null
     ? null
     : Number(value.renderMaxResolution)
+  const renderPoseFadeMs = value.renderPoseFadeMs == null
+    ? null
+    : Number(value.renderPoseFadeMs)
   if (
     assetPort < 0
     || bridgePort < 0
@@ -730,6 +734,9 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     renderMaxFps,
     renderTextureSampling: value.renderTextureSampling === true,
     renderMaxResolution,
+    renderPoseFadeMs: renderPoseFadeMs !== null && Number.isFinite(renderPoseFadeMs) && renderPoseFadeMs >= 0
+      ? renderPoseFadeMs
+      : null,
     sliceBounds,
   }
 }
@@ -762,6 +769,9 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
   })
   if (bridge.renderMaxResolution !== null) {
     query.set('renderMaxResolution', String(bridge.renderMaxResolution))
+  }
+  if (bridge.renderPoseFadeMs !== null) {
+    query.set('renderPoseFadeMs', String(bridge.renderPoseFadeMs))
   }
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     query.set('host', 'electron')

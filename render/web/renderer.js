@@ -32,6 +32,15 @@
     textureSampling: renderParams.get("renderTextureSampling"),
     devicePixelRatio: window.devicePixelRatio,
   });
+  // Cross-fade applied when a clip change has no authored transition clip —
+  // the post-speech pose release back to idle is the common case. 0 keeps the
+  // previous hard cut; absent/invalid values fall back to the 200 ms default.
+  const poseFadeMs = (() => {
+    const raw = renderParams.get("renderPoseFadeMs");
+    if (raw === null || raw === "") return 200;
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.min(2000, Math.max(0, value)) : 200;
+  })();
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
@@ -59,6 +68,15 @@
       this.sprite = new PIXI.Sprite();
       this.sprite.anchor.set(0.5, 1.0);  // Bottom-center alignment
       this.container.addChild(this.sprite);
+
+      // Outgoing-pose overlay: dissolves the previously displayed frame above
+      // the incoming clip while setEmotion has no authored transition frames.
+      this._poseFadeMs = poseFadeMs;
+      this._poseFade = null;
+      this._poseFadeSprite = new PIXI.Sprite();
+      this._poseFadeSprite.anchor.set(0.5, 1.0);
+      this._poseFadeSprite.visible = false;
+      this.container.addChild(this._poseFadeSprite);
 
       /** emotion → PIXI.Texture[] */
       this._frames = {};
@@ -158,6 +176,7 @@
         this._videoFrozenHold = false;
         this._releaseVideoDisplay();
         this._releaseFrameVideoSource();
+        this._endPoseFade();
         this._mouthOverlay.texture = PIXI.Texture.EMPTY;
         this._hideMouthLayer();
         this._transitionQueue = [];
@@ -368,8 +387,10 @@
       this._refreshTextureDemand();
 
       if (transFrames && transFrames.length > 0) {
+        this._endPoseFade();
         this._playTransition(transFrames, () => this._showFrame(0));
       } else {
+        this._beginPoseFade();
         this._showFrame(0);
       }
     }
@@ -992,6 +1013,9 @@
       let tickCount = 0;
       app.ticker.add((delta) => {
         tickCount++;
+        // A fading release overlay owns real time even while the frame loop is
+        // held or idle animation is paused; it must never freeze on screen.
+        this._advancePoseFade();
         if (tickCount % 180 === 1) {  // ~every 3s at 60fps
           console.log("[SpriteRenderer] ticker alive: tick=%d, iAE=%s, held=%s, tq=%d, emo=%s, fidx=%d, intv=%d, deltaMS=%d",
             tickCount, this._idleAnimationEnabled, this._held, this._transitionQueue.length,
@@ -1083,6 +1107,61 @@
         this._cycleCompleteHandler(emotion);
       } catch (e) {
         console.warn("[SpriteRenderer] cycle handler failed:", e);
+      }
+    }
+
+    // ---- Pose release cross-fade ----
+
+    // Dissolve the outgoing displayed frame over the first frames of the new
+    // clip. The pose graph has no release clips (pose -> idle jumps), so the
+    // renderer blends what is already on screen instead of cutting.
+    _beginPoseFade() {
+      const texture = this.sprite.texture;
+      this._endPoseFade();
+      if (!this._poseFadeMs || !this._isTextureReady(texture)) return;
+      // The outgoing frame leaves the displayed window as soon as the new
+      // clip's first texture applies; pin or retain it for the fade window.
+      const video = this._videoDisplay && this._videoDisplay.texture === texture
+        ? this._videoDisplay.source : null;
+      if (video) {
+        try { video.retainDisplay(texture); }
+        catch { return; }
+      } else {
+        const url = this._textureUrls.get(texture);
+        if (!url) return;
+        this._frameStore.replacePins("pose-fade", [url]);
+      }
+      const overlay = this._poseFadeSprite;
+      overlay.texture = texture;
+      overlay.x = this.sprite.x;
+      overlay.y = this.sprite.y;
+      overlay.scale.set(this.sprite.scale.x, this.sprite.scale.y);
+      overlay.alpha = 1;
+      overlay.visible = true;
+      this._poseFade = { texture, video, elapsed: 0 };
+    }
+
+    _advancePoseFade() {
+      const fade = this._poseFade;
+      if (!fade) return;
+      fade.elapsed += Math.min(app.ticker.deltaMS, 100);
+      const t = Math.min(1, fade.elapsed / this._poseFadeMs);
+      this._poseFadeSprite.alpha = 1 - t * t * (3 - 2 * t);  // smoothstep fade-out
+      if (t >= 1) this._endPoseFade();
+    }
+
+    _endPoseFade() {
+      const fade = this._poseFade;
+      if (!fade) return;
+      this._poseFade = null;
+      const overlay = this._poseFadeSprite;
+      overlay.visible = false;
+      overlay.alpha = 1;
+      overlay.texture = PIXI.Texture.EMPTY;
+      this._frameStore.replacePins("pose-fade", []);
+      if (fade.video) {
+        try { fade.video.releaseDisplay(fade.texture); }
+        catch { /* the released clip may already be gone */ }
       }
     }
 

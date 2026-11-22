@@ -19,7 +19,7 @@ function setup(fps = 30, textureSampling = true) {
     load:async(url)=>{loads.push(url);return {texture:{url,height:100,width:100,baseTexture:{valid:true}},cpuBytes:40000,gpuBytes:40000};},
   };
   const context = { app:{ticker}, graphicsProfile:'standard', frameRateController:{effectiveMaxFps:fps},
-    renderBudget:budget.resolveRenderBudget({maxFps:fps,textureSampling}), PIXI:{Container:Display,Sprite:Display,Graphics:Display},
+    renderBudget:budget.resolveRenderBudget({maxFps:fps,textureSampling}), poseFadeMs:0, PIXI:{Container:Display,Sprite:Display,Graphics:Display},
     window:{RenderBudget:budget,FrameStore:require('../render/web/frame_store.js'),
       FrameTextureBackend:{createFrameTextureBackend:()=>backend},addEventListener(){}},
     console:{log(){},warn(){},error(){}},setTimeout,clearTimeout };

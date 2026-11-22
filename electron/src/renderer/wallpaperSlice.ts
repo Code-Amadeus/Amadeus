@@ -13,6 +13,9 @@ export async function syncElectronSliceHost(payload: Record<string, unknown>): P
     renderMaxResolution: payload.renderMaxResolution == null
       ? null
       : Number(payload.renderMaxResolution),
+    renderPoseFadeMs: payload.renderPoseFadeMs == null
+      ? null
+      : Number(payload.renderPoseFadeMs),
     sliceBounds: payload.sliceBounds && typeof payload.sliceBounds === 'object'
       ? payload.sliceBounds as { x: number; y: number; width: number; height: number }
       : undefined,

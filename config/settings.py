@@ -583,6 +583,11 @@ RENDER_TEXTURE_SAMPLING: bool = read_catalog_environment(
     _ENV, computed_defaults={"RENDER_TEXTURE_SAMPLING": RENDER_EFFECTIVE_MAX_FPS == 60},
 )["RENDER_TEXTURE_SAMPLING"]
 
+# Cross-fade applied when a clip change has no authored transition clip; the
+# post-speech pose release back to idle is the common case. 0 keeps the
+# previous hard cut. Applies to render surfaces opened after the change.
+RENDER_POSE_FADE_MS = _int("RENDER_POSE_FADE_MS", 200)
+
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.
 WALLPAPER_SFX_GATE_LOG = _bool("WALLPAPER_SFX_GATE_LOG", False)
