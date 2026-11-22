@@ -52,7 +52,8 @@ class FakeHost:
         return list(self.items if self.reported is None else self.reported)
 
     def unlisted_players(self, project, reported):
-        return sum(h.same_path(x.Path, project) for x in self.items) > sum(h.same_path(x.Path, project) for x in reported)
+        return (sum(h.same_path(x.Path, project) for x in self.items) > sum(h.same_path(x.Path, project) for x in reported)
+                or len(self.items) > len(reported))
 
     def set_wallpaper(self, wallpaper, request_settled=None, request_dispatching=None):
         if request_dispatching:
@@ -198,6 +199,31 @@ def test_omitted_mounted_scene_is_not_a_user_clear_or_permission_to_replace_it(f
     host.reported = None
     session.restore()
     assert host.items == [h.DesktopItem("primary", "old")] and not session.journal.exists()
+
+
+def test_empty_report_is_not_a_before_image_while_a_scene_is_live(f):
+    host, session = f
+    host.items = [h.DesktopItem("primary", "user-scene")]
+    snapshot = h.Snapshot("amadeus", "primary", host.options, [], host.running)
+    assert isinstance(failure(lambda: session.mount(snapshot)), OSError)
+    session.release_unstarted_host(host.running)
+    assert host.set_calls == 0 and host.stopped is None and not session.journal.exists()
+
+
+def test_omitted_live_scene_is_not_proof_of_a_cleared_desktop(f):
+    host, session = f
+    owned = h.ProcessIdentity(10, 20)
+    original(host)
+    session.mount(before(host, owned))
+    host.set_wallpaper(h.DesktopItem("primary", "user-new"))
+    # The user's scene is still playing but Lively's report omits every row.
+    host.reported = []
+    assert isinstance(failure(session.restore), OSError)
+    assert not host.closed and host.stopped is None and session.journal.exists()
+    host.reported = None
+    h.Session(host, session.journal).restore()
+    assert host.items == [h.DesktopItem("primary", "user-new")]
+    assert host.stopped is None and not session.journal.exists()
 
 
 def test_incomplete_before_image_cannot_acquire_or_shut_down_host(f):
@@ -819,10 +845,10 @@ def native_players(tmp_path, monkeypatch):
     monkeypatch.setattr(windows, "processes", lambda: (p for p in processes() if p[0] in players))
     # /K REM accepts the same quoted arguments as Lively's wrapper and stays
     # alive on the test's pipe. No Lively instance or desktop is involved.
-    def launch(display):
+    def launch(display, url="http://127.0.0.1:50123/wallpaper/lively/index.html"):
         child = subprocess.Popen(
             [str(wrapper), "/D", "/Q", "/K", "REM", "--wallpaper-url",
-             "http://127.0.0.1:50123/wallpaper/lively/index.html", "--wallpaper-display", display],
+             url, "--wallpaper-display", display],
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -884,6 +910,14 @@ def test_span_primary_change_allows_close_and_restores_previous_scene(f, native_
     session.restore()
     assert host.closed == ["amadeus"] and host.items == [previous]
     assert host.stopped is None and not session.journal.exists()
+
+
+@native
+def test_any_player_without_a_registry_row_vetoes_the_whole_report(native_players):
+    observer, launch = native_players
+    launch("primary", url="https://example.invalid/user-scene")
+    assert observer.unlisted_players("amadeus", [])
+    assert not observer.unlisted_players("amadeus", [h.DesktopItem("primary", "user-scene")])
 
 
 @native

@@ -261,8 +261,8 @@ class Session:
                     raise
             else:
                 if time.monotonic() >= deadline:
-                    raise OSError("Lively reports fewer entries for this project than running Amadeus wallpaper "
-                                  "players. Retry when the scene list and player count agree.")
+                    raise OSError("Lively reports fewer wallpaper entries than running players; the list is "
+                                  "incomplete. Retry when the scene list and player count agree.")
             time.sleep(0.1)
             reported = self.host.get_wallpapers()
 
@@ -585,8 +585,9 @@ class Windows:
         finally:
             self.close(handle)
 
-    def managed_player_count(self) -> int:
-        count = 0
+    def player_counts(self) -> tuple[int, int]:
+        """Same-session WebView2 players: (all, running the Amadeus URL)."""
+        players = managed = 0
         for pid in self.session_processes("lively.player.webview2.exe"):
             args = self.player_argv(pid)
             if not args:
@@ -595,9 +596,10 @@ class Windows:
             urls = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--wallpaper-url"]
             if len(urls) != 1:
                 raise OSError("Cannot identify the Lively wallpaper player; recovery not confirmed.")
+            players += 1
             if managed_url(urls[0]):
-                count += 1
-        return count
+                managed += 1
+        return players, managed
 
     def image_path(self, handle):
         size, buffer = w.DWORD(32768), ctypes.create_unicode_buffer(32768)
@@ -986,7 +988,12 @@ class LivelyHost:
         # A span player can be reassigned to a new primary without relaunch.
         # Its launch display is not its identity. Each reported project row
         # accounts for at most one live player; restoration still checks monitors.
-        return self.windows.managed_player_count() > sum(same_path(x.Path, project) for x in reported)
+        # The same accounting bounds the whole report: a live WebView2 player
+        # always owns a registry row, so more players than rows proves the host
+        # omitted entries. An empty or partial list is then unconfirmed, not
+        # evidence that any scene or its player is gone.
+        players, managed = self.windows.player_counts()
+        return managed > sum(same_path(x.Path, project) for x in reported) or players > len(reported)
 
     def get_screens(self):
         screens = self.rpc.call("Display", "GetScreens")[0]
