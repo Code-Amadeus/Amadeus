@@ -1111,6 +1111,84 @@ def test_explicit_status_query_reuses_the_existing_narrator_and_attempt_context(
     asyncio.run(scenario())
 
 
+def test_status_query_foreground_delivery_joins_spoken_update_context() -> None:
+    async def scenario() -> None:
+        from server import task_lookup
+
+        captured: list[dict] = []
+
+        async def narrator(**kwargs) -> dict:
+            captured.append(kwargs)
+            return {
+                "action": "speak",
+                "display_text": "已经运行了大约十分钟，还在等新的进展。",
+                "speak": True,
+            }
+
+        observer = WorkObserverCoordinator()
+        observer._observer_llm = narrator
+        observer._get_display_language = lambda: "simplified_chinese"
+        session = ObserverSession(
+            narration_id="work:work-status:attempt:attempt-status",
+            run_id="run-status",
+            session_id="session-status",
+            provider="future_provider",
+            work_item_id="work-status",
+            attempt_id="attempt-status",
+        )
+        observer._sessions[session.narration_id] = session
+        note = task_lookup.status_query_narration_note(
+            {
+                "work_item_id": "work-status",
+                "attempt_id": "attempt-status",
+                "title": "Adapt the board to AUIP",
+                "execution": "running",
+                "activity_phase": "working",
+                "completion": "unknown",
+                "attention": "none",
+            },
+            session_id="session-status",
+        )
+
+        decision = await observer.compose_status_query_reply(note)
+        assert decision is not None
+        # The Cooperative Chat foreground turn owns display/history/voice for
+        # the reply, so the delivery arrives as foreground_published rather
+        # than a TTS enqueue receipt.  It still proves the person was told
+        # this exact line, so it belongs in the anti-repetition context.
+        observer.record_status_query_delivery(
+            note,
+            decision,
+            {"speech_status": "foreground_published"},
+        )
+        assert session.recent_spoken_updates() == [
+            {
+                "action": "speak",
+                "text": decision["display_text"],
+                "terminal": False,
+            }
+        ]
+
+        # Asking again now carries the earlier answer, so the Narrator can
+        # say nothing changed instead of replaying the same sentence.
+        assert await observer.compose_status_query_reply(note) is not None
+        assert captured[-1]["recent_spoken_updates"][-1]["text"] == (
+            decision["display_text"]
+        )
+
+        # A refused foreground publish never reached the person and must not
+        # be remembered as spoken.
+        refused = await observer.compose_status_query_reply(note)
+        observer.record_status_query_delivery(
+            note,
+            refused,
+            {"speech_status": "suppressed"},
+        )
+        assert len(session.recent_spoken_updates()) == 1
+
+    asyncio.run(scenario())
+
+
 if __name__ == "__main__":
     test_terminal_merge_keeps_three_semantic_milestones_over_mechanics()
     test_same_permission_issue_speaks_once_until_state_changes()
@@ -1124,4 +1202,5 @@ if __name__ == "__main__":
     test_steer_checkpoint_retires_pending_pre_steer_narration()
     test_status_query_uses_only_current_steer_evidence_and_preserves_authority()
     test_explicit_status_query_reuses_the_existing_narrator_and_attempt_context()
+    test_status_query_foreground_delivery_joins_spoken_update_context()
     print("ok: narration prioritises semantic milestones and permission state changes")
