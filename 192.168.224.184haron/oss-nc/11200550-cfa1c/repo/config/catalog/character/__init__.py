@@ -1,1 +1,0 @@
-"""Packaged character setting declarations."""
