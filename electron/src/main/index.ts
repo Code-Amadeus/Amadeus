@@ -25,7 +25,7 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
-import { isWallpaperStartup } from './startupMode.js'
+import { isWallpaperStartup, wantsDraggableSliceControls } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
@@ -317,6 +317,18 @@ function wantsWallpaper(): boolean {
     wallpaperStartup = isWallpaperStartup(process.argv, process.env, process.platform, values.AMADEUS_WINDOWS_STARTUP_MODE)
   }
   return wallpaperStartup
+}
+
+let sliceDraggableControls: boolean | undefined
+function wantsSliceDraggableControls(): boolean {
+  // Resolve once per launch alongside the startup-mode preference; the GUI
+  // flag is a desktop-restart setting.
+  if (sliceDraggableControls === undefined) {
+    const values = desktopSettings.snapshot(process.env).values as Record<string, string>
+    sliceDraggableControls = wantsDraggableSliceControls(process.env, process.platform,
+      values.AMADEUS_WALLPAPER_DRAGGABLE_CONTROLS)
+  }
+  return sliceDraggableControls
 }
 
 // Python backend management.
@@ -737,7 +749,9 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
 function electronSliceBounds(): Electron.Rectangle {
   const display = screen.getPrimaryDisplay()
   const displayBounds = display.bounds
-  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
+  // The draggable-controls layout spans the whole display so the shaped
+  // window can host its controls anywhere on it.
+  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene' || wantsSliceDraggableControls()) {
     return displayBounds
   }
   return electronCanvasBounds()
@@ -769,6 +783,7 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
   }
   if (process.platform === 'win32') query.set('windowsComposer', '1')
+  if (wantsSliceDraggableControls()) query.set('freeControls', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 

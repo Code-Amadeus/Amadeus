@@ -195,6 +195,19 @@ export const catalogGroups: CatalogGroup[] = [
             }
           }
         ]
+      },
+      "AMADEUS_WALLPAPER_DRAGGABLE_CONTROLS": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Draggable wallpaper controls",
+          "zh-CN": "可拖动的壁纸控件"
+        },
+        "default": false,
+        "description": {
+          "en-US": "Optional on Windows: spread the transparent wallpaper controls window across the display so the Work status button and task card can be dragged anywhere on it. Drag a control to move it; right-click it to return to the authored position. Positions are stored in the wallpaper window's local storage.",
+          "zh-CN": "Windows 可选功能：让透明壁纸控件窗口铺满整个显示器，从而可以把 Work 状态按钮和任务卡片拖到屏幕任意位置。拖动控件即可移动，右键控件恢复默认位置。位置保存在壁纸窗口的本地存储中。"
+        },
+        "scope": "desktop"
       }
     }
   },

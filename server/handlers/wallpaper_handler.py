@@ -455,6 +455,7 @@ class WallpaperHandler(RequestHandler):
             "canvasBounds": getattr(host, "canvas_bounds", {}),
             "keyboardInputToggleBounds": getattr(host, "keyboard_input_toggle_bounds", {}),
             "keyboardComposerBounds": getattr(host, "keyboard_composer_bounds", {}),
+            "wallpaperImageSize": getattr(host, "wallpaper_image_size", []),
             "url": getattr(host, "url", ""),
             "lively_url": getattr(host, "lively_url", ""),
         }

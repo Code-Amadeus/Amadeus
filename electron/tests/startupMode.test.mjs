@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { loadTypeScript } from './helpers/loadTypeScript.mjs'
-const { isWallpaperStartup } = loadTypeScript(new URL('../src/main/startupMode.ts', import.meta.url))
+const { isWallpaperStartup, wantsDraggableSliceControls } = loadTypeScript(new URL('../src/main/startupMode.ts', import.meta.url))
 import { managesWindowsWallpaper } from '../src/main/windowsWallpaper.ts'
 
 test('wallpaper startup is explicit in argv or environment', () => {
@@ -54,4 +54,18 @@ test('wallpaper entry choices never override external host ownership', () => {
       assert.equal(managesWindowsWallpaper('win32', environment), false)
     }
   }
+})
+
+test('draggable slice controls are an opt-in Windows preference', () => {
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    assert.equal(wantsDraggableSliceControls({}, platform), false)
+    assert.equal(wantsDraggableSliceControls({}, platform, 'true'), platform === 'win32')
+  }
+  for (const truthy of ['true', '1', 'yes', 'TRUE', ' True ']) {
+    assert.equal(wantsDraggableSliceControls({ AMADEUS_WALLPAPER_DRAGGABLE_CONTROLS: truthy }, 'win32'), true, truthy)
+  }
+  for (const falsy of ['false', '0', 'no', 'on', 'bogus', '']) {
+    assert.equal(wantsDraggableSliceControls({ AMADEUS_WALLPAPER_DRAGGABLE_CONTROLS: falsy }, 'win32', 'true'), false, falsy)
+  }
+  assert.equal(wantsDraggableSliceControls({}, 'win32', 'bogus'), false)
 })

@@ -163,6 +163,23 @@ def _desktop_slice_bounds_norm(config: dict | None = None) -> dict[str, float]:
     return {"x": left, "y": top, "width": right - left, "height": bottom - top}
 
 
+def _wallpaper_image_size(config: dict | None = None) -> list[int]:
+    """Return the authored wallpaper art size used to normalize control bounds.
+
+    The Electron slice host uses it to reproduce the scene's aspect-preserving
+    cover transform when its window spans the whole display.
+    """
+    value = config if isinstance(config, dict) else _load_crt_config()
+    raw = value.get("img_size") or [1672, 941]
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        raw = [1672, 941]
+    try:
+        width, height = (float(item) for item in raw)
+    except (TypeError, ValueError):
+        width, height = 1672.0, 941.0
+    return [max(1, int(round(width))), max(1, int(round(height)))]
+
+
 def _load_wallpaper_ui_config() -> dict:
     try:
         data = json.loads(_BRIDGE_CFG_PATH.read_text(encoding="utf-8"))

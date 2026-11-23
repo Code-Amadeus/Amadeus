@@ -65,6 +65,23 @@ duplicate arrangements are preserved. Restoration uses monitor device IDs and
 the original Lively project, not a screenshot of its last frame. It does not
 attempt to restore a video's exact playback timestamp.
 
+## Optional draggable controls
+
+**Settings → General → Startup → Draggable wallpaper controls**
+(`AMADEUS_WALLPAPER_DRAGGABLE_CONTROLS`) is an opt-in, off-by-default desktop
+preference that applies after quitting and reopening Amadeus. When enabled,
+the transparent Slice window spans the whole primary display instead of only
+the authored control region, and its layout projects the wallpaper art's
+aspect-preserving cover crop so controls still land where the artwork paints
+them. The Work status button and the task card can then be dragged anywhere
+on the display: a drag starts after a small movement threshold, so normal
+clicks are preserved; positions persist as normalized window coordinates in
+the wallpaper window's `localStorage` under
+`amadeus.desktop-controls.positions.v1`; and a right-click on the control
+returns it to its authored position. The keyboard input toggle and composer
+are not draggable. Positions are stored per profile and origin, not per
+monitor, and the setting does not select which display hosts the wallpaper.
+
 If the user selects another wallpaper or changes layout during the session,
 their new selection wins. An already-running Lively is never shut down. A
 Lively process started by Amadeus is shut down only after restoration and only
