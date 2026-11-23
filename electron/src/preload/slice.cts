@@ -14,4 +14,8 @@ contextBridge.exposeInMainWorld('amadeus', {
   setElectronSliceShape: (
     bounds: Array<{ x: number; y: number; width: number; height: number }>,
   ): Promise<boolean> => ipcRenderer.invoke('electron-slice.set-shape', bounds),
+  getControlPositions: (): Promise<Record<string, { x: number; y: number }>> =>
+    ipcRenderer.invoke('electron-slice.control-positions.get'),
+  setControlPositions: (positions: Record<string, { x: number; y: number }>): Promise<boolean> =>
+    ipcRenderer.invoke('electron-slice.control-positions.set', positions),
 })

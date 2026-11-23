@@ -104,16 +104,17 @@
   // The Work status button and the task card keep their authored positions by
   // default. With freeControls the slice window spans the display and each
   // control can be dragged anywhere on it; positions persist as normalized
-  // window coordinates, and a right-click restores the authored position.
+  // window coordinates through the main process (the 127.0.0.1:<assetPort>
+  // origin changes every run, so localStorage cannot hold them), and a
+  // right-click restores the authored position.
 
-  const POSITIONS_KEY = "amadeus.desktop-controls.positions.v1";
   const DRAG_THRESHOLD_PX = 5;
   const EDGE_MARGIN_PX = 24;
   const CONTROL_SELECTORS = {
     status: ".crt-canvas-surface-status",
     card: ".crt-canvas-surface-card",
   };
-  let savedControlPositions = loadControlPositions();
+  let savedControlPositions = {};
   let suppressClickOn = null;
 
   function controlRoot() {
@@ -121,24 +122,29 @@
   }
 
   function loadControlPositions() {
-    const positions = {};
-    try {
-      const saved = JSON.parse(localStorage.getItem(POSITIONS_KEY) || "{}");
+    const bridge = window.amadeus;
+    if (!bridge || typeof bridge.getControlPositions !== "function") return;
+    bridge.getControlPositions().then(saved => {
+      const positions = {};
       for (const key of Object.keys(CONTROL_SELECTORS)) {
         const pos = saved && saved[key];
         const x = pos && Number(pos.x);
         const y = pos && Number(pos.y);
         if (Number.isFinite(x) && Number.isFinite(y)) positions[key] = { x, y };
       }
-    } catch (error) { /* corrupt or unavailable storage starts clean */ }
-    return positions;
+      savedControlPositions = positions;
+      applyControlPositions();
+    }).catch(() => { /* unreadable storage starts clean */ });
   }
 
   function persistControlPositions() {
-    try {
-      localStorage.setItem(POSITIONS_KEY, JSON.stringify(savedControlPositions));
-    } catch (error) { /* storage may be unavailable; dragging still works */ }
+    const bridge = window.amadeus;
+    if (!bridge || typeof bridge.setControlPositions !== "function") return;
+    bridge.setControlPositions(savedControlPositions)
+      .catch(() => { /* a dropped save still leaves dragging functional */ });
   }
+
+  loadControlPositions();
 
   // Controls stay absolutely positioned inside the surface root so their
   // stylesheet sizes keep working; pinning only replaces their left/top with

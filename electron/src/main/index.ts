@@ -25,6 +25,7 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
+import { normalizeSliceControlPositions, SliceControlPositionsStore } from './sliceControlPositions.js'
 import { isWallpaperStartup, wantsDraggableSliceControls } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
@@ -746,8 +747,21 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   }
 }
 
+// The full-display surface spans the display hosting the wallpaper so its
+// controls track the screen the user picked in the wallpaper monitor setting.
+// Until #311's resolver lands, AMADEUS_WALLPAPER_MONITOR matches an Electron
+// display label or id; primary is the fallback.
+function electronSliceDisplay(): Electron.Display {
+  const wanted = (process.env.AMADEUS_WALLPAPER_MONITOR || '').trim()
+  if (wanted) {
+    const match = screen.getAllDisplays().find(d => d.label === wanted || String(d.id) === wanted)
+    if (match) return match
+  }
+  return screen.getPrimaryDisplay()
+}
+
 function electronSliceBounds(): Electron.Rectangle {
-  const display = screen.getPrimaryDisplay()
+  const display = electronSliceDisplay()
   const displayBounds = display.bounds
   // The draggable-controls layout spans the whole display so the shaped
   // window can host its controls anywhere on it.
@@ -758,7 +772,7 @@ function electronSliceBounds(): Electron.Rectangle {
 }
 
 function electronCanvasBounds(): Electron.Rectangle {
-  const displayBounds = screen.getPrimaryDisplay().bounds
+  const displayBounds = electronSliceDisplay().bounds
   const left = Math.floor(displayBounds.x + displayBounds.width * electronSliceLayout.x)
   const top = Math.floor(displayBounds.y + displayBounds.height * electronSliceLayout.y)
   const right = Math.ceil(left + displayBounds.width * electronSliceLayout.width)
@@ -2620,6 +2634,24 @@ ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangl
   electronSliceShape = normalizedRegions
   if (firstCommit) console.log(`[electron-slice] renderer shape committed: ${electronSliceShape.length} region(s)`)
   reconcileElectronSliceReadiness(window)
+  return true
+})
+// Positions are window-normalized, so they survive resolution changes; only a
+// trusted wallpaper surface may read or write them.
+const sliceControlPositions = new SliceControlPositionsStore(
+  path.join(USER_DATA_DIR, 'wallpaper-control-positions.json'),
+)
+function isElectronSliceRenderer(sender: Electron.WebContents): boolean {
+  return sender === electronSliceWindow?.webContents
+    || sender === electronCanvasLifecycle.window?.webContents
+}
+ipcMain.handle('electron-slice.control-positions.get', (event) => {
+  if (!isElectronSliceRenderer(event.sender)) return {}
+  return sliceControlPositions.read()
+})
+ipcMain.handle('electron-slice.control-positions.set', (event, positions: unknown) => {
+  if (!isElectronSliceRenderer(event.sender)) return false
+  sliceControlPositions.write(normalizeSliceControlPositions(positions))
   return true
 })
 ipcMain.handle('auip-app.open', async (
