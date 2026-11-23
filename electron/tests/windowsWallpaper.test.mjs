@@ -64,12 +64,13 @@ else:
       assert.equal(path.resolve(observed.executable), path.resolve(helperPython))
       assert.equal(path.resolve(observed.file), path.join(helperDir, 'helper.py'))
       assert.deepEqual(observed.args, ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html'])
-      const targeted = dependencies.launch('http://127.0.0.1:1234/wallpaper/lively/index.html', '\\\\.\\DISPLAY2')
+      const deviceId = '\\\\?\\DISPLAY#GSM5BC7#5&2f3a2e4f&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}'
+      const targeted = dependencies.launch('http://127.0.0.1:1234/wallpaper/lively/index.html', deviceId)
       await targeted.ready
       targeted.process.stdin.end()
       await targeted.done
       assert.deepEqual(JSON.parse(await fs.readFile(trace, 'utf8')).args,
-        ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html', '\\\\.\\DISPLAY2'])
+        ['run', 'http://127.0.0.1:1234/wallpaper/lively/index.html', deviceId])
     } finally { await fs.rm(root, { recursive: true, force: true }) }
   })
 }

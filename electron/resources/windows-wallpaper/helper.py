@@ -175,9 +175,12 @@ class Snapshot:
 
 @dataclass(frozen=True)
 class MonitorGeometry:
-    """One connected monitor in physical pixels; Monitor is the GDI device
-    name shared with the Electron host as the explicit wallpaper target."""
+    """One connected monitor in physical pixels. DeviceId is Lively's display
+    identity (the device-interface path `\\\\?\\DISPLAY#…#{…}` reported by
+    GetScreens and required by SetWallpaper); it is the persisted wallpaper
+    target. Monitor is the GDI device name, kept for display labels only."""
     Monitor: str
+    DeviceId: str
     X: int
     Y: int
     Width: int
@@ -428,6 +431,15 @@ class MONITORINFOEX(ctypes.Structure):
                 ("dwFlags", w.DWORD), ("szDevice", w.WCHAR * 32)]
 
 
+class DISPLAY_DEVICE(ctypes.Structure):
+    _fields_ = [("cb", w.DWORD), ("DeviceName", w.WCHAR * 32),
+                ("DeviceString", w.WCHAR * 128), ("StateFlags", w.DWORD),
+                ("DeviceID", w.WCHAR * 128), ("DeviceKey", w.WCHAR * 128)]
+
+
+EDD_GET_DEVICE_INTERFACE_NAME = 0x00000001
+
+
 class Windows:
     def __init__(self):
         self.api = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -620,6 +632,10 @@ class Windows:
             self.check(api.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)))
         api.GetMonitorInfoW.argtypes = [w.HANDLE, ctypes.POINTER(MONITORINFOEX)]
         api.GetMonitorInfoW.restype = w.BOOL
+        # Same query Lively's DisplayManager makes for ScreenData.DeviceId:
+        # the monitor's device interface path for a GDI device name.
+        api.EnumDisplayDevicesW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(DISPLAY_DEVICE), w.DWORD]
+        api.EnumDisplayDevicesW.restype = w.BOOL
         found = []
         callback_type = ctypes.WINFUNCTYPE(w.BOOL, w.HANDLE, w.HANDLE, ctypes.POINTER(RECT), w.LPARAM)
         api.EnumDisplayMonitors.argtypes = [w.HANDLE, ctypes.POINTER(RECT), callback_type, w.LPARAM]
@@ -629,7 +645,12 @@ class Windows:
             info = MONITORINFOEX()
             info.cbSize = ctypes.sizeof(info)
             self.check(api.GetMonitorInfoW(monitor, ctypes.byref(info)))
-            found.append(MonitorGeometry(info.szDevice, info.rcMonitor.left, info.rcMonitor.top,
+            device = DISPLAY_DEVICE()
+            device.cb = ctypes.sizeof(device)
+            # Not a hard failure: an unidentified monitor simply cannot be an
+            # explicit target; resolve_monitor fails closed on no match.
+            api.EnumDisplayDevicesW(info.szDevice, 0, ctypes.byref(device), EDD_GET_DEVICE_INTERFACE_NAME)
+            found.append(MonitorGeometry(info.szDevice, device.DeviceID, info.rcMonitor.left, info.rcMonitor.top,
                                          info.rcMonitor.right - info.rcMonitor.left,
                                          info.rcMonitor.bottom - info.rcMonitor.top, bool(info.dwFlags & 1)))
             return True
@@ -1054,8 +1075,9 @@ class LivelyHost:
         return primary[0]
 
     def resolve_monitor(self, target: str | None = None):
-        # The persisted choice is a GDI device name; it resolves to exactly one
-        # live Lively screen or fails before another display is taken over.
+        # The persisted choice is Lively's display DeviceId, the same identity
+        # GetScreens reports and SetWallpaper consumes; it resolves to exactly
+        # one live Lively screen or fails before another display is taken over.
         if target is None:
             return self.primary_monitor()
         matches = [screen.Monitor for screen, _ in self.get_screens() if screen.Monitor == target]

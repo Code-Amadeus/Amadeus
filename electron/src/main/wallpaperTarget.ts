@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
-// The explicit wallpaper display choice is a Windows GDI device name such as
-// \\.\DISPLAY2. Win32 monitor enumeration, Lively's GetScreens RPC and the
-// helper's session journal all speak that identity; Electron's volatile
-// Display.id never crosses this boundary.
+// The explicit wallpaper display choice is Lively's display DeviceId, the
+// device-interface path (\\?\DISPLAY#…#{…}) that Lively's GetScreens RPC
+// reports and SetWallpaper resolves. The helper's `screens` command produces
+// it with EnumDisplayDevicesW(EDD_GET_DEVICE_INTERFACE_NAME) — the same query
+// Lively's DisplayManager makes — and the session journal already stores it.
+// Electron's volatile Display.id never crosses this boundary.
 export const WALLPAPER_MONITOR_SETTING = 'AMADEUS_WALLPAPER_MONITOR'
 
 export interface WallpaperRect {
@@ -15,7 +17,11 @@ export interface WallpaperRect {
 }
 
 export interface WallpaperMonitorDescriptor extends WallpaperRect {
+  // deviceId: the persisted identity Lively resolves (\\?\DISPLAY#…#{…}).
+  // monitor: the GDI device name (\\.\DISPLAYn), labels only — it can be
+  // renumbered on hot-plug and is not accepted by SetWallpaper.
   monitor: string
+  deviceId: string
   primary: boolean
 }
 
@@ -46,12 +52,13 @@ export function parseWallpaperMonitors(raw: unknown): WallpaperMonitorDescriptor
   return monitors.map(item => {
     const source = item && typeof item === 'object' ? item as Record<string, unknown> : {}
     const monitor = typeof source.Monitor === 'string' ? source.Monitor : ''
+    const deviceId = typeof source.DeviceId === 'string' ? source.DeviceId : ''
     const geometry = { x: Number(source.X), y: Number(source.Y), width: Number(source.Width), height: Number(source.Height) }
-    if (!monitor || [geometry.x, geometry.y, geometry.width, geometry.height].some(v => !Number.isFinite(v))
+    if (!deviceId || [geometry.x, geometry.y, geometry.width, geometry.height].some(v => !Number.isFinite(v))
       || geometry.width <= 0 || geometry.height <= 0) {
       throw new Error('The wallpaper helper reported an invalid display entry.')
     }
-    return { monitor, ...geometry, primary: Boolean(source.Primary) }
+    return { monitor, deviceId, ...geometry, primary: Boolean(source.Primary) }
   })
 }
 
@@ -97,7 +104,7 @@ export function resolveWallpaperTargetDisplay<D>(target: string | undefined,
   monitors: WallpaperMonitorDescriptor[], displays: D[],
   physicalBounds: (display: D) => WallpaperRect): WallpaperTargetResolution<D> {
   if (!target) return { status: 'default' }
-  const descriptors = monitors.filter(monitor => monitor.monitor === target)
+  const descriptors = monitors.filter(monitor => monitor.deviceId === target)
   if (descriptors.length !== 1) return { status: descriptors.length > 1 ? 'ambiguous' : 'disconnected' }
   const descriptor = descriptors[0]
   const matches = displays.filter(display => rectsMatchWithin(physicalBounds(display), descriptor))
@@ -117,8 +124,9 @@ export function wallpaperTargetProblem(status: string, target: string): string {
 }
 
 // Settings lists one choice per connected Win32 monitor. Correlating an
-// Electron display only provides its friendly label; identity stays the
-// device name and strict correlation still applies when a session starts.
+// Electron display only provides its friendly label; the persisted value
+// stays the DeviceId and strict correlation still applies when a session
+// starts.
 export function wallpaperMonitorOptions<D extends { label?: string }>(monitors: WallpaperMonitorDescriptor[],
   displays: D[], physicalBounds: (display: D) => WallpaperRect): WallpaperMonitorOption[] {
   const claimed = new Set<D>()
@@ -128,6 +136,6 @@ export function wallpaperMonitorOptions<D extends { label?: string }>(monitors: 
     const name = monitor.monitor.replace(/^\\\\\.\\/, '')
     const label = [name, display?.label, `${monitor.width}\u00d7${monitor.height}`, monitor.primary ? 'Primary' : '']
       .filter(Boolean).join(' \u00b7 ')
-    return { monitor: monitor.monitor, label, primary: monitor.primary }
+    return { monitor: monitor.deviceId, label, primary: monitor.primary }
   })
 }

@@ -175,7 +175,7 @@ export function windowsWallpaperDependencies(projectRoot: string, resourcesPath:
       // and exit wait so normal shutdown still waits for desktop restoration.
       // A detached venv python.exe can create a console in its interpreter child
       // despite windowsHide. Use the same runtime's windowed sibling when present.
-      // `target` is the GDI device name of the chosen wallpaper display.
+      // `target` is the Lively DeviceId of the chosen wallpaper display.
       const windowed = path.join(path.dirname(python), 'pythonw.exe')
       const command = process.platform === 'win32' && path.basename(python).toLowerCase() === 'python.exe'
         && fs.existsSync(windowed) ? windowed : python

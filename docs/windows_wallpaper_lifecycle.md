@@ -62,7 +62,9 @@ options are restored afterwards.
 
 In per-monitor mode only one display is taken over: the primary display by
 default, or the display the user picked in Settings
-(`AMADEUS_WALLPAPER_MONITOR`, a GDI device name such as `\\.\DISPLAY2`). An
+(`AMADEUS_WALLPAPER_MONITOR`, the display `DeviceId` that Lively's
+`GetScreens` reports and `SetWallpaper` resolves, a device-interface path
+such as `\\?\DISPLAY#SAM0A8F#5&2618d42e&0&UID512#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}`). An
 explicit choice is resolved against both Lively's screen list and Electron's
 display list before mounting; a missing or ambiguous match is reported and no
 other display is taken over. Existing span or duplicate arrangements are
