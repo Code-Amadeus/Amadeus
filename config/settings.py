@@ -34,6 +34,7 @@ VTS_TOKEN_FILE: str = _catalog_values["VTS_TOKEN_FILE"]
 GRAPHICS_PROFILE: str = _catalog_values["GRAPHICS_PROFILE"]
 RENDER_MAX_FPS: int = _catalog_values["RENDER_MAX_FPS"]
 RENDER_MAX_RESOLUTION: float = _catalog_values["RENDER_MAX_RESOLUTION"]
+RENDER_POSE_FADE_MS: int = _catalog_values["RENDER_POSE_FADE_MS"]
 RENDER_FRAME_SOURCE: str = _catalog_values["RENDER_FRAME_SOURCE"]
 RENDER_FRAME_BUDGET_MIB: str = _catalog_values["RENDER_FRAME_BUDGET_MIB"]
 RENDER_BC7_CACHE: bool = _catalog_values["RENDER_BC7_CACHE"]
@@ -582,11 +583,6 @@ RENDER_EFFECTIVE_MAX_FPS, RENDER_EFFECTIVE_MAX_RESOLUTION = _resolve_graphics_pr
 RENDER_TEXTURE_SAMPLING: bool = read_catalog_environment(
     _ENV, computed_defaults={"RENDER_TEXTURE_SAMPLING": RENDER_EFFECTIVE_MAX_FPS == 60},
 )["RENDER_TEXTURE_SAMPLING"]
-
-# Cross-fade applied when a clip change has no authored transition clip; the
-# post-speech pose release back to idle is the common case. 0 keeps the
-# previous hard cut. Applies to render surfaces opened after the change.
-RENDER_POSE_FADE_MS = _int("RENDER_POSE_FADE_MS", 200)
 
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.

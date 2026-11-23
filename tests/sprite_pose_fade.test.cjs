@@ -132,7 +132,7 @@ function fixture(t, { poseFadeMs = 200 } = {}) {
     } };
 }
 
-test('a clip change without authored transition frames dissolves the outgoing frame and releases its pin', async t => {
+test('a release change without authored transition frames dissolves the outgoing frame and releases its pin', async t => {
   const f = fixture(t), s = f.sprite;
   s.loadFrames('thinking', ['thinking-0', 'thinking-1']);
   s.loadFrames('idle', ['idle-0', 'idle-1']);
@@ -141,7 +141,7 @@ test('a clip change without authored transition frames dissolves the outgoing fr
   const held = await f.complete('thinking-0');
   assert.equal(s.sprite.texture, held);
 
-  s.setEmotion('idle');
+  s.setEmotion('idle', { release: true });
   const overlay = s._poseFadeSprite;
   assert.equal(overlay.visible, true, 'the outgoing pose stays on screen as a fading overlay');
   assert.equal(overlay.texture, held);
@@ -168,10 +168,26 @@ test('renderPoseFadeMs=0 keeps the previous hard cut', async t => {
   s.setEmotion('thinking');
   await flush();
   await f.complete('thinking-0');
-  s.setEmotion('idle');
+  s.setEmotion('idle', { release: true });
   assert.equal(s._poseFadeSprite.visible, false);
   assert.equal(s._poseFade, null);
   assert.deepEqual(f.pins.get('pose-fade') ?? [], [], 'no outgoing pin is held after a hard cut');
+});
+
+test('a non-release clip change keeps the hard cut and holds no fade pin', async t => {
+  const f = fixture(t), s = f.sprite;
+  s.loadFrames('thinking', ['thinking-0']);
+  s.loadFrames('idle', ['idle-0']);
+  s.loadFrames('sad', ['sad-0']);
+  s.setEmotion('thinking');
+  await flush();
+  await f.complete('thinking-0');
+  for (const change of ['idle', 'sad']) {
+    s.setEmotion(change);  // authored-sequence and interactive hops never fade
+    assert.equal(s._poseFadeSprite.visible, false, `${change} must not get a fade overlay`);
+    assert.equal(s._poseFade, null);
+    assert.deepEqual(f.pins.get('pose-fade') ?? [], []);
+  }
 });
 
 test('authored transition frames still win over the overlay fade', async t => {
@@ -182,7 +198,7 @@ test('authored transition frames still win over the overlay fade', async t => {
   s.setEmotion('thinking');
   await flush();
   await f.complete('thinking-0');
-  s.setEmotion('idle');
+  s.setEmotion('idle', { release: true });
   assert.equal(s._poseFadeSprite.visible, false, 'an authored transition replaces the cut without a fade');
   assert.equal(s._poseFade, null);
   assert.ok(s._transitionQueue.length > 0, 'the authored transition sequence plays');
@@ -198,13 +214,13 @@ test('a second clip change replaces the fade with the currently displayed frame'
   s.setEmotion('thinking');
   await flush();
   const thinking = await f.complete('thinking-0');
-  s.setEmotion('idle');
+  s.setEmotion('idle', { release: true });
   await flush();
   const idle = await f.complete('idle-0');
   assert.equal(s.sprite.texture, idle);
   f.ticker.tick(50);
 
-  s.setEmotion('sad');
+  s.setEmotion('sad', { release: true });
   const overlay = s._poseFadeSprite;
   assert.equal(overlay.visible, true);
   assert.equal(overlay.texture, idle, 'the second fade starts from the live frame, not the stale one');
@@ -222,7 +238,7 @@ test('a deactivating character ends the fade and releases the outgoing frame pin
   s.setEmotion('thinking');
   await flush();
   await f.complete('thinking-0');
-  s.setEmotion('idle');
+  s.setEmotion('idle', { release: true });
   assert.equal(s._poseFadeSprite.visible, true);
   s.setActive(false);
   assert.equal(s._poseFadeSprite.visible, false);

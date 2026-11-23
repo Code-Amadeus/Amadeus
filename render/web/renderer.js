@@ -32,9 +32,9 @@
     textureSampling: renderParams.get("renderTextureSampling"),
     devicePixelRatio: window.devicePixelRatio,
   });
-  // Cross-fade applied when a clip change has no authored transition clip —
-  // the post-speech pose release back to idle is the common case. 0 keeps the
-  // previous hard cut; absent/invalid values fall back to the 200 ms default.
+  // Cross-fade applied on the post-speech release path when a clip change has
+  // no authored transition clip — the pose release back to idle/standing. 0
+  // keeps the previous hard cut; absent/invalid values fall back to 200 ms.
   const poseFadeMs = (() => {
     const raw = renderParams.get("renderPoseFadeMs");
     if (raw === null || raw === "") return 200;
@@ -70,7 +70,7 @@
       this.container.addChild(this.sprite);
 
       // Outgoing-pose overlay: dissolves the previously displayed frame above
-      // the incoming clip while setEmotion has no authored transition frames.
+      // the incoming clip on a release hop with no authored transition frames.
       this._poseFadeMs = poseFadeMs;
       this._poseFade = null;
       this._poseFadeSprite = new PIXI.Sprite();
@@ -369,7 +369,7 @@
 
     // ---- State control ----
 
-    setEmotion(emotion) {
+    setEmotion(emotion, options) {
       if (emotion === this._currentEmotion) return;
       const key = `${this._currentEmotion}->${emotion}`;
       const transFrames = this._transitions[key];
@@ -390,7 +390,9 @@
         this._endPoseFade();
         this._playTransition(transFrames, () => this._showFrame(0));
       } else {
-        this._beginPoseFade();
+        // Only the release path dissolves; authored sequences and interactive
+        // poses keep their authored pacing and never get an overlay.
+        if (options && options.release === true) this._beginPoseFade();
         this._showFrame(0);
       }
     }
@@ -1113,8 +1115,9 @@
     // ---- Pose release cross-fade ----
 
     // Dissolve the outgoing displayed frame over the first frames of the new
-    // clip. The pose graph has no release clips (pose -> idle jumps), so the
-    // renderer blends what is already on screen instead of cutting.
+    // clip on a release hop only. The pose graph has no release clips
+    // (pose -> idle jumps), so the renderer blends what is already on screen
+    // instead of cutting; authored transitions take precedence when present.
     _beginPoseFade() {
       const texture = this.sprite.texture;
       this._endPoseFade();
@@ -1323,7 +1326,7 @@
       this.transitionHoldActive = false;
       this.sprite.setSpeaking(false);
       this.sprite.clearHold();
-      if (this.rootNodeId) this._playNode(this.rootNodeId);
+      if (this.rootNodeId) this._playNode(this.rootNodeId, { release: true });
       console.log("[SpriteForgeRuntime] released to root");
     }
 
@@ -1410,7 +1413,7 @@
             this.trigger(deferredIntent);
             return;
           }
-          if (releaseNodeId) this._playNode(releaseNodeId);
+          if (releaseNodeId) this._playNode(releaseNodeId, { release: true });
           if (releaseNodeId && releaseNodeId !== this.rootNodeId) {
             this._schedulePostSpeechReleaseAdvance(releaseNodeId);
           }
@@ -1454,13 +1457,16 @@
       if (next) this._playNode(next);
     }
 
-    _playNode(nodeId) {
+    _playNode(nodeId, options) {
       if (!nodeId || !this.nodesById[nodeId]) return;
       this.currentNodeId = nodeId;
       this.transitionHoldActive = false;
       this.sprite.clearHold();
       const label = this._label(nodeId);
-      this.sprite.setEmotion(label);
+      // { release: true } marks the post-speech/release return to standing —
+      // the only hop allowed to cross-fade, and only where the graph has no
+      // authored release clip for it.
+      this.sprite.setEmotion(label, { release: options && options.release === true });
       this._prefetchNodeNeighborhood(nodeId);
     }
 
@@ -1642,7 +1648,7 @@
         if (this.speechActive || this.currentNodeId !== releaseNodeId) return;
         this.sprite.clearHold();
         const next = this._nextAutoNode(releaseNodeId);
-        this._playNode(next && next !== releaseNodeId ? next : this.rootNodeId);
+        this._playNode(next && next !== releaseNodeId ? next : this.rootNodeId, { release: true });
       }, durationMs);
     }
 

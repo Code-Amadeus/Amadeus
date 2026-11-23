@@ -461,6 +461,21 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "example_active": true,
         "default": 1.5
+      },
+      "RENDER_POSE_FADE_MS": {
+        "type": "integer",
+        "title": {
+          "en-US": "Pose-release cross-fade",
+          "zh-CN": "姿势释放淡入淡出"
+        },
+        "min": 0,
+        "max": 2000,
+        "step": 50,
+        "description": {
+          "en-US": "0–2000 ms. When a pose releases back to standing without an authored transition, the outgoing frame dissolves over this duration. 0 restores the previous instant cut. Applies to render surfaces opened after the change.",
+          "zh-CN": "范围 0–2000 毫秒。姿势释放回站立且没有已编排过渡时，原画面在此时间内淡出。设为 0 恢复此前的瞬时切换；对之后打开的渲染画面生效。"
+        },
+        "default": 200
       }
     },
     "apply": "backend_restart"
