@@ -104,7 +104,10 @@ AppSession active, the switch is **pending off**: Main Chat keeps its usual AUIP
 evaluation on every turn, and every session that was active can continue, so a
 user can still direct a running game from chat. The Host starts no new AppSession
 while shutdown is pending, including a launch requested earlier or deferred until
-Work finishes. When the last active AppSession ends, the switch takes effect.
+Work finishes. Admission enforces this: while the switch is off or pending off,
+registration through any attach ticket and a self-attach request are refused
+with `auip_interaction_disabled`, and the application stays standalone, as with
+"Not now". When the last active AppSession ends, the switch takes effect.
 Turning it back on during that period cancels the pending shutdown.
 
 Once it has taken effect:
@@ -118,7 +121,8 @@ Once it has taken effect:
   the last session ended;
 - creating apps through Work, opening them, and using them by hand remain
   available, along with AppSession identity, permission checks and receipts.
-  An attach ticket issued earlier opens a spectator-capable app in observe mode.
+  An app opened this way stays standalone; it does not join AUIP until the
+  switch is turned back on.
 
 Turning it back on restores entry, participation and narration for later turns
 with no replay.

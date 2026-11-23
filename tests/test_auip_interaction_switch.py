@@ -13,6 +13,7 @@ from server.auip_engagement import AuipEngagementCoordinator
 from server.auip_launch import AuipLaunchCandidate, AuipLaunchCoordinator
 from server.auip_narration import AuipNarrationAdapter, AuipNarrationProfile
 from server.auip_runtime import AuipRuntime
+from server.auip_self_attach import AuipSelfAttachCoordinator
 from server.handlers.auip_handler import AuipHandler
 from server.handlers.system_handler import SystemHandler
 from server.protocol import Method
@@ -309,30 +310,93 @@ def test_after_the_last_session_ends_participation_is_refused_and_on_restores(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("enabled", [True, False], ids=["on", "off"])
-def test_participant_attach_ticket_opens_as_spectator_while_off(monkeypatch, enabled) -> None:
+def _issue(runtime: AuipRuntime, mode: str = "collaborate") -> str:
+    return runtime.issue_attach_ticket(
+        conversation_id="admission",
+        artifact_ref="artifact:game@digest",
+        engagement_mode=mode,
+    )["attach_ticket"]
+
+
+def test_attach_ticket_is_refused_while_the_switch_is_off(monkeypatch) -> None:
     runtime = AuipRuntime()
-    ticket = runtime.issue_attach_ticket(
-        conversation_id="late-ticket",
-        artifact_ref="artifact:game@digest",
-        engagement_mode="collaborate",
-    )
-    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", enabled)
-    registered = runtime.register_attached(
-        manifest=_manifest(),
-        attach_ticket=ticket["attach_ticket"],
-    )
-    assert registered["engagement_mode"] == ("collaborate" if enabled else "observe")
-    # An app that cannot spectate still opens in its only mode; gates keep it quiet.
-    participant_only = runtime.issue_attach_ticket(
-        conversation_id="late-ticket",
-        artifact_ref="artifact:game@digest",
-        engagement_mode="collaborate",
-    )
+    ticket = _issue(runtime)
+    _off(monkeypatch)
+    with pytest.raises(AuipProtocolError) as refused:
+        runtime.register_attached(manifest=_manifest(), attach_ticket=ticket)
+    assert refused.value.code == "auip_interaction_disabled"
+    assert runtime.has_active_session() is False
+    assert runtime.ai_interaction_in_effect() is False
+
+    # A participant-only app is refused too, not downgraded to a mode it lacks.
+    participant_only = _issue(runtime, "delegate")
+    with pytest.raises(AuipProtocolError) as refused:
+        runtime.register_attached(
+            manifest=_manifest(stances=("participant",)),
+            attach_ticket=participant_only,
+        )
+    assert refused.value.code == "auip_interaction_disabled"
+    assert runtime.has_active_session() is False
+    assert runtime.ai_interaction_in_effect() is False
+
+    _on(monkeypatch)
     assert runtime.register_attached(
-        manifest=_manifest(stances=("participant",)),
-        attach_ticket=participant_only["attach_ticket"],
+        manifest=_manifest(), attach_ticket=_issue(runtime)
     )["engagement_mode"] == "collaborate"
+
+
+def test_attach_is_refused_during_pending_off_and_pending_off_still_ends(
+    monkeypatch,
+) -> None:
+    runtime = AuipRuntime()
+    first = _registered(runtime, _manifest(), "admission")
+    second = _registered(runtime, _manifest(), "admission")
+    ticket = _issue(runtime)
+    _off(monkeypatch)
+    assert runtime.ai_interaction_in_effect() is True
+
+    with pytest.raises(AuipProtocolError) as refused:
+        runtime.register_attached(manifest=_manifest(), attach_ticket=ticket)
+    assert refused.value.code == "auip_interaction_disabled"
+
+    runtime.disconnect(first["app_session_id"])
+    assert runtime.ai_interaction_in_effect() is True
+    runtime.disconnect(second["app_session_id"])
+    # No refused app joined, so the pending shutdown completes.
+    assert runtime.has_active_session() is False
+    assert runtime.ai_interaction_in_effect() is False
+
+
+@pytest.mark.parametrize("active", [False, True], ids=["off", "pending-off"])
+def test_self_attach_request_is_refused_while_the_switch_is_off(
+    monkeypatch, active
+) -> None:
+    async def scenario() -> None:
+        runtime = AuipRuntime()
+        if active:
+            _registered(runtime, _manifest(), "admission")
+        attention = MagicMock()
+        attention.create_selection = AsyncMock()
+        artifacts = MagicMock()
+        coordinator = AuipSelfAttachCoordinator(
+            runtime=runtime,
+            artifacts=artifacts,
+            attention=attention,
+            current_session_id=lambda: "admission",
+        )
+        _off(monkeypatch)
+        with pytest.raises(AuipProtocolError) as refused:
+            await coordinator.request(
+                manifest=_manifest(),
+                instance_id="instance-0001",
+                entry_url="file:///tmp/game.html",
+            )
+        assert refused.value.code == "auip_interaction_disabled"
+        # No card offers play options, and no ticket is minted.
+        attention.create_selection.assert_not_awaited()
+        assert runtime._attach_tickets == {}
+
+    asyncio.run(scenario())
 
 
 def test_control_decided_after_the_last_session_ended_is_refused(monkeypatch) -> None:

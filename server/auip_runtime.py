@@ -49,9 +49,9 @@ OPERATOR_STATUSES = frozenset({"idle", "thinking", "awaiting_receipt", "error"})
 def ai_interaction_enabled() -> bool:
     """Read the user's live AI application interaction choice.
 
-    This is the choice itself.  While it is off, no new AUIP session may be
-    started by Amadeus, but sessions already active keep running until the
-    last one ends (see ``AuipRuntime.ai_interaction_in_effect``).
+    This is the choice itself.  While it is off, no AppSession may be
+    admitted, but sessions already active keep running until the last one
+    ends (see ``AuipRuntime.ai_interaction_in_effect``).
     """
 
     return bool(getattr(settings, "AUIP_INTERACTION_ENABLED", True))
@@ -299,15 +299,12 @@ class AuipRuntime:
             binding = self._attach_tickets.pop(clean_ticket, None)
             if binding is None:
                 raise AuipProtocolError("invalid_attach_ticket")
+            if not ai_interaction_enabled():
+                # Admission is the one place a session becomes active, so
+                # refusing here keeps pending off from ever gaining sessions.
+                # The app stays standalone and usable by hand.
+                raise AuipProtocolError("auip_interaction_disabled")
             mode = binding.engagement_mode
-            if (
-                mode != "observe"
-                and "spectator" in parsed.stances
-                and not ai_interaction_enabled()
-            ):
-                # A ticket may predate the user turning interaction off; the
-                # app still opens, but Amadeus may join it only as a spectator.
-                mode = "observe"
             return self._register_parsed(
                 parsed,
                 conversation_id=binding.conversation_id,
