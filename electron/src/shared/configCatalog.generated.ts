@@ -1515,6 +1515,27 @@ export const catalogGroups: CatalogGroup[] = [
           ]
         },
         "example_active": true
+      },
+      "CODEX_APP_SERVER_RELEASE_CONFIRM_TIMEOUT_S": {
+        "type": "integer",
+        "title": {
+          "en-US": "Thread release confirm timeout",
+          "zh-CN": "线程释放确认超时"
+        },
+        "min": 0,
+        "max": 600,
+        "step": 5,
+        "description": {
+          "en-US": "0–600 s. How long the host waits for the Codex App Server to confirm a thread release before treating it as unconfirmed. Applies to new Works.",
+          "zh-CN": "范围 0–600 秒。宿主等待 Codex App Server 确认线程释放的时长，超时按未确认处理。对新的工作项生效。"
+        },
+        "default": 30,
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ]
+        },
+        "example_active": true
       }
     },
     "section": "providers",
