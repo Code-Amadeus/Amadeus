@@ -142,6 +142,7 @@ from config.environment import load_project_environment
 
 from config import settings
 from config.log_privacy import protected_text
+from config.background_tasks import spawn_background
 
 install_stdio_mojibake_repair()
 
@@ -708,7 +709,7 @@ async def bootstrap(port: int = 17777) -> None:
             await asyncio.sleep(0.05)
             server.should_exit = True
 
-        asyncio.create_task(_request_exit())
+        spawn_background(_request_exit())
         return {"ok": True}
 
     @app.post("/wallpaper/stop")
@@ -882,7 +883,7 @@ async def bootstrap(port: int = 17777) -> None:
                 from server.vn_tts_bridge import display_vn_subtitle, is_vn_sentence
 
                 if is_vn_sentence(sentence_id):
-                    asyncio.create_task(display_vn_subtitle(
+                    spawn_background(display_vn_subtitle(
                         sentence_id, japanese_text,
                         display=_server_display_chinese_subtitle_with_text,
                         is_current=playback_manager.is_current_playback_sentence,
@@ -919,7 +920,7 @@ async def bootstrap(port: int = 17777) -> None:
                             )
                             return
 
-                asyncio.create_task(_wait_for_translation())
+                spawn_background(_wait_for_translation())
         except Exception:
             logger.exception("server pre-translation display failed")
 
@@ -1301,7 +1302,7 @@ async def bootstrap(port: int = 17777) -> None:
         try:
             from llm.llama_server import start_llama_server as _start_ls, warmup_local_llm_cache as _warmup
             await _start_ls()
-            asyncio.create_task(_warmup())
+            spawn_background(_warmup())
         except Exception as e:
             logger.warning("llama server init failed: %s", e)
 
@@ -1329,11 +1330,11 @@ async def bootstrap(port: int = 17777) -> None:
                 await pending_sentence_items.get()
                 pending_sentence_items.task_done()
 
-        asyncio.create_task(_discard_disabled_tts_requests(), name="tts-disabled-noop")
+        spawn_background(_discard_disabled_tts_requests(), name="tts-disabled-noop")
     else:
         from tts.pipeline import play_sentence_worker as _psw
-        asyncio.create_task(playback_manager.run())
-        asyncio.create_task(_psw())
+        spawn_background(playback_manager.run())
+        spawn_background(_psw())
 
     from server.cooperative_chat_ingress import prepared_auip_entry_scope
 
@@ -1542,7 +1543,7 @@ async def bootstrap(port: int = 17777) -> None:
             await asr_h.notify_turn_complete(f"chat_{status}")
             return
         if status == "complete":
-            asyncio.create_task(_release_asr_after_playback_idle())
+            spawn_background(_release_asr_after_playback_idle())
 
     async def _release_asr_after_playback_idle() -> None:
         # Fallback for cases where LLM streaming completes but PlaybackManager's
