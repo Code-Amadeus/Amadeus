@@ -25,6 +25,7 @@ from config.settings import (
     BARGE_IN_START_DELAY_MS,
     BARGE_IN_VAD_THRESHOLD,
 )
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ class BargeInDetector:
             try:
                 result = callback(payload)
                 if hasattr(result, "__await__"):
-                    asyncio.create_task(result)
+                    spawn_background(result)
             except Exception:
                 logger.exception("[BargeIn] debug callback failed")
 

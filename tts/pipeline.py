@@ -49,6 +49,7 @@ from tts.latency_clock import log_latency_marker
 from tts.synthesis_backend import SynthesisBackends, select_synthesis
 from tts.utterance_scheduler import TTSUtteranceScheduler
 from config.tts_acceleration import acceleration_mode
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
@@ -997,7 +998,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 s1_queue: asyncio.Queue = asyncio.Queue()
                 _active_stream_queues.add(s1_queue)
                 try:
-                    asyncio.create_task(
+                    spawn_background(
                         _playback_manager.play_s1_stream(
                             s1_queue,
                             sentence_id,
@@ -1042,7 +1043,7 @@ async def speak_stream_enhanced_asyncio_queue(
     if stream_to_player and _playback_manager is not None:
         s1_queue: asyncio.Queue = asyncio.Queue()
         _active_stream_queues.add(s1_queue)
-        asyncio.create_task(
+        spawn_background(
             _playback_manager.play_s1_stream(
                 s1_queue,
                 sentence_id,
@@ -1418,7 +1419,7 @@ async def play_sentence_worker():
                 emotion=job.emotion,
             )
 
-            asyncio.create_task(tts_coro)
+            spawn_background(tts_coro)
             permit_owned = False  # synthesis now owns the acquired permit
             for _ in range(job.consumed_count):
                 _pending_sentence_items.task_done()

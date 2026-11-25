@@ -12,6 +12,8 @@ import time
 from collections import defaultdict
 from typing import Any, Awaitable, Callable
 
+from config.background_tasks import track_background
+
 logger = logging.getLogger(__name__)
 
 Callback = Callable[[str, dict[str, Any]], Awaitable[None]]  # (method, params) -> None
@@ -138,7 +140,7 @@ class EventBus:
     ) -> None:
         """Create the callback tasks. Always runs on the serving loop thread."""
         for cb in callbacks:
-            asyncio.ensure_future(cb(method, params), loop=loop)
+            track_background(asyncio.ensure_future(cb(method, params), loop=loop))
 
     def subscriber_count(self, method: str) -> int:
         return len(self._subscribers.get(method, []))
