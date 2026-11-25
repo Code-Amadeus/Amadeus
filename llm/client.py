@@ -35,6 +35,7 @@ from config.settings import (
     LOCAL_LLM_URL, LOCAL_LLM_LM_STUDIO_URL, LOCAL_LLM_OLLAMA_URL,
     LLM_PROVIDER as DEFAULT_LLM_PROVIDER,
 )
+from reply_usage import token_usage
 from llm.gemini_client import create_gemini_client, generate_gemini_text
 from llm.local_backends import local_chat_url, require_llama_message_capacity
 
@@ -230,6 +231,8 @@ def remote_llm_messages_query(
     on_text: Callable[[str], None] | None = None,
     json_output: bool = True,
     turn_id: str = "",
+    usage_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    role_request_profile: Mapping[str, Any] | None = None,
 ) -> str:
     """Query the selected Chat backend with the supplied role messages.
 
@@ -294,9 +297,29 @@ def remote_llm_messages_query(
     first_text_seen = False
     text_consumer = on_text
 
+    def observe_usage(kind, usage=None):
+        if usage_observer is None:
+            return
+        event = dict(kind=kind, request_id=request_id, turn_id=turn_id,
+                     provider=selected_provider, model=requested_model)
+        if usage is not None:
+            event["usage"] = usage
+        try:
+            usage_observer(event)
+        except Exception:
+            logger.debug("role usage observation failed")
+
+    def on_provider_usage(raw):
+        usage = token_usage(raw)
+        if usage is not None:
+            observe_usage("usage", usage)
+
+    provider_usage = on_provider_usage if usage_observer is not None else None
+
     def mark_request_started():
         nonlocal request_started
         request_started = time.perf_counter()
+        observe_usage("started")
         if text_consumer is not None:
             logger.info(
                 "[MODEL-LATENCY] stage=request_start request_id=%s turn_id=%s "
@@ -320,6 +343,9 @@ def remote_llm_messages_query(
     if text_consumer is not None:
         on_text = timed_text
 
+    if role_request_profile is not None and selected_provider != "openai":
+        raise ValueError("profile requires selected OpenAI role")
+
     if selected_provider in ("deepseek", "hybrid2"):
         if llm_client is None:
             llm_client = init_llm_client()
@@ -336,24 +362,33 @@ def remote_llm_messages_query(
             extra_body={"thinking": {"type": "disabled"}},
         )
         content, response_model, response_id, finish_reason = (
-            _openai_response_details(response, on_text=on_text)
+            _openai_response_details(response, on_text=on_text, on_usage=provider_usage)
         )
     elif selected_provider in ("openai", "hybrid3"):
         if llm_client is None:
             llm_client = init_llm_client()
         requested_model = str(model or OPENAI_MODEL_NAME)
+        collector = on_text
+        if role_request_profile is None:
+            options = dict(model=requested_model, max_completion_tokens=max(1, int(max_tokens)),
+                           reasoning_effort="low", stream=on_text is not None)
+            if provider_usage is not None and on_text is not None:
+                options["stream_options"] = {"include_usage": True}
+            if json_output:
+                options["response_format"] = {"type": "json_object"}
+        else:
+            options = dict(role_request_profile)
+            if (options["model"] != requested_model or json_output
+                    or not 0 < options["max_completion_tokens"] <= max(1, int(max_tokens))):
+                raise ValueError("sealed role profile does not match this call")
+            options["extra_body"] = {"prompt_cache_options": options.pop("prompt_cache_options")}
+            if options["stream"] and collector is None:
+                # Provider streaming is independent of permission to show partial text.
+                collector = lambda _delta: None
         mark_request_started()
-        response = llm_client.chat.completions.create(
-            model=requested_model,
-            messages=normalized,
-            max_completion_tokens=max(1, int(max_tokens)),
-            reasoning_effort="low",
-            stream=on_text is not None,
-            timeout=float(timeout),
-            **({"response_format": {"type": "json_object"}} if json_output else {}),
-        )
+        response = llm_client.chat.completions.create(messages=normalized, timeout=float(timeout), **options)
         content, response_model, response_id, finish_reason = (
-            _openai_response_details(response, on_text=on_text)
+            _openai_response_details(response, on_text=collector, on_usage=provider_usage)
         )
     elif selected_provider == "gemini":
         if gemini_model is None:
@@ -452,12 +487,14 @@ def _collect_text_stream(stream, extract, on_text: Callable[[str], None]) -> str
     return "".join(pieces)
 
 
-def _openai_response_details(response: Any, *, on_text=None) -> tuple[Any, Any, Any, Any]:
+def _openai_response_details(response: Any, *, on_text=None, on_usage=None) -> tuple[Any, Any, Any, Any]:
     if on_text is not None:
         model = response_id = finish_reason = None
 
         def extract(chunk):
             nonlocal model, response_id, finish_reason
+            if on_usage is not None:
+                on_usage(getattr(chunk, "usage", None))
             model = getattr(chunk, "model", None) or model
             response_id = getattr(chunk, "id", None) or response_id
             choices = getattr(chunk, "choices", None) or []
@@ -468,6 +505,8 @@ def _openai_response_details(response: Any, *, on_text=None) -> tuple[Any, Any, 
 
         content = _collect_text_stream(response, extract, on_text)
         return content, model, response_id, finish_reason
+    if on_usage is not None:
+        on_usage(getattr(response, "usage", None))
     if not response or not getattr(response, "choices", None):
         raise RuntimeError("structured control backend returned no choices")
     choice = response.choices[0]

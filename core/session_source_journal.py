@@ -355,7 +355,7 @@ def retire(data, *, capture=True):
     return value
 
 
-def publish(path, data, *, create=False):
+def publish(path, data, *, create=False, previous=None):
     # Observation does not replace the existing synchronous Session mutation
     # owner. In particular it does not pretend a publish-only lock serializes
     # the preceding read/prepare/write operation or a second process writer.
@@ -363,7 +363,19 @@ def publish(path, data, *, create=False):
     observer = _publication_observer
     if observer is not None:
         try:
-            observer(Path(path))
+            generations = data.get(FIELD, {}).get("generations", ())
+            if not generations:
+                observer(Path(path))
+            else:
+                current = generations[-1]
+                prior = (previous or {}).get(FIELD, {}).get("generations", ())
+                offset = (len(prior[-1]["events"]) if prior and
+                          prior[-1]["incarnation"] == current["incarnation"] else 0)
+                # Only coordinates already committed to the owning file cross this boundary.
+                changes = tuple((event["source"]["namespace"], event["source"]["record_key"], event["position"])
+                                for event in current["events"][offset:])
+                observer(Path(path), generation=(data["session_id"], current["incarnation"]),
+                         retired=current["retired"], changes=changes)
         except Exception as exc:
             # The authority file is already durable. Notification failure may
             # delay rebuildable work, never change the committed write result.

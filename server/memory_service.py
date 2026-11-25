@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import importlib
@@ -146,6 +146,7 @@ class HostMemoryService:
         # A destructive mutation and the start of protected answer publication
         # have one linear order. Generation never holds this short boundary.
         self._publication_lock = asyncio.Lock()
+        self.output_speech = None
         self._state = "starting" if config.enabled else "disabled"
         self._semantic_state = "warming" if config.semantic_enabled and config.enabled else "disabled"
         self._semantic_reason = self._semantic_state
@@ -760,9 +761,9 @@ class HostMemoryService:
         try:
             self._available()
             if self._source_lookup is not None:
-                allowed = await self._db.run(lambda:self._store.filter_recall_use_dependencies(
-                    self._access(context), spans, now_ms=time.time_ns() // 1_000_000),
+                allowed, signatures = await self._db.run(lambda:self._current_history_outputs(context, spans),
                     timeout=self._remaining(deadline), priority=True)
+                self._sources.require_current(signatures)
                 by_key = {(s.namespace, s.record_key, s.revision) for s, _ in allowed}
                 rejected = {_message_key(item["session_id"], item) for item, span in zip(sources, spans)
                             if (span.namespace, span.record_key, span.revision) not in by_key}
@@ -770,7 +771,9 @@ class HostMemoryService:
                 self._lookup_context(context, references)
                 kept = [row for row in rows if row.get("_source") is None or
                         _message_key(row["_source"]["session_id"], row["_source"]) not in rejected]
-                return (MemoryLookupEvidence(context, references, {}) if references else None), kept
+                reads = self._api.OutputReadSet(outputs=tuple(span for span, _ in allowed))
+                evidence = MemoryLookupEvidence(context, references, {}, read_set=reads) if allowed else None
+                return evidence, kept
             references = await self._db.run(lambda:self._store.recall_use_dependencies(self._access(context),
                 spans, now_ms=time.time_ns() // 1_000_000), timeout=self._remaining(deadline), priority=True)
             self._lookup_context(context, references)
@@ -785,6 +788,30 @@ class HostMemoryService:
             self.context(session_id, token=context["context_token"])
             return None, independent_rows()
         return MemoryLookupEvidence(context, references, {}), rows
+
+    def _current_history_outputs(self, context, spans):
+        access = self._access(context)
+        allowed = self._store._filter_recall_use_read_sets(
+            access, spans, now_ms=time.time_ns() // 1_000_000)
+        view = self._sources.view(access)
+        valid, signatures = [], {}
+        checked = {}
+
+        def current(output):
+            if output not in checked:
+                try:
+                    sid, _ = view.output_state(output)
+                    path, signature, *_ = view.files[sid]
+                    checked[output] = (path, signature)
+                except (FileNotFoundError, MemoryRequestError):
+                    checked[output] = None
+            return checked[output]
+
+        for output, reads in allowed:
+            if all(current(parent) is not None for parent in reads.outputs):
+                valid.append((output, reads.memories))
+                signatures.update(checked[parent] for parent in reads.outputs)
+        return valid, tuple(signatures.items())
 
     def _lookup_context(self, context, candidates):
         self.context(context["session_id"], token=context["context_token"])
@@ -836,10 +863,6 @@ class HostMemoryService:
         self._remaining(deadline)
         return MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time, package)
 
-    @staticmethod
-    def _source_reads(evidence):
-        return replace(evidence.read_set, memories=(*evidence.read_set.memories, *evidence.candidates))
-
     async def supplement_lookup(self, evidence, action):
         if self._source_lookup is None or evidence.pack is None:
             raise MemoryRequestError("invalid_request")
@@ -855,7 +878,7 @@ class HostMemoryService:
         method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
         try:
             updated, signatures = await self._db.run(lambda:self._source_lookup.supplement(access,
-                evidence.pack, self._source_reads(evidence), action, ranked, payload=evidence.payload,
+                evidence.pack, evidence.read_set, action, ranked, payload=evidence.payload,
                 counter=counter, method=method), priority=True, timeout=self._remaining(deadline))
         except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,
                 self._api.MemoryValidationError):
@@ -894,28 +917,40 @@ class HostMemoryService:
             deadline = deadline_now() + self.config.explicit_validity_timeout_s
             def register():
                 access, now_ms = self._access(context), time.time_ns() // 1_000_000
+                watches = []
                 try:
                     if evidence.read_set is None:
                         self._store.register_recall_use(access, evidence.candidates, source=source, now_ms=now_ms)
                         signatures = ()
                     else:
-                        reads = self._source_lookup.capture(access, self._source_reads(evidence))
-                        signatures = self._source_lookup.require_reads(access, reads, self._sources.view(access))
-                        self._store.register_output_use(access, reads, source=source, now_ms=now_ms)
+                        purpose = "ordinary" if evidence.pack is None else "lookup"
+                        reads = self._source_lookup.capture(access, evidence.read_set, purpose=purpose)
+                        signatures = self._source_lookup.require_reads(
+                            access, reads, self._sources.view(access), purpose=purpose,
+                            record_watches=watches.extend if self.output_speech is not None else None)
+                        self._store.register_output_use(
+                            access, reads, source=source, now_ms=now_ms, purpose=purpose)
                 except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,
                         self._api.MemoryValidationError):
                     raise MemoryRequestError("conflict") from None
                 self._policy.register_derived(source)
-                return signatures
+                return signatures, tuple(watches)
             reads = evidence.read_set
-            if evidence.candidates or (reads and (reads.sources or reads.memories or reads.outputs or reads.candidates)):
-                signatures = await self._db.run(register, timeout=self._remaining(deadline), priority=True,
-                    mutation=True)
-                if signatures:
+            registered = bool(evidence.candidates or (reads and
+                (reads.sources or reads.memories or reads.outputs or reads.candidates)))
+            if registered:
+                signatures, watches = await self._db.run(
+                    register, timeout=self._remaining(deadline), priority=True, mutation=True)
+            speech_scope = (self.output_speech.publication(
+                context["session_id"], message_id, revision, source, watches=watches)
+                if registered and self.output_speech is not None else nullcontext())
+            with speech_scope:
+                if registered and signatures:
+                    # Install the output's watcher before this last file-version check.
                     self._sources.require_current(signatures)
-            self._lookup_context(context, evidence.candidates)
-            self._remaining(deadline)
-            yield publication_started
+                self._lookup_context(context, evidence.candidates)
+                self._remaining(deadline)
+                yield publication_started
         finally:
             publication_started()
 

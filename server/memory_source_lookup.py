@@ -104,12 +104,14 @@ class SourceLookup:
         return self.delivery.retrieval.lookup_sources(access, query, limit=16, candidate_limit=32,
             max_chars=131072, query_wait_ms=100).items
 
-    def require_reads(self, access, reads, view):
+    def require_reads(self, access, reads, view, *, purpose="lookup", record_watches=None):
         """Check current Session entries even if replay has yet to reach SQLite."""
         outputs = (*reads.outputs, *(item.source for item in reads.sources))
+        current_outputs = set()
         with self.store._lock:
             self.store._check()
-            ancestry = self.store._output_dependencies(access, outputs, "lookup", candidates=reads.candidates)
+            ancestry = self.store._output_dependencies(
+                access, outputs, purpose, candidates=reads.candidates, current_outputs=current_outputs)
         pins = (*reads.sources, *ancestry.sources)
         memories = {ref.memory_id for ref in (*reads.memories, *ancestry.memories)}
         identities = {(span.namespace, span.record_key) for span in (
@@ -121,13 +123,18 @@ class SourceLookup:
                     for source in pending["sources"])
                 for pending in policy.value["pending"]):
             raise MemoryRequestError("conflict")
-        signatures = view.signatures(pins)
+        states = {output: view.output_state(output) for output in current_outputs}
+        signatures = view.signatures(pins, output_states=states.values())
         self.delivery.require_current(signatures)
+        if record_watches is not None:
+            record_watches((pin.source, pin.state_version) for pin in pins)
+            record_watches((output, position) for output, (_, position) in states.items())
         return signatures
 
-    def capture(self, access, reads):
+    def capture(self, access, reads, *, purpose="lookup"):
         return self.store.capture_read_set(access, memories=reads.memories, sources=reads.sources,
-            outputs=reads.outputs, candidates=reads.candidates, now_ms=time.time_ns() // 1_000_000)
+            outputs=reads.outputs, candidates=reads.candidates, now_ms=time.time_ns() // 1_000_000,
+            purpose=purpose)
 
     def assemble(self, access, ranked, *, counter, method):
         view = self.delivery.view(access)

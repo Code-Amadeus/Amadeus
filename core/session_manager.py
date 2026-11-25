@@ -677,7 +677,7 @@ def _persist_history(
         old = _source_journal.read(path) if exists else None
         prepared = _source_journal.prepare(data, old, create=create, control_sources=control_sources,
                                            capture=capture)
-        _source_journal.publish(path, prepared, create=create and not exists)
+        _source_journal.publish(path, prepared, create=create and not exists, previous=old)
         history._source_journal = prepared[_source_journal.FIELD]
     else:
         if control_sources:
@@ -912,7 +912,7 @@ def delete_session(session_id: str) -> bool:
                     _validate_stored_history(data['dialog'], data.get('last_summary', ''))
                     _normalize_message_metadata(data['dialog'])
                 retired = _source_journal.retire(data, capture=capture)
-                _source_journal.publish(path, retired)
+                _source_journal.publish(path, retired, previous=data)
             else:
                 os.remove(path)
             _committed_recent.pop(session_id, None)

@@ -45,8 +45,11 @@ class SourceDelivery:
             self._pending[path] = None
             self._wake.set()
 
-    def _published(self, path):
-        # The commit owner never waits for SQLite or embedding.
+    def _published(self, path, *, generation=None, retired=False, changes=()):
+        # This observer runs after the journal commit, before its caller can acknowledge it.
+        speech = self.host.output_speech
+        if speech is not None and generation is not None:
+            speech.source_committed(generation, retired=retired, changes=changes)
         self.loop.call_soon_threadsafe(self._enqueue, path)
 
     async def close(self):
@@ -256,10 +259,25 @@ class SessionReadView:
         speaker = self.access.user_id if row["role"] == "user" else self.access.character_id
         return self.delivery.api.SourceContent(source, text, row["role"], speaker)
 
-    def signatures(self, pins):
+    def output_state(self, output):
+        """The current displayed reply has its own lifetime within this Session."""
+        sid, mid, _, _, events, rows = self._source(output)
+        row = rows.get(mid)
+        if row is None or row["role"] != "assistant" or row["revision"] != output.revision:
+            raise MemoryRequestError("conflict")
+        heads = events.get(output.record_key)
+        if heads:
+            head = heads[-1]
+            if head["action"] != "upsert" or head["source"]["revision"] != output.revision:
+                raise MemoryRequestError("conflict")
+            return sid, head["position"]
+        return sid, 0
+
+    def signatures(self, pins, *, output_states=()):
         signatures = {}
-        for pin in pins:
-            sid, _, _ = self._row(pin)
+        session_ids = {self._row(pin)[0] for pin in pins}
+        session_ids.update(sid for sid, _ in output_states)
+        for sid in session_ids:
             path, signature, *_ = self.files[sid]
             signatures[path] = signature
         return tuple(signatures.items())

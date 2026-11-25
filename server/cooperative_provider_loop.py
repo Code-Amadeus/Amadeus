@@ -1855,9 +1855,16 @@ class CooperativeProviderLoop:
             evidence = await self.memory_lookup_validate(reference)
             dependencies = guard.get("dependencies") if guard else None
             if dependencies is not None:
-                evidence = replace(evidence, candidates=tuple({
-                    (item.memory_id, item.row_version):item
-                    for item in (*evidence.candidates, *dependencies.candidates)}.values()))
+                if dependencies.read_set is not None:
+                    reads = evidence.read_set
+                    if reads is None:
+                        raise LoopConflict("lookup lost the source-backed read set")
+                    evidence = replace(evidence, read_set=replace(
+                        reads, outputs=(*reads.outputs, *dependencies.read_set.outputs)))
+                else:
+                    evidence = replace(evidence, candidates=tuple({
+                        (item.memory_id, item.row_version):item
+                        for item in (*evidence.candidates, *dependencies.candidates)}.values()))
             live()
             self._require_history_guard(guard)
         except asyncio.CancelledError:

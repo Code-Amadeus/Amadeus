@@ -490,6 +490,10 @@ async def bootstrap(port: int = 17777) -> None:
 
     memory_service = HostMemoryService(MemoryConfig.from_environment(settings._ENV),
         project_for_session=work_ledger.session_project)
+    output_speech = None
+    if os.environ.get("AMADEUS_TRIAL_SPEECH_RETIREMENT") == "1":
+        from server import memory_output_speech as speech_retirement
+        output_speech = speech_retirement.install(memory_service)
     memory_service.start()
     _work_session_manager.configure_model_history_projection(memory_service.project_history)
     work_preview = WorkPreviewManager(work_ledger_store)
@@ -795,6 +799,8 @@ async def bootstrap(port: int = 17777) -> None:
 
     # audio player.
     from tts.playback import StreamPlayerWithBuffer as _SPB, PlaybackManager as _PM, SubtitleHooks as _SH
+    if output_speech is not None:
+        _SPB, _PM = speech_retirement.player_types(_SPB, _PM, output_speech)
     from server import presentation_runtime, wallpaper_subtitle_runtime
     from server.wallpaper_subtitle_translator import translate_wallpaper_subtitle
     from tts.sentence_state import pre_translation_cache
@@ -1286,7 +1292,11 @@ async def bootstrap(port: int = 17777) -> None:
     except Exception:
         logger.exception("failed to configure server pre-translation cache")
     pending_actions = Queue()
-    pending_sentence_items = asyncio.Queue(maxsize=3)
+    pending_sentence_items = (asyncio.Queue(maxsize=3) if output_speech is None else
+        speech_retirement.queue(output_speech, maxsize=3))
+    if output_speech is not None and not e2e_no_tts and TTS_BACKEND != "disabled":
+        import tts.pipeline as speech_pipeline
+        speech_retirement.bind_pipeline(speech_pipeline, playback_manager, output_speech)
     exp_tts_semaphore = asyncio.Semaphore(tts_concurrency)
     exp_play_condition = asyncio.Condition()
 
@@ -1819,7 +1829,9 @@ async def bootstrap(port: int = 17777) -> None:
     def _cooperative_publisher(session_id):
         from core import session_manager as cooperative_sessions
 
-        delivery = CooperativeHostDelivery(session_id=session_id,
+        delivery_type = (CooperativeHostDelivery if output_speech is None else
+            speech_retirement.delivery_type(CooperativeHostDelivery, output_speech))
+        delivery = delivery_type(session_id=session_id,
             display=chat_role_delivery.publish, narration_sink=_speak_cooperative_chat,
             role_stream_factory=lambda cause, gui_callback=None,
                 auip_background_capture_release=None:
