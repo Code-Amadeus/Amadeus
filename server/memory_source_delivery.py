@@ -106,44 +106,25 @@ class SourceDelivery:
         return False
 
     def _current_text(self, access, pin):
-        sid, mid, incarnation = journal.decode(pin.source)
-        path = self._path(sid)
-        before = sessions._session_file_signature(path)
-        data = journal.read(path)
-        live = journal.live(data)
-        if live is None:
+        view = self.view(access)
+        try:
+            content = view.read(pin, discoverable=True)
+            self.require_current(view.signatures((pin,)))
+        except (FileNotFoundError, MemoryRequestError):
             return None
-        generation = live["generations"][-1]
-        scope = generation["scope"]
-        if (generation["incarnation"] != incarnation or scope["user_id"] != access.user_id
-                or scope["character_id"] != access.character_id
-                or scope["project_id"] not in (None, access.project_id)):
-            return None
+        return content.text
 
-        current = None
-        state_version = None
-        for event in reversed(generation["events"]):
-            if event["source"]["record_key"] != pin.source.record_key:
-                continue
-            change = self._change(event)
-            if current is None:
-                current = change
-                if (current.action != "upsert" or current.source != pin.source
-                        or not current.lookup_allowed or current.evidence_only
-                        or current.policy_revision != pin.policy_revision
-                        or current.recorded_at_ms != pin.recorded_at_ms):
-                    return None
-            elif replace(current, position=change.position) != change:
-                break
-            state_version = change.position
-        if state_version != pin.state_version:
-            return None
-        row = next((row for row in data["dialog"] if row["message_id"] == mid), None)
-        if row is None or row["created_at_ms"] != pin.recorded_at_ms:
-            return None
-        projected = project_memory_source(sid, row, expected_revision=pin.source.revision,
-                                          incarnation=incarnation)
-        return projected["text"] if before == sessions._session_file_signature(path) else None
+    def view(self, access):
+        return SessionReadView(self, access)
+
+    @staticmethod
+    def require_current(signatures):
+        try:
+            for path, signature in signatures:
+                if sessions._session_file_signature(path) != signature:
+                    raise MemoryRequestError("conflict")
+        except OSError:
+            raise MemoryRequestError("conflict") from None
 
     def _materialize_page(self, access, after):
         # An unresolved Host-side privacy operation can precede the SDK barrier.
@@ -197,3 +178,84 @@ class SourceDelivery:
         except Exception as exc:
             self._state = "unavailable"
             logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
+
+
+class SessionReadView:
+    """One read operation over exact committed Session versions."""
+
+    def __init__(self, delivery, access):
+        self.delivery = delivery
+        self.access = access
+        self.files = {}
+
+    def _source(self, source):
+        sid, mid, incarnation = journal.decode(source)
+        if sid not in self.files:
+            path = self.delivery._path(sid)
+            signature = sessions._session_file_signature(path)
+            data = journal.read(path)
+            live = journal.live(data)
+            if live is None:
+                raise MemoryRequestError("conflict")
+            generation = live["generations"][-1]
+            events = {}
+            for event in generation["events"]:
+                events.setdefault(event["source"]["record_key"], []).append(event)
+            self.files[sid] = (path, signature, generation, events,
+                               {row["message_id"]: row for row in data["dialog"]})
+        path, signature, generation, events, rows = self.files[sid]
+        scope = generation["scope"]
+        if (generation["incarnation"] != incarnation or scope["user_id"] != self.access.user_id
+                or scope["character_id"] != self.access.character_id
+                or scope["project_id"] not in (None, self.access.project_id)):
+            raise MemoryRequestError("conflict")
+        return sid, mid, incarnation, generation["stream_id"], events, rows
+
+    def pin(self, item):
+        *_, stream, _events, _rows = self._source(item.source)
+        pin = self.delivery.maintenance.lookup_input(self.access, stream, item.source, discoverable=True)
+        if pin.state_version != item.reference.target_version:
+            raise MemoryRequestError("conflict")
+        self._row(pin, discoverable=True)
+        return pin
+
+    def _row(self, pin, *, discoverable=False):
+        source = pin.source
+        sid, mid, incarnation, _stream, events, rows = self._source(source)
+        row = rows.get(mid)
+        revisions = events.get(source.record_key)
+        if row is None or not revisions or (row["revision"], row["created_at_ms"]) != (
+                source.revision, pin.recorded_at_ms):
+            raise MemoryRequestError("conflict")
+        current = self.delivery._change(revisions[-1])
+        if (current.action != "upsert" or current.source != source or not current.lookup_allowed
+                or (discoverable and current.evidence_only)
+                or (current.policy_revision, current.recorded_at_ms) !=
+                    (pin.policy_revision, pin.recorded_at_ms)):
+            raise MemoryRequestError("conflict")
+        version = current.position
+        for event in reversed(revisions[:-1]):
+            if self.delivery._change(event) != replace(current, position=event["position"]):
+                break
+            version = event["position"]
+        if version != pin.state_version:
+            raise MemoryRequestError("conflict")
+        return sid, incarnation, row
+
+    def read(self, pin, *, max_chars=MAX_SOURCE_CHARS, max_bytes=4_000_000, discoverable=False):
+        sid, incarnation, row = self._row(pin, discoverable=discoverable)
+        source = pin.source
+        text = project_memory_source(sid, row, expected_revision=source.revision,
+                                     incarnation=incarnation)["text"]
+        if len(text) > max_chars or len(text.encode("utf8")) > max_bytes:
+            raise MemoryRequestError("source_budget")
+        speaker = self.access.user_id if row["role"] == "user" else self.access.character_id
+        return self.delivery.api.SourceContent(source, text, row["role"], speaker)
+
+    def signatures(self, pins):
+        signatures = {}
+        for pin in pins:
+            sid, _, _ = self._row(pin)
+            path, signature, *_ = self.files[sid]
+            signatures[path] = signature
+        return tuple(signatures.items())

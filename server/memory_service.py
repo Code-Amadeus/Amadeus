@@ -22,7 +22,7 @@ from core import session_manager as sm
 from core import session_source_journal as journal
 from core.chat_history_projection import MEMORY_TEXT_PROJECTION_VERSION, exclude_source_spans
 from server.memory_source_policy import SourcePolicyProjection, SourcePolicyUnavailable, SourcePolicyBindingMismatch
-from server.memory_context import pack_reference
+from server.memory_context import estimate_reply_tokens, pack_reference
 from server.reference_deadline import await_until, deadline_now
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,8 @@ class MemoryLookupEvidence:
     context: dict
     candidates: tuple
     payload: dict
+    read_set: object | None = None
+    question_time: dict | None = None
 
 
 class HostMemoryService:
@@ -135,6 +137,7 @@ class HostMemoryService:
         self._model = _SingleFlight("eidema-model")
         self._startup = None
         self._sources = None
+        self._source_lookup = None
         self._index_task = None
         self._index_requested = False
         self._closing = False
@@ -220,8 +223,10 @@ class HostMemoryService:
             await self._db.run(opened, timeout=None, on_completed=installed)
             if self.config.enabled and self.config.source_runtime_enabled and not self._closing:
                 from server.memory_source_delivery import SourceDelivery
+                from server.memory_source_lookup import SourceLookup
                 try:
                     self._sources = SourceDelivery(self)
+                    self._source_lookup = SourceLookup(self, self._sources)
                 except (AttributeError, ValueError) as exc:
                     logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
         except Exception as exc:
@@ -678,19 +683,48 @@ class HostMemoryService:
         self._remaining(deadline)
         return {**admitted, "coverage":coverage}
 
-    async def lookup_for_session(self, session_id, query):
-        """Explicit, standalone saved-memory search; never add another history dose."""
+    async def lookup_for_session(self, session_id, query, *, input_id="", turn_id="", question=""):
+        """Explicit search in the Host-bound scope of a previously accepted turn."""
         if not isinstance(query, str) or not query.strip() or len(query) > 2000:
             raise MemoryRequestError("invalid_request")
         self._available()
         context = self.context(session_id)
         deadline = deadline_now() + self.config.explicit_lookup_timeout_s
+        if self._source_lookup is not None:
+            current, clock = self._lookup_question(context, input_id, turn_id, question)
+            self._lookup_context(context, ())
+            result = await self._query.run(lambda:self._source_lookup.rank(
+                self._access(context), query.strip(), current=current, question_time=clock),
+                timeout=self._remaining(deadline))
+            self._remaining(deadline)
+            return MemoryTurnReference(context, result, deadline)
         result = await self._query.run(lambda:self._store.recall(self._access(context),
             query.strip(), ranking="semantic_first", now_ms=time.time_ns() // 1_000_000,
             limit=MEMORY_CANDIDATE_LIMIT, max_chars=MEMORY_CANDIDATE_CHAR_BUDGET),
             timeout=self._remaining(deadline))
         self._remaining(deadline)
         return MemoryTurnReference(context, result, deadline)
+
+    def _lookup_question(self, context, input_id, turn_id, question):
+        unknown = {"status":"unknown"}
+        if not input_id or not turn_id:
+            return None, unknown
+        try:
+            row = sm.read_committed_session_source(context["session_id"], input_id, revision=1)
+        except (LookupError, ValueError):
+            return None, unknown
+        if (row["role"], row["turn_id"], row.get("incarnation")) != (
+                "user", turn_id, context.get("incarnation")):
+            return None, unknown
+        source = self._api.SourceSpan(**journal.coordinate(
+            context["session_id"], input_id, row["revision"], context.get("incarnation")))
+        if row["text"] != question:
+            return source, unknown
+        clock = self._api.format_recorded_time(row["created_at_ms"])
+        if clock.status != "known":
+            return source, unknown
+        return source, {"status":"known", "utc":clock.utc,
+                        "utc_offset_minutes":row.get("utc_offset_minutes")}
 
     def history_policy_token(self):
         # Retain the value object in the turn guard; a recycled Python id must
@@ -724,6 +758,18 @@ class HostMemoryService:
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         try:
             self._available()
+            if self._source_lookup is not None:
+                allowed = await self._db.run(lambda:self._store.filter_recall_use_dependencies(
+                    self._access(context), spans, now_ms=time.time_ns() // 1_000_000),
+                    timeout=self._remaining(deadline), priority=True)
+                by_key = {(s.namespace, s.record_key, s.revision) for s, _ in allowed}
+                rejected = {_message_key(item["session_id"], item) for item, span in zip(sources, spans)
+                            if (span.namespace, span.record_key, span.revision) not in by_key}
+                references = tuple(dict.fromkeys(ref for _, refs in allowed for ref in refs))
+                self._lookup_context(context, references)
+                kept = [row for row in rows if row.get("_source") is None or
+                        _message_key(row["_source"]["session_id"], row["_source"]) not in rejected]
+                return (MemoryLookupEvidence(context, references, {}) if references else None), kept
             references = await self._db.run(lambda:self._store.recall_use_dependencies(self._access(context),
                 spans, now_ms=time.time_ns() // 1_000_000), timeout=self._remaining(deadline), priority=True)
             self._lookup_context(context, references)
@@ -752,6 +798,10 @@ class HostMemoryService:
         if not isinstance(reference, MemoryTurnReference):
             raise MemoryRequestError("invalid_request")
         context = reference.context
+        if self._source_lookup is not None:
+            from server.memory_source_lookup import RankedLookup
+            if isinstance(reference.result, RankedLookup):
+                return await self._validate_source_lookup(context, reference.result)
         self._lookup_context(context, reference.result.candidates)
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         result = await self._db.run(lambda:self._store.revalidate(self._access(context),
@@ -771,6 +821,19 @@ class HostMemoryService:
         coverage["context_budget"] = budget
         self._remaining(deadline)
         return MemoryLookupEvidence(context, tuple(selected), {**admitted, "coverage":coverage})
+
+    async def _validate_source_lookup(self, context, ranked):
+        self._lookup_context(context, ())
+        deadline = deadline_now() + self.config.explicit_validity_timeout_s
+        counter = self._reply_token_count or estimate_reply_tokens
+        method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
+        reads, signatures, payload = await self._db.run(lambda:self._source_lookup.assemble(
+            self._access(context), ranked, counter=counter, method=method),
+            timeout=self._remaining(deadline), priority=True)
+        self._lookup_context(context, reads.memories)
+        self._sources.require_current(signatures)
+        self._remaining(deadline)
+        return MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time)
 
     @asynccontextmanager
     async def lookup_delivery(self, evidence, *, message_id, revision=1):
@@ -797,16 +860,28 @@ class HostMemoryService:
                 revision, context.get("incarnation")))
             deadline = deadline_now() + self.config.explicit_validity_timeout_s
             def register():
-                if evidence.candidates:
-                    try:
-                        self._store.register_recall_use(self._access(context), evidence.candidates,
-                            source=source, now_ms=time.time_ns() // 1_000_000)
-                    except self._api.MemoryConflict:
-                        raise MemoryRequestError("conflict") from None
-                    self._policy.register_derived(source)
-            if evidence.candidates:
-                await self._db.run(register, timeout=self._remaining(deadline), priority=True,
+                access, now_ms = self._access(context), time.time_ns() // 1_000_000
+                try:
+                    if evidence.read_set is None:
+                        self._store.register_recall_use(access, evidence.candidates, source=source, now_ms=now_ms)
+                        signatures = ()
+                    else:
+                        prior = evidence.read_set
+                        reads = self._store.capture_read_set(access, memories=(*prior.memories, *evidence.candidates),
+                            sources=prior.sources, outputs=prior.outputs, candidates=prior.candidates, now_ms=now_ms)
+                        signatures = self._source_lookup.require_reads(access, reads, self._sources.view(access))
+                        self._store.register_output_use(access, reads, source=source, now_ms=now_ms)
+                except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,
+                        self._api.MemoryValidationError):
+                    raise MemoryRequestError("conflict") from None
+                self._policy.register_derived(source)
+                return signatures
+            reads = evidence.read_set
+            if evidence.candidates or (reads and (reads.sources or reads.memories or reads.outputs or reads.candidates)):
+                signatures = await self._db.run(register, timeout=self._remaining(deadline), priority=True,
                     mutation=True)
+                if signatures:
+                    self._sources.require_current(signatures)
             self._lookup_context(context, evidence.candidates)
             self._remaining(deadline)
             yield publication_started
