@@ -121,8 +121,9 @@ Once it has taken effect:
   the last session ended;
 - creating apps through Work, opening them, and using them by hand remain
   available, along with AppSession identity, permission checks and receipts.
-  An app opened this way stays standalone; it does not join AUIP until the
-  switch is turned back on.
+  An app opened this way stays standalone, and the Work page says so instead
+  of waiting for it to connect. To connect it, turn the switch back on and
+  reopen the app.
 
 Turning it back on restores entry, participation and narration for later turns
 with no replay.

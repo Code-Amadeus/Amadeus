@@ -556,18 +556,25 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
       if (!launchUrl) throw new Error('The host did not return an AUIP launch descriptor.')
       if (!artifactRef) throw new Error('The host did not bind the AUIP launch to an artifact.')
       if (!hostSurfaceId) throw new Error('The host did not bind an AUIP surface identity.')
-      setAuipExperience({
-        artifactRef,
-        title: 'AUIP application',
-        status: 'connecting',
-      })
+      // With AI application interaction off, the Host refuses the registration,
+      // so the app opens on its own and no connection will follow.
+      const standalone = prepared.auip_interaction_enabled === false
+      if (!standalone) {
+        setAuipExperience({
+          artifactRef,
+          title: 'AUIP application',
+          status: 'connecting',
+        })
+      }
       const opened = await window.amadeus?.openAuipApp(launchUrl, hostSurfaceId, workItemId)
       if (!opened?.ok) {
         throw new Error(opened?.detail || 'The desktop host refused the AUIP launch URL.')
       }
       setAuipLaunchFeedback({
         status: 'success',
-        message: 'Application opened. Its one-time Attach ticket is waiting for registration.',
+        message: standalone
+          ? 'AI application interaction is off, so the application opened on its own. Turn it on in Settings → Providers to let Amadeus join.'
+          : 'Application opened. Its one-time Attach ticket is waiting for registration.',
       })
     } catch (error) {
       setAuipExperience(undefined)

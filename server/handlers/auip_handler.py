@@ -23,7 +23,7 @@ from server.auip_control_decision import (
     reconcile_active_auip_control,
 )
 from server.auip_engagement import AuipEngagementCoordinator
-from server.auip_runtime import AuipRuntime, runtime
+from server.auip_runtime import AuipRuntime, ai_interaction_enabled, runtime
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -138,6 +138,10 @@ class AuipHandler(RequestHandler):
                     **ticket,
                     "host_surface_id": host_surface_id,
                     "launch_url": launch_url,
+                    # While the switch is off the app still opens, but its
+                    # registration will be refused, so no caller should wait
+                    # for it to connect.
+                    "auip_interaction_enabled": ai_interaction_enabled(),
                 }
             if method == Method.AUIP_LAUNCH_RESULT:
                 if self.launch is None:
