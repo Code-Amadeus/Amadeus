@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import importlib
 import json
@@ -118,6 +118,7 @@ class MemoryLookupEvidence:
     payload: dict
     read_set: object | None = None
     question_time: dict | None = None
+    pack: object | None = None
 
 
 class HostMemoryService:
@@ -827,13 +828,45 @@ class HostMemoryService:
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         counter = self._reply_token_count or estimate_reply_tokens
         method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
-        reads, signatures, payload = await self._db.run(lambda:self._source_lookup.assemble(
+        reads, signatures, payload, package = await self._db.run(lambda:self._source_lookup.assemble(
             self._access(context), ranked, counter=counter, method=method),
             timeout=self._remaining(deadline), priority=True)
         self._lookup_context(context, reads.memories)
         self._sources.require_current(signatures)
         self._remaining(deadline)
-        return MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time)
+        return MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time, package)
+
+    @staticmethod
+    def _source_reads(evidence):
+        return replace(evidence.read_set, memories=(*evidence.read_set.memories, *evidence.candidates))
+
+    async def supplement_lookup(self, evidence, action):
+        if self._source_lookup is None or evidence.pack is None:
+            raise MemoryRequestError("invalid_request")
+        context = evidence.context
+        self._lookup_context(context, evidence.candidates)
+        access = self._access(context)
+        deadline = deadline_now() + self.config.explicit_lookup_timeout_s
+        ranked = ()
+        if "query" in action:
+            ranked = await self._query.run(lambda:self._source_lookup.search_originals(access, action["query"]),
+                timeout=self._remaining(deadline))
+        counter = self._reply_token_count or estimate_reply_tokens
+        method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
+        try:
+            updated, signatures = await self._db.run(lambda:self._source_lookup.supplement(access,
+                evidence.pack, self._source_reads(evidence), action, ranked, payload=evidence.payload,
+                counter=counter, method=method), priority=True, timeout=self._remaining(deadline))
+        except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,
+                self._api.MemoryValidationError):
+            raise MemoryRequestError("conflict") from None
+        self._lookup_context(context, evidence.candidates)
+        self._sources.require_current(signatures)
+        self._remaining(deadline)
+        if updated is None:
+            return None
+        reads, _, payload, package = updated
+        return replace(evidence, candidates=reads.memories, payload=payload, read_set=reads, pack=package)
 
     @asynccontextmanager
     async def lookup_delivery(self, evidence, *, message_id, revision=1):
@@ -866,9 +899,7 @@ class HostMemoryService:
                         self._store.register_recall_use(access, evidence.candidates, source=source, now_ms=now_ms)
                         signatures = ()
                     else:
-                        prior = evidence.read_set
-                        reads = self._store.capture_read_set(access, memories=(*prior.memories, *evidence.candidates),
-                            sources=prior.sources, outputs=prior.outputs, candidates=prior.candidates, now_ms=now_ms)
+                        reads = self._source_lookup.capture(access, self._source_reads(evidence))
                         signatures = self._source_lookup.require_reads(access, reads, self._sources.view(access))
                         self._store.register_output_use(access, reads, source=source, now_ms=now_ms)
                 except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,

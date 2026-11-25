@@ -212,10 +212,14 @@ class SessionReadView:
         return sid, mid, incarnation, generation["stream_id"], events, rows
 
     def pin(self, item):
-        *_, stream, _events, _rows = self._source(item.source)
-        pin = self.delivery.maintenance.lookup_input(self.access, stream, item.source, discoverable=True)
+        pin = self._pin(item.source)
         if pin.state_version != item.reference.target_version:
             raise MemoryRequestError("conflict")
+        return pin
+
+    def _pin(self, source):
+        *_, stream, _events, _rows = self._source(source)
+        pin = self.delivery.maintenance.lookup_input(self.access, stream, source, discoverable=True)
         self._row(pin, discoverable=True)
         return pin
 
@@ -259,3 +263,26 @@ class SessionReadView:
             path, signature, *_ = self.files[sid]
             signatures[path] = signature
         return tuple(signatures.items())
+
+    def position(self, pin):
+        sid, _, incarnation, _, events, _ = self._source(pin.source)
+        return (sid, incarnation), tuple(events).index(pin.source.record_key)
+
+    def relative(self, anchor, offset):
+        """Locate a committed slot without crossing an unavailable message."""
+        sid, mid, _, _, events, rows = self._source(anchor.source)
+        keys = tuple(events)
+        at = keys.index(anchor.source.record_key)
+        index = at + offset
+        if not 0 <= index < len(keys):
+            raise MemoryRequestError("conflict")
+        entry = events[keys[index]][-1]
+        source = self.delivery.api.SourceSpan(**entry["source"])
+        _, target, _ = journal.decode(source)
+        dialog = tuple(rows)
+        # Journal ordering remembers removed slots, and the live transcript
+        # also detects intervening rows written while capture was paused.
+        if target not in rows or dialog.index(target) - dialog.index(mid) != offset:
+            raise MemoryRequestError("conflict")
+        pin = self._pin(source)
+        return pin, rows[target]["role"]

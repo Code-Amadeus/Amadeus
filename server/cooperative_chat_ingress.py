@@ -997,6 +997,8 @@ class CooperativeChatManager:
                     if self.memory is not None else None,
                 memory_lookup_validate=self.memory.validate_lookup if self.memory is not None else None,
                 memory_lookup_delivery=self.memory.lookup_delivery if self.memory is not None else None,
+                memory_lookup_followup=(self.memory.supplement_lookup
+                    if self.memory is not None and self.memory.config.source_runtime_enabled else None),
                 memory_source_lookup=(self.memory is not None and self.memory.config.source_runtime_enabled),
                 memory_lookup_status=lambda turn_id, status:bus.emit_now(Method.CHAT_MEMORY_LOOKUP,
                     {"session_id":session_id, "turn_id":turn_id, "status":status}),
