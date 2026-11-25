@@ -449,7 +449,12 @@ def _lookup_answer(raw, payload, *, allow_read):
     tag, = controls
     if tag["type"] != "DELEGATE" or not raw.rstrip().endswith(tag["raw"]):
         return say, None
-    action = tag["attrs"]
+    from tools.text_utils import _parse_attr_kv
+
+    attributes = tag["raw"][len("[DELEGATE"):-1]
+    if not attributes or not attributes[0].isspace():
+        return say, None
+    action = _parse_attr_kv(attributes, strict=True)
     if action.get("op") != "memory_lookup":
         return say, None
     fields = set(action) - {"op", "release_group"}
@@ -459,6 +464,12 @@ def _lookup_answer(raw, payload, *, allow_read):
             return say, {**action, "query":query.strip()}
     if fields == {"record", "direction"} and action["direction"] in {"previous", "next"}:
         if any(row["source_id"] == action["record"] for row in payload.get("records", ())):
+            return say, action
+    if (fields == {"change_from", "direction", "quote"}
+            and payload.get("coverage", {}).get("ordered_state_lookup") is True
+            and action["direction"] in {"previous", "next"}
+            and isinstance(action["quote"], str) and 0 < len(action["quote"]) <= 512):
+        if any(row["source_id"] == action["change_from"] for row in payload.get("records", ())):
             return say, action
     return say, None
 
@@ -1318,6 +1329,14 @@ class CooperativeProviderLoop:
                             "原会話内で位置が分かる場合は query の代わりに record=\"s0\" direction=\"previous\""
                             " または next を使い、実際の source_id を指定します。無関係な独立原話だけを外せる場合は"
                             " release_group=\"g0\" に実際の group_id を指定できます。これ以外の操作は提案しません。")
+                    if (event.get("additional_lookup_remaining") == 1
+                            and event.get("coverage", {}).get("ordered_state_lookup") is True):
+                        system += (" 同じ事実の前値・後値が必要な場合は "
+                            "[DELEGATE op=memory_lookup change_from=\"s0\" direction=\"previous\" "
+                            "quote=\"原記録の引用箇所\"]、または next を使えます。引用は原文そのままを使います。")
+                    if event.get("memory_reference", {}).get("state_change"):
+                        system += (" state_change の before/after は確認済みの前値・後値の引用箇所です。"
+                            "各値の条件や出来事は原文から読み取り、記録時刻から状態の順を推測しません。")
             if event.get("state") == "auip_read":
                 from server.auip_control_decision import auip_read_role_contract
 

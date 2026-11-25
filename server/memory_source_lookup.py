@@ -46,6 +46,8 @@ class SourceLookup:
         self.store = host._store
         self.api = host._api
         self.evidence = self.api.EvidenceDelivery(self.store)
+        # Trusted Host configuration (policy id, revision, formation pipeline).
+        self.ordered_change_policy = None
         self.stale = (MemoryRequestError, FileNotFoundError, self.api.MemoryConflict,
                       self.api.MemoryNotFound, self.api.MemoryValidationError)
 
@@ -158,10 +160,25 @@ class SourceLookup:
             authorized=lambda: self.host._policy.ready, reader=SimpleNamespace(read=read), count_tokens=counter,
             now_ms=time.time_ns() // 1_000_000, include_notes=True)
 
-    def _package(self, access, current, result, view, coverage, counter, method, *, prior=None, visited=()):
+    def _package(self, access, current, result, view, coverage, counter, method, *,
+                 prior=None, visited=(), state_change=None):
         memories = tuple(group.reference for group in result.groups if group.status == "complete"
                          and isinstance(group.reference, self.api.RecallReference))
         payload, tokens, size, position_reads = self._source_order(access, result, view, counter)
+        if state_change is not None:
+            aliases = {pin.source: row["source_id"]
+                       for row, pin in zip(payload["records"], result.record_inputs, strict=True)}
+            order = {}
+            for label, excerpt in zip(("before", "after"), (state_change.left, state_change.right), strict=True):
+                whole = self.api.SourceSpan(excerpt.namespace, excerpt.record_key, excerpt.revision)
+                order[label] = [aliases[whole], excerpt.start_cp, excerpt.end_cp]
+            payload = {**payload, "state_change": order}
+            raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            tokens, size = counter(raw), len(raw.encode("utf8"))
+            if tokens > 1024 or size > 8192:
+                return None
+        if self.ordered_change_policy is not None and result.record_inputs:
+            coverage = {**coverage, "ordered_state_lookup": True}
         before = prior or self.api.OutputReadSet()
         reads = self.capture(access, self.api.OutputReadSet(
             memories=(*before.memories, *memories),
@@ -205,28 +222,57 @@ class SourceLookup:
                 return ordered, tokens, size, tuple(dependencies)
         return payload, result.tokens, result.utf8_bytes, ()
 
-    def supplement(self, access, package, prior, action, ranked, *, payload, counter, method):
+    def supplement(self, access, package, prior, action, ranked, *, payload, counter, method,
+                   required_originals=None):
+        """Apply one supplemental read. Host-selected originals must all fit."""
         view = self.delivery.view(access)
         prior = self.capture(access, prior)
         signatures = self.require_reads(access, prior, view)
         roots = tuple(group.reference for group in package.groups)
-        anchor, visited = None, ()
-        if "record" in action:
-            anchor = self._visible_record(action["record"], package, payload)
-            addition, visited = self._neighbor(access, view, anchor, action["direction"])
-            at = next(i for i, group in enumerate(package.groups) if anchor.source in group.sources)
-            at += action["direction"] == "next"
+        anchor, visited, state_change = None, (), None
+        if required_originals is not None:
+            # Each nomination comes from the existing authorized source lookup,
+            # independently of the role action and its serializable parameters.
+            if {"record", "change_from"}.intersection(action) or len(required_originals) != 2:
+                raise MemoryRequestError("invalid_request")
+            try:
+                additions = tuple(view.pin(item) for item in required_originals)
+                self.require_reads(access, self.api.OutputReadSet(sources=additions), view)
+            except self.stale:
+                return None, signatures
+            at = len(roots)
+        elif "change_from" in action or "record" in action:
+            is_state_change = "change_from" in action
+            label = action["change_from" if is_state_change else "record"]
+            anchor = self._visible_record(label, package, payload)
+            if anchor.source == package.current:
+                return None, signatures
+            if is_state_change:
+                ordered = self._ordered_change_reference(access, anchor, label, action, payload)
+                if ordered is None:
+                    return None, signatures
+                addition, state_change = ordered
+                additions, at = (addition,), len(roots)
+            else:
+                addition, visited = self._neighbor(access, view, anchor, action["direction"])
+                at = next(i for i, group in enumerate(package.groups) if anchor.source in group.sources)
+                at += action["direction"] == "next"
+                additions = (addition,) if addition is not None else ()
         else:
             addition = self._new_original(access, view, package, ranked)
             at = len(roots)
-        if addition is None or addition.source == package.current or addition in package.records:
+            additions = (addition,) if addition is not None else ()
+        originals = tuple(pin for pin in additions if isinstance(pin, self.api.SourceInput))
+        if (not additions or set(additions).intersection(roots)
+                or len({pin.source for pin in originals}) != len(originals)
+                or any(pin.source == package.current or pin in package.records for pin in originals)):
             return None, signatures
 
         release = self._release(package, action.get("release_group"), anchor)
         attempts = (None, release) if release is not None else (None,)
         for discarded in attempts:
             proposed = list(roots)
-            proposed.insert(at, addition)
+            proposed[at:at] = additions
             if discarded is not None:
                 proposed.remove(discarded)
             if len(proposed) > 8:
@@ -235,10 +281,49 @@ class SourceLookup:
             selected = tuple(group.reference for group in result.groups if group.status == "complete")
             if selected != tuple(proposed):
                 continue
+            if state_change is not None:
+                added = {pin.source for pin in result.record_inputs} - {pin.source for pin in package.records}
+                if not added or package.current in added:
+                    continue
             change = self._package(access, package.current, result, view, payload["coverage"], counter, method,
-                                   prior=prior, visited=visited)
-            return change, change[1]
+                                   prior=prior, visited=visited, state_change=state_change)
+            if change is not None:
+                return change, change[1]
         return None, signatures
+
+    def _ordered_change_reference(self, access, anchor, label, action, payload):
+        if self.ordered_change_policy is None:
+            return None
+        body, = (row["text"] for row in payload["records"] if row["source_id"] == label)
+        try:
+            excerpt = self.api.locate_source_quote(anchor.source, body, action["quote"])
+        except self.api.MemoryValidationError:
+            return None
+        match_end = {"previous": "right", "next": "left"}.get(action["direction"])
+        if match_end is None:
+            return None
+        found = self.api.Comparisons(self.store).find(access, [excerpt], purpose="lookup")
+        if found.budget_omitted:
+            return None
+        matches = (row for row in found.items if row.comparison.kind == "reported_change"
+                   and excerpt in (row.comparison.left, row.comparison.right))
+        selected = []
+        with self.store._lock:
+            self.store._check()
+            for row in matches:
+                ref = self.api.RecallReference(row.memory.memory_id, row.memory.row_version)
+                policy = self.store._db.execute(
+                    "SELECT a.policy_id,a.policy_version,a.pipeline_version "
+                    "FROM memories m JOIN derived_authorizations a ON a.authorization_id=m.authorization_id "
+                    "WHERE m.memory_id=? AND m.row_version=? AND a.enabled=1 "
+                    "AND m.authorization_generation=a.generation AND m.state='active' AND m.invalid_reason IS NULL",
+                    (ref.memory_id, ref.row_version),
+                ).fetchone()
+                if not policy or tuple(policy) != self.ordered_change_policy:
+                    return None
+                if getattr(row.comparison, match_end) == excerpt:
+                    selected.append((ref, row.comparison))
+        return selected[0] if len(selected) == 1 else None
 
     @staticmethod
     def _visible_record(label, package, payload):

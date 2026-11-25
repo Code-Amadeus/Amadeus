@@ -104,21 +104,32 @@ def _pair_ids_values(ids_text: str, values_text: str) -> dict:
 # 标签解析
 # ---------------------------------------------------------------------------
 
-def _parse_attr_kv(attr_text: str) -> dict:
+def _parse_attr_kv(attr_text: str, *, strict: bool = False) -> dict:
     """
     将标签属性串解析为字典。
     例：" id=MouthSmile,BrowInnerUp value=0.7,0.2 dur=2s ease=easeOut "
     →  {"id": "MouthSmile,BrowInnerUp", "value": "0.7,0.2", "dur": "2s", "ease": "easeOut"}
     """
     attrs = {}
-    s = re.sub(r"\s+", " ", attr_text.strip())
+    s = attr_text.strip()
+    if not strict:
+        s = re.sub(r"\s+", " ", s)
     if not s:
         return attrs
+    end = 0
     for m in re.finditer(r"(\w+)\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s]+)", s):
-        value = m.group(2).strip()
-        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        key, value = m.groups()
+        if strict and (s[end:m.start()].strip() or (end and m.start() == end) or key in attrs):
+            return {}
+        quoted = value[0] in ('"', "'") and value[-1] == value[0]
+        if quoted and (not strict or len(value) > 1):
             value = value[1:-1]
-        attrs[m.group(1)] = value
+        elif strict and any(delimiter in value for delimiter in ('"', "'")):
+            return {}
+        attrs[key] = value
+        end = m.end()
+    if strict and s[end:].strip():
+        return {}
     return attrs
 
 
