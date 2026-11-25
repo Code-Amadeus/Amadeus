@@ -5,8 +5,8 @@
     "zh-CN": "启动"
   },
   "description": {
-    "en-US": "Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.",
-    "zh-CN": "完全退出并重新打开 Amadeus 后生效。你也随时可以通过侧栏的 Wallpaper 切换壁纸模式。"
+    "en-US": "Startup mode applies after you quit and reopen Amadeus; the wallpaper display applies to the next wallpaper session. Wallpaper is always available in the sidebar.",
+    "zh-CN": "启动方式在完全退出并重新打开 Amadeus 后生效；壁纸显示器在下一次壁纸会话生效。你也随时可以通过侧栏的 Wallpaper 切换壁纸模式。"
   },
   "desktop": true,
   "apply": "desktop_restart",
@@ -39,6 +39,22 @@
           }
         }
       ]
+    },
+    "AMADEUS_WALLPAPER_MONITOR": {
+      "type": "string",
+      "title": {
+        "en-US": "Wallpaper display",
+        "zh-CN": "壁纸显示器"
+      },
+      "default": "",
+      "description": {
+        "en-US": "The display used by the managed wallpaper. Applies to the next wallpaper session.",
+        "zh-CN": "托管壁纸使用的显示器，在下一次壁纸会话生效。"
+      },
+      "scope": "desktop",
+      "apply": "frontend",
+      "trim": true,
+      "max_length": 256
     }
   }
 }

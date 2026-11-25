@@ -110,6 +110,9 @@ class FakeHost:
     def stop_owned_process(self, process):
         self.stopped = process
 
+    def resolve_monitor(self, target=None):
+        return target or "primary"
+
 
 @pytest.fixture
 def f(tmp_path):
@@ -1249,3 +1252,121 @@ def test_native_large_message_and_separate_payload_are_read_completely():
         assert h.Rpc(server.windows, server.name).call("Settings", "GetSettings") == [payload]
     finally:
         server.join()
+
+
+# Lively's ScreenData.device_id is a device-interface path, not a GDI name;
+# fakes keep the real shape so the persisted identity stays honest.
+DISPLAY_ID_1 = "\\\\?\\DISPLAY#SAM0A8F#5&2618d42e&0&UID512#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}"
+DISPLAY_ID_2 = "\\\\?\\DISPLAY#GSM5BC7#5&2f3a2e4f&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}"
+DISPLAY_ID_9 = "\\\\?\\DISPLAY#DELA1B2#7&9f1c30ab&1&UID8960#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}"
+
+
+def test_resolve_monitor_selects_primary_without_an_explicit_target():
+    host = object.__new__(h.LivelyHost)
+    host.get_screens = lambda: [(h.DesktopItem(DISPLAY_ID_1, ""), True),
+                                (h.DesktopItem(DISPLAY_ID_2, ""), False)]
+    assert host.resolve_monitor() == DISPLAY_ID_1
+
+
+def test_resolve_monitor_selects_exactly_the_requested_display():
+    host = object.__new__(h.LivelyHost)
+    host.get_screens = lambda: [(h.DesktopItem(DISPLAY_ID_1, ""), True),
+                                (h.DesktopItem(DISPLAY_ID_2, ""), False)]
+    assert host.resolve_monitor(DISPLAY_ID_2) == DISPLAY_ID_2
+
+
+def test_resolve_monitor_rejects_a_gdi_device_name():
+    # get_screens field 1 is the device-interface path; a GDI name like
+    # \\.\DISPLAY2 must never resolve against a live Lively host.
+    host = object.__new__(h.LivelyHost)
+    host.get_screens = lambda: [(h.DesktopItem(DISPLAY_ID_1, ""), True),
+                                (h.DesktopItem(DISPLAY_ID_2, ""), False)]
+    error = failure(lambda: host.resolve_monitor("\\\\.\\DISPLAY2"))
+    assert isinstance(error, ValueError) and "not connected" in str(error)
+
+
+@pytest.mark.parametrize("screens,target,reason", [
+    ([(h.DesktopItem(DISPLAY_ID_1, ""), True)], DISPLAY_ID_2, "not connected"),
+    ([(h.DesktopItem(DISPLAY_ID_1, ""), True), (h.DesktopItem(DISPLAY_ID_2, ""), False),
+      (h.DesktopItem(DISPLAY_ID_2, ""), False)], DISPLAY_ID_2, "more than one"),
+])
+def test_resolve_monitor_fails_closed_without_exactly_one_match(screens, target, reason):
+    host = object.__new__(h.LivelyHost)
+    host.get_screens = lambda: screens
+    error = failure(lambda: host.resolve_monitor(target))
+    assert isinstance(error, ValueError) and reason in str(error) and repr(target) in str(error)
+
+
+@native
+def test_windows_monitors_reports_device_ids_and_physical_geometry():
+    monitors = h.Windows().monitors()
+    assert monitors and sum(x.Primary for x in monitors) == 1
+    assert all(x.Monitor.startswith("\\\\.\\") and x.Width > 0 and x.Height > 0 for x in monitors)
+    assert all(x.DeviceId.startswith("\\\\?\\DISPLAY#") for x in monitors)
+
+
+@native
+def test_screens_command_reports_the_identities_run_resolves(monkeypatch):
+    reports = []
+    monkeypatch.setattr(h, "report", reports.append)
+    assert h.main(["screens"]) == 0
+    monitors = reports[-1]["monitors"]
+    assert monitors and all(item["DeviceId"].startswith("\\\\?\\DISPLAY#") for item in monitors)
+    assert [item["DeviceId"] for item in monitors] == [x.DeviceId for x in h.Windows().monitors()]
+
+
+@native
+def test_run_mounts_on_the_explicit_target_and_the_journal_preserves_it(tmp_path, monkeypatch):
+    host = FakeHost()
+    host.started_process = host.running
+    host.ensure_running = lambda: None
+    host.write_project = lambda url: "amadeus"
+    host.reported, host.close_noop, host.fail_after = [], True, True
+
+    class Lock:
+        def lock(self, file):
+            return 1
+
+        def close(self, handle):
+            pass
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(h, "Windows", Lock)
+    monkeypatch.setattr(h, "LivelyHost", lambda windows: host)
+    reports = []
+    monkeypatch.setattr(h, "report", reports.append)
+    target = DISPLAY_ID_2
+    assert h.main(["run", "http://127.0.0.1:12345/wallpaper/lively/index.html", target]) == 1
+    assert host.items == [h.DesktopItem(target, "amadeus")]
+    assert reports[-1]["status"] == "error" and reports[-1]["recoveryPending"] is True
+    host.close_noop = False
+    assert h.main(["recover"]) == 0 and reports[-1]["status"] == "restored"
+    assert host.items == []
+
+
+@native
+def test_run_refuses_an_unresolvable_target_without_touching_a_display(tmp_path, monkeypatch):
+    host = FakeHost()
+    host.started_process = host.running
+    host.ensure_running = lambda: None
+    host.write_project = lambda url: "amadeus"
+    target = DISPLAY_ID_9
+    def refuse(requested=None):
+        raise ValueError(f"The selected wallpaper display {requested!r} is not connected.")
+    host.resolve_monitor = refuse
+
+    class Lock:
+        def lock(self, file):
+            return 1
+
+        def close(self, handle):
+            pass
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(h, "Windows", Lock)
+    monkeypatch.setattr(h, "LivelyHost", lambda windows: host)
+    reports = []
+    monkeypatch.setattr(h, "report", reports.append)
+    assert h.main(["run", "http://127.0.0.1:12345/wallpaper/lively/index.html", target]) == 1
+    assert reports[-1]["status"] == "error" and "not connected" in reports[-1]["error"]
+    assert reports[-1]["recoveryPending"] is False and host.set_calls == 0 and not host.items

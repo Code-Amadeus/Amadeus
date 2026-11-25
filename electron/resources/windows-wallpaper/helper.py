@@ -173,6 +173,21 @@ class Snapshot:
     RequestProcess: ProcessIdentity | None = None
 
 
+@dataclass(frozen=True)
+class MonitorGeometry:
+    """One connected monitor in physical pixels. DeviceId is Lively's display
+    identity (the device-interface path `\\\\?\\DISPLAY#…#{…}` reported by
+    GetScreens and required by SetWallpaper); it is the persisted wallpaper
+    target. Monitor is the GDI device name, kept for display labels only."""
+    Monitor: str
+    DeviceId: str
+    X: int
+    Y: int
+    Width: int
+    Height: int
+    Primary: bool
+
+
 def identity_json(item) -> ProcessIdentity | None:
     if item is None:
         return None
@@ -407,6 +422,24 @@ class SYSTEM_PROCESS_PREFIX(ctypes.Structure):
                 ("InheritedFromUniqueProcessId", w.HANDLE), ("HandleCount", w.ULONG), ("SessionId", w.ULONG)]
 
 
+class RECT(ctypes.Structure):
+    _fields_ = [("left", w.LONG), ("top", w.LONG), ("right", w.LONG), ("bottom", w.LONG)]
+
+
+class MONITORINFOEX(ctypes.Structure):
+    _fields_ = [("cbSize", w.DWORD), ("rcMonitor", RECT), ("rcWork", RECT),
+                ("dwFlags", w.DWORD), ("szDevice", w.WCHAR * 32)]
+
+
+class DISPLAY_DEVICE(ctypes.Structure):
+    _fields_ = [("cb", w.DWORD), ("DeviceName", w.WCHAR * 32),
+                ("DeviceString", w.WCHAR * 128), ("StateFlags", w.DWORD),
+                ("DeviceID", w.WCHAR * 128), ("DeviceKey", w.WCHAR * 128)]
+
+
+EDD_GET_DEVICE_INTERFACE_NAME = 0x00000001
+
+
 class Windows:
     def __init__(self):
         self.api = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -584,6 +617,48 @@ class Windows:
             raise
         finally:
             self.close(handle)
+
+    def monitors(self) -> list[MonitorGeometry]:
+        # Per-monitor V2 awareness makes the reported rectangles physical
+        # pixels, the unit Electron's screen.dipToScreenRect returns. Once set
+        # it cannot be changed; a second call fails even for the same value.
+        api = ctypes.WinDLL("user32", use_last_error=True)
+        api.GetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        api.AreDpiAwarenessContextsEqual.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        api.AreDpiAwarenessContextsEqual.restype = w.BOOL
+        api.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        api.SetProcessDpiAwarenessContext.restype = w.BOOL
+        if not api.AreDpiAwarenessContextsEqual(api.GetThreadDpiAwarenessContext(), ctypes.c_void_p(-4)):
+            self.check(api.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)))
+        api.GetMonitorInfoW.argtypes = [w.HANDLE, ctypes.POINTER(MONITORINFOEX)]
+        api.GetMonitorInfoW.restype = w.BOOL
+        # Same query Lively's DisplayManager makes for ScreenData.DeviceId:
+        # the monitor's device interface path for a GDI device name.
+        api.EnumDisplayDevicesW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(DISPLAY_DEVICE), w.DWORD]
+        api.EnumDisplayDevicesW.restype = w.BOOL
+        found = []
+        callback_type = ctypes.WINFUNCTYPE(w.BOOL, w.HANDLE, w.HANDLE, ctypes.POINTER(RECT), w.LPARAM)
+        api.EnumDisplayMonitors.argtypes = [w.HANDLE, ctypes.POINTER(RECT), callback_type, w.LPARAM]
+        api.EnumDisplayMonitors.restype = w.BOOL
+
+        def visit(monitor, hdc, rect, data):
+            info = MONITORINFOEX()
+            info.cbSize = ctypes.sizeof(info)
+            self.check(api.GetMonitorInfoW(monitor, ctypes.byref(info)))
+            device = DISPLAY_DEVICE()
+            device.cb = ctypes.sizeof(device)
+            # Not a hard failure: an unidentified monitor simply cannot be an
+            # explicit target; resolve_monitor fails closed on no match.
+            api.EnumDisplayDevicesW(info.szDevice, 0, ctypes.byref(device), EDD_GET_DEVICE_INTERFACE_NAME)
+            found.append(MonitorGeometry(info.szDevice, device.DeviceID, info.rcMonitor.left, info.rcMonitor.top,
+                                         info.rcMonitor.right - info.rcMonitor.left,
+                                         info.rcMonitor.bottom - info.rcMonitor.top, bool(info.dwFlags & 1)))
+            return True
+
+        self.check(api.EnumDisplayMonitors(None, None, callback_type(visit), 0))
+        if not found:
+            raise OSError("No Windows monitors are connected.")
+        return found
 
     def managed_player_count(self) -> int:
         count = 0
@@ -999,6 +1074,18 @@ class LivelyHost:
             raise ValueError("Expected exactly one primary Lively display")
         return primary[0]
 
+    def resolve_monitor(self, target: str | None = None):
+        # The persisted choice is Lively's display DeviceId, the same identity
+        # GetScreens reports and SetWallpaper consumes; it resolves to exactly
+        # one live Lively screen or fails before another display is taken over.
+        if target is None:
+            return self.primary_monitor()
+        matches = [screen.Monitor for screen, _ in self.get_screens() if screen.Monitor == target]
+        if len(matches) != 1:
+            reason = "is not connected" if not matches else "matches more than one display"
+            raise ValueError(f"The selected wallpaper display {target!r} {reason}.")
+        return matches[0]
+
     def write_project(self, url):
         directory = Path(text_value(self.get_settings(), 33)) / "wallpapers" / "amadeus-managed"
         atomic_json(directory / "LivelyInfo.json", dict(AppVersion=SUPPORTED_VERSION, Title="Amadeus", Desc="Managed by Amadeus",
@@ -1088,10 +1175,13 @@ def main(args=None) -> int:
         if command == "prepare":
             report(dict(prepared=host.prepare_first_run(host.data_directory)))
             return 0
+        if command == "screens" and len(args) == 1:
+            report(dict(monitors=[asdict(x) for x in windows.monitors()]))
+            return 0
         if command not in ("run", "recover"):
-            raise ValueError("Expected inspect, prepare, run or recover.")
+            raise ValueError("Expected inspect, prepare, run, screens or recover.")
         if command == "run":
-            if len(args) != 2 or not managed_url(args[1]):
+            if len(args) not in (2, 3) or not managed_url(args[1]):
                 raise ValueError("Expected the local Amadeus wallpaper wrapper URL.")
         lock = windows.lock(state / "session.lock")
         if command == "recover" and not journal.exists():
@@ -1105,8 +1195,8 @@ def main(args=None) -> int:
             report(dict(status="restored"))
             return 0
         host.ensure_running()
-        snapshot = Snapshot(host.write_project(args[1]), host.primary_monitor(), host.get_options(),
-                            host.get_wallpapers(), host.started_process)
+        snapshot = Snapshot(host.write_project(args[1]), host.resolve_monitor(args[2] if len(args) == 3 else None),
+                            host.get_options(), host.get_wallpapers(), host.started_process)
 
         def body():
             report(dict(status="mounted"))
