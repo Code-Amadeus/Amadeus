@@ -9,6 +9,7 @@ import sqlite3
 from uuid import uuid4
 
 from config.durable_io import write_bytes, write_text
+from core import session_source_journal as journal
 from server.memory_source_policy import SourcePolicyProjection, SourcePolicyBindingMismatch
 from server import memory_policy_metadata
 
@@ -77,14 +78,11 @@ def recover_source_policy(db_path, user_id, *, api=None):
             for source in [*projection.value["exclusions"],
                     *(item["source"] for item in projection.value["retirements"]),
                     *projection.value["derived_sources"]]:
-                if source["namespace"] == "amadeus-message-v1":
+                if source["namespace"] in (journal.V1, journal.V2):
                     try:
-                        values = json.loads(source["record_key"])
+                        journal.decode_record_key(source["namespace"], source["record_key"])
                     except (TypeError, ValueError):
                         raise PolicyRecoveryError("invalid_coordinates") from None
-                    if (not isinstance(values, list) or len(values) != 3
-                            or any(not isinstance(item, str) or not item for item in values)):
-                        raise PolicyRecoveryError("invalid_coordinates")
         except PolicyRecoveryError:
             raise
         except SourcePolicyBindingMismatch:

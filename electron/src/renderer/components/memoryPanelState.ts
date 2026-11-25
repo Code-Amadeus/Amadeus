@@ -11,6 +11,7 @@ export interface MemorySource {
   session_id: string
   message_id: string
   revision: number
+  incarnation?: string
   projection_version: string
   role: string
   text: string
@@ -21,6 +22,7 @@ export interface MemorySourceSpan {
   session_id: string
   message_id: string
   revision: number
+  incarnation?: string
   projection_version: string
   start_cp: number
   end_cp: number
@@ -109,6 +111,7 @@ export function sourceSpan(source: MemorySource, start: number, end: number): Me
   const length = Array.from(source.text).length
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start || end > length) return null
   return { session_id: source.session_id, message_id: source.message_id, revision: source.revision,
+    ...(source.incarnation === undefined ? {} : { incarnation: source.incarnation }),
     projection_version: source.projection_version, start_cp: start, end_cp: end }
 }
 

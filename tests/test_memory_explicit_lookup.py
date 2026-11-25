@@ -358,7 +358,8 @@ async def test_known_derived_reply_registers_before_stream_and_stops_on_forget(h
             pass
     async def partial(event):
         # The marker and authoritative relation predate the first visible byte.
-        assert ("A", event["message_id"]) in host.service._derived_sources
+        source = {"session_id": "A", "message_id": event["message_id"], "revision": event["revision"]}
+        assert host.service.history_is_derived(({"source": "kurisu", "text": event["text"], "_source": source},))
         partials.append(event)
         return True
     loop.publish.role_stream_factory = lambda *_args, **_kwargs:Role()

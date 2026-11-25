@@ -68,15 +68,24 @@ def coordinate(sid, mid, revision, incarnation=None):
     )
 
 
-def decode(source):
-    values = json.loads(source.record_key)
-    if source.namespace == V1 and len(values) == 3:
+def decode_record_key(namespace: str, record_key: str) -> tuple[str, str, str | None, str]:
+    values = json.loads(record_key)
+    if not isinstance(values, list) or any(
+        not isinstance(value, str) or not value for value in values
+    ):
+        raise ValueError("journal_invalid_source_coordinate")
+    if namespace == V1 and len(values) == 3:
         sid, mid, version = values
         inc = None
-    elif source.namespace == V2 and len(values) == 4:
+    elif namespace == V2 and len(values) == 4:
         sid, inc, mid, version = values
     else:
         raise ValueError("journal_unknown_source_coordinate")
+    return sid, mid, inc, version
+
+
+def decode(source):
+    sid, mid, inc, version = decode_record_key(source.namespace, source.record_key)
     if version != VERSION:
         raise ValueError("journal_projection_unavailable")
     return sid, mid, inc

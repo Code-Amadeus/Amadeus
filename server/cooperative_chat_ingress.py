@@ -197,7 +197,7 @@ def _shared_role_history(session_id: str, current_turn_id: str) -> tuple[dict, .
     """Read one originating Session snapshot without consulting another Session."""
 
     if sm.get_current_session_id() == session_id:
-        recent = tuple(dict(row) for row in sm.conversation_history.recent())
+        recent = sm.conversation_history.recent_with_source_identity()
     else:
         recent = sm.committed_session_recent(session_id)
     rows = []
@@ -211,10 +211,11 @@ def _shared_role_history(session_id: str, current_turn_id: str) -> tuple[dict, .
             continue
         if turn_id and turn_id == current_turn_id:
             continue
+        source = {"session_id": session_id, "message_id": row.get("message_id"), "revision": row.get("revision")}
+        if "incarnation" in row:
+            source["incarnation"] = row["incarnation"]
         rows.append({"source":"user" if role == "user" else "kurisu",
-            "text":text,
-            "_source":{"session_id":session_id, "message_id":row.get("message_id"),
-                "revision":row.get("revision")},
+            "text":text, "_source":source,
             "input_id" if role == "user" else "cause":turn_id})
     return tuple(rows)
 

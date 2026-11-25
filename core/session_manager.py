@@ -153,7 +153,7 @@ class ConversationHistory:
         history.dialog = list(self.dialog)
         return history
 
-    def _memory_incarnation(self) -> str | None:
+    def source_incarnation(self) -> str | None:
         if self._source_journal is not None:
             return self._source_journal["generations"][-1]["incarnation"]
         return None
@@ -169,8 +169,12 @@ class ConversationHistory:
 
         return self.dialog[-max(2, self.max_rounds * 2):]
 
+    def recent_with_source_identity(self) -> list[dict[str, Any]]:
+        """Detach the history together with the generation that owned it."""
+        return _history_with_incarnation(self.recent(), self.source_incarnation())
+
     def model_recent(self) -> list[dict[str, Any]]:
-        return project_model_history(self._session_id, self.recent())
+        return project_model_history(self._session_id, self.recent_with_source_identity())
 
     def add_user(self, content: str, turn_id: str | None = None, *, message_id: str = "",
                  historical: bool = False):
@@ -362,12 +366,23 @@ _model_history_projection: Callable | None = None
 # One committed Session snapshot, published only by the serial Session owner.
 # Source selection never reopens/migrates a file on the conversation loop.
 _committed_sources: tuple[str, tuple[dict[str, Any], ...], dict[str, dict[str, Any]], str | None] | None = None
-_committed_recent: OrderedDict[str, tuple[dict[str, Any], ...]] = OrderedDict()
+_committed_recent: OrderedDict[str, tuple[tuple[dict[str, Any], ...], str | None]] = OrderedDict()
+
+
+def _history_with_incarnation(rows, incarnation: str | None) -> list[dict[str, Any]]:
+    history = [dict(row) for row in rows]
+    for row in history:
+        if incarnation is None:
+            row.pop("incarnation", None)
+        else:
+            row["incarnation"] = incarnation
+    return history
 
 
 def _cache_committed_sources(session_id: str, history: ConversationHistory) -> None:
     global _committed_sources
     window = max(2, history.max_rounds * 2)
+    incarnation = history.source_incarnation()
     if session_id == _CURRENT_SESSION_ID:
         conversation_history._source_journal = history._source_journal
         prior = (_committed_sources[2] if _committed_sources is not None
@@ -379,24 +394,24 @@ def _cache_committed_sources(session_id: str, history: ConversationHistory) -> N
             # newly committed content must never alias later active edits.
             source_rows.append(previous if previous is not None and previous == row else deepcopy(row))
         rows = tuple(source_rows)
-        _committed_sources = (session_id, rows, {row["message_id"]: row for row in rows},
-                              history._memory_incarnation())
+        _committed_sources = (session_id, rows, {row["message_id"]: row for row in rows}, incarnation)
         recent = rows[-window:]
     else:
         # Inactive Sessions retain only their bounded model window. Copying
         # every durable source here creates no usable source ownership.
         recent = tuple(dict(row) for row in history.dialog[-window:])
-    _committed_recent[session_id] = recent
+    _committed_recent[session_id] = (recent, incarnation)
     _committed_recent.move_to_end(session_id)
     while len(_committed_recent) > 16:
         _committed_recent.popitem(last=False)
 
 
 def committed_session_recent(session_id: str) -> tuple[dict[str, Any], ...]:
-    """Bounded previously loaded window; this reader never opens a Session."""
+    """Read the bounded history and generation from one committed snapshot."""
     if session_id not in _committed_recent:
         raise LookupError("Committed Session window is unavailable")
-    return tuple(dict(row) for row in _committed_recent[session_id])
+    rows, incarnation = _committed_recent[session_id]
+    return tuple(_history_with_incarnation(rows, incarnation))
 
 
 def committed_session_rows(session_id: str, *, limit: int = 100) -> tuple[dict[str, Any], ...]:
@@ -755,7 +770,7 @@ def read_session_sources(session_id: str) -> tuple[dict[str, Any], ...]:
     from core.chat_history_projection import project_memory_source
 
     history, _enable = _read_session_history(session_id)
-    incarnation = history._memory_incarnation()
+    incarnation = history.source_incarnation()
     return tuple(project_memory_source(session_id, row, incarnation=incarnation) for row in history.dialog)
 
 
@@ -772,7 +787,7 @@ def _project_history_source(session_id, history, message_id, *, revision):
     if row is None:
         raise LookupError("Session message source is unavailable")
     return project_memory_source(session_id, row, expected_revision=revision,
-                                 incarnation=history._memory_incarnation())
+                                 incarnation=history.source_incarnation())
 
 
 def mark_memory_control_sources(session_id: str, bindings) -> None:

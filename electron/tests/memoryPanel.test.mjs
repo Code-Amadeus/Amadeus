@@ -245,7 +245,7 @@ test('replaying a retired save does not claim that the forgotten memory was save
 
 test('source selection uses the canonical selected span and the whole-message choice is explicit', async () => {
   const source = { session_id: context.session_id, message_id: 'synthetic-source', revision: 4,
-    projection_version: 'amadeus-memory-text-v1', role: 'user', text: 'A🪷日本語' }
+    incarnation: 'synthetic-generation', projection_version: 'amadeus-memory-text-v1', role: 'user', text: 'A🪷日本語' }
   const panel = panelHarness(method => method === 'memory.sources' ? ok({ sources: [source] }) : backend(method))
   await panel.flush()
   panel.button('New memory').props.onClick(); panel.render()
@@ -257,7 +257,7 @@ test('source selection uses the canonical selected span and the whole-message ch
   panel.button('Save memory').props.onClick(); await panel.flush()
   const request = panel.requests.find(item => item.method === 'memory.remember')
   assert.deepEqual(request.params.source, { session_id: context.session_id, message_id: source.message_id,
-    revision: 4, projection_version: 'amadeus-memory-text-v1', start_cp: 1, end_cp: 4 })
+    incarnation: source.incarnation, revision: 4, projection_version: 'amadeus-memory-text-v1', start_cp: 1, end_cp: 4 })
   assert.equal(request.params.text, 'Synthetic paraphrase of the selected source')
   panel.dispose()
 })

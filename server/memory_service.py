@@ -19,13 +19,14 @@ from typing import Callable
 
 from config.memory import MemoryConfig, MEMORY_FINAL_VALIDITY_TIMEOUT_S
 from core import session_manager as sm
+from core import session_source_journal as journal
 from core.chat_history_projection import MEMORY_TEXT_PROJECTION_VERSION, exclude_source_spans
 from server.memory_source_policy import SourcePolicyProjection, SourcePolicyUnavailable, SourcePolicyBindingMismatch
 from server.memory_context import pack_reference
 from server.reference_deadline import await_until, deadline_now
 
 logger = logging.getLogger(__name__)
-SOURCE_NAMESPACE = "amadeus-message-v1"
+SOURCE_NAMESPACE = journal.V1
 MAX_MEMORY_TEXT_CHARS = 32768
 MAX_MEMORY_CONDITION_CHARS = 4096  # Eidema's published condition input cap.
 MEMORY_CANDIDATE_LIMIT = 16
@@ -36,6 +37,10 @@ MEMORY_CANDIDATE_LIMIT = 16
 # Use Eidema's bounded public ceiling without reducing either source input cap.
 MEMORY_INDEX_CHUNK_LIMIT = 4096
 MEMORY_CANDIDATE_CHAR_BUDGET = MEMORY_CANDIDATE_LIMIT * (MAX_MEMORY_TEXT_CHARS + MAX_MEMORY_CONDITION_CHARS)
+
+
+def _message_key(session_id, row):
+    return session_id, row.get("incarnation"), row.get("message_id")
 
 
 class MemoryRequestError(Exception):
@@ -299,11 +304,15 @@ class HostMemoryService:
         project_id = self.project_for_session(session_id) or None
         identity = [self.config.user_id, session_id, character_id, project_id,
             sm.get_session_selection_revision()]
+        incarnation = sm.conversation_history.source_incarnation()
+        if incarnation is not None:
+            identity.append(incarnation)
         stamp = hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
         if token is not None and token != stamp:
             raise MemoryRequestError("context_changed")
         return {"session_id":session_id, "character_id":character_id,
-            "project_id":project_id, "context_token":stamp}
+            "project_id":project_id, "context_token":stamp,
+            **({"incarnation": incarnation} if incarnation is not None else {})}
 
     def _access(self, context):
         return self._api.AccessScope(self.config.user_id, context["character_id"], context["project_id"])
@@ -329,6 +338,8 @@ class HostMemoryService:
             raise MemoryRequestError("conflict")
         if not isinstance(value, dict) or value.get("session_id") != context["session_id"]:
             raise MemoryRequestError("invalid_request")
+        if value.get("incarnation") != context.get("incarnation"):
+            raise MemoryRequestError("conflict")
         start, end, revision = value.get("start_cp"), value.get("end_cp"), value.get("revision")
         if (any(type(number) is not int for number in (start, end, revision))
                 or value.get("projection_version") != MEMORY_TEXT_PROJECTION_VERSION):
@@ -340,34 +351,32 @@ class HostMemoryService:
                 context["session_id"], value["message_id"], revision=revision)
         except (KeyError, ValueError, LookupError, OSError):
             raise MemoryRequestError("conflict") from None
+        incarnation = source.get("incarnation")
+        if incarnation != context.get("incarnation"):
+            raise MemoryRequestError("conflict")
         if not 0 <= start < end <= len(source["text"]):
             raise MemoryRequestError("invalid_request")
         self._sync_projection()
         if not self._exclusions_ready:
             raise MemoryRequestError("conflict")
-        known = (self._exclusions.get((context["session_id"], source["message_id"]), [])
-            + self._pending_sources.get((context["session_id"], source["message_id"]), []))
+        key = _message_key(context["session_id"], source)
+        known = self._exclusions.get(key, []) + self._pending_sources.get(key, [])
         if any(span["revision"] != revision
                 or span["projection_version"] != source["projection_version"]
                 or max(start, span.get("start_cp") or 0) < min(end,
                     span["end_cp"] if span.get("end_cp") is not None else len(source["text"])) for span in known):
             raise MemoryRequestError("conflict")
-        key = json.dumps([context["session_id"], source["message_id"], source["projection_version"]], separators=(",", ":"))
-        return self._api.SourceSpan(SOURCE_NAMESPACE, key, revision, start, end)
+        coordinate = journal.coordinate(context["session_id"], source["message_id"], revision, incarnation)
+        return self._api.SourceSpan(**{**coordinate, "start_cp": start, "end_cp": end})
 
     def _index_source_spans(self, sources):
         indexed = {}
         for span, reason in sources:
-            if span.namespace != SOURCE_NAMESPACE:
+            if span.namespace not in (journal.V1, journal.V2):
                 continue
             try:
-                coordinates = json.loads(span.record_key)
-                if not isinstance(coordinates, list) or len(coordinates) != 3:
-                    raise ValueError("invalid_source_coordinates")
-                sid, mid, projection = coordinates
-                if any(not isinstance(value, str) or not value for value in (sid, mid, projection)):
-                    raise ValueError("invalid_source_coordinates")
-                indexed.setdefault((sid, mid), []).append({"revision":span.revision,
+                sid, mid, incarnation, projection = journal.decode_record_key(span.namespace, span.record_key)
+                indexed.setdefault((sid, incarnation, mid), []).append({"revision":span.revision,
                     "projection_version":projection, "start_cp":span.start_cp, "end_cp":span.end_cp,
                     **({"reason":reason} if reason is not None else {})})
             except (TypeError, ValueError):
@@ -423,7 +432,7 @@ class HostMemoryService:
             raise SourcePolicyUnavailable("memory_source_policy_recovery_required")
         result = []
         for row in rows:
-            key = (session_id, row.get("message_id"))
+            key = _message_key(session_id, row)
             spans = (self._retirements.get(key, []) + self._exclusions.get(key, [])
                 + self._pending_sources.get(key, []))
             # Known generated answers carry whole-output dependencies. A later
@@ -438,11 +447,12 @@ class HostMemoryService:
 
     @staticmethod
     def _source_dto(source):
-        if source is None or source["namespace"] != SOURCE_NAMESPACE:
+        if source is None or source["namespace"] not in (journal.V1, journal.V2):
             return None
-        sid, mid, projection = json.loads(source["record_key"])
+        sid, mid, incarnation, projection = journal.decode_record_key(source["namespace"], source["record_key"])
         return {"session_id":sid, "message_id":mid, "projection_version":projection,
-            "revision":source["revision"], "start_cp":source["start_cp"], "end_cp":source["end_cp"]}
+            "revision":source["revision"], "start_cp":source["start_cp"], "end_cp":source["end_cp"],
+            **({"incarnation": incarnation} if incarnation is not None else {})}
 
     def _memory_dto(self, memory):
         result = asdict(memory)
@@ -498,7 +508,8 @@ class HostMemoryService:
             rows = sm.committed_session_rows(context["session_id"], limit=limit)
             from core.chat_history_projection import project_memory_source
             sources = await asyncio.to_thread(lambda:tuple(
-                project_memory_source(context["session_id"], row) for row in rows))
+                project_memory_source(context["session_id"], row, incarnation=context.get("incarnation"))
+                for row in rows))
             self.context(context["session_id"], token=context["context_token"])
             return {"ok":True, "context":context, "sources":list(sources)}
         if method == "memory.list":
@@ -613,7 +624,7 @@ class HostMemoryService:
         context = self.context(session_id)
         # Current request plus up to two eligible prior USER utterances only.
         # Source masks run before these strings become retrieval input.
-        history = sm.project_model_history(session_id, sm.conversation_history.recent())
+        history = sm.conversation_history.model_recent()
         prior = [row["content"] for row in history if row["role"] == "user"
             and (not turn_id or row.get("turn_id") != turn_id)][-2:]
         result = await self._query.run(lambda:self._store.recall(self._access(context),
@@ -679,7 +690,7 @@ class HostMemoryService:
         self._sync_projection()
         for row in rows[-2 * sm.PROMPT_HISTORY_ROUNDS:]:
             source = row.get("_source")
-            if (source is not None and (source.get("session_id"), source.get("message_id"))
+            if (source is not None and _message_key(source.get("session_id"), source)
                     in self._derived_sources and project_role_history((row,))):
                 yield source
 
@@ -694,11 +705,10 @@ class HostMemoryService:
             return None, rows
         def independent_rows():
             return [row for row in rows if not (row.get("_source") is not None
-                and (row["_source"].get("session_id"), row["_source"].get("message_id")) in self._derived_sources)]
+                and _message_key(row["_source"].get("session_id"), row["_source"]) in self._derived_sources)]
         context = self.context(session_id)
-        spans = [self._api.SourceSpan(SOURCE_NAMESPACE, json.dumps([
-            source["session_id"], source["message_id"], MEMORY_TEXT_PROJECTION_VERSION],
-            separators=(",", ":")), source["revision"], None, None) for source in sources]
+        spans = [self._api.SourceSpan(**journal.coordinate(source["session_id"], source["message_id"],
+            source["revision"], source.get("incarnation"))) for source in sources]
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         try:
             self._available()
@@ -771,9 +781,8 @@ class HostMemoryService:
         try:
             context = evidence.context
             self._lookup_context(context, evidence.candidates)
-            source = self._api.SourceSpan(SOURCE_NAMESPACE, json.dumps([
-                context["session_id"], message_id, MEMORY_TEXT_PROJECTION_VERSION],
-                separators=(",", ":")), revision, None, None)
+            source = self._api.SourceSpan(**journal.coordinate(context["session_id"], message_id,
+                revision, context.get("incarnation")))
             deadline = deadline_now() + self.config.explicit_validity_timeout_s
             def register():
                 if evidence.candidates:
