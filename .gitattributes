@@ -21,3 +21,11 @@
 # Vendored cache provenance hashes must survive Windows autocrlf checkouts.
 /render/web/vendor/zstd/**/*.js text eol=lf
 /render/web/vendor/zstd/provenance.json text eol=lf
+
+# Frozen memory qualification data hashes exact bytes, including CRLF.
+/tests/fixtures/memory_jina_admission/*.json -text whitespace=cr-at-eol
+/docs/evidence/memory_jina_admission/*.json -text whitespace=cr-at-eol
+/docs/evidence/memory_jina_admission/**/*.json -text whitespace=cr-at-eol
+/docs/evidence/memory_jina_runtime/*.json -text whitespace=cr-at-eol
+# The measured source archive is immutable binary evidence, not editable code.
+/docs/evidence/memory_jina_admission/tested_sources/** binary

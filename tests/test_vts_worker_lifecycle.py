@@ -232,8 +232,21 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
             assert callbacks == ["provider"]
             callbacks.append("inputs")
 
-        def close_ledger():
+        provider_facts_drained, observer_closed, preview_closed = AsyncMock(), AsyncMock(), AsyncMock()
+        async def memory_close():
             assert callbacks == ["provider", "inputs"]
+            provider_facts_drained.assert_awaited_once_with()
+            observer_closed.assert_awaited_once_with()
+            preview_closed.assert_awaited_once_with()
+            callbacks.append("memory")
+        def detach_projection(projector):
+            assert projector is None and callbacks[-1] == "memory"
+            callbacks.append("memory_projection")
+        memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close))
+        session_manager = SimpleNamespace(configure_model_history_projection=Mock(side_effect=detach_projection))
+
+        def close_ledger():
+            assert callbacks == ["provider", "inputs", "memory", "memory_projection"]
             callbacks.append("ledger")
 
         server_task = loop.create_future()
@@ -262,11 +275,12 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
                     set_start_admission_validator=Mock(), close=provider_close),
             provider_activity_h=SimpleNamespace(close=AsyncMock()),
             work_h=SimpleNamespace(drain_inputs=drain_inputs),
-            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=close_ledger,
+            work_ledger=SimpleNamespace(drain_provider_facts=provider_facts_drained, close=close_ledger,
                 store=SimpleNamespace(list_unresolved_provider_attempts=Mock(
                     return_value=[object()] if pending_work == "attempt" else []),
                     list_writer_leases=Mock(return_value=[object()] if pending_work == "lease" else []))),
-            work_observer=SimpleNamespace(close=AsyncMock()), work_preview=SimpleNamespace(close_all=AsyncMock()),
+            work_observer=SimpleNamespace(close=observer_closed), work_preview=SimpleNamespace(close_all=preview_closed),
+            memory_service=memory_service, _work_session_manager=session_manager,
             _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
             _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
         exec(compile(module, str(path), "exec"), namespace)
@@ -277,7 +291,9 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
             else:
                 await namespace["run_tail"]()
             assert len(futures) == (1 if heartbeat_start_fails else 2)
-            assert callbacks == ["provider", "inputs", "ledger"]
+            assert callbacks == ["provider", "inputs", "memory", "memory_projection", "ledger"]
+            memory_service.close.assert_awaited_once_with()
+            session_manager.configure_model_history_projection.assert_called_once_with(None)
             cleanup_record.assert_called_once_with(providers_settled=True,
                 work_settled=pending_work == "none", teardown_succeeded=True)
         finally:

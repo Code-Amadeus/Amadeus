@@ -9,13 +9,17 @@
 """
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import copy, deepcopy
+from dataclasses import dataclass
+from collections import OrderedDict
+from datetime import datetime
 import json
 import logging
 import os
 import re
 import time
 from typing import Any, Callable
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from config.durable_io import write_text
 from llm import character_prompts
@@ -31,12 +35,90 @@ logger = logging.getLogger(__name__)
 PROMPT_HISTORY_ROUNDS = 30
 
 
+def assistant_turn_message_id(turn_id: str) -> str:
+    """Identity of the single foreground reply, derived only from Host turn identity.
+
+    This lets an interruption arriving before final publication name that same
+    reply. Additional Host publications in the turn allocate independent ids.
+    """
+    if not turn_id:
+        raise ValueError("A foreground reply requires a Host turn identity")
+    return "message-" + uuid5(NAMESPACE_URL, "amadeus:assistant-turn:" + turn_id).hex
+
+
+def new_message_metadata(*, message_id: str = "", legacy: bool = False) -> dict[str, Any]:
+    """Allocate Host identity once; a legacy row's original time is unknown."""
+    created_at_ms = None if legacy else time.time_ns() // 1_000_000
+    offset = (None if created_at_ms is None else
+              datetime.fromtimestamp(created_at_ms / 1000).astimezone().utcoffset())
+    return {
+        "message_id": message_id or "message-" + uuid4().hex,
+        "created_at_ms": created_at_ms,
+        "utc_offset_minutes": None if offset is None else int(offset.total_seconds() // 60),
+        "revision": 1,
+    }
+
+
+def _normalize_message_metadata(dialog: list[dict[str, Any]]) -> bool:
+    """Upgrade old rows without deriving identities or dates from their text."""
+    changed = False
+    identities: set[str] = set()
+    for index, message in enumerate(dialog):
+        identity = message.get("message_id")
+        # Persistence stages share unchanged rows with the serial state owner.
+        # Upgrade only detached rows, so a failed commit cannot allocate ids or
+        # publish defaults into the active history.
+        if (not identity or (isinstance(identity, str) and
+                re.fullmatch(r"cooperative-role:[0-9a-f]{64}", identity))
+                or any(name not in message for name in
+                    ("created_at_ms", "utc_offset_minutes", "revision"))):
+            message = dict(message)
+            dialog[index] = message
+        # This was the shipped cooperative delivery fallback. Retire its
+        # content-derived identity before exposing a source to memory readers.
+        if not identity or (isinstance(identity, str) and
+                re.fullmatch(r"cooperative-role:[0-9a-f]{64}", identity)):
+            message["message_id"] = "message-" + uuid4().hex
+            changed = True
+        identity = message["message_id"]
+        if not isinstance(identity, str) or not identity.strip() or identity in identities:
+            raise ValueError("Session message identity is invalid or duplicated")
+        identities.add(identity)
+        for name, default in (("created_at_ms", None), ("utc_offset_minutes", None), ("revision", 1)):
+            if name not in message:
+                message[name] = default
+                changed = True
+        if type(message["revision"]) is not int or message["revision"] < 1:
+            raise ValueError("Session message revision must be a positive integer")
+        created = message["created_at_ms"]
+        offset = message["utc_offset_minutes"]
+        if created is not None and (type(created) is not int or created < 0):
+            raise ValueError("Session message time must be UTC milliseconds or unknown")
+        if offset is not None and (type(offset) is not int or not -1440 < offset < 1440):
+            raise ValueError("Session message UTC offset is invalid")
+        if created is None and offset is not None:
+            raise ValueError("An unknown message time cannot have a known UTC offset")
+    return changed
+
+
+@dataclass(frozen=True)
+class _SessionFileState:
+    """Small persisted header, valid only while the same file is unchanged."""
+
+    path: str
+    signature: tuple[int, ...]
+    character_id: str
+    title: Any
+    enable_conversation: bool
+
+
 class ConversationHistory:
     def __init__(self, max_rounds: int = PROMPT_HISTORY_ROUNDS, summary_token_threshold: int = 3000,
-                 *, character_id: str | None = None):
+                 *, character_id: str | None = None, session_id: str | None = None):
+        self._session_id = session_id
         self._character_id = character_prompts.validate_character_id(
             character_prompts.active_character_id() if character_id is None else character_id)
-        # The complete Session record: {role, content, turn_id?}.
+        # Complete Session records include Host identity, time and revision.
         self.dialog: list[dict[str, Any]] = []
         # Rounds visible to a model; see recent().
         self.max_rounds = max_rounds
@@ -45,6 +127,7 @@ class ConversationHistory:
         # visible reply model to generate an in-band memory summary.
         self.summary_token_threshold = summary_token_threshold
         self.last_summary = ""
+        self._file_state: _SessionFileState | None = None
 
     @property
     def character_id(self) -> str:
@@ -57,10 +140,15 @@ class ConversationHistory:
     def snapshot(self) -> ConversationHistory:
         """Detach one turn's input from later active-Session mutations."""
 
-        history = ConversationHistory(self.max_rounds, self.summary_token_threshold,
-                                      character_id=self.character_id)
+        history = copy(self)
         history.dialog = deepcopy(self.dialog)
-        history.last_summary = self.last_summary
+        history._file_state = deepcopy(self._file_state)
+        return history
+
+    def _persistence_copy(self) -> ConversationHistory:
+        """Stage a serial-owner write; changed rows must be replaced, not edited."""
+        history = copy(self)
+        history.dialog = list(self.dialog)
         return history
 
     def _estimate_tokens(self, text: str) -> int:
@@ -74,24 +162,41 @@ class ConversationHistory:
 
         return self.dialog[-max(2, self.max_rounds * 2):]
 
-    def add_user(self, content: str):
-        if not content:
-            return
-        self.dialog.append({"role": "user", "content": content})
+    def model_recent(self) -> list[dict[str, Any]]:
+        return project_model_history(self._session_id, self.recent())
 
-    def add_assistant(self, content: str, turn_id: str | None = None):
+    def add_user(self, content: str, turn_id: str | None = None, *, message_id: str = "",
+                 historical: bool = False):
+        return self._add_message("user", content, turn_id, message_id=message_id, historical=historical)
+
+    def add_assistant(self, content: str, turn_id: str | None = None, *, message_id: str = "",
+                      historical: bool = False):
+        return self._add_message("assistant", content, turn_id, message_id=message_id, historical=historical)
+
+    def _add_message(self, role: str, content: str, turn_id: str | None, *, message_id: str,
+                     historical: bool):
         if not content:
-            return
-        message = {"role": "assistant", "content": content}
+            return False
+        if message_id:
+            prior = next((row for row in self.dialog if row.get("message_id") == message_id), None)
+            if prior is not None:
+                return (prior.get("role") == role and prior.get("content") == content
+                    and prior.get("turn_id") == (str(turn_id) if turn_id else None))
+        message = {"role": role, "content": content,
+            **new_message_metadata(message_id=message_id, legacy=historical)}
         if turn_id:
             message["turn_id"] = str(turn_id)
-        self.dialog.append(message)
+        prepared = [message]
+        _normalize_message_metadata(prepared)
+        self.dialog.append(prepared[0])
+        return True
 
     def mark_last_assistant_interrupted(
         self,
         heard_content: str,
         marker: str = "[interrupted by user]",
         turn_id: str | None = None,
+        message_id: str = "",
     ) -> bool:
         """Annotate the latest assistant row of exactly one identified turn.
 
@@ -100,23 +205,12 @@ class ConversationHistory:
         """
         marker = (marker or "[interrupted by user]").strip()
         heard_content = (heard_content or "").strip()
-        assistants = [
-            message
-            for message in reversed(self.dialog)
-            if message.get("role") == "assistant"
-        ]
-        target = None
-        if turn_id:
-            requested_turn_id = str(turn_id)
-            target = next(
-                (
-                    message
-                    for message in assistants
-                    if str(message.get("turn_id") or "") == requested_turn_id
-                ),
-                None,
-            )
-        if target is not None:
+        target_index = next((index for index in range(len(self.dialog) - 1, -1, -1)
+            if turn_id and self.dialog[index].get("role") == "assistant"
+            and str(self.dialog[index].get("turn_id") or "") == str(turn_id)
+            and (not message_id or self.dialog[index].get("message_id") == message_id)), None)
+        if target_index is not None:
+            target = self.dialog[target_index]
             recorded_controls = self._recorded_control_text(
                 str(target.get("content") or "")
             )
@@ -129,7 +223,12 @@ class ConversationHistory:
                 content = f"{content}\n\n{recorded_controls}"
             if target.get("content") == content:
                 return False
+            prepared = [dict(target)]
+            _normalize_message_metadata(prepared)
+            target = prepared[0]
             target["content"] = content
+            target["revision"] += 1
+            self.dialog[target_index] = target
             return True
         return False
 
@@ -165,7 +264,7 @@ class ConversationHistory:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        for m in self.recent():
+        for m in self.model_recent():
             messages.append({"role": m["role"], "content": m["content"]})
         # Host-owned facts about this exact turn belong after history and
         # before the user's words. They are neither durable memory nor a
@@ -186,7 +285,7 @@ class ConversationHistory:
         parts = []
         if system_prompt:
             parts.append(system_prompt)
-        for m in self.recent():
+        for m in self.model_recent():
             prefix = "ユーザー:" if m["role"] == "user" else "アシスタント:"
             parts.append(f"{prefix}{m['content']}")
         if current_turn_system:
@@ -219,20 +318,26 @@ def persist_interrupted_assistant_turn(
     marker = (marker or "[interrupted by user]").strip()
     content = f"{heard} {marker}".strip() if heard else marker
     try:
-        history, enable = _read_session_history(sid)
-        if sid == _CURRENT_SESSION_ID:
-            history = conversation_history.snapshot()
+        history, enable = _prepare_session_update(sid)
         owned = [row for row in history.dialog if row.get("turn_id") == tid]
         if not owned:
             logger.info("Session %r does not own interrupted turn %r; history unchanged", sid, tid)
             return False
-        if not any(row.get("role") == "assistant" for row in owned):
-            history.add_assistant(content, turn_id=tid)
-        elif not history.mark_last_assistant_interrupted(heard, marker=marker, turn_id=tid):
+        active_reply = _active_assistant_replies.get((sid, tid))
+        message_id = active_reply["message_id"] if active_reply else ""
+        assistants = [row for row in owned if row.get("role") == "assistant"
+            and (not message_id or row.get("message_id") == message_id)]
+        if not assistants:
+            message = {"role":"assistant", "content":content, "turn_id":tid,
+                **(active_reply or new_message_metadata(message_id=assistant_turn_message_id(tid)))}
+            history.dialog.append(message)
+        elif not history.mark_last_assistant_interrupted(
+                heard, marker=marker, turn_id=tid, message_id=message_id):
             return False
         _persist_history(sid, history, enable_conversation=enable)
         if sid == _CURRENT_SESSION_ID:
             conversation_history.dialog = history.dialog
+            conversation_history._file_state = history._file_state
         return True
     except Exception:
         logger.exception("failed to record interruption in Session %r", sid)
@@ -241,6 +346,86 @@ def persist_interrupted_assistant_turn(
 
 # 全局单例
 conversation_history = ConversationHistory(summary_token_threshold=3000)
+
+# A delivery lifecycle supplies the missing identity when audio interruption
+# precedes its first durable publication. This holds metadata only, not another
+# transcript; Session/turn ownership is still checked against committed rows.
+_active_assistant_replies: dict[tuple[str, str], dict[str, Any]] = {}
+_model_history_projection: Callable | None = None
+# One committed Session snapshot, published only by the serial Session owner.
+# Source selection never reopens/migrates a file on the conversation loop.
+_committed_sources: tuple[str, tuple[dict[str, Any], ...], dict[str, dict[str, Any]]] | None = None
+_committed_recent: OrderedDict[str, tuple[dict[str, Any], ...]] = OrderedDict()
+
+
+def _cache_committed_sources(session_id: str, history: ConversationHistory) -> None:
+    global _committed_sources
+    window = max(2, history.max_rounds * 2)
+    if session_id == _CURRENT_SESSION_ID:
+        prior = (_committed_sources[2] if _committed_sources is not None
+            and _committed_sources[0] == session_id else {})
+        source_rows = []
+        for row in history.dialog:
+            previous = prior.get(row["message_id"])
+            # Active rows remain mutable. Reuse only an equal detached source;
+            # newly committed content must never alias later active edits.
+            source_rows.append(previous if previous is not None and previous == row else deepcopy(row))
+        rows = tuple(source_rows)
+        _committed_sources = (session_id, rows, {row["message_id"]:row for row in rows})
+        recent = rows[-window:]
+    else:
+        # Inactive Sessions retain only their bounded model window. Copying
+        # every durable source here creates no usable source ownership.
+        recent = tuple(dict(row) for row in history.dialog[-window:])
+    _committed_recent[session_id] = recent
+    _committed_recent.move_to_end(session_id)
+    while len(_committed_recent) > 16:
+        _committed_recent.popitem(last=False)
+
+
+def committed_session_recent(session_id: str) -> tuple[dict[str, Any], ...]:
+    """Bounded previously loaded window; this reader never opens a Session."""
+    if session_id not in _committed_recent:
+        raise LookupError("Committed Session window is unavailable")
+    return tuple(dict(row) for row in _committed_recent[session_id])
+
+
+def committed_session_rows(session_id: str, *, limit: int = 100) -> tuple[dict[str, Any], ...]:
+    snapshot = _committed_sources
+    if snapshot is None or snapshot[0] != session_id:
+        raise LookupError("Committed Session source snapshot is unavailable")
+    return tuple(dict(row) for row in snapshot[1][-limit:])
+
+
+def read_committed_session_source(session_id: str, message_id: str, *, revision: int) -> dict[str, Any]:
+    from core.chat_history_projection import project_memory_source
+
+    snapshot = _committed_sources
+    if snapshot is None or snapshot[0] != session_id or message_id not in snapshot[2]:
+        raise LookupError("Committed Session source is unavailable")
+    return project_memory_source(session_id, snapshot[2][message_id], expected_revision=revision)
+
+
+def configure_model_history_projection(projector: Callable | None) -> None:
+    """Install the Host's derived source-exclusion projection, never raw edits."""
+    global _model_history_projection
+    _model_history_projection = projector
+
+
+def project_model_history(session_id: str | None, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return (_model_history_projection(session_id, rows)
+        if _model_history_projection is not None else [dict(row) for row in rows])
+
+
+def register_assistant_reply(session_id: str, turn_id: str, metadata: dict[str, Any]) -> None:
+    _active_assistant_replies[(session_id, turn_id)] = {
+        key:metadata[key] for key in ("message_id", "created_at_ms", "utc_offset_minutes", "revision")}
+
+
+def release_assistant_reply(session_id: str, turn_id: str, message_id: str) -> None:
+    key = (session_id, turn_id)
+    if _active_assistant_replies.get(key, {}).get("message_id") == message_id:
+        _active_assistant_replies.pop(key)
 
 # ---------------------------------------------------------------------------
 # 会话持久化
@@ -285,7 +470,7 @@ def _check_activation(session_id: str | None) -> None:
 def _install_session_state(
     session_id: str | None, history: ConversationHistory | None, *, independent_selection: bool = True,
 ) -> None:
-    global _CURRENT_SESSION_ID, _SESSION_SELECTION_REVISION
+    global _CURRENT_SESSION_ID, _SESSION_SELECTION_REVISION, _committed_sources
     if history is not None:
         # Keep the established singleton object for its existing importers.
         # The model window is Host policy, not Session state, so a Session never
@@ -294,7 +479,13 @@ def _install_session_state(
         conversation_history.last_summary = history.last_summary
         conversation_history.summary_token_threshold = history.summary_token_threshold
         conversation_history._character_id = history.character_id
+        conversation_history._session_id = history._session_id
+        conversation_history._file_state = history._file_state
     _CURRENT_SESSION_ID = session_id
+    if session_id is not None and history is not None:
+        _cache_committed_sources(session_id, history)
+    else:
+        _committed_sources = None
     if independent_selection:
         _SESSION_SELECTION_REVISION += 1
 
@@ -350,6 +541,7 @@ def create_session(session_id: str, *, activate: bool = True) -> str:
     if not session_id:
         session_id = time.strftime("%Y%m%d-%H%M%S")
     history = _empty_history()
+    history._session_id = session_id
     _persist_history(session_id, history, enable_conversation=False, create=True)
     if not activate:
         return session_id
@@ -379,28 +571,55 @@ def save_session(session_id: str | None = None, *, enable_conversation: bool = F
         # A late turn may still name A after B is loaded; never save B as A.
         logger.warning("skip Session save: target %r is not loaded", sid)
         return False
-    history = conversation_history.snapshot()
+    history = conversation_history._persistence_copy()
     try:
         _persist_history(sid, history, enable_conversation=enable_conversation)
+        conversation_history.dialog = history.dialog
+        conversation_history._file_state = history._file_state
         return True
     except Exception:
         logger.exception("failed to save Session %r", sid)
         return False
 
 
+def _session_file_signature(path: str) -> tuple[int, ...]:
+    status = os.stat(path)
+    return (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns)
+
+
+def _existing_session_file(sid: str, history: ConversationHistory) -> _SessionFileState:
+    path = _session_path(sid)
+    signature = _session_file_signature(path)
+    state = history._file_state
+    if state is None or state.path != path or state.signature != signature:
+        # External replacement/edits invalidate the header. Preserve ownership
+        # validation and title changes without reparsing our own full transcript.
+        with open(path, "r", encoding="utf-8") as source:
+            data = json.load(source)
+        state = _SessionFileState(path, signature, _stored_character_id(data, sid),
+            data.get("title"), bool(data.get("enable_conversation", False)))
+    if state.character_id != history.character_id:
+        raise ValueError("A Session's character identity cannot be changed")
+    return state
+
+
+def _prepare_session_update(sid: str) -> tuple[ConversationHistory, bool]:
+    if sid != _CURRENT_SESSION_ID:
+        return _read_session_history(sid)
+    history = conversation_history._persistence_copy()
+    history._file_state = _existing_session_file(sid, history)
+    return history, history._file_state.enable_conversation
+
+
 def _persist_history(
     sid: str, history: ConversationHistory, *, enable_conversation: bool, create: bool = False,
 ) -> None:
     """Persist prepared data without relabelling the currently loaded history."""
+    _normalize_message_metadata(history.dialog)
     existing_title = None
     path = _session_path(sid)
     if not create and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            existing = json.load(f)
-        existing_character_id = _stored_character_id(existing, sid)
-        if existing_character_id != history.character_id:
-            raise ValueError("A Session's character identity cannot be changed")
-        existing_title = existing.get("title")
+        existing_title = _existing_session_file(sid, history).title
     data = {
         "session_id": sid,
         "character_id": history.character_id,
@@ -429,8 +648,16 @@ def _persist_history(
                 except OSError:
                     logger.exception("could not remove incomplete new Session %r", sid)
             raise
-        return
-    write_text(path, encoded)
+    else:
+        write_text(path, encoded)
+    try:
+        history._file_state = _SessionFileState(path, _session_file_signature(path),
+            history.character_id, existing_title, enable_conversation)
+    except OSError:
+        # Replacement already committed. A failed cache refresh cannot turn it
+        # into a failed write or leave the committed source view behind.
+        history._file_state = None
+    _cache_committed_sources(sid, history)
 
 
 def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
@@ -443,6 +670,7 @@ def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
         conversation_history.max_rounds,
         int(data.get("summary_token_threshold", conversation_history.summary_token_threshold)),
         character_id=character_id,
+        session_id=session_id,
     )
     history.dialog = data.get("dialog", [])
     history.last_summary = data.get("last_summary", "")
@@ -457,7 +685,17 @@ def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
         or not isinstance(history.last_summary, str)
     ):
         raise ValueError("Session history has an invalid shape")
-    return history, bool(data.get("enable_conversation", False))
+    if _normalize_message_metadata(history.dialog):
+        # Persist the one-time upgrade before publishing any allocated ids.
+        # Preserve the Session timestamp/title: migration is not a new chat.
+        data["dialog"] = history.dialog
+        write_text(_session_path(session_id), json.dumps(data, ensure_ascii=False, indent=2))
+    enable = bool(data.get("enable_conversation", False))
+    path = _session_path(session_id)
+    history._file_state = _SessionFileState(path, _session_file_signature(path),
+        character_id, data.get("title"), enable)
+    _cache_committed_sources(session_id, history)
+    return history, enable
 
 
 def _stored_character_id(data: Any, session_id: str) -> str:
@@ -466,6 +704,25 @@ def _stored_character_id(data: Any, session_id: str) -> str:
     # Only a missing legacy field has the historical default. An explicit bad
     # identity must never be replaced by the startup character.
     return character_prompts.validate_character_id(data.get("character_id", character_prompts.DEFAULT_CHARACTER_ID))
+
+
+def read_session_sources(session_id: str) -> tuple[dict[str, Any], ...]:
+    """Read durable sources on the serial Host owner; legacy reads may migrate."""
+    from core.chat_history_projection import project_memory_source
+
+    history, _enable = _read_session_history(session_id)
+    return tuple(project_memory_source(session_id, row) for row in history.dialog)
+
+
+def read_session_source(session_id: str, message_id: str, *, revision: int) -> dict[str, Any]:
+    """Resolve an exact revision on the serial Host owner; reads may migrate."""
+    from core.chat_history_projection import project_memory_source
+
+    history, _enable = _read_session_history(session_id)
+    row = next((row for row in history.dialog if row["message_id"] == message_id), None)
+    if row is None:
+        raise LookupError("Session message source is unavailable")
+    return project_memory_source(session_id, row, expected_revision=revision)
 
 
 def get_session_character_id(session_id: str) -> str:
@@ -494,7 +751,8 @@ def require_session_character(session_id: str) -> str:
 
 
 def append_session_message(session_id: str, *, role: str, content: str, turn_id: str,
-                           message_id: str = "") -> bool:
+                           message_id: str = "", created_at_ms: int | None = None,
+                           utc_offset_minutes: int | None = None) -> bool:
     """Project a Host-correlated message into its existing Session.
 
     Called synchronously on the owning Host loop, like Session selection/save.
@@ -507,23 +765,29 @@ def append_session_message(session_id: str, *, role: str, content: str, turn_id:
         return False
     try:
         content.encode("utf-8", errors="strict")
-        history, enable = _read_session_history(session_id)
-        if session_id == _CURRENT_SESSION_ID:
-            history = conversation_history.snapshot()
-        message = {"role":role, "content":content, "turn_id":str(turn_id),
-            **({"message_id":message_id} if message_id else {})}
-        prior = next((row for row in history.dialog if row.get("role") == role
-            and row.get("turn_id") == str(turn_id)
-            and (not message_id or row.get("message_id") == message_id
-                or (not row.get("message_id") and row.get("content") == content))), None)
+        history, enable = _prepare_session_update(session_id)
+        # An explicit identity is authoritative, never a same-text/turn guess.
+        # The legacy no-id API is limited to one row of that role in the turn:
+        # it can confirm an unchanged replay, but can neither edit nor add parts.
+        prior = next((row for row in history.dialog if (
+            row.get("message_id") == message_id if message_id else
+            row.get("role") == role and row.get("turn_id") == str(turn_id))), None)
         if prior is not None:
-            if prior.get("content") != content:
+            if not (prior.get("role") == role and prior.get("turn_id") == str(turn_id)
+                    and prior.get("content") == content):
                 return False
         else:
+            message = {"role":role, "content":content, "turn_id":str(turn_id),
+                **new_message_metadata(message_id=message_id)}
+            if created_at_ms is not None:
+                message.update(created_at_ms=created_at_ms, utc_offset_minutes=utc_offset_minutes)
+            if re.fullmatch(r"cooperative-role:[0-9a-f]{64}", message["message_id"]):
+                return False  # Retired content hashes cannot become new source identities.
             history.dialog.append(message)
         _persist_history(session_id, history, enable_conversation=enable)
         if session_id == _CURRENT_SESSION_ID:
             conversation_history.dialog = history.dialog
+            conversation_history._file_state = history._file_state
         return True
     except Exception:
         logger.exception("failed to append a message to Session %r", session_id)
@@ -547,6 +811,7 @@ def load_session(session_id: str, *, expected_selection_revision: int | None = N
 
 
 def delete_session(session_id: str) -> bool:
+    global _committed_sources
     try:
         path = _session_path(session_id)
         if os.path.exists(path):
@@ -557,6 +822,9 @@ def delete_session(session_id: str) -> bool:
                 # keep the context but do not revive already retired authority.
                 _check_activation(None)
             os.remove(path)
+            _committed_recent.pop(session_id, None)
+            if _committed_sources is not None and _committed_sources[0] == session_id:
+                _committed_sources = None
             if active:
                 _install_session_state(None, empty)
             return True

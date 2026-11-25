@@ -493,6 +493,18 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
         async def drain_inputs():
             assert order == ["cooperative_begin", "provider", "cooperative_finish", "cooperative_ledger"]
             order.append("inputs")
+        provider_facts_drained, observer_closed, preview_closed = AsyncMock(), AsyncMock(), AsyncMock()
+        async def memory_close():
+            assert order[-1] == "inputs"
+            provider_facts_drained.assert_awaited_once_with()
+            observer_closed.assert_awaited_once_with()
+            preview_closed.assert_awaited_once_with()
+            order.append("memory")
+        def detach_projection(projector):
+            assert projector is None and order[-1] == "memory"
+            order.append("memory_projection")
+        memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close))
+        session_manager = SimpleNamespace(configure_model_history_projection=Mock(side_effect=detach_projection))
         path = Path(__file__).resolve().parents[1] / "server/app.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bootstrap = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "bootstrap")
@@ -525,10 +537,11 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
             openclaw_gateway_start_task=None,
             provider_activity_h=SimpleNamespace(close=AsyncMock()),
             work_h=SimpleNamespace(drain_inputs=drain_inputs),
-            work_ledger=SimpleNamespace(drain_provider_facts=AsyncMock(), close=lambda: order.append("ledger"),
+            work_ledger=SimpleNamespace(drain_provider_facts=provider_facts_drained, close=lambda: order.append("ledger"),
                 store=SimpleNamespace(list_unresolved_provider_attempts=Mock(return_value=[]),
                     list_writer_leases=Mock(return_value=[]))),
-            work_observer=SimpleNamespace(close=AsyncMock()), work_preview=SimpleNamespace(close_all=AsyncMock()),
+            work_observer=SimpleNamespace(close=observer_closed), work_preview=SimpleNamespace(close_all=preview_closed),
+            memory_service=memory_service, _work_session_manager=session_manager,
             _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
             _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
         exec(compile(module, str(path), "exec"), namespace)
@@ -546,7 +559,9 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
             await caller
         runner.assert_not_called()
         assert order == ["cooperative_begin", "provider", "cooperative_finish",
-            "cooperative_ledger", "inputs", "ledger"]
+            "cooperative_ledger", "inputs", "memory", "memory_projection", "ledger"]
+        memory_service.close.assert_awaited_once_with()
+        session_manager.configure_model_history_projection.assert_called_once_with(None)
         assert logger.exception.call_count == int(fence_fails)
         cleanup_record.assert_called_once_with(providers_settled=True, work_settled=True,
             teardown_succeeded=not fence_fails)

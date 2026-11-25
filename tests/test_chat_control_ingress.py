@@ -25,6 +25,18 @@ def request(utterance="u1", *, turn=None, session="A", text="Choose destination"
     return {"text": text, "session_id": session, "utterance_id": utterance, "turn_id": turn or "turn-" + utterance}
 
 
+def assert_session_input(snapshot, expected_sources, session_id):
+    assert snapshot._session_id == session_id
+    assert [(row["role"], row["content"]) for row in snapshot.dialog] == [("user", "HISTORY_" + session_id)]
+    assert snapshot.dialog == expected_sources
+    assert snapshot.dialog is not expected_sources
+    source = snapshot.dialog[0]
+    assert isinstance(source["message_id"], str) and source["message_id"]
+    assert type(source["created_at_ms"]) is int and source["created_at_ms"] > 0
+    assert type(source["utc_offset_minutes"]) is int and -1440 < source["utc_offset_minutes"] < 1440
+    assert source["revision"] == 1
+
+
 @pytest.fixture
 def context(tmp_path, monkeypatch):
     monkeypatch.setattr(sm, "_SESSION_DIR", str(tmp_path / "sessions"))
@@ -32,10 +44,12 @@ def context(tmp_path, monkeypatch):
     monkeypatch.setattr(sm, "_SESSION_SELECTION_REVISION", 0)
     monkeypatch.setattr(sm, "_activation_guard", None)
     monkeypatch.setattr(sm, "conversation_history", sm.ConversationHistory())
+    history_sources = {}
     for sid in ("A", "B"):
         sm.create_session(sid)
         sm.conversation_history.add_user("HISTORY_" + sid)
         assert sm.save_session(sid)
+        history_sources[sid] = [dict(row) for row in sm.conversation_history.dialog]
     assert sm.load_session("A")[0]
     turns = tc.TurnCoordinator()
     monkeypatch.setattr(tc, "coordinator", turns)
@@ -65,7 +79,8 @@ def context(tmp_path, monkeypatch):
             return handler, legacy, direct
 
         yield SimpleNamespace(ledger=ledger, store=store, turns=turns, emit=emit, make=make,
-            control=control, decision=chosen, project=project, destination=destination)
+            control=control, decision=chosen, project=project, destination=destination,
+            history_sources=history_sources)
 
 
 def test_exact_grant_drives_one_real_focus_without_old_router_or_issuer(context, monkeypatch):
@@ -74,7 +89,7 @@ def test_exact_grant_drives_one_real_focus_without_old_router_or_issuer(context,
         async def runner(text, **kwargs):
             admission = kwargs["turn_admission"]
             seen.append(admission)
-            assert kwargs["history_snapshot"].dialog == [{"role": "user", "content": "HISTORY_A"}]
+            assert_session_input(kwargs["history_snapshot"], context.history_sources["A"], "A")
             context.control.admit(admission)
             sealed = context.control.seal(admission, context.decision)
             receipt = context.control.apply(sealed["effect_id"])
@@ -363,7 +378,7 @@ def test_older_input_internal_session_install_does_not_refuse_newer_queued_targe
         await handler._stream_task
         assert sm.get_current_session_id() == "B"
         assert runner.await_args.kwargs["turn_admission"].session_id == "B"
-        assert runner.await_args.kwargs["history_snapshot"].dialog == [{"role": "user", "content": "HISTORY_B"}]
+        assert_session_input(runner.await_args.kwargs["history_snapshot"], context.history_sources["B"], "B")
         assert context.ledger.find_admission("chat:B", "two")["lifecycle"] == "current"
     asyncio.run(run())
 

@@ -83,18 +83,20 @@ async def test_head_settles_at_the_user_turn_boundary(streaming_role, mode):
         if mode == "action":
             assert receipt["state"] == "work_required"
             assert host.history.call_args.kwargs["content"] == "首句。"
-            assert host.history.call_args.kwargs["message_id"] == "cooperative-head:reply"
+            head_id = host.history.call_args.kwargs["message_id"]
+            assert head_id
             assert not receipt.get("_host_coordination_delivered")
             # Ingress may now wait for a choice; an unrelated receipt remains deliverable.
             await asyncio.wait_for(loop._deliver("受理。", cause="reply"), 1)
             assert [call.kwargs["content"] for call in host.history.call_args_list] == ["首句。", "受理。"]
             assert len({call.kwargs["message_id"] for call in host.history.call_args_list}) == 2
             finals = [p for method, p in host.emitted if method == "chat.role_message"]
-            assert [p["message_id"] for p in finals] == ["cooperative-head:reply", "reply"]
-            assert finals[0]["turn_id"] == "reply"
+            assert [p["message_id"] for p in finals] == [head_id,
+                host.history.call_args_list[1].kwargs["message_id"]]
+            assert all(p["turn_id"] == "reply" for p in finals)
         else:
             host.history.assert_called_once_with("A", role="assistant", content="首句。遠端。",
-                turn_id="reply", message_id=ANY)
+                turn_id="reply", message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
             assert len([row for row in loop.history if row["source"] == "kurisu"]) == 1
             if mode == "professional":
                 assert receipt["state"] == "work_plan_required"
@@ -139,7 +141,8 @@ async def test_head_interruption_records_only_visible_prefix_and_releases_lock(s
         with pytest.raises(asyncio.CancelledError if failure == "cancel" else RuntimeError):
             await asyncio.wait_for(task, 2)
         assert closed.is_set() and not loop._delivery_lock.locked()
-        host.history.assert_called_once_with("A", role="assistant", content="見えた部分", turn_id="reply")
+        host.history.assert_called_once_with("A", role="assistant", content="見えた部分", turn_id="reply",
+            message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
         assert host.queue.empty()
     finally:
         release.set()
@@ -226,7 +229,7 @@ async def test_empty_head_leaves_one_remote_reply_without_retry(streaming_role, 
         assert len(calls) == 1 and not loop._delivery_lock.locked()
         assert streaming_role.queue.qsize() == 1
         streaming_role.history.assert_called_once_with("A", role="assistant", content="遠端。",
-            turn_id="reply", message_id=ANY)
+            turn_id="reply", message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
         assert "local head produced no visible text" in caplog.text
     finally:
         await loop.close()
@@ -272,7 +275,7 @@ async def test_remote_ready_cancels_unstarted_head_without_waiting_for_endpoint(
         assert "local head produced no visible text" not in caplog.text
         if mode in {"streamed", "completed"}:
             streaming_role.history.assert_called_once_with("A", role="assistant", content="遠端。",
-                turn_id="remote-first", message_id=ANY)
+                turn_id="remote-first", message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
         else:
             streaming_role.history.assert_not_called()
     finally:

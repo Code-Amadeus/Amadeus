@@ -211,9 +211,9 @@ def apply_branch_merge_to_history(
         if not content:
             continue
         if role == "user":
-            conversation_history.add_user(content)
+            conversation_history.add_user(content, historical=True)
         elif role == "assistant":
-            conversation_history.add_assistant(content)
+            conversation_history.add_assistant(content, historical=True)
 
     if include_final_report and merge.get("final_report"):
         conversation_history.add_assistant(

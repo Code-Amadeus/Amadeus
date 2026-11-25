@@ -7,7 +7,6 @@ publication does not establish physical display or authorize execution.
 from __future__ import annotations
 
 import inspect
-import hashlib
 import asyncio
 import json
 import logging
@@ -17,6 +16,8 @@ from typing import Callable
 
 from server.narration_delivery import NarrationRequest, NarrationSink, deliver_narration
 from core.chat_history_projection import project_completed_role_history
+from core.session_manager import (assistant_turn_message_id, new_message_metadata,
+    register_assistant_reply, release_assistant_reply)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,9 @@ class CooperativeHostDelivery:
     async def __call__(self, event: dict) -> bool:
         return await self._publish(event)
 
+    async def publish_protected(self, event: dict, *, publication_started) -> bool:
+        return await self._publish(event, publication_started=publication_started)
+
     def begin_stream(self, cause, *, gui_callback=None,
                      auip_background_capture_release=None):
         if (self.role_stream_factory is None or self.allows is None
@@ -107,7 +111,12 @@ class CooperativeHostDelivery:
         return _CooperativeReplyStream(self, cause, gui_callback=gui_callback,
             auip_background_capture_release=auip_background_capture_release)
 
-    async def _publish(self, event, *, narration_result=None):
+    async def _publish(self, event, *, narration_result=None, publication_started=None):
+        # The event belongs to the Host publication lifecycle. Reusing it is a
+        # retry of the same message; a separate event (even identical text) is
+        # a separate publication. Allocate before either UI or persistence.
+        if not event.get("message_id"):
+            event.update(new_message_metadata())
         cause, text = event["cause"], event["text"]
         accepted = self.display({**event, "session_id":self.session_id})
         if inspect.isawaitable(accepted):
@@ -116,15 +125,17 @@ class CooperativeHostDelivery:
         self.receipts.append(receipt)
         if accepted is not True:
             return False
+        if publication_started is not None:
+            publication_started()
         if self.record_display is not None:
             # The Host published the output. Persistence failure must not cause
             # another model/execution call to repeat it.
             history_text = project_completed_role_history(text)
-            message_id = event.get("message_id") or ("cooperative-role:" + hashlib.sha256(
-                (str(cause) + "\0" + text).encode("utf-8")).hexdigest())
             receipt["history_recorded"] = self.record_display(
                 self.session_id, role="assistant",
-                content=history_text, turn_id=cause, message_id=message_id) is True
+                content=history_text, turn_id=cause, message_id=event["message_id"],
+                **{key:event[key] for key in ("created_at_ms", "utc_offset_minutes")
+                    if key in event}) is True
         if self.narration_sink is not None:
             sink = (self.narration_sink if narration_result is None
                 else lambda _payload: narration_result)
@@ -144,7 +155,8 @@ class _CooperativeReplyStream:
     def __init__(self, delivery, cause, *, gui_callback=None,
                  auip_background_capture_release=None):
         self.delivery = delivery
-        self.event = {"cause":cause, "session_id":delivery.session_id}
+        self.event = {"cause":cause, "session_id":delivery.session_id,
+            **new_message_metadata(message_id=assistant_turn_message_id(cause))}
         self.gui_callback = gui_callback
         self.presented_text = ""
         role_kwargs = {}
@@ -157,6 +169,7 @@ class _CooperativeReplyStream:
         self.releases_auip_on_first_sentence = bool(
             getattr(self.role, "releases_auip_on_first_sentence", False))
         self.closed = False
+        register_assistant_reply(delivery.session_id, cause, self.event)
 
     def _publish_gui(self, text):
         accepted = self.gui_callback(text)
@@ -164,12 +177,22 @@ class _CooperativeReplyStream:
             # The synchronous Host callback publishes before sentence dispatch.
             # Keep that prefix even if dispatch is cancelled before feed returns.
             self.presented_text = text
+            self._publication_started()
         return accepted
+
+    def _publication_started(self):
+        callback = getattr(self, "publication_started", None)
+        if callback is not None:
+            self.publication_started = None
+            callback()
 
     async def _check(self):
         if self.closed or not await self.delivery.allows(self.event):
             self.abort()
             raise asyncio.CancelledError("role reply lost foreground ownership")
+        policy_check = getattr(self, "policy_check", None)
+        if policy_check is not None:
+            policy_check()
 
     async def feed(self, text):
         await self._check()
@@ -179,6 +202,7 @@ class _CooperativeReplyStream:
             accepted = await self.delivery.partial_display({**self.event, "text":visible})
             if accepted is True:
                 self.presented_text = visible
+                self._publication_started()
 
     async def prepare(self):
         await self._check()
@@ -197,9 +221,12 @@ class _CooperativeReplyStream:
         await self._check()
         narration = await self.role.finish()
         await self._check()
+        event.update({key:value for key, value in self.event.items()
+            if key not in {"cause", "session_id"}})
         accepted = await self.delivery._publish(event, narration_result=narration)
         if accepted is True:
             self.closed = True
+            release_assistant_reply(self.delivery.session_id, self.event["cause"], self.event["message_id"])
         else:
             self.abort()
         return accepted
@@ -213,15 +240,18 @@ class _CooperativeReplyStream:
                 receipt = {**self.event, "published":True, "partial":True,
                     "history_recorded":False}
                 self.delivery.receipts.append(receipt)
-                # No message_id: an existing final/interrupted row for this turn
-                # wins. In particular a late cleanup cannot restore an unheard tail.
+                # The exact reply identity also names a pre-final interruption.
+                # append is immutable: late cleanup cannot restore an unheard tail.
                 receipt["history_recorded"] = self.delivery.record_display(
                     self.delivery.session_id, role="assistant",
                     content=project_completed_role_history(self.presented_text),
-                    turn_id=self.event["cause"]) is True
+                    turn_id=self.event["cause"], message_id=self.event["message_id"],
+                    created_at_ms=self.event["created_at_ms"],
+                    utc_offset_minutes=self.event["utc_offset_minutes"]) is True
         except Exception:
             logger.exception("failed to record interrupted cooperative presentation")
         finally:
+            release_assistant_reply(self.delivery.session_id, self.event["cause"], self.event["message_id"])
             self.role.abort()
 
 

@@ -44,6 +44,7 @@ for mod in list(sys.modules):
     if mod.split(".")[0] in _BLOCKED:
         del sys.modules[mod]
 
+from eidema import MemoryStore  # noqa: F401
 import server.app  # noqa: F401
 # asr manager / mic_input_service are reachable outside server.app's lazy
 # import chain (tests, config-only journeys); they must stay importable on

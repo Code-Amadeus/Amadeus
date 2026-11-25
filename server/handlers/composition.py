@@ -27,6 +27,7 @@ class HandlerServices:
     current_session_id: Callable[[], str]
     auip_app_websocket_url: str
     extra_capability_packages: Callable[[], Any]
+    memory: Any = None
 
 
 @dataclass
@@ -50,6 +51,7 @@ def builtin_handler_factories(
     from server.handlers.chat_handler import ChatHandler
     from server.handlers.expression_handler import ExpressionHandler
     from server.handlers.mcp_connection_handler import McpConnectionHandler
+    from server.handlers.memory_handler import MemoryHandler
     from server.handlers.provider_activity_handler import ProviderActivityHandler
     from server.handlers.provider_handler import ProviderHandler
     from server.handlers.render_handler import RenderHandler
@@ -70,6 +72,7 @@ def builtin_handler_factories(
     return {
         "chat": ChatHandler,
         "session": SessionHandler,
+        "memory": lambda: MemoryHandler(services.memory),
         "character": CharacterHandler,
         "tts": lambda: voice.tts,
         "asr": lambda: voice.asr,

@@ -9,6 +9,11 @@
   },
   "archive_prefix": "amadeus-{version}",
   "required_files": [
+    "tools/package_eidema.py",
+    "server/memory_policy_metadata.py",
+    "vendor/eidema/README.md",
+    "vendor/eidema/provenance.json",
+    "vendor/eidema/eidema-0.2.0.dev1-py3-none-any.whl",
     "tools/extension_package.py",
     "tools/check_extension_contract.py",
     "tools/probes/extension_contract_pi.py",

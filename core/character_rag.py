@@ -86,7 +86,7 @@ class CharacterKnowledgeIndex:
 
         enforce_local_model_loading()
         import faiss
-        from sentence_transformers import SentenceTransformer
+        from core.local_embeddings import get_local_embedding_model
 
         self.index = faiss.read_index(str(index_path))
         self.model_name = str(metadata["model"])
@@ -94,9 +94,7 @@ class CharacterKnowledgeIndex:
         self.texts = metadata["texts"]
         if self.index.ntotal != len(self.texts) or self.index.d != metadata["dimension"]:
             raise ValueError("Character index dimensions/count do not match its metadata")
-        self.embedder = SentenceTransformer(
-            metadata["model"], device="cpu", local_files_only=True, trust_remote_code=False
-        )
+        self.embedder = get_local_embedding_model(metadata["model"])
         if self.embedder.get_embedding_dimension() != self.index.d:
             raise ValueError("Embedding model dimension does not match the character index")
 
@@ -146,6 +144,7 @@ class CharacterRAG:
         self._index = None
         self._load_failed = False
         self._lock = Lock()
+        self._reference_task: asyncio.Task | None = None
         self._status = {"state": "not_loaded", "detail": "Loads on the first chat turn."}
 
     def status(self) -> dict:
@@ -225,6 +224,27 @@ class CharacterRAG:
         )
         return reference
 
+    async def reference_async(self, query: str) -> str:
+        """Own at most one off-loop job, even after a caller times out.
+
+        Cancellation cannot stop a synchronous model load/search. Later callers
+        wait for that existing job, discard its turn-local result, then compute
+        their own query. Their Host deadline can expire without queuing threads.
+        """
+        while self._reference_task is not None and not self._reference_task.done():
+            await asyncio.shield(self._reference_task)
+        task = asyncio.create_task(asyncio.to_thread(self.reference, query))
+        self._reference_task = task
+        # A timed-out caller no longer awaits this task. Retrieve any failure
+        # without logging its potentially private exception body.
+        def finished(done):
+            if not done.cancelled():
+                done.exception()
+            if self._reference_task is done:
+                self._reference_task = None
+        task.add_done_callback(finished)
+        return await asyncio.shield(task)
+
 
 # The process owns the index. Session loops only receive a retrieval callback.
 # Construction is cheap: no filesystem/model access occurs until reference().
@@ -241,4 +261,4 @@ async def role_character_reference(query: str) -> str:
 
     if active_character_id() != DEFAULT_CHARACTER_ID or not settings.RAG_ENABLED:
         return ""
-    return await asyncio.to_thread(get_character_rag().reference, query)
+    return await get_character_rag().reference_async(query)

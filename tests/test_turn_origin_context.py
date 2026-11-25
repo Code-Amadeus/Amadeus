@@ -124,6 +124,13 @@ def test_explicit_session_selection_loads_history_after_old_turn_interrupt(sessi
     async def run():
         captured = []
         interrupted = []
+        original_sources = session_files("origin-A")["dialog"]
+        target_sources = session_files("active-B")["dialog"] if target == "active-B" else []
+        for source in original_sources + target_sources:
+            assert isinstance(source["message_id"], str) and source["message_id"]
+            assert type(source["created_at_ms"]) is int and source["created_at_ms"] > 0
+            assert type(source["utc_offset_minutes"]) is int and -1440 < source["utc_offset_minutes"] < 1440
+            assert source["revision"] == 1
 
         async def stream(_text, **kwargs):
             captured.append(kwargs)
@@ -143,11 +150,15 @@ def test_explicit_session_selection_loads_history_after_old_turn_interrupt(sessi
         ):
             await handler._handle_send({"text": "hello", "turn_id": "new-turn", "session_id": target})
             await handler._stream_task
-        assert interrupted == [("origin-A", [{"role": "user", "content": "ONLY_A"}])]
+        assert interrupted == [("origin-A", original_sources)]
+        assert [(row["role"], row["content"]) for row in interrupted[0][1]] == [("user", "ONLY_A")]
         assert captured[0]["turn_admission"].session_id == target
-        expected = [{"role": "user", "content": "ONLY_B"}] if target == "active-B" else []
-        assert captured[0]["history_snapshot"].dialog == expected
+        snapshot = captured[0]["history_snapshot"]
+        assert snapshot._session_id == target
+        assert snapshot.dialog == target_sources
+        assert [(row["role"], row["content"]) for row in snapshot.dialog] == (
+            [("user", "ONLY_B")] if target == "active-B" else [])
         assert sm.get_current_session_id() == target
-        assert session_files("origin-A")["dialog"] == [{"role": "user", "content": "ONLY_A"}]
+        assert session_files("origin-A")["dialog"] == original_sources
 
     asyncio.run(run())

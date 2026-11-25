@@ -49,6 +49,16 @@ def test_prompts_carry_the_recent_window_while_the_record_keeps_every_round() ->
     assert "user 1" not in prompt and "user 2" in prompt and "reply 3" in prompt
 
 
+def test_added_message_consumes_the_normalized_host_identity() -> None:
+    retired = "cooperative-role:" + "a" * 64
+    history = ConversationHistory()
+    assert history.add_user("Question", turn_id="user-turn", message_id=retired)
+    assert history.add_assistant("Reply", turn_id="reply-turn", message_id=retired)
+    assert all(row["message_id"].startswith("message-") for row in history.dialog)
+    assert history.dialog[0]["message_id"] != history.dialog[1]["message_id"]
+    assert all(row["revision"] == 1 for row in history.dialog)
+
+
 if __name__ == "__main__":
     test_openai_style_history_has_one_authoritative_latest_user_message()
     print("ok: OpenAI-style history adds no in-band maintenance request")

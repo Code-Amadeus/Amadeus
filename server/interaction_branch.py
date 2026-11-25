@@ -2155,6 +2155,7 @@ class InteractionBranchCoordinator:
             "role": "assistant",
             "content": self._branch_capsule_text(branch, close_status=close_status),
             "branch_capsule": branch.branch_id,
+            **sm.new_message_metadata(),
         }
         if insert_at < 0:
             # 区间内没有打标条目（如分支开后立即被 supersede）——仅当

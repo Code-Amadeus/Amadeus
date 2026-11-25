@@ -485,6 +485,13 @@ async def bootstrap(port: int = 17777) -> None:
         provider_cancel=provider_runtime.cancel,
         current_session_id=_work_session_manager.get_current_session_id,
     )
+    from config.memory import MemoryConfig
+    from server.memory_service import HostMemoryService
+
+    memory_service = HostMemoryService(MemoryConfig.from_environment(settings._ENV),
+        project_for_session=work_ledger.session_project)
+    memory_service.start()
+    _work_session_manager.configure_model_history_projection(memory_service.project_history)
     work_preview = WorkPreviewManager(work_ledger_store)
     auip_launch = AuipLaunchCoordinator(
         artifacts=work_ledger_store, work_roster=work_ledger, attention=attention_requests,
@@ -501,6 +508,7 @@ async def bootstrap(port: int = 17777) -> None:
         extra_capability_packages=lambda: (*extension_runtime.capability_packages(), *auip_app_capability_packages(
             auip_launch.candidates(_attention_session_manager.get_current_session_id() or "")
         )),
+        memory=memory_service,
     ))
     # References needed by existing domain runtime owners; registration below
     # includes every factory result, including handlers without app bindings.
@@ -1844,6 +1852,7 @@ async def bootstrap(port: int = 17777) -> None:
         persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
         role_provider_selector=_select_cooperative_role_provider,
         role_reference=role_character_reference,
+        memory=memory_service,
         hybrid_head=hybrid_local_head,
         permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
         permission_store=work_ledger_store,
@@ -2525,6 +2534,8 @@ async def bootstrap(port: int = 17777) -> None:
             await work_ledger.drain_provider_facts()
             await work_observer.close()
             await work_preview.close_all()
+            await memory_service.close()
+            _work_session_manager.configure_model_history_projection(None)
             work_settled = (not work_ledger.store.list_unresolved_provider_attempts(limit=1)
                             and not work_ledger.store.list_writer_leases(active_only=True))
             work_ledger.close()
