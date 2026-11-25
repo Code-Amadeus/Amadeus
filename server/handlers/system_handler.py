@@ -12,6 +12,7 @@ from config.catalog import application_policy, configuration_groups, option_valu
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
+from config.background_tasks import spawn_background
 
 
 def _startup_field(
@@ -892,7 +893,7 @@ class SystemHandler(RequestHandler):
 
             if should_manage_local_server(settings):
                 await start_llama_server()
-                asyncio.create_task(warmup_local_llm_cache())
+                spawn_background(warmup_local_llm_cache())
             else:
                 await asyncio.to_thread(stop_llama_server)
 

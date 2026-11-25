@@ -14,6 +14,7 @@ from threading import Lock
 from typing import Callable, Coroutine, Any
 
 from config.log_privacy import protected_text
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class PreTranslationCache:
             self.cache[normalized] = entry
         # Capture both the policy and its entry. A late completion cannot write
         # into a replacement entry after a language switch or repeated sentence.
-        asyncio.create_task(self._translate_task(normalized, entry, self._translate_fn))
+        spawn_background(self._translate_task(normalized, entry, self._translate_fn))
         logger.info(
             "[PreTranslationCache] started: %s -> %s",
             sentence_id,

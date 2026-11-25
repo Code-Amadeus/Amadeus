@@ -33,6 +33,7 @@ from server.outcome_verification import (
     ProviderOutcomeVerdict,
     assess_provider_outcome,
 )
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -1848,7 +1849,7 @@ class InteractionBranchCoordinator:
                 run_id,
             )
             return
-        loop.create_task(
+        spawn_background(
             self._stop_active_run(
                 branch,
                 run_id=run_id,
@@ -1857,6 +1858,7 @@ class InteractionBranchCoordinator:
                 reason=reason,
             ),
             name=f"browser-branch-stop:{run_id}",
+            loop=loop,
         )
 
     async def _stop_active_run(

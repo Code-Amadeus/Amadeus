@@ -21,6 +21,7 @@ from core.turn_coordinator import TurnAuthorityError
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -450,9 +451,10 @@ class ChatHandler(RequestHandler):
             if pending:
                 return False
             self._active_accumulated_text = str(accumulated or "")
-            loop.create_task(
+            spawn_background(
                 bus.emit(Method.CHAT_TOKEN, {"token": accumulated, "turn_id": turn_id,
-                    "session_id": session_id})
+                    "session_id": session_id}),
+                loop=loop,
             )
             return True
 

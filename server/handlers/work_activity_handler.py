@@ -31,6 +31,7 @@ from server.work_semantic_progress import (
     remember_tool_call,
     semantic_progress_fact,
 )
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -2419,7 +2420,7 @@ class WorkActivityCoordinator:
         if state.get("observer_release_fallback_scheduled"):
             return
         state["observer_release_fallback_scheduled"] = True
-        asyncio.create_task(
+        spawn_background(
             self._release_behavior_after_observer_timeout(run_id=run_id, reason=reason),
             name=f"work-release-fallback-{run_id or 'provider'}",
         )

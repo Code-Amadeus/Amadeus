@@ -52,8 +52,8 @@ class FixtureHost:
     def unlisted_players(self, project, reported):
         # This fixture owns its synthetic desktop; never inspect real players
         # on the machine running the Electron parent-lifetime tests.
-        return sum(h.same_path(item.Path, project) for item in self.items) > sum(
-            h.same_path(item.Path, project) for item in reported)
+        return (sum(h.same_path(item.Path, project) for item in self.items) > sum(
+            h.same_path(item.Path, project) for item in reported) or len(self.items) > len(reported))
 
     def set_session_options(self):
         pass

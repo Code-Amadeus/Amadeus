@@ -16,6 +16,7 @@ from config.settings import (
 )
 from server.protocol import Method
 from server.ws_handler import RequestHandler
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ class RenderHandler(RequestHandler):
 
         # Schedule a delayed replay fallback in case the render surface loads
         # before its parent event channel sends render.ready.
-        asyncio.create_task(self._replay_sprites())
+        spawn_background(self._replay_sprites())
 
         return {"url": url}
 
@@ -103,7 +104,7 @@ class RenderHandler(RequestHandler):
         logger.info("[RenderHandler] render surface ready, replaying current selection")
         if self._ensure_runtime is not None:
             self._render_bridge = self._ensure_runtime()
-        asyncio.create_task(self._do_replay())
+        spawn_background(self._do_replay())
         return {"status": "ok"}
 
     async def _do_replay(self) -> None:

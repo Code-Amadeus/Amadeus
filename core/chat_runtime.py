@@ -23,6 +23,7 @@ from tts.latency_clock import log_latency_marker
 from tts.sentence_state import sentence_state_manager, pre_translation_cache
 from tts.pre_translation_runtime import runtime as pre_translation_runtime
 from vts.expression_controller import get_controller as _get_expr_ctrl
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger("chat_runtime")
 
@@ -278,7 +279,7 @@ class ChatRuntime:
 
         # 并行启动预翻译，不阻塞 TTS（CLI 本地路径关闭翻译，字幕在播放时显示）
         if _pre_translation_enabled():
-            asyncio.create_task(self._safe_start_translation(sentence_id, safe_text))
+            spawn_background(self._safe_start_translation(sentence_id, safe_text))
 
         # stream_tts 标志供 hybrid 路线使用：远端首 token 到达后下一句走流式 TTS
         _stream_tts_flag = st.next_stream_tts if st.next_stream_tts is not None else st.is_first
