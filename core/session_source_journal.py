@@ -22,21 +22,25 @@ logger = logging.getLogger(__name__)
 # permission and is emitted only after the authoritative file was committed.
 _publication_observer = None
 _publication_owner = None
+_publication_scope = None
 
 
-def configure_publication(observer=None, *, owner=None):
-    global _publication_observer, _publication_owner
+def configure_publication(observer=None, *, owner=None, scope_for_session=None):
+    global _publication_observer, _publication_owner, _publication_scope
     if observer is not None and (not callable(observer) or owner is None):
         raise ValueError("publication_observer_owner_required")
     if observer is not None and _publication_observer is not None:
         raise ValueError("publication_observer_already_bound")
     if observer is None and owner is not _publication_owner:
         raise ValueError("publication_observer_owner_mismatch")
+    if scope_for_session is not None and (observer is None or not callable(scope_for_session)):
+        raise ValueError("publication_scope_requires_observer")
     _publication_observer, _publication_owner = observer, owner if observer is not None else None
+    _publication_scope = scope_for_session
 
 
 def enabled():
-    return os.environ.get("AMADEUS_SESSION_JOURNAL_ENABLED") == "1"
+    return _publication_scope is not None or os.environ.get("AMADEUS_SESSION_JOURNAL_ENABLED") == "1"
 
 
 def scope_fields(user, character, project):
@@ -49,7 +53,10 @@ def scope_fields(user, character, project):
     return dict(kind=kind, user_id=user, character_id=character, project_id=project)
 
 
-def binding(character):
+def binding(character, session_id=None):
+    scope_for_session = _publication_scope
+    if scope_for_session is not None:
+        return scope_for_session(session_id, character)
     user = os.environ.get("AMADEUS_SESSION_JOURNAL_USER", "")
     project = os.environ.get("AMADEUS_SESSION_JOURNAL_PROJECT") or None
     if project is None and os.environ.get("AMADEUS_SESSION_JOURNAL_CHARACTER") != character:
@@ -150,6 +157,9 @@ def incarnation(data):
 
 
 def _grant():
+    if _publication_scope is not None:
+        return dict(formation_allowed=False, policy_revision="host-explicit-lookup-v1",
+                    lookup_allowed=True, derived_use_mask=1)
     lookup = os.environ.get("AMADEUS_JOURNAL_LOOKUP_ALLOWED", "1") == "1"
     ordinary = os.environ.get("AMADEUS_JOURNAL_ORDINARY_ALLOWED", "1") == "1"
     derived_lookup = os.environ.get("AMADEUS_JOURNAL_DERIVED_LOOKUP_ALLOWED", "1") == "1"
@@ -164,7 +174,7 @@ def _grant():
     )
 
 
-def _event(generation, sid, row, action):
+def _event(generation, sid, row, action, previous_grant=None):
     grant = (
         _grant()
         if action == "upsert"
@@ -175,6 +185,8 @@ def _event(generation, sid, row, action):
             derived_use_mask=0,
         )
     )
+    if previous_grant is not None:
+        grant = {field: previous_grant[field] for field in grant}
     return dict(
         position=len(generation["events"]) + 1,
         source=coordinate(sid, row["message_id"], row["revision"], generation["incarnation"]),
@@ -246,22 +258,31 @@ def prepare(data, old, *, create=False, control_sources=(), capture=True):
             raise ValueError("journal_activation_required")
         journal = dict(version=1, history_start="current_snapshot_only", generations=[])
     sid = data["session_id"]
+    scope = binding(data["character_id"], sid) if capture else None
     if previous_generation is None or create:
         incarnation = uuid4().hex if previous_generation else None
-        scope = binding(data["character_id"]) if capture else previous_generation["scope"]
+        scope = scope if capture else previous_generation["scope"]
         stream_id = f"m0:{sid}:inc:{incarnation}" if incarnation is not None else f"m0:{sid}"
         generation = dict(
             incarnation=incarnation, scope=scope, stream_id=stream_id, retired=False, events=[]
         )
         journal["generations"].append(generation)
-        # First enrollment captures the current snapshot.
-        old_rows = {}
+        # Launching with capture enabled grants newly committed rows. Existing
+        # dialogs require a separate, explicit import.
+        old_rows = ({row["message_id"]: row for row in old.get("dialog", [])}
+                    if _publication_scope is not None and old is not None and not create else {})
     else:
         generation = previous_generation
         if generation["retired"]:
             raise FileNotFoundError("retired_session")
-        if capture and generation["scope"] != binding(data["character_id"]):
-            raise PermissionError("journal_live_scope_rebound")
+        if capture and generation["scope"] != scope:
+            if _publication_scope is None:
+                raise PermissionError("journal_live_scope_rebound")
+            if generation["events"]:
+                capture = False
+            else:
+                # A new conversation can pick its Work project before its first message.
+                generation["scope"] = scope
         old_rows = {row["message_id"]: row for row in old.get("dialog", [])}
     current = {row["message_id"]: row for row in data["dialog"]}
     controls = _bound_controls(sid, generation, old_rows, current, control_sources)
@@ -293,7 +314,10 @@ def prepare(data, old, *, create=False, control_sources=(), capture=True):
         if unchanged and _current_upsert(latest, row) is None:
             continue
         if capture:
-            event = _event(generation, sid, row, "upsert")
+            grant = None
+            if _publication_scope is not None and previous and previous["action"] == "upsert":
+                grant = previous
+            event = _event(generation, sid, row, "upsert", previous_grant=grant)
         elif unchanged and mid in controls:
             event = {**previous, "position": len(generation["events"]) + 1}
         else:
@@ -312,9 +336,9 @@ def prepare(data, old, *, create=False, control_sources=(), capture=True):
 def retire(data, *, capture=True):
     journal = deepcopy(live(data))
     if journal is None:
-        journal = prepare(data, None, capture=capture)[FIELD]
+        journal = prepare(data, data if _publication_scope is not None else None, capture=capture)[FIELD]
     generation = journal["generations"][-1]
-    if capture and generation["scope"] != binding(data["character_id"]):
+    if capture and _publication_scope is None and generation["scope"] != binding(data["character_id"]):
         raise PermissionError("journal_delete_scope_mismatch")
     latest = _latest_events(generation)
     for row in data.get("dialog", []):

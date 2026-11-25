@@ -134,6 +134,7 @@ class HostMemoryService:
         self._query = _SingleFlight("eidema-query")
         self._model = _SingleFlight("eidema-model")
         self._startup = None
+        self._sources = None
         self._index_task = None
         self._index_requested = False
         self._closing = False
@@ -217,6 +218,12 @@ class HostMemoryService:
                 if self.config.enabled and self.config.semantic_enabled and not self._closing:
                     self._index_task = asyncio.create_task(self._prewarm())
             await self._db.run(opened, timeout=None, on_completed=installed)
+            if self.config.enabled and self.config.source_runtime_enabled and not self._closing:
+                from server.memory_source_delivery import SourceDelivery
+                try:
+                    self._sources = SourceDelivery(self)
+                except (AttributeError, ValueError) as exc:
+                    logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
         except Exception as exc:
             if isinstance(exc, SourcePolicyBindingMismatch):
                 self._source_policy_reason = "identity_mismatch"
@@ -276,6 +283,9 @@ class HostMemoryService:
             try:
                 outcome = await self._model.run(lambda:self._store.run_index_batch(limit=1, max_chunks=MEMORY_INDEX_CHUNK_LIMIT),
                     timeout=300)
+                if not outcome.busy and outcome.attempted == 0 and self._sources is not None:
+                    outcome = await self._model.run(lambda:self._sources.retrieval.run_index_batch(
+                        limit=1, max_chunks=MEMORY_INDEX_CHUNK_LIMIT), timeout=300)
                 if outcome.busy:
                     await asyncio.sleep(.05)
                     continue
@@ -488,6 +498,8 @@ class HostMemoryService:
             "automatic_threshold":self._automatic_threshold,
             "source_policy_state":"ready" if self._exclusions_ready else "recovery_required",
             "source_policy_reason":self._source_policy_reason,
+            **({"source_delivery":self._sources.state if self._sources is not None else "unavailable"}
+                if self.config.enabled and self.config.source_runtime_enabled else {}),
             "threshold_calibrated":self._threshold_calibrated, "history_exclusions_ready":self._exclusions_ready}
 
     async def request(self, method, params):
@@ -814,6 +826,8 @@ class HostMemoryService:
             # cancellation of a UI awaiter never orphans a SQLite owner/commit.
             if self._startup is not None:
                 await asyncio.gather(self._startup, return_exceptions=True)
+            if self._sources is not None:
+                await self._sources.close()
             if self._index_task is not None and not self._index_task.done():
                 self._index_task.cancel()
                 await asyncio.gather(self._index_task, return_exceptions=True)

@@ -28,6 +28,7 @@ class MemoryConfig:
     # A hard serialized model-reference ceiling, separate from token estimates
     # and from the larger internal candidate pool's codepoint budget.
     context_bytes: int = 4096
+    source_runtime_enabled: bool = False
 
     @classmethod
     def from_environment(cls, reader: EnvironmentReader):
@@ -45,6 +46,7 @@ class MemoryConfig:
             explicit_lookup_timeout_s=reader.number("AMADEUS_MEMORY_EXPLICIT_LOOKUP_TIMEOUT_S", 2.),
             explicit_validity_timeout_s=reader.number("AMADEUS_MEMORY_EXPLICIT_VALIDITY_TIMEOUT_S", 1.),
             context_bytes=reader.integer("AMADEUS_MEMORY_CONTEXT_BYTES", 4096),
+            source_runtime_enabled=reader.boolean("AMADEUS_MEMORY_SOURCE_RUNTIME_ENABLED", False),
         )
         if (not values.user_id or values.model_backend not in ("", "jina-onnx-q4", "e5") or (values.semantic_threshold is not None and not -1 <= values.semantic_threshold <= 1)
                 or not .01 <= values.recall_timeout_s <= 5
