@@ -36,6 +36,7 @@ from tts.aec_realtime import get_realtime_aec_processor
 from tts.latency_clock import log_latency_marker
 from tts.mouth_signal import MouthSignalSink
 from tts.speech_onset import first_voiced_sample
+from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -624,7 +625,7 @@ class PlaybackManager:
             if is_first_chunk:
                 self._fire_sentence_start(sentence_id)
 
-            asyncio.create_task(
+            spawn_background(
                 self.player.play_audio_chunk_and_signal_completion(
                     audio_chunk,
                     sample_rate,
@@ -911,7 +912,7 @@ class PlaybackManager:
             if hooks.subtitle_available and hooks.update_subtitle_display:
                 hooks.update_subtitle_display(japanese_text, "")
             if hooks.check_and_display_pre_translation:
-                asyncio.create_task(
+                spawn_background(
                     hooks.check_and_display_pre_translation(sentence_id, japanese_text)
                 )
 
@@ -1188,7 +1189,7 @@ class PlaybackManager:
         if hooks.subtitle_available and hooks.update_subtitle_display:
             hooks.update_subtitle_display(text, "")
         if hooks.check_and_display_pre_translation:
-            asyncio.create_task(
+            spawn_background(
                 hooks.check_and_display_pre_translation(sentence_id, text)
             )
 
@@ -1305,7 +1306,7 @@ class PlaybackManager:
                 self._note_current_audio_started(full_audio_data, sample_rate)
 
                 if segments and len(segments) > 1:
-                    asyncio.create_task(
+                    spawn_background(
                         self._fire_segment_starts(
                             sentence_id,
                             segments,
@@ -1315,7 +1316,7 @@ class PlaybackManager:
                         )
                     )
 
-                asyncio.create_task(
+                spawn_background(
                     self.player.play_full_audio_and_signal_completion(
                         full_audio_data,
                         sample_rate,
@@ -1344,7 +1345,7 @@ class PlaybackManager:
                         return
                     self._finish_audio_item(primary_id, logical_sentence_ids)
 
-                asyncio.create_task(_finish_on_audio_done())
+                spawn_background(_finish_on_audio_done())
 
             except Exception as e:
                 self.logger.error(f"PlaybackManager run loop failed: {e}", exc_info=True)
@@ -1421,7 +1422,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
             if hooks.subtitle_available and hooks.update_subtitle_display:
                 hooks.update_subtitle_display(subtitle_text, "")
             if hooks.check_and_display_pre_translation:
-                asyncio.create_task(
+                spawn_background(
                     hooks.check_and_display_pre_translation(subtitle_sentence_id, subtitle_text)
                 )
 
@@ -1515,7 +1516,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
             if hooks.subtitle_available and hooks.update_subtitle_display:
                 hooks.update_subtitle_display(japanese_text, "")
             if hooks.check_and_display_pre_translation:
-                asyncio.create_task(
+                spawn_background(
                     hooks.check_and_display_pre_translation(sentence_id, japanese_text)
                 )
 
@@ -1604,7 +1605,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
                     )
                 elif translation_data["status"] == "translating":
                     logger.info(f"[Subtitle] translation in progress; waiting asynchronously: {sentence_id}")
-                    asyncio.create_task(
+                    spawn_background(
                         self._wait_for_translation(sentence_id, normalized)
                     )
                 else:
@@ -1741,7 +1742,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
                         f"[Subtitle] displayed: '{self._pending_subtitle_text[:30]}...'"
                     )
                     try:
-                        asyncio.create_task(
+                        spawn_background(
                             self._check_and_update_translation(
                                 pending_sid, self._pending_subtitle_text
                             )
