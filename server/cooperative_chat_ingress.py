@@ -86,6 +86,7 @@ from server.auip_control_decision import (
     auip_decision_preserves_main_context,
     render_auip_role_grounding,
 )
+from server.auip_runtime import runtime as auip_app_runtime
 from server.interaction_branch import (
     InteractionBranchRoutingLease,
     InteractionBranchRunStopUnconfirmed,
@@ -1521,7 +1522,7 @@ class CooperativeChatManager:
     def prefetch_auip_entry_context(self, session_id: str):
         """Prepare presentation during speech; never create a session or an action."""
         context = self.auip_entry_context
-        if not session_id or context is None:
+        if not session_id or context is None or not auip_app_runtime.ai_interaction_in_effect():
             return None
 
         async def prepare():
@@ -1654,7 +1655,10 @@ class CooperativeChatManager:
                                  admission, require_live_turn: Callable) -> dict | None:
         """Route focused control; schedule every inactive entry behind the role."""
 
-        if self.auip_decider is None or self.auip_router is None:
+        if (self.auip_decider is None or self.auip_router is None
+                or not auip_app_runtime.ai_interaction_in_effect()):
+            # Off with no active app: no AUIP decision query and no entry
+            # prompt. While shutdown is pending, evaluation still runs.
             return None
         binding = ingress.loop._binding
         history = ingress.loop.prior_messages(turn_id)
@@ -2026,22 +2030,27 @@ class CooperativeChatManager:
         action = str(getattr(decision, "action", "") or "")
         read_facets = tuple(getattr(decision, "read_facets", ()) or ())
         app_session_id = str(getattr(decision, "app_session_id", "") or "")
+        # A decision frozen before the last app session ended is refused here,
+        # before a step model call, read or app action can start.
+        disabled = not auip_app_runtime.ai_interaction_in_effect()
+        accepted_decision = getattr(decision, "status", "") == "ok" and not disabled
         confirmed = require_live_turn()
         if inspect.isawaitable(confirmed):
             admission = await confirmed
         if not independent:
             ingress.loop._effects.accept_no_effect(admission,
-                reason="auip_rejected" if getattr(decision, "status", "") != "ok"
+                reason="auip_rejected" if not accepted_decision
                     else "auip_read" if read_facets else "auip_" + action)
             record_user()
         display_text = None
         role_scope = ({"role_scope":"この応答ではアプリ側の要求だけを扱います。独立したWorkは別の担当が説明します。"}
             if independent else {})
-        if getattr(decision, "status", "") != "ok":
+        if not accepted_decision:
             receipt = {"state":"auip_rejected", "action":action,
                 "input_id":admission.utterance_id, "app_session_id":app_session_id,
                 "outcome":{"ok":False,
-                    "reason":str(getattr(decision, "reason", "") or "app_control_unavailable"),
+                    "reason":"auip_interaction_disabled" if disabled else
+                        str(getattr(decision, "reason", "") or "app_control_unavailable"),
                     "available_modes":list(getattr(decision, "available_modes", ()) or ())}}
             return await finish(receipt, {"source":"host_receipt", **receipt, **role_scope})
         step_request = self.auip_step
@@ -2264,6 +2273,9 @@ class CooperativeChatManager:
         """Use the shared role projections independently of action proposals."""
         from server.auip_runtime import runtime
 
+        if not runtime.ai_interaction_in_effect():
+            # The app stays usable by hand, but its state is not chat context.
+            return ""
         expected = str(app_session_id or "").strip()
         # Rendering is synchronous and the Runtime uses an RLock. Keep the
         # identity check and both existing projections in one focus snapshot,

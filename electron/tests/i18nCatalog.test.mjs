@@ -93,7 +93,7 @@ test('capability projection text has a translated entry in every configuration',
             snapshots.push({
               llm_provider: llm, wake_enabled: voice, aec_realtime_enabled: voice, aec_realtime_barge_in: voice,
               wallpaper_caption_mode: caption, chat_translation_subtitles_enabled: voice,
-              vision_enabled: enabled, vision_mode: mode, vision_scope: scope,
+              vision_enabled: enabled, vision_mode: mode, vision_scope: scope, auip_interaction_enabled: voice,
               model_connections: ['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid_local'].map(id => group(id, configured)),
               voice_configuration: [
                 group('speech_synthesis', configured, { TTS_BACKEND: voice ? 'gpt_sovits' : 'fish_audio' }, { active: true }),

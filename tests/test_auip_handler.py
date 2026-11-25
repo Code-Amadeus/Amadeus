@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from config import settings
 from server.auip_app_connection import (
     APP_METHODS,
     AuipAppConnectionManager,
@@ -190,6 +191,29 @@ def test_host_prepare_binds_the_current_session_and_app_registration_cannot_repl
         assert replay["error"] == "invalid_attach_ticket"
 
     asyncio.run(scenario())
+
+
+def test_prepare_says_when_the_app_will_stay_standalone(monkeypatch) -> None:
+    async def prepare() -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            host = AuipHandler(
+                AuipRuntime(),
+                artifacts=_Store(Path(tmp)),
+                current_session_id=lambda: "host-session",
+            )
+            return await host.handle(
+                Method.AUIP_ATTACH_PREPARE, {"artifact_id": "artifact-1"}
+            )
+
+    assert asyncio.run(prepare())["auip_interaction_enabled"] is True
+
+    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
+    off = asyncio.run(prepare())
+    # The app still opens through the usual descriptor; only its registration
+    # is refused, so the caller must not wait for a connection.
+    assert off["ok"] is True
+    assert parse_app_launch_url(off["launch_url"])["attachTicket"] == off["attach_ticket"]
+    assert off["auip_interaction_enabled"] is False
 
 
 def test_preview_handoff_failure_does_not_weaken_validated_auip_prepare() -> None:
