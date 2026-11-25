@@ -90,7 +90,8 @@ def project_role_history(rows) -> list[dict[str, Any]]:
 
 
 def project_memory_source(session_id: str, message: dict[str, Any], *,
-                          expected_revision: int | None = None) -> dict[str, Any]:
+                          expected_revision: int | None = None,
+                          incarnation: str | None = None) -> dict[str, Any]:
     """Project one identified Session revision, without changing model history.
 
     Call through Session's durable source reader. This function never allocates
@@ -103,13 +104,16 @@ def project_memory_source(session_id: str, message: dict[str, Any], *,
         raise ValueError("Session source identity/revision is unavailable")
     role, content = message["role"], message["content"]
     text = _MEMORY_ASSISTANT_SYNTAX.sub("", content) if role == "assistant" else content
-    return {
+    projected = {
         "session_id": session_id, "message_id": message["message_id"],
         "turn_id": message.get("turn_id"), "role": role, "revision": revision,
         "created_at_ms": message.get("created_at_ms"),
         "utc_offset_minutes": message.get("utc_offset_minutes"),
         "projection_version": MEMORY_TEXT_PROJECTION_VERSION, "text": text,
     }
+    if incarnation is not None:
+        projected["incarnation"] = incarnation
+    return projected
 
 
 def project_inline_role_history(

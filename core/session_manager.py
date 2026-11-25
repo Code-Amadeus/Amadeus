@@ -23,6 +23,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from config.durable_io import write_text
 from llm import character_prompts
+from core import session_source_journal as _source_journal
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ class ConversationHistory:
         self.summary_token_threshold = summary_token_threshold
         self.last_summary = ""
         self._file_state: _SessionFileState | None = None
+        self._source_journal = None
 
     @property
     def character_id(self) -> str:
@@ -150,6 +152,11 @@ class ConversationHistory:
         history = copy(self)
         history.dialog = list(self.dialog)
         return history
+
+    def _memory_incarnation(self) -> str | None:
+        if self._source_journal is not None:
+            return self._source_journal["generations"][-1]["incarnation"]
+        return None
 
     def _estimate_tokens(self, text: str) -> int:
         return len(text or "")
@@ -354,7 +361,7 @@ _active_assistant_replies: dict[tuple[str, str], dict[str, Any]] = {}
 _model_history_projection: Callable | None = None
 # One committed Session snapshot, published only by the serial Session owner.
 # Source selection never reopens/migrates a file on the conversation loop.
-_committed_sources: tuple[str, tuple[dict[str, Any], ...], dict[str, dict[str, Any]]] | None = None
+_committed_sources: tuple[str, tuple[dict[str, Any], ...], dict[str, dict[str, Any]], str | None] | None = None
 _committed_recent: OrderedDict[str, tuple[dict[str, Any], ...]] = OrderedDict()
 
 
@@ -362,6 +369,7 @@ def _cache_committed_sources(session_id: str, history: ConversationHistory) -> N
     global _committed_sources
     window = max(2, history.max_rounds * 2)
     if session_id == _CURRENT_SESSION_ID:
+        conversation_history._source_journal = history._source_journal
         prior = (_committed_sources[2] if _committed_sources is not None
             and _committed_sources[0] == session_id else {})
         source_rows = []
@@ -371,7 +379,8 @@ def _cache_committed_sources(session_id: str, history: ConversationHistory) -> N
             # newly committed content must never alias later active edits.
             source_rows.append(previous if previous is not None and previous == row else deepcopy(row))
         rows = tuple(source_rows)
-        _committed_sources = (session_id, rows, {row["message_id"]:row for row in rows})
+        _committed_sources = (session_id, rows, {row["message_id"]: row for row in rows},
+                              history._memory_incarnation())
         recent = rows[-window:]
     else:
         # Inactive Sessions retain only their bounded model window. Copying
@@ -403,7 +412,8 @@ def read_committed_session_source(session_id: str, message_id: str, *, revision:
     snapshot = _committed_sources
     if snapshot is None or snapshot[0] != session_id or message_id not in snapshot[2]:
         raise LookupError("Committed Session source is unavailable")
-    return project_memory_source(session_id, snapshot[2][message_id], expected_revision=revision)
+    return project_memory_source(session_id, snapshot[2][message_id], expected_revision=revision,
+                                 incarnation=snapshot[3])
 
 
 def configure_model_history_projection(projector: Callable | None) -> None:
@@ -481,6 +491,7 @@ def _install_session_state(
         conversation_history._character_id = history.character_id
         conversation_history._session_id = history._session_id
         conversation_history._file_state = history._file_state
+        conversation_history._source_journal = history._source_journal
     _CURRENT_SESSION_ID = session_id
     if session_id is not None and history is not None:
         _cache_committed_sources(session_id, history)
@@ -518,6 +529,7 @@ def list_sessions() -> list[str]:
     _ensure_session_dir()
     try:
         files = [f for f in os.listdir(_SESSION_DIR) if f.endswith(".json")]
+        files = [f for f in files if not _source_journal.retired_envelope_hint(os.path.join(_SESSION_DIR, f))]
         return sorted([os.path.splitext(f)[0] for f in files])
     except Exception:
         return []
@@ -540,6 +552,8 @@ def _session_path(session_id: str) -> str:
 def create_session(session_id: str, *, activate: bool = True) -> str:
     if not session_id:
         session_id = time.strftime("%Y%m%d-%H%M%S")
+    if _source_journal.enabled():
+        _source_journal.recover(_session_path(session_id))
     history = _empty_history()
     history._session_id = session_id
     _persist_history(session_id, history, enable_conversation=False, create=True)
@@ -596,6 +610,10 @@ def _existing_session_file(sid: str, history: ConversationHistory) -> _SessionFi
         # validation and title changes without reparsing our own full transcript.
         with open(path, "r", encoding="utf-8") as source:
             data = json.load(source)
+        journal = _source_journal.live(data)
+        if (state is not None or history._source_journal is not None) and journal != history._source_journal:
+            raise ValueError("session_source_journal_changed_outside_owner")
+        history._source_journal = journal
         state = _SessionFileState(path, signature, _stored_character_id(data, sid),
             data.get("title"), bool(data.get("enable_conversation", False)))
     if state.character_id != history.character_id:
@@ -604,6 +622,8 @@ def _existing_session_file(sid: str, history: ConversationHistory) -> _SessionFi
 
 
 def _prepare_session_update(sid: str) -> tuple[ConversationHistory, bool]:
+    if _source_journal.enabled():
+        _source_journal.recover(_session_path(sid))
     if sid != _CURRENT_SESSION_ID:
         return _read_session_history(sid)
     history = conversation_history._persistence_copy()
@@ -612,14 +632,18 @@ def _prepare_session_update(sid: str) -> tuple[ConversationHistory, bool]:
 
 
 def _persist_history(
-    sid: str, history: ConversationHistory, *, enable_conversation: bool, create: bool = False,
+    sid: str, history: ConversationHistory, *, enable_conversation: bool,
+    create: bool = False, control_sources=(),
 ) -> None:
     """Persist prepared data without relabelling the currently loaded history."""
     _normalize_message_metadata(history.dialog)
     existing_title = None
     path = _session_path(sid)
-    if not create and os.path.exists(path):
+    exists = os.path.exists(path)
+    if not create and exists:
         existing_title = _existing_session_file(sid, history).title
+    if not exists and history._source_journal is not None:
+        raise FileNotFoundError("registered_session_missing")
     data = {
         "session_id": sid,
         "character_id": history.character_id,
@@ -631,25 +655,37 @@ def _persist_history(
     }
     if existing_title:
         data["title"] = existing_title
-    # Serialization failure must not truncate the last good Session file.
-    encoded = json.dumps(data, ensure_ascii=False, indent=2)
-    if create:
-        created = False
-        try:
-            with open(path, "x", encoding="utf-8") as output:
-                created = True
-                output.write(encoded)
-                output.flush()
-                os.fsync(output.fileno())
-        except BaseException:
-            if created:
-                try:
-                    os.remove(path)
-                except OSError:
-                    logger.exception("could not remove incomplete new Session %r", sid)
-            raise
+    capture = _source_journal.writes_enabled(sid)
+    has_journal = history._source_journal is not None
+    has_retired_name = create and exists and _source_journal.retired_envelope_hint(path)
+    if capture or has_journal or has_retired_name:
+        old = _source_journal.read(path) if exists else None
+        prepared = _source_journal.prepare(data, old, create=create, control_sources=control_sources,
+                                           capture=capture)
+        _source_journal.publish(path, prepared, create=create and not exists)
+        history._source_journal = prepared[_source_journal.FIELD]
     else:
-        write_text(path, encoded)
+        if control_sources:
+            raise ValueError("memory_control_source_requires_live_session")
+        # Serialization failure must not truncate the last good Session file.
+        encoded = json.dumps(data, ensure_ascii=False, indent=2)
+        if create:
+            created = False
+            try:
+                with open(path, "x", encoding="utf-8") as output:
+                    created = True
+                    output.write(encoded)
+                    output.flush()
+                    os.fsync(output.fileno())
+            except BaseException:
+                if created:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        logger.exception("could not remove incomplete new Session %r", sid)
+                raise
+        else:
+            write_text(path, encoded)
     try:
         history._file_state = _SessionFileState(path, _session_file_signature(path),
             history.character_id, existing_title, enable_conversation)
@@ -660,9 +696,35 @@ def _persist_history(
     _cache_committed_sources(sid, history)
 
 
+def _validate_stored_history(dialog, summary) -> None:
+    if (not isinstance(dialog, list)
+            or any(not isinstance(message, dict)
+                or not isinstance(message.get('role'), str)
+                or not isinstance(message.get('content'), str) for message in dialog)
+            or not isinstance(summary, str)):
+        raise ValueError('Session history has an invalid shape')
+
+
 def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
     with open(_session_path(session_id), "r", encoding="utf-8") as source:
         data = json.load(source)
+    history, upgraded = _decode_session_history(session_id, data)
+    if upgraded:
+        # Persist the one-time upgrade before publishing any allocated ids.
+        # Preserve the Session timestamp/title: migration is not a new chat.
+        data["dialog"] = history.dialog
+        write_text(_session_path(session_id), json.dumps(data, ensure_ascii=False, indent=2))
+    enable = bool(data.get("enable_conversation", False))
+    path = _session_path(session_id)
+    history._file_state = _SessionFileState(path, _session_file_signature(path),
+        history.character_id, data.get("title"), enable)
+    _cache_committed_sources(session_id, history)
+    return history, enable
+
+
+def _decode_session_history(session_id: str, data) -> tuple[ConversationHistory, bool]:
+    """Prepare a detached dialog for projection or the normal file migration."""
+    _source_journal.live(data)
     character_id = _stored_character_id(data, session_id)
     # Older files also stored max_rounds. The model window is Host policy, so a
     # saved value no longer narrows what the loaded Session sends to a model.
@@ -673,29 +735,11 @@ def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
         session_id=session_id,
     )
     history.dialog = data.get("dialog", [])
+    history._source_journal = data.get('source_journal')
     history.last_summary = data.get("last_summary", "")
-    if (
-        not isinstance(history.dialog, list)
-        or any(
-            not isinstance(message, dict)
-            or not isinstance(message.get("role"), str)
-            or not isinstance(message.get("content"), str)
-            for message in history.dialog
-        )
-        or not isinstance(history.last_summary, str)
-    ):
-        raise ValueError("Session history has an invalid shape")
-    if _normalize_message_metadata(history.dialog):
-        # Persist the one-time upgrade before publishing any allocated ids.
-        # Preserve the Session timestamp/title: migration is not a new chat.
-        data["dialog"] = history.dialog
-        write_text(_session_path(session_id), json.dumps(data, ensure_ascii=False, indent=2))
-    enable = bool(data.get("enable_conversation", False))
-    path = _session_path(session_id)
-    history._file_state = _SessionFileState(path, _session_file_signature(path),
-        character_id, data.get("title"), enable)
-    _cache_committed_sources(session_id, history)
-    return history, enable
+    _validate_stored_history(history.dialog, history.last_summary)
+    history.dialog = list(history.dialog)
+    return history, _normalize_message_metadata(history.dialog)
 
 
 def _stored_character_id(data: Any, session_id: str) -> str:
@@ -711,24 +755,41 @@ def read_session_sources(session_id: str) -> tuple[dict[str, Any], ...]:
     from core.chat_history_projection import project_memory_source
 
     history, _enable = _read_session_history(session_id)
-    return tuple(project_memory_source(session_id, row) for row in history.dialog)
+    incarnation = history._memory_incarnation()
+    return tuple(project_memory_source(session_id, row, incarnation=incarnation) for row in history.dialog)
 
 
 def read_session_source(session_id: str, message_id: str, *, revision: int) -> dict[str, Any]:
     """Resolve an exact revision on the serial Host owner; reads may migrate."""
+    history, _enable = _read_session_history(session_id)
+    return _project_history_source(session_id, history, message_id, revision=revision)
+
+
+def _project_history_source(session_id, history, message_id, *, revision):
     from core.chat_history_projection import project_memory_source
 
-    history, _enable = _read_session_history(session_id)
     row = next((row for row in history.dialog if row["message_id"] == message_id), None)
     if row is None:
         raise LookupError("Session message source is unavailable")
-    return project_memory_source(session_id, row, expected_revision=revision)
+    return project_memory_source(session_id, row, expected_revision=revision,
+                                 incarnation=history._memory_incarnation())
+
+
+def mark_memory_control_sources(session_id: str, bindings) -> None:
+    """Persist already authorized exact control coordinates on the Session owner."""
+    history, enable = _prepare_session_update(session_id)
+    _persist_history(session_id, history, enable_conversation=enable, control_sources=bindings)
+    if session_id == _CURRENT_SESSION_ID:
+        conversation_history._file_state = history._file_state
+        conversation_history._source_journal = history._source_journal
 
 
 def get_session_character_id(session_id: str) -> str:
     """Read persisted ownership without activating history or loading a role pack."""
     with open(_session_path(session_id), "r", encoding="utf-8") as source:
-        return _stored_character_id(json.load(source), session_id)
+        data = json.load(source)
+    _source_journal.live(data)
+    return _stored_character_id(data, session_id)
 
 
 class SessionCharacterMismatch(ValueError):
@@ -800,6 +861,8 @@ def load_session(session_id: str, *, expected_selection_revision: int | None = N
     调用方负责将 enable_conversation 写回自己的全局变量。
     """
     try:
+        if _source_journal.enabled():
+            _source_journal.recover(_session_path(session_id))
         if not os.path.exists(_session_path(session_id)):
             return False, False
         history, enable = _read_session_history(session_id)
@@ -814,6 +877,8 @@ def delete_session(session_id: str) -> bool:
     global _committed_sources
     try:
         path = _session_path(session_id)
+        if _source_journal.enabled():
+            _source_journal.recover(path)
         if os.path.exists(path):
             active = session_id == _CURRENT_SESSION_ID
             empty = _empty_history() if active else None
@@ -821,7 +886,20 @@ def delete_session(session_id: str) -> bool:
                 # Fence before removing the active file. If removal then fails,
                 # keep the context but do not revive already retired authority.
                 _check_activation(None)
-            os.remove(path)
+            data = _source_journal.read(path)
+            capture = _source_journal.writes_enabled(session_id)
+            if capture or _source_journal.FIELD in data:
+                if not _source_journal.enabled():
+                    _source_journal.recover(path)
+                if _source_journal.FIELD not in data:
+                    data['character_id'] = _stored_character_id(data, session_id)
+                    data['dialog'] = data.get('dialog', [])
+                    _validate_stored_history(data['dialog'], data.get('last_summary', ''))
+                    _normalize_message_metadata(data['dialog'])
+                retired = _source_journal.retire(data, capture=capture)
+                _source_journal.publish(path, retired)
+            else:
+                os.remove(path)
             _committed_recent.pop(session_id, None)
             if _committed_sources is not None and _committed_sources[0] == session_id:
                 _committed_sources = None
@@ -881,6 +959,7 @@ def set_session_title(session_id: str, title: str) -> bool:
             return False
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        _source_journal.live(data)
         data["title"] = title
         write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
         return True
