@@ -18,20 +18,28 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
-_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+_BACKGROUND_TASKS: set[asyncio.Future[Any]] = set()
 
 
-def _finished(task: asyncio.Task[Any]) -> None:
-    _BACKGROUND_TASKS.discard(task)
-    if task.cancelled():
+def _finished(future: asyncio.Future[Any]) -> None:
+    _BACKGROUND_TASKS.discard(future)
+    if future.cancelled():
         return
-    exc = task.exception()
+    exc = future.exception()
     if exc is not None:
+        name = future.get_name() if isinstance(future, asyncio.Task) else type(future).__name__
         logger.error(
             "background task %r failed",
-            task.get_name(),
+            name,
             exc_info=(type(exc), exc, exc.__traceback__),
         )
+
+
+def track_background(future: asyncio.Future[Any]) -> None:
+    """Keep a scheduled future alive and report its failure on completion."""
+    if future not in _BACKGROUND_TASKS:
+        _BACKGROUND_TASKS.add(future)
+        future.add_done_callback(_finished)
 
 
 def spawn_background(
@@ -49,6 +57,5 @@ def spawn_background(
         task = asyncio.create_task(coro, name=name)
     else:
         task = loop.create_task(coro, name=name)
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_finished)
+    track_background(task)
     return task
