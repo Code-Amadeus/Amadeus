@@ -209,9 +209,13 @@ Lively 不会继续迟到挂载。
 empty or partial list on enumeration error and acknowledge a close without
 waiting for its player to exit. Amadeus mounts its loopback wallpaper using
 Lively's WebView2 player. Before saving a before-image or committing recovery,
-the helper counts live wrappers for the Amadeus loopback URL in the current
-Windows session. If that count exceeds the number of entries for the managed
-project, the list cannot confirm cleanup. It does not match the player's launch display
+the helper counts live WebView2 wrappers in the current Windows session and
+checks two bounds: wrappers running the Amadeus loopback URL must not exceed the
+entries reported for the managed project, and the whole wrapper count must not
+exceed the whole reported row count. Every reported row accounts for at most
+one player, so either excess proves the list omitted entries and it cannot
+confirm cleanup — an empty report is then unconfirmed, not evidence that a
+scene or its player is gone. It does not match the player's launch display
 to a registry row: in span mode [Lively can update the primary display without
 relaunching the player](https://github.com/lively-community/lively/blob/6860a4093fc50058c4815908658a4391c4449935/src/Lively/Lively/Core/WinDesktopCore.cs#L742-L750).
 Counts can veto cleanup; the existing project and monitor checks still decide
@@ -220,16 +224,21 @@ seconds for fresh observations without issuing Close again. If the discrepancy
 or an access denial persists, the recovery journal is retained and host shutdown
 is blocked. Retry `recover` once the conflict is resolved; do not delete the journal.
 
-This check covers the managed WebView2 wrapper, not the complete registry of
-all Lively plugins. A preview or another project using the same Amadeus endpoint
-can also make the observation ambiguous; close that preview before retrying.
+This check covers WebView2 wrappers, not the complete registry of all Lively
+plugins. Rows backed by other player types, or an omitted row whose surviving
+count still fits inside the reported total, remain undetectable host-side. A
+preview or another project using the same Amadeus endpoint, or any WebView2
+player without a registry row, can also make the observation ambiguous; close
+that preview before retrying.
 Absence of a wrapper does not certify an arbitrary empty/partial host registry,
 or exit of every descendant. Those guarantees need truthful results from
 [Lively's list and close RPCs](https://github.com/lively-community/lively/blob/6860a4093fc50058c4815908658a4391c4449935/src/Lively/Lively/RPC/WinDesktopCoreServer.cs#L197-L298).
 
-**#233：场景漏报，但播放器仍在运行。** helper 在保存桌面原状和确认恢复前，对比当前
-Windows 会话内使用 Amadeus 回环地址的 WebView2 播放器数量与托管项目的登记条目数。
-播放器多于条目才构成漏报。跨屏模式更换主屏时，Lively 会更新登记的显示器，不会重启
+**#233：场景漏报，但播放器仍在运行。** helper 在保存桌面原状和确认恢复前，统计当前
+Windows 会话内的全部 WebView2 播放器并核验两个上界：使用 Amadeus 回环地址的播放器
+不得超过托管项目的登记条目数，播放器总数不得超过报告的总条目数。每条登记最多对应
+一个播放器，任一超出即证明清单漏报、无法确认清理——空列表此时属于未证实，而不是
+场景或其播放器已退出的证据。跨屏模式更换主屏时，Lively 会更新登记的显示器，不会重启
 播放器，因此不比较启动参数里的旧屏号。数量只用于否决清理；原有项目和显示器检查
 仍决定恢复哪张壁纸。对指定项目发出 Close 后，最多等两秒重新核验；持续漏报或拒绝
 访问时，保留恢复日志，不关闭宿主。排除冲突后可重试 `recover`，不要删除日志。
