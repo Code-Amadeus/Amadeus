@@ -315,11 +315,10 @@ snapshot before opening current-session candidates for creation-time identity
 checks. An inaccessible foreign-session process does not block discovery;
 snapshot failures and unverified current-session identities remain errors.
 
-[.NET 8 support ends on 2026-11-10](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
-This motivates #264. If replacement cannot be qualified before that date,
-the release branch must first retarget the old helper and CI to net10.0 as a
-separate change. The migration branch contains the replacement; it does not
-claim clean-machine or unmodified-Lively release qualification.
+This Python helper replaced the earlier self-contained .NET 8 helper (#264)
+before [.NET 8 support ended on 2026-11-10](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
+The replacement does not claim clean-machine or unmodified-Lively release
+qualification.
 
 Electron packaging writes to `electron/build`, separate from compiled input
 in `electron/dist`; otherwise electron-builder excludes its own output folder
