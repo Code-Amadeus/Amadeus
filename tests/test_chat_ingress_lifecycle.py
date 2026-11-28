@@ -456,113 +456,126 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
         runner = AsyncMock(return_value="late response")
         handler, _, _ = context.make(runner=runner)
         monkeypatch.setattr(handler, "_prepare_visual_context", visual)
-        await handler._handle_send(request())
-        await entered.wait()
-        if fence_fails:
-            monkeypatch.setattr(context.ledger, "advance_epoch", Mock(side_effect=RuntimeError("fence failed")))
-        order = []
-        class CooperativeClose:
-            async def begin_close(self):
-                assert not order
-                order.append("cooperative_begin")
-
-            async def finish_close(self):
-                assert order == ["cooperative_begin", "provider"]
-                order.append("cooperative_finish")
-
-        class CooperativeLedger:
-            def close(self):
-                assert order == ["cooperative_begin", "provider", "cooperative_finish"]
-                order.append("cooperative_ledger")
-
         vts_worker_stop = threading.Event()
-        extension_close = Mock()
-        cleanup_record = Mock()
-        loop = asyncio.get_running_loop()
-        vts_workers = [loop.run_in_executor(None, vts_worker_stop.wait) for _ in range(2)]
-        async def provider_close():
-            extension_close.assert_called_once_with()
-            assert handler._stream_task.done() and not handler.is_busy()
-            assert vts_worker_stop.is_set() and all(worker.done() for worker in vts_workers)
-            assert not any(worker.cancelled() for worker in vts_workers)
-            assert order == ["cooperative_begin"]
-            order.append("provider")
-            release.set()
-            await asyncio.sleep(0)
-            return {"settled": True}
-        async def drain_inputs():
-            assert order == ["cooperative_begin", "provider", "cooperative_finish", "cooperative_ledger"]
-            order.append("inputs")
-        provider_facts_drained, observer_closed, preview_closed = AsyncMock(), AsyncMock(), AsyncMock()
-        async def memory_close():
-            assert order[-1] == "inputs"
-            provider_facts_drained.assert_awaited_once_with()
-            observer_closed.assert_awaited_once_with()
-            preview_closed.assert_awaited_once_with()
-            order.append("memory")
-        def detach_projection(projector):
-            assert projector is None and order[-1] == "memory"
-            order.append("memory_projection")
-        memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close))
-        session_manager = SimpleNamespace(configure_model_history_projection=Mock(side_effect=detach_projection))
-        path = Path(__file__).resolve().parents[1] / "server/app.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        bootstrap = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "bootstrap")
-        cleanup = next(n for n in bootstrap.body if isinstance(n, ast.Try) and any(
-            isinstance(part, ast.Attribute) and part.attr == "drain_provider_facts"
-            for statement in n.finalbody for part in ast.walk(statement)))
-        function = ast.AsyncFunctionDef(name="run_cleanup",
-            args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
-            body=cleanup.finalbody, decorator_list=[])
-        module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
-        monkeypatch.setitem(sys.modules, "asr.mic_input_service", SimpleNamespace(close_mic_input_service=Mock()))
-        monkeypatch.setitem(sys.modules, "llm.llama_server", SimpleNamespace(stop_llama_server=Mock()))
-        logger = Mock()
-        from server.handlers.voice import close_voice_input_services
-        namespace = dict(asyncio=asyncio, chat_h=handler, logger=logger, bus=SimpleNamespace(off=Mock()),
-            extension_runtime=SimpleNamespace(close=extension_close),
-            close_voice_input_services=close_voice_input_services,
-            vts_worker_stop=vts_worker_stop, vts_workers=vts_workers,
-            Method=Method, auip_launch_callback=None, work_preview_auip_callback=None,
-            auip_result_entry_callback=None,
-            set_auip_launch_coordinator=Mock(), auip_presentation_callback=object(),
-            auip_engagement_callback=object(), auip_engagement=SimpleNamespace(close=AsyncMock()),
-            auip_narration_callback=object(), auip_narration=SimpleNamespace(close=AsyncMock()),
-            provider_runtime=SimpleNamespace(set_request_preparer=Mock(),
-                set_native_session_checkpoint=Mock(), set_automatic_permission_authorizer=Mock(),
-                set_start_admission_validator=Mock(),
-                close=provider_close),
-            cooperative_chat=CooperativeClose(), chat_role_delivery=None,
-            cooperative_ledger=CooperativeLedger(),
-            openclaw_gateway_start_task=None,
-            provider_activity_h=SimpleNamespace(close=AsyncMock()),
-            work_h=SimpleNamespace(drain_inputs=drain_inputs),
-            work_ledger=SimpleNamespace(drain_provider_facts=provider_facts_drained, close=lambda: order.append("ledger"),
-                store=SimpleNamespace(list_unresolved_provider_attempts=Mock(return_value=[]),
-                    list_writer_leases=Mock(return_value=[]))),
-            work_observer=SimpleNamespace(close=observer_closed), work_preview=SimpleNamespace(close_all=preview_closed),
-            memory_service=memory_service, _work_session_manager=session_manager,
-            _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
-            _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
-        exec(compile(module, str(path), "exec"), namespace)
-        caller = asyncio.create_task(namespace["run_cleanup"]())
-        if cancel_count:
-            await cleaning.wait()
-            for _ in range(cancel_count):
-                caller.cancel()
+        vts_workers = []
+        caller = None
+        try:
+            await handler._handle_send(request())
+            await entered.wait()
+            if fence_fails:
+                monkeypatch.setattr(context.ledger, "advance_epoch", Mock(side_effect=RuntimeError("fence failed")))
+            order = []
+            class CooperativeClose:
+                async def begin_close(self):
+                    assert not order
+                    order.append("cooperative_begin")
+
+                async def finish_close(self):
+                    assert order == ["cooperative_begin", "provider"]
+                    order.append("cooperative_finish")
+
+            class CooperativeLedger:
+                def close(self):
+                    assert order == ["cooperative_begin", "provider", "cooperative_finish"]
+                    order.append("cooperative_ledger")
+
+            extension_close = Mock()
+            cleanup_record = Mock()
+            loop = asyncio.get_running_loop()
+            vts_workers = [loop.run_in_executor(None, vts_worker_stop.wait) for _ in range(2)]
+            async def provider_close():
+                extension_close.assert_called_once_with()
+                assert handler._stream_task.done() and not handler.is_busy()
+                assert vts_worker_stop.is_set() and all(worker.done() for worker in vts_workers)
+                assert not any(worker.cancelled() for worker in vts_workers)
+                assert order == ["cooperative_begin"]
+                order.append("provider")
+                release.set()
                 await asyncio.sleep(0)
-            release_cleanup.set()
-            with pytest.raises(asyncio.CancelledError):
+                return {"settled": True}
+            async def drain_inputs():
+                assert order == ["cooperative_begin", "provider", "cooperative_finish", "cooperative_ledger"]
+                order.append("inputs")
+            provider_facts_drained, observer_closed, preview_closed = AsyncMock(), AsyncMock(), AsyncMock()
+            async def memory_close():
+                assert order[-1] == "inputs"
+                provider_facts_drained.assert_awaited_once_with()
+                observer_closed.assert_awaited_once_with()
+                preview_closed.assert_awaited_once_with()
+                order.append("memory")
+            def detach_projection(projector):
+                assert projector is None and order[-1] == "memory"
+                order.append("memory_projection")
+            memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close), _maintenance=None)
+            session_manager = SimpleNamespace(configure_model_history_projection=Mock(side_effect=detach_projection))
+            path = Path(__file__).resolve().parents[1] / "server/app.py"
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            bootstrap = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "bootstrap")
+            cleanup = next(n for n in bootstrap.body if isinstance(n, ast.Try) and any(
+                isinstance(part, ast.Attribute) and part.attr == "drain_provider_facts"
+                for statement in n.finalbody for part in ast.walk(statement)))
+            function = ast.AsyncFunctionDef(name="run_cleanup",
+                args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
+                body=cleanup.finalbody, decorator_list=[])
+            module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+            monkeypatch.setitem(sys.modules, "asr.mic_input_service", SimpleNamespace(close_mic_input_service=Mock()))
+            monkeypatch.setitem(sys.modules, "llm.llama_server", SimpleNamespace(stop_llama_server=Mock()))
+            logger = Mock()
+            from server.handlers.voice import close_voice_input_services
+            namespace = dict(asyncio=asyncio, chat_h=handler, logger=logger, bus=SimpleNamespace(off=Mock()),
+                extension_runtime=SimpleNamespace(close=extension_close),
+                close_voice_input_services=close_voice_input_services,
+                vts_worker_stop=vts_worker_stop, vts_workers=vts_workers,
+                Method=Method, auip_launch_callback=None, work_preview_auip_callback=None,
+                auip_result_entry_callback=None,
+                set_auip_launch_coordinator=Mock(), auip_presentation_callback=object(),
+                auip_engagement_callback=object(), auip_engagement=SimpleNamespace(close=AsyncMock()),
+                auip_narration_callback=object(), auip_narration=SimpleNamespace(close=AsyncMock()),
+                provider_runtime=SimpleNamespace(set_request_preparer=Mock(),
+                    set_native_session_checkpoint=Mock(), set_automatic_permission_authorizer=Mock(),
+                    set_start_admission_validator=Mock(),
+                    close=provider_close),
+                cooperative_chat=CooperativeClose(), chat_role_delivery=None,
+                cooperative_ledger=CooperativeLedger(),
+                openclaw_gateway_start_task=None,
+                provider_activity_h=SimpleNamespace(close=AsyncMock()),
+                work_h=SimpleNamespace(drain_inputs=drain_inputs),
+                work_ledger=SimpleNamespace(drain_provider_facts=provider_facts_drained, close=lambda: order.append("ledger"),
+                    store=SimpleNamespace(list_unresolved_provider_attempts=Mock(return_value=[]),
+                        list_writer_leases=Mock(return_value=[]))),
+                work_observer=SimpleNamespace(close=observer_closed), work_preview=SimpleNamespace(close_all=preview_closed),
+                memory_service=memory_service, _work_session_manager=session_manager,
+                maintenance_binding=None, memory_maintenance=None,
+                _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
+                _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
+            exec(compile(module, str(path), "exec"), namespace)
+            caller = asyncio.create_task(namespace["run_cleanup"]())
+            if cancel_count:
+                await cleaning.wait()
+                for _ in range(cancel_count):
+                    caller.cancel()
+                    await asyncio.sleep(0)
+                release_cleanup.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await caller
+                await asyncio.gather(handler._close_task, return_exceptions=True)
+            else:
                 await caller
-            await asyncio.gather(handler._close_task, return_exceptions=True)
-        else:
-            await caller
-        runner.assert_not_called()
-        assert order == ["cooperative_begin", "provider", "cooperative_finish",
-            "cooperative_ledger", "inputs", "memory", "memory_projection", "ledger"]
-        memory_service.close.assert_awaited_once_with()
-        session_manager.configure_model_history_projection.assert_called_once_with(None)
-        assert logger.exception.call_count == int(fence_fails)
-        cleanup_record.assert_called_once_with(providers_settled=True, work_settled=True,
-            teardown_succeeded=not fence_fails)
+            runner.assert_not_called()
+            assert order == ["cooperative_begin", "provider", "cooperative_finish",
+                "cooperative_ledger", "inputs", "memory", "memory_projection", "ledger"]
+            memory_service.close.assert_awaited_once_with()
+            session_manager.configure_model_history_projection.assert_called_once_with(None)
+            assert logger.exception.call_count == int(fence_fails)
+            cleanup_record.assert_called_once_with(providers_settled=True, work_settled=True,
+                teardown_succeeded=not fence_fails)
+        finally:
+            # Test failures must not leave fixture-owned async or thread gates held.
+            release.set()
+            release_cleanup.set()
+            vts_worker_stop.set()
+            if caller is not None:
+                await asyncio.gather(caller, return_exceptions=True)
+            await asyncio.gather(handler.close(), return_exceptions=True)
+            await asyncio.gather(*vts_workers, return_exceptions=True)
     asyncio.run(run())
