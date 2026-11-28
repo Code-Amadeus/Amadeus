@@ -12,9 +12,9 @@ by default or assert that a desktop/model quality run has passed.
   `7632424925b1cd6fd578c97d27e0e1af5488284eea457759199a3e35742a4e48`.
 - Native stage manifest SHA-256:
   `c39e4eda45fa230950205ce4511abbbdfb96be0abb7f34873aaefed7db632c16`.
-- Independent Eidema source: `de0d7dc5e0f82c7f1ad77f23375b6ba9e998ae79`;
-  wheel `eidema-0.2.0.dev2-py3-none-any.whl`, SHA-256
-  `23c206274ff9c5ed9db9d88b61361cccce6eb5bc9d990f406ca0e2ace21e101b`.
+- Independent Eidema source: `fcded43c98faf9f1618e0ea6f8eaf5a01272610f`;
+  wheel `eidema-0.2.0a1-py3-none-any.whl`, SHA-256
+  `6ed17735e45150e5461e7b04c3ec1d57899f7324b5bf206fe683e216b0f59c88`.
 
 The ordinary changed Host modules and effective Host/LLM/TTS deltas were compared
 with the archive baseline and applied to the merged checkout. The SDK is installed
@@ -30,7 +30,6 @@ them. Configure the backend before starting it:
 
 | Condition | Effect |
 | --- | --- |
-| `AMADEUS_MEMORY_ENABLED=true` | Starts the normal Host store owner; default is true. |
 | `AMADEUS_MEMORY_USE_ENABLED=true` | Enables memory use, explicit Session lookup and retirement of queued speech that depends on recalled evidence. |
 | `AMADEUS_MEMORY_EXTRACTION_ENABLED=true` | Allows separate background formation requests for newly committed and eligible conversation sources. |
 
@@ -58,11 +57,14 @@ nine groups, while preserving source/byte limits and all earlier read dependenci
 Role-proposed lookup retains the original eight-group/token bound. There is still
 only one supplemental read and one final buffered answer.
 
-Desktop extraction uses the configured provider in a separate background request.
+Desktop formation uses DeepSeek Flash Low in a separate background request.
+The Memory panel exposes versioned warm suggestions, evidence and review.
+The desktop pauses cold generation while preserving any existing cold binding.
 Tools can also pass trusted Python `DesktopMemoryMaintenance` to `bootstrap`
 with explicit per-Session authority, scope, providers, clock and SDK budget.
 Reformation, adoption selectors and automatic cold context retain their separate
-trusted options. Ordinary memory injection requires its existing relevance threshold.
+trusted options. Experimental ordinary injection requires an explicitly configured
+`AMADEUS_MEMORY_SEMANTIC_THRESHOLD`; the embedder selects the retrieval model only.
 Maintenance uses the normal Host store and receiver, yields to foreground/audio
 work, and joins issued work before store close.
 

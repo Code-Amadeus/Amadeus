@@ -134,5 +134,5 @@ def configured_maintenance(host, api_key):
         clock=lambda: time.time_ns() // 1_000_000, window_id="desktop-memory",
         budget=daily_budget, config=api.RuntimeConfig(enabled=True, quiet_ms=3_000, max_wait_ms=15_000, batch_events=6),
         warm_adoption_selector=lambda candidate: _adopt_verbatim(host, candidate),
-        automatic_cold_context=True,
+        cold_generation_enabled=False,
     )

@@ -142,8 +142,10 @@ automatically; choose an installation profile supported on your platform.
 [![Current Amadeus architecture: Host authority, Work Providers, Provider-scoped MCP/Skills, AUIP AppSessions, voice, and SpriteForge presentation](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
 
 The memory runtime uses the independent Eidema SDK. The Alpha integrates local
-memory storage and explicit recall with optional background formation. Persona
-updates remain on the roadmap.
+memory storage, explicit recall and optional background formation with a review
+panel. The separately downloaded Jina ONNX Q4 weights use
+[CC-BY-NC-4.0](https://huggingface.co/jinaai/jina-embeddings-v5-text-nano-retrieval/blob/ac5d898c8d382b17167c33e5c8af644a3519b47d/README.md).
+Persona updates remain on the roadmap.
 
 Three separations are deliberate:
 

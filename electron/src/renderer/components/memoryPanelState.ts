@@ -50,8 +50,21 @@ export interface MemoryStatus {
   source_policy_reason?: string
 }
 export interface MemoryAttempt {
-  method: 'memory.remember' | 'memory.correct' | 'memory.forget'
+  method: 'memory.remember' | 'memory.correct' | 'memory.forget' | 'memory.review_candidate'
   params: Readonly<Record<string, unknown>>
+}
+export interface MemorySuggestion {
+  candidate_id: string
+  row_version: number
+  kind: string
+  scope: MemoryScope
+  created_at_ms: number
+  savable: boolean
+}
+export interface MemorySuggestionDetail extends MemorySuggestion {
+  text: string
+  condition: string | null
+  quotes: { speaker_role: string; text: string }[]
 }
 export interface MemoryForgetPreview {
   targets: { memory_id: string; row_version: number }[]
@@ -105,6 +118,17 @@ export class MemoryPanelConnection {
 export function memoryAttempt(method: MemoryAttempt['method'], params: Record<string, unknown>,
   newId: () => string = () => crypto.randomUUID()): MemoryAttempt {
   return Object.freeze({ method, params: Object.freeze({ ...structuredClone(params), operation_id: newId(), item_id: newId() }) })
+}
+
+export function suggestionKindText(kind: string): string {
+  switch (kind) {
+    case 'fact': return 'Suggested fact'
+    case 'preference': return 'Suggested preference'
+    case 'instruction': return 'Suggested instruction'
+    case 'event': return 'Suggested event'
+    case 'comparison': return 'Suggested comparison'
+    default: return 'Memory suggestion'
+  }
 }
 
 export function sourceSpan(source: MemorySource, start: number, end: number): MemorySourceSpan | null {

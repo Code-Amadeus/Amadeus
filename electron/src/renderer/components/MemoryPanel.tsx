@@ -5,9 +5,10 @@ import { useI18n } from '../i18n'
 import {
   MemoryPanelConnection, MemoryPanelFailure, memoryAttempt, memoryErrorText, memoryIndexText,
   memoryAutomaticAdmissionText, memoryLifecycleText, memorySemanticReasonText, selectedSourceSpan, sourceSpan, sourceTextParts,
-  memorySourcePolicyReasonText, memorySourcePolicyActionText, memoryPolicyRecoveryCommand,
+  memorySourcePolicyReasonText, memorySourcePolicyActionText, memoryPolicyRecoveryCommand, suggestionKindText,
   type MemoryAttempt, type MemoryScope, type MemorySend, type MemorySource,
   type MemoryStatus, type SavedMemory, type MemoryForgetPreview, type MemoryCursor,
+  type MemorySuggestion, type MemorySuggestionDetail,
 } from './memoryPanelState'
 import '../styles/memoryPanel.css'
 
@@ -36,6 +37,11 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
   const [sources, setSources] = useState<MemorySource[]>([])
   const [sourcesAvailable, setSourcesAvailable] = useState(false)
   const [detail, setDetail] = useState<Detail | null>(null)
+  const [reviewAvailable, setReviewAvailable] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<MemorySuggestion[]>([])
+  const [reviewTarget, setReviewTarget] = useState<MemorySuggestion | null>(null)
+  const [suggestion, setSuggestion] = useState<MemorySuggestionDetail | null>(null)
   const [editor, setEditor] = useState<Editor>('inspect')
   const [text, setText] = useState('')
   const [correctionMode, setCorrectionMode] = useState<'change' | 'error'>('change')
@@ -65,13 +71,23 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
     ++listGeneration.current
     pageRequest.current.serial++; pageRequest.current.active = false
     setLoading(true); setPageLoading(false); setItems([]); setNextCursor(null); setError('')
+    setSuggestions([]); setReviewTarget(null); setSuggestion(null)
     try {
       const snapshot = await connection.request('memory.status')
       if (!connection.active || revision !== reads.current) return
       setEnabled(snapshot.enabled === true)
       setStatus((snapshot.status as MemoryStatus) || {})
       setScopes(Array.isArray(snapshot.scopes) ? snapshot.scopes as ScopeOption[] : [])
+      setReviewAvailable(snapshot.candidate_review_available === true)
       if (snapshot.enabled !== true) { setItems([]); setSources([]); return }
+      if (showSuggestions) {
+        if (snapshot.candidate_review_available !== true) { setShowSuggestions(false); return }
+        const result = await connection.request('memory.candidates')
+        if (connection.active && revision === reads.current) {
+          setSuggestions(Array.isArray(result.candidates) ? result.candidates as MemorySuggestion[] : [])
+        }
+        return
+      }
       const [list, sourceList] = await Promise.allSettled([
         connection.request('memory.list', { scope: nextScope, limit: 100 }),
         connection.request('memory.sources', { limit: 50 }),
@@ -88,7 +104,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
         setError(memoryErrorText(failure)); setEnabled(false); setItems([])
       }
     } finally { if (connection.active && revision === reads.current) setLoading(false) }
-  }, [connection])
+  }, [connection, showSuggestions])
 
   useEffect(() => { void load(scope) }, [load, scope])
 
@@ -128,6 +144,26 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
     } finally { if (connection.active && revision === reads.current) setLoading(false) }
   }
 
+  const inspectSuggestion = async (item: MemorySuggestion) => {
+    if (locked) return
+    const revision = ++reads.current
+    setLoading(true); setError(''); setReceipt(''); setReviewTarget(item); setSuggestion(null)
+    try {
+      const result = await connection.request('memory.candidate', {
+        candidate_id: item.candidate_id, expected_version: item.row_version,
+      })
+      if (!connection.active || revision !== reads.current) return
+      const reviewed = result.candidate as MemorySuggestionDetail | undefined
+      if (!reviewed || reviewed.candidate_id !== item.candidate_id || reviewed.row_version !== item.row_version
+        || typeof reviewed.text !== 'string' || !Array.isArray(reviewed.quotes) || !reviewed.quotes.length) {
+        throw new Error('Incomplete suggestion')
+      }
+      setSuggestion(reviewed)
+    } catch (failure) {
+      if (connection.active && revision === reads.current) setError(memoryErrorText(failure))
+    } finally { if (connection.active && revision === reads.current) setLoading(false) }
+  }
+
   const begin = (next: 'new' | 'correct') => {
     if (locked) return
     setEditor(next); setText(next === 'correct' ? detail?.memory.text || '' : '')
@@ -144,17 +180,22 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
       const result = await connection.request(attempt.method, { ...attempt.params })
       if (!connection.active) return
       const operation = result.operation as { status?: string; index_state?: string; memory_id?: string; cleanup_pending?: boolean } | undefined
-      if (!operation || !['saved', 'corrected', 'forgotten', 'retired'].includes(operation.status || '')) {
+      const messages: Record<string, string> = {
+        saved: 'Memory saved durably.',
+        corrected: 'Correction saved durably.',
+        forgotten: Array.isArray(attempt.params.confirmed_targets) && attempt.params.confirmed_targets.length > 1
+          ? 'The listed memories and their historical versions were forgotten.' : 'This memory and its historical versions were forgotten.',
+        accepted: 'Suggestion saved as a memory.',
+        rejected: 'Suggestion dismissed.',
+        retired: 'This earlier operation was retired. It did not restore a forgotten memory.',
+      }
+      if (!operation?.status || !Object.hasOwn(messages, operation.status)) {
         throw new Error('Unconfirmed operation')
       }
       setPending(null); setForgetPreview(null); setEditor('inspect'); setText(''); setSourceIndex(-1)
       setDetail(result.memory ? { memory: result.memory as SavedMemory, history: [] } : null)
       if (operation.cleanup_pending) setStatus(value => ({ ...value, cleanup_state: 'pending' }))
-      setReceipt(operation.status === 'saved' ? 'Memory saved durably.'
-        : operation.status === 'corrected' ? 'Correction saved durably.'
-          : operation.status === 'forgotten' ? Array.isArray(attempt.params.confirmed_targets) && attempt.params.confirmed_targets.length > 1
-            ? 'The listed memories and their historical versions were forgotten.' : 'This memory and its historical versions were forgotten.'
-            : 'This earlier operation was retired. It did not restore a forgotten memory.')
+      setReceipt(messages[operation.status])
       // Refresh derived readiness and cleanup facts separately from the committed operation receipt.
       await load(scope)
     } catch (failure) {
@@ -202,6 +243,14 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
 
   const scopeName = (value: MemoryScope) => value === 'shared' ? t('Shared with my characters')
     : value === 'project' ? t('Current character and Project') : t('Current character')
+
+  const decideSuggestion = (decision: 'save' | 'dismiss') => {
+    if (locked || !reviewTarget || (decision === 'save' && !suggestion?.savable)) return
+    void perform(memoryAttempt('memory.review_candidate', {
+      candidate_id: reviewTarget.candidate_id, expected_version: reviewTarget.row_version, decision,
+      ...(decision === 'save' ? { kind: suggestion!.kind } : {}),
+    }))
+  }
 
   return <section hidden={!visible} className="memory-panel" aria-label={t('Memory')}>
     <header className="memory-header">
@@ -256,6 +305,40 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
         </div>
         {memorySemanticReasonText(status.semantic_reason) && <p className="memory-note">{t(memorySemanticReasonText(status.semantic_reason))}</p>}
         {status.automatic_admission === 'ready' && <p className="memory-note">{t('Automatic recall is experimental and may include unrelated memories.')}</p>}
+        {reviewAvailable && <div className="memory-actions">
+          <SettingsButton size="small" tone={showSuggestions ? 'secondary' : 'primary'} aria-pressed={!showSuggestions}
+            disabled={locked || editing} onClick={() => { setShowSuggestions(false); setReceipt('') }}>{t('Saved memories')}</SettingsButton>
+          <SettingsButton size="small" tone={showSuggestions ? 'primary' : 'secondary'} aria-pressed={showSuggestions}
+            disabled={locked || editing} onClick={() => { setShowSuggestions(true); setDetail(null); setReceipt('') }}>{t('Review suggestions')}</SettingsButton>
+        </div>}
+        {showSuggestions ? <>
+          <p className="memory-note">{t('Check the quoted messages and any conditions before saving.')}</p>
+          {!loading && suggestions.length === 0 && <p className="memory-empty">{t('No memory suggestions to review.')}</p>}
+          <div className="memory-list" aria-label={t('Review suggestions')}>
+            {suggestions.map(item => <button key={item.candidate_id} className="memory-list-item" type="button"
+              aria-pressed={reviewTarget?.candidate_id === item.candidate_id} disabled={locked}
+              onClick={() => { void inspectSuggestion(item) }}>
+              <span className="memory-list-text">{t(suggestionKindText(item.kind))}</span>
+              <span className="memory-note">{scopeName(item.scope)} · {new Date(item.created_at_ms).toLocaleString()}</span>
+            </button>)}
+          </div>
+          {reviewTarget && <CardShell vertical>
+            <h3 className="settings-group-title">{t(suggestionKindText(reviewTarget.kind))}</h3>
+            {suggestion && <>
+              <p className="memory-body">{suggestion.text}</p>
+              {suggestion.condition && <p className="memory-note">{t('Applies when {condition}', { condition: suggestion.condition })}</p>}
+              {suggestion.quotes.map((quote, index) => <div key={index}>
+                <p className="memory-note">{t(quote.speaker_role === 'user' ? 'Quote from your message' : 'Quote from the character’s message')}</p>
+                <pre className="memory-source-preview">{quote.text}</pre>
+              </div>)}
+            </>}
+            <div className="memory-actions">
+              {suggestion?.savable && <SettingsButton tone="primary" disabled={locked}
+                onClick={() => decideSuggestion('save')}>{t('Save as memory')}</SettingsButton>}
+              <SettingsButton disabled={locked} onClick={() => decideSuggestion('dismiss')}>{t('Dismiss suggestion')}</SettingsButton>
+            </div>
+          </CardShell>}
+        </> : <>
         <p className="memory-note">{t('Semantic indexing finds candidates; it does not establish that a memory is relevant.')}</p>
         <p className="memory-note">{t('A durable save can finish before semantic indexing. Lexical recall alone does not provide full semantic recall.')}</p>
         <div className="memory-tools">
@@ -376,6 +459,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
               </div>
             </div>}
           </CardShell>}
+        </>}
         </>}
       </>}
     </div>

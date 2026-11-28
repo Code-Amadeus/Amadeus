@@ -359,14 +359,10 @@ def test_pathological_fragmentation_above_cap_fails_truthfully(adapter, tmp_path
 
 @pytest.mark.parametrize("override", [None, .84])
 async def test_default_jina_gate_and_explicit_override_are_truthful(tmp_path, monkeypatch, override):
-    from core.memory_admission import automatic_threshold
     from server.memory_service import HostMemoryService
-    assert automatic_threshold(JINA_MEMORY_VERSION) is None
-    # Exercise default factory selection and actual Jina admission metadata,
-    # without loading weights: the new empty store needs no inference work.
+    # Exercise the default factory without loading weights. Only the Host
+    # configuration grants automatic admission.
     monkeypatch.setattr(jina, "_get_model", lambda path: object())
-    embedder = jina.MemoryJinaEmbedder()
-    assert embedder.automatic_threshold is None and not embedder.threshold_calibrated
     service = HostMemoryService(MemoryConfig(db_path=tmp_path / "gate.sqlite3", semantic_threshold=override))
     service.start()
     try:

@@ -15,9 +15,15 @@ after restarting the backend.
 - **Form memories from new chats** runs separate, bounded background requests
   to DeepSeek Flash (low reasoning) at `api.deepseek.com` using the DeepSeek API
   key configured in Models. The request includes eligible text, speaker roles
-  and record times. Comparison may read earlier evidence already permitted for
-  formation. This switch is off by default. It enrolls new committed messages.
+  and record times. This switch is off by default. It enrolls new committed messages.
   Unregistered older conversations require a separate import.
+
+In **Memory → Review suggestions**, inspect generated statements and their
+source quotes, including any stated conditions. Save a supported suggestion as
+an independent note or dismiss it. Saving checks the reviewed version and
+current source permissions.
+Existing comparison proposals can be inspected and dismissed. The desktop
+Alpha pauses cold comparison requests and retains existing checkpoints.
 
 With formation off, old permitted notes remain available when use is on. With
 use off, the character does not look up memory, and the note manager can still be
@@ -27,18 +33,25 @@ correct or forget a note.
 ## Runtime and resources
 
 Install the pinned dependencies with `uv sync --locked --extra memory`. The
-default semantic profile uses the separately licensed Jina ONNX Q4 files.
+default semantic profile uses Jina ONNX Q4 weights under
+[CC-BY-NC-4.0](https://huggingface.co/jinaai/jina-embeddings-v5-text-nano-retrieval/blob/ac5d898c8d382b17167c33e5c8af644a3519b47d/README.md).
 `uv run --locked --no-sync python tools/prepare_memory_model.py --download`
 downloads and verifies the pinned upstream snapshot on request. The source
 archive ships the Eidema wheel. Semantic model resources are opt-in downloads.
 
 Session originals, SQLite, Jina inference and candidate assembly run locally.
 Warm formation can publish a whole verbatim user report after validating the
-source and span, with permission for explicit lookup. Rewritten or ambiguous
-statements and cold comparisons stay pending. They do not overwrite notes.
-Warm and cold share a background budget with an independent cold cadence.
+source and span, with permission for explicit lookup. Other proposals stay
+pending until review. Formation requests use a separate daily budget.
 Foreground replies do not wait for a forming or comparing model call.
 
 The model provider interface remains open to other hosts and local LLMs. This
 release's background configuration uses DeepSeek Flash. Use of a cloud character
 for replies is configured separately in Models.
+
+## Evaluation configurations
+
+Published explicit-recall scores use OpenAI GPT-6.1 Terra with reasoning
+`none`. The regular OpenAI desktop path uses `low`. The default desktop
+role is DeepSeek Flash with thinking disabled, and its opt-in formation task
+uses Flash Low separately. [Benchmark protocol and scores](https://github.com/Code-Amadeus/Eidema/blob/main/docs/benchmarks.md)

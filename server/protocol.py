@@ -35,6 +35,9 @@ class Method(str, Enum):
     MEMORY_FORGET_PREVIEW = "memory.forget_preview"
     MEMORY_FORGET = "memory.forget"
     MEMORY_SOURCES = "memory.sources"
+    MEMORY_CANDIDATES = "memory.candidates"
+    MEMORY_CANDIDATE = "memory.candidate"
+    MEMORY_REVIEW_CANDIDATE = "memory.review_candidate"
     # Chat
     CHAT_SEND          = "chat.send"
     CHAT_MEMORY_LOOKUP = "chat.memory_lookup"

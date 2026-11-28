@@ -276,8 +276,9 @@ async def test_automatic_gate_precedes_rank_and_context_quotas(host):
     assert reference.result.candidates[0].lexical_match is False
 
 
-async def test_unknown_embedding_profile_skips_automatic_recall_before_query_work(host, monkeypatch):
+async def test_model_threshold_cannot_grant_automatic_recall_before_query_work(host, monkeypatch):
     embedder = SyntheticMultilingualEmbedder()
+    embedder.automatic_threshold = .84  # Legacy E5-style policy hint.
     embed_query = Mock(wraps=embedder.embed_query)
     monkeypatch.setattr(embedder, "embed_query", embed_query)
     service = await semantic_service(host, lambda:embedder, threshold=None)

@@ -10,8 +10,9 @@ logger = logging.getLogger(__name__)
 
 class MemoryHandler(RequestHandler):
     methods = [Method.MEMORY_STATUS, Method.MEMORY_LIST, Method.MEMORY_GET,
-        Method.MEMORY_REMEMBER, Method.MEMORY_CORRECT, Method.MEMORY_FORGET, Method.MEMORY_SOURCES]
-    methods.append(Method.MEMORY_FORGET_PREVIEW)
+        Method.MEMORY_REMEMBER, Method.MEMORY_CORRECT, Method.MEMORY_FORGET, Method.MEMORY_SOURCES,
+        Method.MEMORY_FORGET_PREVIEW, Method.MEMORY_CANDIDATES, Method.MEMORY_CANDIDATE,
+        Method.MEMORY_REVIEW_CANDIDATE]
 
     def __init__(self, service):
         self.service = service

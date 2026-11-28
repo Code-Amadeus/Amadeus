@@ -84,6 +84,8 @@ test('dynamic memory feedback and lifecycle labels have Chinese translations', (
     'Memory source protections are active. Protected chat history remains usable.',
     'Automatic recall is experimental and may include unrelated memories.',
     'Semantic indexing finds candidates; it does not establish that a memory is relevant.',
+    ...['fact', 'preference', 'instruction', 'event', 'comparison', 'hypothesis'].map(state.suggestionKindText),
+    'Suggestion saved as a memory.', 'Suggestion dismissed.',
     ...['starting', 'identity_mismatch', 'core_unreadable', 'core_missing', 'store_rollback', 'invalid_coordinates', 'sidecar_rebuild_required', 'publication_pending'].map(memorySourcePolicyReasonText),
     ...['starting', 'identity_mismatch', 'core_unreadable', 'invalid_coordinates', 'sidecar_rebuild_required', 'unknown'].map(memorySourcePolicyActionText),
     ...['active', 'superseded', 'retracted', 'expired', 'forgotten', 'unknown'].map(state.memoryLifecycleText),
@@ -149,6 +151,39 @@ function backend(method) {
   if (method === 'memory.forget_preview') return ok({ preview: { targets: [{ memory_id: memory.memory_id, row_version: 3 }], memories: [memory], source_exclusions: [] } })
   return ok({ memory, operation: { status: 'saved', memory_id: memory.memory_id, row_version: 3, index_state: 'pending' } })
 }
+
+test('candidate review shows only current evidence and retries the same versioned save', async () => {
+  const candidate = { candidate_id: 'suggestion', row_version: 2, kind: 'fact',
+    scope: 'character', created_at_ms: 1000, savable: true }
+  let saves = 0
+  const panel = panelHarness((method, params) => {
+    if (method === 'memory.status') return { ...backend(method), candidate_review_available: true }
+    if (method === 'memory.candidates') return ok({ candidates: saves > 1 ? [] : [candidate] })
+    if (method === 'memory.candidate') {
+      assert.equal(params.expected_version, 2)
+      return ok({ candidate: { ...candidate, text: 'The return tag is in the blue tray.',
+        condition: 'During rehearsal', quotes: [{ speaker_role: 'user', text: 'I leave the tag in the blue tray for rehearsals.' }] } })
+    }
+    if (method === 'memory.review_candidate') {
+      return ++saves === 1 ? { ok: false, error: 'outcome_unknown' } : ok({ operation: { status: 'accepted' } })
+    }
+    return backend(method)
+  })
+  await panel.flush()
+  assert.equal(panel.requests.some(request => request.method === 'memory.candidates'), false)
+  panel.button('Review suggestions').props.onClick(); await panel.flush()
+  panel.button('Suggested factCurrent character · ' + new Date(candidate.created_at_ms).toLocaleString()).props.onClick(); await panel.flush()
+  assert.match(panel.text, /During rehearsal/)
+  assert.match(panel.text, /I leave the tag in the blue tray for rehearsals/)
+  panel.button('Save as memory').props.onClick(); await panel.flush()
+  panel.button('Retry same operation').props.onClick(); await panel.flush()
+  const attempts = panel.requests.filter(request => request.method === 'memory.review_candidate')
+  assert.equal(attempts.length, 2)
+  assert.deepEqual(attempts[0].params, attempts[1].params)
+  assert.equal(attempts[1].params.decision, 'save')
+  assert.match(panel.text, /Suggestion saved as a memory/)
+  assert.match(panel.text, /No memory suggestions to review/)
+})
 
 test('manual save waits for the committed result and retries an uncertain outcome with identical identities', async () => {
   const commit = deferred(); let saves = 0

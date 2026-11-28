@@ -28,7 +28,8 @@ async def bind_maintenance(host, *, enabled=False, access=None,
                            window_id=None, config=None, budget=None,
                            schedule_path=None, context=None, observer=None,
                            resource_ready=None, reformation_enabled=False,
-                           warm_adoption_selector=None, cold_adoption_selector=None, automatic_cold_context=False):
+                           warm_adoption_selector=None, cold_adoption_selector=None,
+                           automatic_cold_context=False, cold_generation_enabled=True):
     """Mount after normal Host startup, using explicit trusted execution inputs.
 
     A disabled call is pure. Enabled callers supply scope, providers, clock and
@@ -40,6 +41,8 @@ async def bind_maintenance(host, *, enabled=False, access=None,
         raise ValueError("invalid_maintenance_opt_in")
     if type(automatic_cold_context) is not bool:
         raise ValueError("invalid_cold_context_opt_in")
+    if type(cold_generation_enabled) is not bool:
+        raise ValueError("invalid_cold_generation_opt_in")
     if type(reformation_enabled) is not bool:
         raise ValueError("invalid_reformation_opt_in")
     if not enabled:
@@ -83,7 +86,8 @@ async def bind_maintenance(host, *, enabled=False, access=None,
         clock, window_id, config, schedule_path, context, observer, resource_ready,
         reformation_enabled, warm_adoption_selector=warm_adoption_selector,
         cold_adoption_selector=cold_adoption_selector,
-        automatic_cold_context=automatic_cold_context and context is None)
+        automatic_cold_context=automatic_cold_context and context is None,
+        cold_generation_enabled=cold_generation_enabled)
     host._maintenance = binding
     # Subscribe before mounting. A receipt during construction remains a wake
     # and the startup snapshot is always captured on the same Host loop.
@@ -104,7 +108,7 @@ class MaintenanceBinding:
     def __init__(self, host, access, warm_provider, cold_provider, clock,
                  window_id, config, schedule_path, context, observer, resource_ready=None,
                  reformation_enabled=False, *, warm_adoption_selector=None,
-                 cold_adoption_selector=None, automatic_cold_context=False):
+                 cold_adoption_selector=None, automatic_cold_context=False, cold_generation_enabled=True):
         self.host, self.delivery, self.api = host, host._sources, host._api
         self.access, self.clock, self.window_id = access, clock, window_id
         self.warm_provider, self.cold_provider = warm_provider, cold_provider
@@ -115,6 +119,7 @@ class MaintenanceBinding:
         self.warm_adoption_selector = warm_adoption_selector
         self.cold_adoption_selector = cold_adoption_selector
         self.automatic_cold_context = automatic_cold_context
+        self.cold_generation_enabled = cold_generation_enabled
         identity = json.dumps(asdict(access) if access is not None else {"user_id": host.config.user_id},
                               sort_keys=True, separators=(",", ":"))
         self.runtime_id = "native-session-maintenance-v1:" + sha256(identity.encode()).hexdigest()
@@ -210,8 +215,9 @@ class MaintenanceBinding:
 
     def _lane(self, access, stream, kind, provider):
         selector = self.warm_adoption_selector if kind == "warm" else self.cold_adoption_selector
+        authorized = self._authorized if kind == "warm" or self.cold_generation_enabled else lambda: False
         executor = create_executor(self.delivery, access, provider,
-            authorized=self._authorized, clock=self.clock, ready=self._ready, kind=kind, selector=selector,
+            authorized=authorized, clock=self.clock, ready=self._ready, kind=kind, selector=selector,
             automatic_cold_context=kind=="cold" and self.automatic_cold_context)
         max_sources = getattr(provider, "max_sources", 100)
         return self.api.RuntimeLane(kind + ":" + stream, access, stream,
@@ -221,6 +227,12 @@ class MaintenanceBinding:
 
     def _refresh(self, streams):
         self._check_thread()
+        previous = []
+        if self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='eidema_runtime'").fetchone():
+            row = self.connection.execute("SELECT binding FROM eidema_runtime WHERE runtime_id=?",
+                                          (self.runtime_id,)).fetchone()
+            previous = [] if row is None else json.loads(row[0])
+        bound_keys = {bound[0] for bound in previous}
         offered = []
         for access, stream in streams:
             # Multi-scope desktop maintenance still runs each SDK lane with
@@ -228,15 +240,11 @@ class MaintenanceBinding:
             if access.user_id != self.host.config.user_id or (self.access is not None and access != self.access):
                 continue
             offered.append(self._lane(access, stream, "warm", self.warm_provider))
-            if self.cold_provider is not None:
+            # Existing checkpoints keep their identity when generation is paused.
+            if self.cold_provider is not None and (self.cold_generation_enabled or "cold:" + stream in bound_keys):
                 offered.append(self._lane(access, stream, "cold", self.cold_provider))
         by_key = {lane.key: lane for lane in offered}
-        previous = []
-        if self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='eidema_runtime'").fetchone():
-            row = self.connection.execute("SELECT binding FROM eidema_runtime WHERE runtime_id=?",
-                                          (self.runtime_id,)).fetchone()
-            previous = [] if row is None else json.loads(row[0])
-        if any(bound[0] not in by_key for bound in previous):
+        if not bound_keys.issubset(by_key):
             raise self.api.MemoryConflict("known_source_generation_missing")
         ordered = [by_key.pop(bound[0]) for bound in previous]
         lanes = tuple(ordered) + tuple(lane for lane in offered if lane.key in by_key)
@@ -383,6 +391,27 @@ class MaintenanceBinding:
                             asyncio.wrap_future(settled), return_exceptions=True))
                     await asyncio.sleep(0)
                     continue
+                if (self.resource_ready is not None and report.step is not None
+                        and report.step.code == "resource_busy"):
+                    self._state, self._next_wake = "waiting_resource", None
+                    self._emit("maintenance_resource_wait")
+                    try:
+                        # Source receipts have their own owner. While the
+                        # foreground is busy, poll only its in-memory probe.
+                        while not self._closed and not self.host._closing:
+                            if self._wake.is_set():
+                                self._wake.clear()
+                                self.runtime.request_scan()
+                            if self._ready():
+                                break
+                            try:
+                                await asyncio.wait_for(self._wake.wait(), .05)
+                            except TimeoutError:
+                                pass
+                    except Exception as error:
+                        self._fail(error)
+                        break
+                    continue
                 if self._wake.is_set():
                     self._wake.clear()
                     # In particular, SDK _synchronize re-reads progress after
@@ -391,21 +420,6 @@ class MaintenanceBinding:
                     # recovers that sweep; no polling or provider lock is used.
                     if self.runtime is not None:
                         self.runtime.request_scan()
-                    continue
-                if (self.resource_ready is not None and report.step is not None
-                        and report.step.code == "resource_busy"):
-                    # Only an SDK-due step/resume blocked at its resource
-                    # boundary rechecks. Idle, coalescing, budget and cold
-                    # cadence keep their ordinary SDK event/deadline waits.
-                    self._state, self._next_wake = "waiting_resource", None
-                    self._emit("maintenance_resource_wait")
-                    try:
-                        await asyncio.wait_for(self._wake.wait(), .05)
-                    except TimeoutError:
-                        pass
-                    if self._wake.is_set() and self.runtime is not None:
-                        self.runtime.request_scan()
-                    self._wake.clear()
                     continue
                 if any(code in ("budget_exhausted", "outside_budget_window")
                        for _, _, code in report.observations):

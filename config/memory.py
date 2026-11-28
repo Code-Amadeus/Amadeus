@@ -41,8 +41,7 @@ class MemoryConfig:
         use_key = "AMADEUS_MEMORY_USE_ENABLED"
         extraction_key = "AMADEUS_MEMORY_EXTRACTION_ENABLED"
         legacy_sources = reader.boolean("AMADEUS_MEMORY_SOURCE_RUNTIME_ENABLED", False)
-        use = (read_catalog_value(reader, use_key) if reader.configured(use_key)
-               else legacy_sources or reader.configured("AMADEUS_MEMORY_ENABLED"))
+        use = read_catalog_value(reader, use_key)
         extract = read_catalog_value(reader, extraction_key)
         values = cls(
             enabled=reader.boolean("AMADEUS_MEMORY_ENABLED", True),

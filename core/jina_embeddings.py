@@ -116,9 +116,6 @@ class MemoryJinaEmbedder:
         if version and version != self.version:
             raise MemoryModelError("model_unsupported")
         self._model = _get_model(model_path or JINA_DEFAULT_PATH)
-        from core.memory_admission import automatic_threshold
-        self.automatic_threshold = automatic_threshold(self.version)
-        self.threshold_calibrated = self.automatic_threshold is not None
 
     def split_passage(self, text):
         chunks, start = [], 0

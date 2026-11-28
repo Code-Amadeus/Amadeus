@@ -61,10 +61,6 @@ class MemoryE5Embedder:
         self.version = "amadeus-e5-query-passage-v1:" + (version or snapshot)
         self.dimensions = self._model.get_embedding_dimension()
         self._max_tokens = min(512, self._model.max_seq_length)
-        # Provisional automatic-admission profile: only this retained, tested
-        # e5 snapshot with the exact Host query/passage/L2/512-token contract.
-        self.automatic_threshold = (.84 if snapshot == "614241f622f53c4eeff9890bdc4f31cfecc418b3"
-            and self.dimensions == 384 and self._max_tokens == 512 else None)
 
     def _fits(self, value):
         return self._model.token_count(value) <= self._max_tokens

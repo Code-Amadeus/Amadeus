@@ -21,8 +21,8 @@
       "type": "boolean",
       "title": { "en-US": "Form memories from new chats", "zh-CN": "从新对话形成记忆" },
       "description": {
-        "en-US": "Allow DeepSeek Flash at api.deepseek.com to process eligible new messages and previously permitted comparison evidence, with speaker roles and record times. This uses your DeepSeek API key.",
-        "zh-CN": "允许 api.deepseek.com 的 DeepSeek Flash 处理获准的新消息和用于比较的旧依据，包括说话者角色和记录时间。使用你的 DeepSeek API 密钥。"
+        "en-US": "Use your DeepSeek API key to send eligible new messages, speaker roles, and record times to DeepSeek Flash at api.deepseek.com in the background. Review suggestions in the Memory panel.",
+        "zh-CN": "使用你的 DeepSeek API 密钥，在后台将获准的新消息、说话者角色和记录时间交给 api.deepseek.com 的 DeepSeek Flash。可在记忆面板审阅建议。"
       },
       "default": false
     }

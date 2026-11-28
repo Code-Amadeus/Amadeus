@@ -27,6 +27,7 @@ class DesktopMemoryMaintenance:
     warm_adoption_selector: Callable | None = None
     cold_adoption_selector: Callable | None = None
     automatic_cold_context: bool = False
+    cold_generation_enabled: bool = True
 
     def __post_init__(self):
         if not callable(self.formation_for_session):
@@ -47,4 +48,5 @@ class DesktopMemoryMaintenance:
             reformation_enabled=self.reformation_enabled,
             warm_adoption_selector=self.warm_adoption_selector,
             cold_adoption_selector=self.cold_adoption_selector,
-            automatic_cold_context=self.automatic_cold_context)
+            automatic_cold_context=self.automatic_cold_context,
+            cold_generation_enabled=self.cold_generation_enabled)

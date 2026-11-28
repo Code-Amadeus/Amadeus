@@ -157,7 +157,6 @@ class HostMemoryService:
             and (config.use_enabled or config.extraction_enabled) else "disabled")
         self._semantic_reason = self._semantic_state
         self._automatic_threshold = config.semantic_threshold
-        self._threshold_calibrated = False
         self._exclusions = {}
         self._retirements = {}
         self._pending_sources = {}
@@ -268,9 +267,6 @@ class HostMemoryService:
                 return
             def attached(_result):
                 self._semantic_state, self._semantic_reason = "ready", "ready"
-                if self._automatic_threshold is None:
-                    self._automatic_threshold = getattr(embedder, "automatic_threshold", None)
-                    self._threshold_calibrated = bool(getattr(embedder, "threshold_calibrated", False))
                 if self._maintenance is not None:
                     self._maintenance.resume()
             while not self._closing and self._semantic_state != "ready":
@@ -522,7 +518,7 @@ class HostMemoryService:
             "source_policy_reason":self._source_policy_reason,
             **({"source_delivery":self._sources.state if self._sources is not None else "unavailable"}
                 if self.config.enabled and self.config.source_runtime_enabled else {}),
-            "threshold_calibrated":self._threshold_calibrated, "history_exclusions_ready":self._exclusions_ready}
+            "threshold_calibrated":False, "history_exclusions_ready":self._exclusions_ready}
 
     def runtime_status(self):
         from importlib.metadata import PackageNotFoundError, version
@@ -553,6 +549,7 @@ class HostMemoryService:
             self.context(context["session_id"], token=context["context_token"])
             return {"ok":True, "context":context, "enabled":self.config.enabled, "status":status,
                 "use_enabled":self.config.enabled and self.config.use_enabled,
+                "candidate_review_available":self._source_lookup is not None,
                 "scopes":[{"kind":kind, "label":kind, "available":kind != "project" or bool(context["project_id"])}
                     for kind in ("character", "shared", "project")]}
         self._available()
@@ -568,6 +565,8 @@ class HostMemoryService:
                 for row in rows))
             self.context(context["session_id"], token=context["context_token"])
             return {"ok":True, "context":context, "sources":list(sources)}
+        if method in {"memory.candidates", "memory.candidate", "memory.review_candidate"}:
+            return await self._review_candidate_request(method, context, access, params)
         if method == "memory.list":
             kind = params.get("scope", "character")
             self._scope(context, kind)
@@ -667,6 +666,41 @@ class HostMemoryService:
             raise MemoryRequestError("invalid_request")
         if method not in {"memory.remember", "memory.correct", "memory.forget"}:
             self.context(context["session_id"], token=context["context_token"])
+        return {"ok":True, "context":context, **response}
+
+    async def _review_candidate_request(self, method, context, access, params):
+        from server.memory_candidate_review import CandidateReview
+
+        if self._source_lookup is None:
+            raise MemoryRequestError("disabled")
+        review = CandidateReview(self._source_lookup)
+        if method == "memory.review_candidate":
+            def mutation():
+                operation = review.decide(access, params, now_ms=time.time_ns() // 1_000_000)
+                try:
+                    self._policy.reconcile(self._store.source_policy(access))
+                except Exception as exc:
+                    self._source_policy_reason = "publication_pending"
+                    logger.warning("[Memory] source publication pending (%s)", type(exc).__name__)
+                return operation
+
+            def committed(_):
+                self._sync_projection()
+                self._schedule_index()
+
+            async with self._publication_lock:
+                self.context(context["session_id"], token=context["context_token"])
+                operation = await self._db.run(mutation, mutation=True, on_completed=committed)
+            return {"ok":True, "context":context, "operation":asdict(operation)}
+        if method == "memory.candidates":
+            response = {"candidates":await self._db.run(lambda:review.list(access))}
+        else:
+            version = params.get("expected_version")
+            if type(version) is not int or version < 1:
+                raise MemoryRequestError("invalid_request")
+            response = {"candidate":await self._db.run(
+                lambda:review.detail(access, params.get("candidate_id"), version))}
+        self.context(context["session_id"], token=context["context_token"])
         return {"ok":True, "context":context, **response}
 
     @staticmethod
