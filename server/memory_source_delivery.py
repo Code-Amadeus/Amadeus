@@ -29,16 +29,69 @@ class SourceDelivery:
         self._pending = OrderedDict()
         self._failed = set()
         self._state = "starting"
-        journal.configure_publication(self._published, owner=self, scope_for_session=self._scope)
+        # Receipt metadata comes only from this receiver's committed SDK ACKs.
+        # It is an inventory for optional owners, never a second durable cursor.
+        self._accepted = OrderedDict()
+        self._receipt_observers = set()
+        self.receipt_inventory_ready = False
+        journal.configure_publication(self._published, owner=self, scope_for_session=self._scope,
+                                      formation_for_session=self.formation_allowed)
         self._task = asyncio.create_task(self._run())
 
     @property
     def state(self):
         return "degraded" if self._state == "idle" and self._failed else self._state
 
+    def accepted_streams(self):
+        return tuple(self._accepted)
+
+    def accepted_receipt(self, access, stream):
+        """Last received ACK and journal head, with no content or new reads."""
+        position, head, _ = self._accepted[access, stream]
+        return position, head
+
+    def formation_streams(self):
+        """Snapshot current formation eligibility of received Session streams."""
+        grants = {}
+        streams = []
+        for (_, stream), (_, _, session_id) in tuple(self._accepted.items()):
+            if session_id not in grants:
+                grants[session_id] = self.formation_allowed(session_id)
+            if grants[session_id]:
+                streams.append(stream)
+        return tuple(streams)
+
+    def subscribe_receipts(self, callback):
+        """Observe completed reception without source bodies or authority."""
+        if not callable(callback):
+            raise ValueError("receipt_callback_required")
+        self._receipt_observers.add(callback)
+        return lambda: self._receipt_observers.discard(callback)
+
+    def _received(self, accepted, *, inventory_ready=False):
+        changed = False
+        for key, position in accepted.items():
+            if self._accepted.get(key) != position:
+                self._accepted[key] = position
+                changed = True
+        if inventory_ready and not self.receipt_inventory_ready:
+            self.receipt_inventory_ready = True
+            changed = True
+        if changed:
+            for callback in tuple(self._receipt_observers):
+                callback()
+
     def _scope(self, session_id, character):
         return journal.scope_fields(self.host.config.user_id, character,
                                     self.host.project_for_session(session_id) or None)
+
+    def formation_allowed(self, session_id):
+        """Current trusted Host decision; source or model metadata cannot grant it."""
+        try:
+            callback = getattr(self.host, "formation_for_session", None)
+            return callback is not None and callback(session_id) is True
+        except Exception:
+            return False
 
     def _enqueue(self, path):
         if not self.host._closing:
@@ -84,7 +137,7 @@ class SourceDelivery:
             "formation_allowed": journal.allows_formation(event),
         })
 
-    def _replay_page(self, path, affected):
+    def _replay_page(self, path, affected, accepted=None):
         data = journal.read(self._path(path.stem))
         for generation in data.get(journal.FIELD, {}).get("generations", ()):
             scope = self.api.MemoryScope(**generation["scope"])
@@ -99,8 +152,12 @@ class SourceDelivery:
             if position > len(events):
                 raise ValueError("source_journal_receiver_ahead")
             page = events[max(0, position - 1):position + SOURCE_PAGE]
+            received = position
             if page:
-                self.maintenance.append_changes(access, stream, [self._change(event) for event in page])
+                received = self.maintenance.append_changes(
+                    access, stream, [self._change(event) for event in page])
+            if accepted is not None:
+                accepted[access, stream] = received, len(events), data["session_id"]
             snapshot = self.host._store.source_policy(access)
             if snapshot.change_seq > self.host._policy.value["change_seq"]:
                 self.host._policy.reconcile(snapshot)
@@ -117,8 +174,8 @@ class SourceDelivery:
             return None
         return content.text
 
-    def view(self, access):
-        return SessionReadView(self, access)
+    def view(self, access, *, purpose="lookup"):
+        return SessionReadView(self, access, purpose=purpose)
 
     @staticmethod
     def require_current(signatures):
@@ -150,6 +207,8 @@ class SourceDelivery:
         try:
             for path in await self._step(self._inventory):
                 self._enqueue(path)
+            if not self._pending:
+                self._received({}, inventory_ready=True)
             while True:
                 self._state = "idle"
                 await self._wake.wait()
@@ -158,8 +217,9 @@ class SourceDelivery:
                 affected = {}
                 while self._pending:
                     path, _ = self._pending.popitem(last=False)
+                    accepted = {}
                     try:
-                        more = await self._step(lambda: self._replay_page(path, affected))
+                        more = await self._step(lambda: self._replay_page(path, affected, accepted))
                     except Exception as exc:
                         self._failed.add(path)
                         logger.warning("[Memory] source journal delivery failed (%s)", type(exc).__name__)
@@ -168,7 +228,13 @@ class SourceDelivery:
                         self.host._sync_projection()
                         if more:
                             self._pending[path] = None
+                    # A committed ACK is observable even if a later policy
+                    # projection step failed. It remains metadata, not a grant.
+                    self._received(accepted)
                     await asyncio.sleep(0)
+                # Startup consumers must see the whole retained generation set
+                # before comparing an SDK binding's immutable persisted prefix.
+                self._received({}, inventory_ready=True)
                 for access in affected:
                     after = None
                     while True:
@@ -186,7 +252,10 @@ class SourceDelivery:
 class SessionReadView:
     """One read operation over exact committed Session versions."""
 
-    def __init__(self, delivery, access):
+    def __init__(self, delivery, access, *, purpose="lookup"):
+        if purpose not in ("lookup", "formation"):
+            raise ValueError("invalid_session_read_purpose")
+        self.purpose = purpose
         self.delivery = delivery
         self.access = access
         self.files = {}
@@ -222,7 +291,10 @@ class SessionReadView:
 
     def _pin(self, source):
         *_, stream, _events, _rows = self._source(source)
-        pin = self.delivery.maintenance.lookup_input(self.access, stream, source, discoverable=True)
+        if self.purpose == "formation":
+            pin = self.delivery.maintenance.formation_input(self.access, source)
+        else:
+            pin = self.delivery.maintenance.lookup_input(self.access, stream, source, discoverable=True)
         self._row(pin, discoverable=True)
         return pin
 
@@ -235,7 +307,11 @@ class SessionReadView:
                 source.revision, pin.recorded_at_ms):
             raise MemoryRequestError("conflict")
         current = self.delivery._change(revisions[-1])
-        if (current.action != "upsert" or current.source != source or not current.lookup_allowed
+        allowed = (current.formation_allowed and not current.evidence_only
+                   and self.delivery.formation_allowed(sid)
+                   and row["role"] in ("user", "assistant")
+                   if self.purpose == "formation" else current.lookup_allowed)
+        if (current.action != "upsert" or current.source != source or not allowed
                 or (discoverable and current.evidence_only)
                 or (current.policy_revision, current.recorded_at_ms) !=
                     (pin.policy_revision, pin.recorded_at_ms)):

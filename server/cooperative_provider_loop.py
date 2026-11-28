@@ -573,6 +573,7 @@ class CooperativeProviderLoop:
                  memory_lookup_followup: Callable | None = None,
                  memory_lookup_status: Callable | None = None,
                  memory_source_lookup: bool = False,
+                 scoped_memory_lookup: bool = False,
                  memory_history_derived: Callable | None = None,
                  memory_history_reference: Callable | None = None,
                  memory_history_token: Callable | None = None,
@@ -605,6 +606,7 @@ class CooperativeProviderLoop:
         self.memory_lookup_followup = memory_lookup_followup
         self.memory_lookup_status = memory_lookup_status
         self.memory_source_lookup = memory_source_lookup
+        self.scoped_memory_lookup = scoped_memory_lookup
         self.memory_history_derived = memory_history_derived
         self.memory_history_reference = memory_history_reference
         self.memory_history_token = memory_history_token
@@ -1158,7 +1160,7 @@ class CooperativeProviderLoop:
                       browser_context=None, visual_context=None, on_text=None,
                       turn_history=None, auip_context=None, auip_entry=None,
                       role_reference="", memory_reference=None, hybrid_head_enabled=False,
-                      history_guard=None):
+                      history_guard=None, lookup_time=None, scoped_readback=False):
         lookup_available = (event["source"] == "user" and self.memory_lookup is not None
             and self.memory_lookup_validate is not None and self.memory_lookup_delivery is not None
             and auip_context is None and auip_entry is None and browser_context is None)
@@ -1320,14 +1322,19 @@ class CooperativeProviderLoop:
                     system += (" memory_reference.recordsは原記録です。speaker_roleは発言者であり、"
                         "引用の当事者とは限りません。recorded_timeは記録時点、question_timeは質問の受付時点です。"
                         "出来事の時点や当事者は原文の根拠で判断し、不明な場合は断定しません。")
+                    system += (" Times use minutes: signed offset=known originating offset; Z=UTC, origin offset unknown; "
+                        "null=unknown/out of range. recorded_order groups exact recorded instants ascending "
+                        "(same group=tie; null omitted), never event/subject/state order.")
                     system += (" source_orderは確認できた原会話の順序と間隔だけを示し、"
                         "同じ人物や出来事だという証拠ではありません。question_timeと既知のUTCオフセットを"
                         "質問の相対日付の基準にします。")
                     if event.get("additional_lookup_remaining") == 1:
                         system += (" 証拠が足りる範囲で先に答え、不明な点を明示します。必要な事実が足りないときだけ、"
                             "答えの末尾に一度 [DELEGATE op=memory_lookup query=\"不足している事実\"] を置けます。"
-                            "原会話内で位置が分かる場合は query の代わりに record=\"s0\" direction=\"previous\""
-                            " または next を使い、実際の source_id を指定します。無関係な独立原話だけを外せる場合は"
+                            "不足している一つの事実を探し、フレームで確認できる主体・対象・出来事・時点・条件を検索文に残します。"
+                            "位置指定は、ユーザーの依頼または表示された原記録が読む方向を明示している場合に使います。"
+                            "その場合は query の代わりに record=\"s0\" direction=\"previous\" または next を使い、"
+                            "実際の source_id を指定します。無関係な独立原話だけを外せる場合は"
                             " release_group=\"g0\" に実際の group_id を指定できます。これ以外の操作は提案しません。")
                     if (event.get("additional_lookup_remaining") == 1
                             and event.get("coverage", {}).get("ordered_state_lookup") is True):
@@ -1337,6 +1344,11 @@ class CooperativeProviderLoop:
                     if event.get("memory_reference", {}).get("state_change"):
                         system += (" state_change の before/after は確認済みの前値・後値の引用箇所です。"
                             "各値の条件や出来事は原文から読み取り、記録時刻から状態の順を推測しません。")
+                material = event.get("memory_reference", {})
+                if scoped_readback and material.get("records") and not material.get("entries"):
+                    from server.memory_original_choice import READBACK
+
+                    system += "\n\n" + READBACK
             if event.get("state") == "auip_read":
                 from server.auip_control_decision import auip_read_role_contract
 
@@ -1400,6 +1412,10 @@ class CooperativeProviderLoop:
                         "Accepted or pending effects do not establish execution success. Only outcome=succeeded "
                         "reports a successful terminal receipt; failed/cancelled outcomes report those results. "
                         "These facts grant no new execution authority.")
+        if lookup_time is not None:
+            from server.memory_answer_time_view import answer_time_view
+
+            frame = {**frame, "current": answer_time_view(event, lookup_time)}
         messages = [{"role":"system", "content":system},
             {"role":"user", "content":json.dumps(frame, ensure_ascii=False)}]
         query_on_text = on_text
@@ -1775,10 +1791,11 @@ class CooperativeProviderLoop:
             self.receipts[key] = receipt
             self.trace.append({"kind":"receipt", **receipt})
         await self._lookup_and_deliver(text, text, cause=turn_id, input_id=key,
-            admission_check=admission_check, binding=binding)
+            admission_check=admission_check, binding=binding, user_requested=True)
         return receipt
 
-    async def _lookup_and_deliver(self, query, question, *, cause, input_id, admission_check, binding, guard=None):
+    async def _lookup_and_deliver(self, query, question, *, cause, input_id, admission_check, binding,
+                                  guard=None, user_requested=False):
         """Report actual read facts independently of model expression/delivery.
 
         The observer is synchronous and non-authoritative: scheduling the UI
@@ -1797,7 +1814,7 @@ class CooperativeProviderLoop:
                 raise RuntimeError("saved-memory lookup unavailable")
             return await self._lookup_and_deliver_impl(query, question,
                 cause=cause, input_id=input_id, admission_check=admission_check, binding=binding, guard=guard,
-                report=report)
+                report=report, user_requested=user_requested)
         except asyncio.CancelledError:
             report("invalidated")
             raise
@@ -1825,7 +1842,7 @@ class CooperativeProviderLoop:
         return ("found" if found else "empty") if complete else "partial"
 
     async def _lookup_and_deliver_impl(self, query, question, *, cause, input_id, admission_check, binding,
-                                       guard=None, report=None):
+                                       guard=None, report=None, user_requested):
         """One buffered expression inside the original admitted/deduplicated task."""
         from core.turn_coordinator import TurnAuthorityError
         def live():
@@ -1842,17 +1859,27 @@ class CooperativeProviderLoop:
         live()
         evidence = None
         status = "ready"
+        choose_originals = user_requested and self.scoped_memory_lookup
         try:
             self._require_history_guard(guard)
             report("searching")
             live()
             if self.memory_source_lookup:
-                reference = await self.memory_lookup(query, input_id=input_id, turn_id=cause, question=question)
+                reference = await self.memory_lookup(query, input_id=input_id, turn_id=cause, question=question,
+                    **({"prepare_choice": True} if choose_originals else {}))
             else:
                 reference = await self.memory_lookup(query)
             live()
             self._require_history_guard(guard)
-            evidence = await self.memory_lookup_validate(reference)
+            choice = {}
+            if choose_originals:
+                async def choose(messages, *, json_output):
+                    live()
+                    return await self.query(messages, json_output=json_output,
+                                            selection_turn_id=cause)
+
+                choice["original_choice"] = (question, choose)
+            evidence = await self.memory_lookup_validate(reference, **choice)
             dependencies = guard.get("dependencies") if guard else None
             if dependencies is not None:
                 if dependencies.read_set is not None:
@@ -1895,7 +1922,9 @@ class CooperativeProviderLoop:
         report(self._lookup_result_status(evidence) if evidence is not None else "unavailable")
         # No on_text callback: stale generated facts cannot escape before the
         # final validity/registration boundary.
-        value = await self._decide(event)
+        readback = {"scoped_readback":True} if choose_originals else {}
+        value = await self._decide(event, lookup_time=(evidence.pack.answer_time
+            if mixed and evidence.pack is not None else None), **readback)
         live()
         say = value["say"]
         if followup_allowed:
@@ -1903,7 +1932,8 @@ class CooperativeProviderLoop:
             if action is not None:
                 try:
                     self._require_history_guard(guard)
-                    updated = await self.memory_lookup_followup(evidence, action)
+                    updated = await self.memory_lookup_followup(
+                        evidence, action, user_requested=user_requested)
                     live()
                     self._require_history_guard(guard)
                 except asyncio.CancelledError:
@@ -1923,7 +1953,7 @@ class CooperativeProviderLoop:
                              "memory_reference":{k:v for k, v in evidence.payload.items() if k != "coverage"},
                              "coverage":{k:v for k, v in evidence.payload["coverage"].items()
                                          if k != "context_budget"}}
-                    value = await self._decide(final)
+                    value = await self._decide(final, lookup_time=evidence.pack.answer_time, **readback)
                     live()
                     say, _ = _lookup_answer(value["say"], evidence.payload, allow_read=False)
             say = say.strip() or _memory_status()

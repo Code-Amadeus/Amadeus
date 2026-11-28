@@ -17,7 +17,7 @@ dependencies = [
     "beautifulsoup4==4.14.3",
     "boto3==1.43.16",
     # Model-free lifecycle core; semantic model packages remain optional.
-    "eidema==0.2.0.dev1",
+    "eidema==0.2.0.dev2",
     "fastapi==0.136.3",
     "google-genai==2.6.0",
     "httpx==0.28.1",
@@ -188,7 +188,7 @@ conflicts = [
 
 [tool.uv.sources]
 # Reviewed independent core snapshot; provenance and SHA-256 ship beside it.
-eidema = { path = "vendor/eidema/eidema-0.2.0.dev1-py3-none-any.whl" }
+eidema = { path = "vendor/eidema/eidema-0.2.0.dev2-py3-none-any.whl" }
 # Upstream 0.0.6 inference sources unchanged; Gradio is a demo-only extra.
 qwen-asr = { path = "vendor/qwen-asr" }
 # Temporary AEC source-build fix; other platforms retain the PyPI artifacts.

@@ -627,7 +627,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
     { name = "boto3", specifier = "==1.43.16" },
     { name = "cn2an", marker = "extra == 'local-models'", specifier = "==0.5.24" },
-    { name = "eidema", path = "vendor/eidema/eidema-0.2.0.dev1-py3-none-any.whl" },
+    { name = "eidema", path = "vendor/eidema/eidema-0.2.0.dev2-py3-none-any.whl" },
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = "==1.14.2" },
     { name = "fastapi", specifier = "==0.136.3" },
     { name = "ffmpeg-python", marker = "extra == 'local-models'", specifier = "==0.2.0" },
@@ -1199,13 +1199,13 @@ wheels = [
 
 [[package]]
 name = "eidema"
-version = "0.2.0.dev1"
-source = { path = "vendor/eidema/eidema-0.2.0.dev1-py3-none-any.whl" }
+version = "0.2.0.dev2"
+source = { path = "vendor/eidema/eidema-0.2.0.dev2-py3-none-any.whl" }
 dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { filename = "eidema-0.2.0.dev1-py3-none-any.whl", hash = "sha256:2398271bb368b3e02dcf9fb14950800f5aa3e41eb544da3f731646428451bef6" },
+    { filename = "eidema-0.2.0.dev2-py3-none-any.whl", hash = "sha256:23c206274ff9c5ed9db9d88b61361cccce6eb5bc9d990f406ca0e2ace21e101b" },
 ]
 
 [package.metadata]

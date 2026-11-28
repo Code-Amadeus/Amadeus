@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import datetime
 from unittest.mock import Mock
 
 import eidema as memory
@@ -96,7 +97,12 @@ async def test_shared_cross_session_lookup_through_chat_wire(pending_host, tmp_p
         await send(ctx, direct=direct)
         assert len(calls) == (1 if direct else 2), (calls, ctx.visible)
         frame = calls[-1]["current"]
-        assert frame["saved_memories_only"] is False and frame["question_time"]["status"] == "known"
+        assert frame["saved_memories_only"] is False
+        clock = ranking.call_args.kwargs["question_time"]
+        assert clock["status"] == "known"  # Canonical Session clock stays exact.
+        shown = datetime.fromisoformat(frame["question_time"].replace("Z", "+00:00"))
+        accepted = datetime.fromisoformat(clock["utc"].replace("Z", "+00:00"))
+        assert shown == accepted.replace(second=0, microsecond=0)
         packet = frame["memory_reference"]
         assert ORIGINAL in [row["text"] for row in packet["records"]]
         assert QUESTION not in [row["text"] for row in packet["records"]]

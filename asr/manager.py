@@ -224,6 +224,10 @@ class ASRManager:
         self._tts_block_mic_fn = None
         # 可选：VAD 检测到语音起始时调用（用于 barge-in：打断正在播放的 TTS）
         self._on_speech_start_fn = None
+        # Each recognition thread owns only its actual utterance ticket.
+        # A cancelled listener's old to_thread call can settle after a new one.
+        self._recognition_lock = threading.Lock()
+        self._recognition_tickets: set[object] = set()
         # 可选：投机文本回调（切片 D2，见 set_speculative_text_callback）
         self._speculative_text_fn = None
 
@@ -278,6 +282,11 @@ class ASRManager:
             backend.prepare()
         except Exception:
             logger.exception("[ASR] preparing the recognizer device state failed")
+
+    def is_recognizing(self) -> bool:
+        """True from speech/audio arrival through this recognition settlement."""
+        with self._recognition_lock:
+            return bool(self._recognition_tickets)
 
     def _speech_started(self) -> None:
         self.prepare_backend_async()
@@ -529,84 +538,101 @@ class ASRManager:
     # ------------------------------------------------------------------
 
     def _listen_once(self, *, listen_timeout_attempt: int = 0) -> Optional[str]:
-        def _should_block_mic() -> bool:
-            try:
-                if self._tts_block_mic_fn is not None and self._tts_block_mic_fn():
-                    return True
-                if self._tts_playing_fn is not None and self._tts_playing_fn():
-                    return True
-            except Exception:
-                return False
-            return False
+        ticket = object()
 
-        mic_service = get_mic_input_service()
-        mic_service.start(preferred_index=self._mic_index)
-        speculative = (
-            _SpeculativeTranscription(
-                self._backend, self.context, _SAMPLE_RATE,
-                on_result=self._speculative_text_fn,
-            )
-            if (
-                _SPECULATIVE_ENABLED
-                and _SPECULATIVE_END_MS > 0
-                and bool(
-                    getattr(
-                        self._backend,
-                        "supports_speculative_transcription",
-                        True,
+        def own_recognition() -> None:
+            with self._recognition_lock:
+                self._recognition_tickets.add(ticket)
+
+        def speech_started() -> None:
+            own_recognition()
+            self._speech_started()
+
+        try:
+            def _should_block_mic() -> bool:
+                try:
+                    if self._tts_block_mic_fn is not None and self._tts_block_mic_fn():
+                        return True
+                    if self._tts_playing_fn is not None and self._tts_playing_fn():
+                        return True
+                except Exception:
+                    return False
+                return False
+
+            mic_service = get_mic_input_service()
+            mic_service.start(preferred_index=self._mic_index)
+            speculative = (
+                _SpeculativeTranscription(
+                    self._backend, self.context, _SAMPLE_RATE,
+                    on_result=self._speculative_text_fn,
+                )
+                if (
+                    _SPECULATIVE_ENABLED
+                    and _SPECULATIVE_END_MS > 0
+                    and bool(
+                        getattr(
+                            self._backend,
+                            "supports_speculative_transcription",
+                            True,
+                        )
                     )
                 )
+                else None
             )
-            else None
-        )
-        audio = mic_service.capture_utterance(
-            vad_model=self._vad_model,
-            threshold=_VAD_THRESHOLD,
-            timeout_s=_LISTEN_TIMEOUT,
-            min_silence_ms=_SILENCE_MS,
-            speech_pad_ms=_SPEECH_PAD_MS,
-            min_speech_ms=_MIN_SPEECH_MS,
-            max_speech_sec=_MAX_SPEECH_SEC,
-            preroll_ms=_PREROLL_MS,
-            energy_end_rms=_ENERGY_END_RMS,
-            energy_end_ms=_ENERGY_END_MS,
-            energy_start_rms=_ENERGY_START_RMS,
-            handoff_max_capture_sec=_HANDOFF_MAX_CAPTURE_SEC,
-            block_mic_fn=_should_block_mic,
-            on_speech_start=self._speech_started,
-            consume_handoff=True,
-            probable_end_silence_ms=_SPECULATIVE_END_MS if speculative is not None else 0,
-            on_probable_end=speculative.submit if speculative is not None else None,
-            on_probable_end_cancelled=speculative.invalidate if speculative is not None else None,
-        )
-        self._mic_index = mic_service.mic_index
-        if audio is None:
-            msg = "[ASR] listen timed out; no speech detected"
-            if listen_timeout_attempt <= 0:
-                logger.info(msg)
-            else:
-                logger.debug(msg)
-            return None
-        # 两段式端点：短静音阶段的投机转写命中时直接复用，隐藏转写延迟
-        text = speculative.consume(audio) if speculative is not None else None
-        if text is None:
-            try:
-                with asr_call_context("final"):
-                    text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
-            except ASRBackendFatalError as exc:
-                if not self._recover_backend_after_failure(exc):
-                    return None
+            audio = mic_service.capture_utterance(
+                vad_model=self._vad_model,
+                threshold=_VAD_THRESHOLD,
+                timeout_s=_LISTEN_TIMEOUT,
+                min_silence_ms=_SILENCE_MS,
+                speech_pad_ms=_SPEECH_PAD_MS,
+                min_speech_ms=_MIN_SPEECH_MS,
+                max_speech_sec=_MAX_SPEECH_SEC,
+                preroll_ms=_PREROLL_MS,
+                energy_end_rms=_ENERGY_END_RMS,
+                energy_end_ms=_ENERGY_END_MS,
+                energy_start_rms=_ENERGY_START_RMS,
+                handoff_max_capture_sec=_HANDOFF_MAX_CAPTURE_SEC,
+                block_mic_fn=_should_block_mic,
+                on_speech_start=speech_started,
+                consume_handoff=True,
+                probable_end_silence_ms=_SPECULATIVE_END_MS if speculative is not None else 0,
+                on_probable_end=speculative.submit if speculative is not None else None,
+                on_probable_end_cancelled=speculative.invalidate if speculative is not None else None,
+            )
+            self._mic_index = mic_service.mic_index
+            if audio is None:
+                msg = "[ASR] listen timed out; no speech detected"
+                if listen_timeout_attempt <= 0:
+                    logger.info(msg)
+                else:
+                    logger.debug(msg)
+                return None
+            # Handoff audio may arrive without a VAD speech-start callback.
+            if len(audio) > 0:
+                own_recognition()
+            # 两段式端点：短静音阶段的投机转写命中时直接复用，隐藏转写延迟
+            text = speculative.consume(audio) if speculative is not None else None
+            if text is None:
                 try:
-                    logger.info("[ASR] retrying captured audio after backend recovery")
-                    with asr_call_context("recovery"):
+                    with asr_call_context("final"):
                         text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
-                except Exception as retry_exc:
-                    logger.error("[ASR] retry after backend recovery failed: %s", retry_exc)
-                    return None
-        if is_asr_prompt_leak(text or "", context=self.context):
-            logger.warning(
-                "[ASR] dropped context-prompt leak from recognizer: %s",
-                protected_text(text),
-            )
-            return None
-        return text
+                except ASRBackendFatalError as exc:
+                    if not self._recover_backend_after_failure(exc):
+                        return None
+                    try:
+                        logger.info("[ASR] retrying captured audio after backend recovery")
+                        with asr_call_context("recovery"):
+                            text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
+                    except Exception as retry_exc:
+                        logger.error("[ASR] retry after backend recovery failed: %s", retry_exc)
+                        return None
+            if is_asr_prompt_leak(text or "", context=self.context):
+                logger.warning(
+                    "[ASR] dropped context-prompt leak from recognizer: %s",
+                    protected_text(text),
+                )
+                return None
+            return text
+        finally:
+            with self._recognition_lock:
+                self._recognition_tickets.discard(ticket)

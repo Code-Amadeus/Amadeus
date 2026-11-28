@@ -123,9 +123,13 @@ class MemoryLookupEvidence:
 
 class HostMemoryService:
     def __init__(self, config: MemoryConfig, *, project_for_session: Callable[[str], str] = lambda sid:"",
-                 api=None, embedder_factory=None, reply_token_count=None, reply_token_count_method=None):
+                 api=None, embedder_factory=None, reply_token_count=None, reply_token_count_method=None,
+                 formation_for_session: Callable[[str], bool] = lambda sid: False):
         self.config = config
         self.project_for_session = project_for_session
+        if not callable(formation_for_session):
+            raise ValueError("formation_for_session_callback_required")
+        self.formation_for_session = formation_for_session
         self._api = api
         self._store = None
         self._embedder_factory = embedder_factory
@@ -138,6 +142,7 @@ class HostMemoryService:
         self._model = _SingleFlight("eidema-model")
         self._startup = None
         self._sources = None
+        self._maintenance = None
         self._source_lookup = None
         self._index_task = None
         self._index_requested = False
@@ -166,6 +171,11 @@ class HostMemoryService:
     def start(self):
         if self._startup is None:
             self._startup = asyncio.create_task(self._open())
+
+    async def bind_maintenance(self, **options):
+        """Explicit trusted opt-in; normal startup installs no maintenance."""
+        from server.memory_maintenance import bind_maintenance
+        return await bind_maintenance(self, **options)
 
     async def _open(self):
         if not self.config.enabled and not self.config.db_path.exists() and not self._policy.path.exists():
@@ -259,6 +269,8 @@ class HostMemoryService:
                 if self._automatic_threshold is None:
                     self._automatic_threshold = getattr(embedder, "automatic_threshold", None)
                     self._threshold_calibrated = bool(getattr(embedder, "threshold_calibrated", False))
+                if self._maintenance is not None:
+                    self._maintenance.resume()
             while not self._closing and self._semantic_state != "ready":
                 try:
                     await self._db.run(lambda:self._store.configure_embedder(embedder), on_completed=attached)
@@ -616,6 +628,12 @@ class HostMemoryService:
             def committed(result):
                 self._sync_projection()
                 self._schedule_index()
+                if (method in {"memory.correct", "memory.forget"} and self._maintenance is not None
+                        and self._maintenance.reformation_enabled):
+                    # A privacy mutation can capture SDK repair work without
+                    # appending a Session source receipt. Wake the same owner
+                    # after commit; privacy completion never waits for formation.
+                    self._maintenance.resume()
             async with self._publication_lock:
                 operation = await self._db.run(mutation, on_completed=committed, mutation=True)
             response = {"operation":asdict(operation),
@@ -685,7 +703,8 @@ class HostMemoryService:
         self._remaining(deadline)
         return {**admitted, "coverage":coverage}
 
-    async def lookup_for_session(self, session_id, query, *, input_id="", turn_id="", question=""):
+    async def lookup_for_session(self, session_id, query, *, input_id="", turn_id="", question="",
+                                 prepare_choice=False):
         """Explicit search in the Host-bound scope of a previously accepted turn."""
         if not isinstance(query, str) or not query.strip() or len(query) > 2000:
             raise MemoryRequestError("invalid_request")
@@ -696,7 +715,8 @@ class HostMemoryService:
             current, clock = self._lookup_question(context, input_id, turn_id, question)
             self._lookup_context(context, ())
             result = await self._query.run(lambda:self._source_lookup.rank(
-                self._access(context), query.strip(), current=current, question_time=clock),
+                self._access(context), query.strip(), current=current, question_time=clock,
+                **({"prepare_choice": True} if prepare_choice else {})),
                 timeout=self._remaining(deadline))
             self._remaining(deadline)
             return MemoryTurnReference(context, result, deadline)
@@ -822,14 +842,14 @@ class HostMemoryService:
         if any(candidate.memory_id in pending for candidate in candidates):
             raise MemoryRequestError("conflict")
 
-    async def validate_lookup(self, reference):
+    async def validate_lookup(self, reference, *, original_choice=None):
         if not isinstance(reference, MemoryTurnReference):
             raise MemoryRequestError("invalid_request")
         context = reference.context
         if self._source_lookup is not None:
             from server.memory_source_lookup import RankedLookup
             if isinstance(reference.result, RankedLookup):
-                return await self._validate_source_lookup(context, reference.result)
+                return await self._validate_source_lookup(context, reference.result, original_choice=original_choice)
         self._lookup_context(context, reference.result.candidates)
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         result = await self._db.run(lambda:self._store.revalidate(self._access(context),
@@ -850,20 +870,45 @@ class HostMemoryService:
         self._remaining(deadline)
         return MemoryLookupEvidence(context, tuple(selected), {**admitted, "coverage":coverage})
 
-    async def _validate_source_lookup(self, context, ranked):
+    async def _validate_source_lookup(self, context, ranked, *, original_choice=None):
         self._lookup_context(context, ())
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         counter = self._reply_token_count or estimate_reply_tokens
         method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
+        choices = []
+        options = {"_original_choice":(original_choice[0], choices)} if original_choice is not None else {}
         reads, signatures, payload, package = await self._db.run(lambda:self._source_lookup.assemble(
-            self._access(context), ranked, counter=counter, method=method),
+            self._access(context), ranked, counter=counter, method=method, **options),
             timeout=self._remaining(deadline), priority=True)
         self._lookup_context(context, reads.memories)
         self._sources.require_current(signatures)
         self._remaining(deadline)
-        return MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time, package)
+        evidence = MemoryLookupEvidence(context, reads.memories, payload, reads, ranked.question_time, package)
+        if not choices:
+            return evidence
+        choice, = choices
+        try:
+            self._sources.require_current(choice.signatures)
+        except self._source_lookup.stale as error:
+            raise MemoryRequestError("conflict") from error
+        # Selection never holds the DB lane or the publication boundary.
+        proposal = await original_choice[1](list(choice.messages), json_output=True)
+        self._lookup_context(context, evidence.candidates)
+        from server.memory_original_choice import apply
 
-    async def supplement_lookup(self, evidence, action):
+        try:
+            selected, checked = await self._db.run(lambda:apply(self._source_lookup,
+                self._access(context), evidence, choice, proposal, counter, method),
+                timeout=self.config.explicit_validity_timeout_s, priority=True)
+            self._sources.require_current(checked)
+        except self._source_lookup.stale as error:
+            if isinstance(error, MemoryRequestError) and error.code == "busy":
+                raise
+            raise MemoryRequestError("conflict") from error
+        self._lookup_context(context, selected.candidates)
+        return selected
+
+    async def supplement_lookup(self, evidence, action, *, user_requested=False):
         if self._source_lookup is None or evidence.pack is None:
             raise MemoryRequestError("invalid_request")
         context = evidence.context
@@ -879,7 +924,8 @@ class HostMemoryService:
         try:
             updated, signatures = await self._db.run(lambda:self._source_lookup.supplement(access,
                 evidence.pack, evidence.read_set, action, ranked, payload=evidence.payload,
-                counter=counter, method=method), priority=True, timeout=self._remaining(deadline))
+                counter=counter, method=method, user_requested=user_requested),
+                priority=True, timeout=self._remaining(deadline))
         except (FileNotFoundError, self._api.MemoryConflict, self._api.MemoryNotFound,
                 self._api.MemoryValidationError):
             raise MemoryRequestError("conflict") from None
@@ -954,6 +1000,13 @@ class HostMemoryService:
         finally:
             publication_started()
 
+    async def wait_closed(self):
+        """Process-owner join; the UI-facing close keeps its existing bound."""
+        if self._close_task is None:
+            await self.close()
+        if self._close_task is not None:
+            await asyncio.shield(self._close_task)
+
     async def close(self):
         if self._close_task is not None:
             try:
@@ -967,6 +1020,8 @@ class HostMemoryService:
             # cancellation of a UI awaiter never orphans a SQLite owner/commit.
             if self._startup is not None:
                 await asyncio.gather(self._startup, return_exceptions=True)
+            if self._maintenance is not None:
+                await self._maintenance.close()
             if self._sources is not None:
                 await self._sources.close()
             if self._index_task is not None and not self._index_task.done():

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import tempfile
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,10 +24,15 @@ logger = logging.getLogger(__name__)
 _publication_observer = None
 _publication_owner = None
 _publication_scope = None
+_publication_formation = None
+
+# The existing Session owner still serializes read/prepare/write. This short
+# boundary orders native file installation with formation dispatch/completion.
+commit_lock = threading.RLock()
 
 
-def configure_publication(observer=None, *, owner=None, scope_for_session=None):
-    global _publication_observer, _publication_owner, _publication_scope
+def configure_publication(observer=None, *, owner=None, scope_for_session=None, formation_for_session=None):
+    global _publication_observer, _publication_owner, _publication_scope, _publication_formation
     if observer is not None and (not callable(observer) or owner is None):
         raise ValueError("publication_observer_owner_required")
     if observer is not None and _publication_observer is not None:
@@ -35,8 +41,11 @@ def configure_publication(observer=None, *, owner=None, scope_for_session=None):
         raise ValueError("publication_observer_owner_mismatch")
     if scope_for_session is not None and (observer is None or not callable(scope_for_session)):
         raise ValueError("publication_scope_requires_observer")
+    if formation_for_session is not None and (observer is None or not callable(formation_for_session)):
+        raise ValueError("publication_formation_requires_observer")
     _publication_observer, _publication_owner = observer, owner if observer is not None else None
     _publication_scope = scope_for_session
+    _publication_formation = formation_for_session
 
 
 def enabled():
@@ -156,9 +165,16 @@ def incarnation(data):
     return journal["generations"][-1]["incarnation"] if journal else None
 
 
-def _grant():
+def _grant(session_id=None):
     if _publication_scope is not None:
-        return dict(formation_allowed=False, policy_revision="host-explicit-lookup-v1",
+        # Only the trusted Host can grant newly committed Session originals.
+        # A missing, false or failed decision retains the explicit-lookup grant.
+        try:
+            formation = (_publication_formation is not None and
+                         _publication_formation(session_id) is True)
+        except Exception:
+            formation = False
+        return dict(formation_allowed=formation, policy_revision="host-explicit-lookup-v1",
                     lookup_allowed=True, derived_use_mask=1)
     lookup = os.environ.get("AMADEUS_JOURNAL_LOOKUP_ALLOWED", "1") == "1"
     ordinary = os.environ.get("AMADEUS_JOURNAL_ORDINARY_ALLOWED", "1") == "1"
@@ -176,7 +192,7 @@ def _grant():
 
 def _event(generation, sid, row, action, previous_grant=None):
     grant = (
-        _grant()
+        _grant(sid)
         if action == "upsert"
         else dict(
             formation_allowed=False,
@@ -394,12 +410,14 @@ def _publish(path, data, *, create=False):
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        if create:
-            # Windows rename and POSIX link both fail if the name is held.
-            install = os.rename if os.name == "nt" else os.link
-            install(temporary, path)
-        else:
-            _replace(temporary, path)
+        # Serialization, staging and fsync occur before this short boundary.
+        with commit_lock:
+            if create:
+                # Windows rename and POSIX link both fail if the name is held.
+                install = os.rename if os.name == "nt" else os.link
+                install(temporary, path)
+            else:
+                _replace(temporary, path)
         try:
             _sync_directory(path.parent)
         except OSError:

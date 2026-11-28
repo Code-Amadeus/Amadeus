@@ -1,7 +1,7 @@
 """Join ranked saved notes and original Session records for an explicit read."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 import time
 from types import SimpleNamespace
@@ -15,6 +15,8 @@ class RankedLookup:
     coverage: dict
     question_time: dict
     current: object | None
+    source_matches: tuple = ()
+    match_model: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,8 @@ class LookupPack:
     groups: tuple
     records: tuple
     current: object | None
+    max_tokens: int = 1024
+    answer_time: dict | None = None
 
 
 def _merge(domains):
@@ -51,7 +55,7 @@ class SourceLookup:
         self.stale = (MemoryRequestError, FileNotFoundError, self.api.MemoryConflict,
                       self.api.MemoryNotFound, self.api.MemoryValidationError)
 
-    def rank(self, access, query, *, current, question_time):
+    def rank(self, access, query, *, current, question_time, prepare_choice=False):
         model = self.store._embedder
         version = model.version if model is not None else None
         dimensions = model.dimensions if model is not None else None
@@ -75,8 +79,18 @@ class SourceLookup:
                 raise error
             return vector
 
-        raw = self.delivery.retrieval.lookup_sources(access, query, limit=16, candidate_limit=32,
-            max_chars=131072, query_wait_ms=100, _query_embedding=embedding)
+        options = dict(limit=16, candidate_limit=32, max_chars=131072, query_wait_ms=100,
+                       _query_embedding=embedding)
+        retrieval = self.delivery.retrieval
+        matches = ()
+        if (prepare_choice and current is not None and question_time.get("status") == "known"
+                and callable(getattr(model, "split_passage", None))):
+            from server.memory_original_choice import WIDE_LIMIT
+
+            raw, matches = retrieval.lookup_sources_with_matches(access, query, match_limit=WIDE_LIMIT,
+                                                                  **options)
+        else:
+            raw = retrieval.lookup_sources(access, query, **options)
 
         def can_resolve(ref):
             try:
@@ -98,7 +112,10 @@ class SourceLookup:
         coverage = asdict(notes.coverage)
         coverage["source_coverage"] = asdict(raw.coverage)
         coverage["budget_omitted"] += raw.coverage.budget_omitted
-        return RankedLookup(_merge(domains), coverage, question_time, current)
+        if not comparable:
+            matches = ()
+        return RankedLookup(_merge(domains), coverage, question_time, current, matches,
+                            (model, version, dimensions) if matches else None)
 
     def search_originals(self, access, query):
         return self.delivery.retrieval.lookup_sources(access, query, limit=16, candidate_limit=32,
@@ -136,25 +153,75 @@ class SourceLookup:
             outputs=reads.outputs, candidates=reads.candidates, now_ms=time.time_ns() // 1_000_000,
             purpose=purpose)
 
-    def assemble(self, access, ranked, *, counter, method):
+    def assemble(self, access, ranked, *, counter, method, _append_references=None, _original_choice=None):
+        # Private per-call experiment seam: already ranked references from
+        # trusted Host code, never request data, model IDs, labels, or body text.
+        if (len(ranked.references) > 32 or (_append_references is not None and
+                (not isinstance(_append_references, (tuple, list)) or len(_append_references) > 32))):
+            raise MemoryRequestError("invalid_request")
+        nominations = tuple(_append_references or ())
+        if len(set((*ranked.references, *nominations))) > 32:
+            raise MemoryRequestError("invalid_request")
         view = self.delivery.view(access)
         resolved = []
         unavailable = 0
-        for ref in ranked.references:
+        pinned = {}
+        for ref in (*ranked.references, *nominations):
             try:
-                value = (view.pin(self.delivery.retrieval.detail(access, ref))
-                         if isinstance(ref, self.api.RetrievalReference) else ref)
+                if _append_references is not None and ref in pinned:
+                    value = pinned[ref]
+                else:
+                    value = (view.pin(self.delivery.retrieval.detail(access, ref))
+                             if isinstance(ref, self.api.RetrievalReference) else ref)
+                    pinned[ref] = value
                 resolved.append(value)
             except self.stale:
                 unavailable += 1
+                resolved.append(None)
 
-        result = self._pack(access, resolved, view, counter)
+        boundary = len(ranked.references)
+        base = [ref for ref in resolved[:boundary] if ref is not None]
+        appended = [ref for ref in resolved[boundary:] if ref is not None]
+        max_tokens = 1024 if _append_references is None else 1536
+        prefix_order, prefix_positions = None, ()
+
+        def append_metadata(raw, records):
+            nonlocal prefix_order, prefix_positions
+            if prefix_order is None:
+                snapshot = SimpleNamespace(payload=raw, record_inputs=records,
+                    tokens=counter(raw), utf8_bytes=len(raw.encode("utf8")))
+                first, _, _, prefix_positions = self._source_order(access, snapshot, view, counter)
+                prefix_order = first.get("source_order", [])
+            return {"source_order":prefix_order} if prefix_order else {}
+
+        result = self._pack(access, base, view, counter,
+            append_references=appended, append_max_tokens=(max_tokens if _append_references is not None else None),
+            append_excluded_source=(ranked.current if _append_references is not None else None),
+            append_metadata=(append_metadata if _append_references is not None else None))
         coverage = dict(ranked.coverage)
-        coverage["budget_omitted"] += sum(group.status == "omitted" for group in result.groups)
+        if _append_references is None:
+            coverage["budget_omitted"] += sum(group.status == "omitted" for group in result.groups)
+        else:
+            completed = {group.reference for group in result.groups if group.status == "complete"}
+            coverage["budget_omitted"] += len({group.reference for group in result.groups
+                if group.status == "omitted" and group.code not in
+                {"already_selected", "no_new_sources", "excluded_source"} and group.reference not in completed})
         coverage["unavailable_groups"] = unavailable + sum(group.status == "unavailable" for group in result.groups)
-        return self._package(access, ranked.current, result, view, coverage, counter, method)
+        assembled = self._package(access, ranked.current, result, view, coverage, counter, method,
+                                  max_tokens=max_tokens, prefix_positions=prefix_positions)
+        if (_original_choice is not None and _append_references is None and not unavailable
+                and not assembled[0].memories and 0 < len(assembled[3].groups) < 8
+                and any(group.code == "payload_budget" for group in result.groups)):
+            from server.memory_original_choice import prepare
 
-    def _pack(self, access, resolved, view, counter):
+            question, choices = _original_choice
+            choice = prepare(self, access, ranked, base, view, assembled[0], question)
+            if choice is not None:
+                choices.append(choice)
+        return assembled
+
+    def _pack(self, access, resolved, view, counter, *, max_tokens=1024, max_groups=8,
+              append_references=(), append_max_tokens=None, append_excluded_source=None, append_metadata=None):
         def read(pin, **limits):
             # A visible earlier answer may itself depend on a withdrawn
             # original. Omit that group before it takes a delivery slot.
@@ -162,17 +229,19 @@ class SourceLookup:
             return view.read(pin, **limits)
 
         return self.evidence.assemble(access, resolved, limits=self.api.EvidenceLimits(
-            8, 8192, 8192, 1024, max_groups=8, max_references=32, read_sources=32,
+            8, 8192, 8192, max_tokens, max_groups=max_groups, max_references=32, read_sources=32,
             read_chars=262144, read_bytes=1048576),
             authorized=lambda: self.host._policy.ready, reader=SimpleNamespace(read=read), count_tokens=counter,
-            now_ms=time.time_ns() // 1_000_000, include_notes=True)
+            now_ms=time.time_ns() // 1_000_000, include_notes=True,
+            append_references=append_references, append_max_tokens=append_max_tokens,
+            append_excluded_source=append_excluded_source, append_metadata=append_metadata)
 
     def _package(self, access, current, result, view, coverage, counter, method, *,
-                 prior=None, visited=(), state_change=None):
+                 prior=None, visited=(), state_change=None, max_tokens=1024, prefix_positions=()):
         memories = tuple(group.reference for group in result.groups if group.status == "complete"
                          and isinstance(group.reference, self.api.RecallReference))
-        payload, tokens, size, position_reads = self._source_order(access, result, view, counter)
         if state_change is not None:
+            payload = json.loads(result.payload)
             aliases = {pin.source: row["source_id"]
                        for row, pin in zip(payload["records"], result.record_inputs, strict=True)}
             order = {}
@@ -182,30 +251,37 @@ class SourceLookup:
             payload = {**payload, "state_change": order}
             raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             tokens, size = counter(raw), len(raw.encode("utf8"))
-            if tokens > 1024 or size > 8192:
+            if tokens > max_tokens or size > 8192:
                 return None
+            # The state relation is required by this lookup. The positional
+            # hint is optional and may use only the remaining budget.
+            result = replace(result, payload=raw, chars=len(raw), utf8_bytes=size, tokens=tokens)
+        payload, tokens, size, position_reads = self._source_order(access, result, view, counter, max_tokens=max_tokens)
         if self.ordered_change_policy is not None and result.record_inputs:
             coverage = {**coverage, "ordered_state_lookup": True}
         before = prior or self.api.OutputReadSet()
         reads = self.capture(access, self.api.OutputReadSet(
             memories=(*before.memories, *memories),
-            sources=(*before.sources, *result.record_inputs, *position_reads, *visited),
+            sources=(*before.sources, *result.record_inputs, *prefix_positions, *position_reads, *visited),
             outputs=before.outputs, candidates=before.candidates))
         signatures = self.require_reads(access, reads, view)
+        from server.memory_answer_time_view import admitted_time_metadata
+
         package = LookupPack(tuple(group for group in result.groups if group.status == "complete"),
-                             result.record_inputs, current)
+                             result.record_inputs, current, max_tokens,
+                             admitted_time_metadata(payload["records"], result.record_inputs, view))
         return reads, signatures, {
             **payload, "coverage": {**coverage, "context_budget": {
                 "used_tokens":tokens, "used_bytes":size, "method":method}},
         }, package
 
-    def _source_order(self, access, result, view, counter):
+    def _source_order(self, access, result, view, counter, *, max_tokens=1024):
         payload = json.loads(result.payload)
         locations = {}
         for row, pin in zip(payload["records"], result.record_inputs, strict=True):
             owner, position = view.position(pin)
             locations.setdefault(owner, []).append((position, row["source_id"], pin))
-        edges, dependencies = [], []
+        edges, dependencies = list(payload.get("source_order", ())), []
         for positions in locations.values():
             positions.sort()
             for (i, left, anchor), (j, right, target) in zip(positions, positions[1:]):
@@ -220,17 +296,19 @@ class SourceLookup:
                         dependencies.append(bridge)
                 except self.stale:
                     continue
-                edges.append([left, right, j - i])
+                edge = [left, right, j - i]
+                if edge not in edges:
+                    edges.append(edge)
         if edges:
             ordered = {**payload, "source_order":edges}
             raw = json.dumps(ordered, ensure_ascii=False, sort_keys=True)
             tokens, size = counter(raw), len(raw.encode("utf8"))
-            if tokens <= 1024 and size <= 8192:
+            if tokens <= max_tokens and size <= 8192:
                 return ordered, tokens, size, tuple(dependencies)
         return payload, result.tokens, result.utf8_bytes, ()
 
     def supplement(self, access, package, prior, action, ranked, *, payload, counter, method,
-                   required_originals=None):
+                   required_originals=None, user_requested=False):
         """Apply one supplemental read. Host-selected originals must all fit."""
         view = self.delivery.view(access)
         prior = self.capture(access, prior)
@@ -276,26 +354,46 @@ class SourceLookup:
             return None, signatures
 
         release = self._release(package, action.get("release_group"), anchor)
-        attempts = (None, release) if release is not None else (None,)
-        for discarded in attempts:
+        discards = (None, release) if release is not None else (None,)
+        # A direct recall can read one new original on its existing second pass.
+        # Distinct original, text and authorization bounds still guard the final packet.
+        group_limit = 9 if user_requested and len(additions) == len(originals) == 1 else 8
+        proposals = []
+        for discarded in discards:
             proposed = list(roots)
             proposed[at:at] = additions
             if discarded is not None:
                 proposed.remove(discarded)
-            if len(proposed) > 8:
-                continue
-            result = self._pack(access, proposed, view, counter)
-            selected = tuple(group.reference for group in result.groups if group.status == "complete")
-            if selected != tuple(proposed):
-                continue
-            if state_change is not None:
-                added = {pin.source for pin in result.record_inputs} - {pin.source for pin in package.records}
-                if not added or package.current in added:
+            if len(proposed) <= group_limit:
+                proposals.append(tuple(proposed))
+
+        # Only the existing user-authorized follow-up can gain space. Keep
+        # successful smaller packs and retry only rejected token fits. The
+        # read set, group/source/byte limits and legitimacy of a proposed
+        # discard remain identical at either budget.
+        budgets = ((package.max_tokens, 1536) if user_requested and len(additions) == 1
+                   and package.max_tokens < 1536 else (package.max_tokens,))
+        for limit in budgets:
+            budget_blocked = []
+            for proposed in proposals:
+                result = self._pack(access, proposed, view, counter, max_tokens=limit, max_groups=group_limit)
+                selected = tuple(group.reference for group in result.groups if group.status == "complete")
+                if selected != proposed:
+                    if all(group.status == "complete" or group.code == "payload_budget" for group in result.groups):
+                        budget_blocked.append(proposed)
                     continue
-            change = self._package(access, package.current, result, view, payload["coverage"], counter, method,
-                                   prior=prior, visited=visited, state_change=state_change)
-            if change is not None:
-                return change, change[1]
+                if state_change is not None:
+                    added = {pin.source for pin in result.record_inputs} - {pin.source for pin in package.records}
+                    if not added or package.current in added:
+                        continue
+                change = self._package(access, package.current, result, view, payload["coverage"], counter, method,
+                                       prior=prior, visited=visited, state_change=state_change, max_tokens=limit)
+                if change is not None:
+                    return change, change[1]
+                # Required relation metadata can overflow after raw groups fit.
+                if state_change is not None:
+                    budget_blocked.append(proposed)
+            proposals = budget_blocked
         return None, signatures
 
     def _ordered_change_reference(self, access, anchor, label, action, payload):

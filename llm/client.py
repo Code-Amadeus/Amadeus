@@ -378,7 +378,8 @@ def remote_llm_messages_query(
                 options["response_format"] = {"type": "json_object"}
         else:
             options = dict(role_request_profile)
-            if (options["model"] != requested_model or json_output
+            response_format = {"type": "json_object"} if json_output else None
+            if (options["model"] != requested_model or options.get("response_format") != response_format
                     or not 0 < options["max_completion_tokens"] <= max(1, int(max_tokens))):
                 raise ValueError("sealed role profile does not match this call")
             options["extra_body"] = {"prompt_cache_options": options.pop("prompt_cache_options")}
