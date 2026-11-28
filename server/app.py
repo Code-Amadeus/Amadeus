@@ -498,8 +498,14 @@ async def bootstrap(port: int = 17777, *,
         project_for_session=work_ledger.session_project,
         **({"formation_for_session": memory_maintenance.formation_for_session}
            if memory_maintenance is not None else {}))
+    configured_extraction = memory_maintenance is None and memory_service.config.extraction_enabled
+    if configured_extraction:
+        from server.memory_preview import configured_maintenance
+        memory_service.formation_for_session = lambda session_id: bool(session_id)
+        memory_maintenance = configured_maintenance(memory_service, settings.DEEPSEEK_API_KEY)
     output_speech = None
-    if os.environ.get("AMADEUS_TRIAL_SPEECH_RETIREMENT") == "1":
+    if ((memory_service.config.enabled and memory_service.config.use_enabled)
+            or os.environ.get("AMADEUS_TRIAL_SPEECH_RETIREMENT") == "1"):
         from server import memory_output_speech as speech_retirement
         output_speech = speech_retirement.install(memory_service)
     memory_service.start()
@@ -2496,8 +2502,13 @@ async def bootstrap(port: int = 17777, *,
     vts_workers: list[asyncio.Future] = []
     try:
         if memory_maintenance is not None:
-            maintenance_binding = await memory_maintenance.bind(
-                memory_service, resource_ready=_maintenance_resources_ready)
+            try:
+                maintenance_binding = await memory_maintenance.bind(
+                    memory_service, resource_ready=_maintenance_resources_ready)
+            except Exception as error:
+                if not configured_extraction:
+                    raise
+                logger.warning("Memory background formation unavailable (%s)", type(error).__name__)
         vts_workers.append(loop.run_in_executor(None, _vts_action_mod.action_worker, vts_worker_stop))
         if vts_manager.connected and VTS_HEARTBEAT_ENABLED:
             vts_workers.append(loop.run_in_executor(None, _vts_action_mod.heartbeat_worker, vts_worker_stop))

@@ -50,7 +50,7 @@ async def bind_maintenance(host, *, enabled=False, access=None,
             or host._maintenance is not None):
         raise ValueError("ready_shared_maintenance_owner_required")
     api = host._api
-    if not isinstance(access, api.AccessScope) or access.user_id != host.config.user_id:
+    if access is not None and (not isinstance(access, api.AccessScope) or access.user_id != host.config.user_id):
         raise ValueError("trusted_maintenance_scope_required")
     if not callable(clock) or not isinstance(window_id, str) or not window_id:
         raise ValueError("maintenance_clock_and_window_required")
@@ -115,7 +115,8 @@ class MaintenanceBinding:
         self.warm_adoption_selector = warm_adoption_selector
         self.cold_adoption_selector = cold_adoption_selector
         self.automatic_cold_context = automatic_cold_context
-        identity = json.dumps(asdict(access), sort_keys=True, separators=(",", ":"))
+        identity = json.dumps(asdict(access) if access is not None else {"user_id": host.config.user_id},
+                              sort_keys=True, separators=(",", ":"))
         self.runtime_id = "native-session-maintenance-v1:" + sha256(identity.encode()).hexdigest()
         self.loop = asyncio.get_running_loop()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="native-maintenance")
@@ -129,6 +130,8 @@ class MaintenanceBinding:
         self._state, self._error, self._next_wake = "starting", None, None
         self._ticks = self._notifications = self._receipts = 0
         self._last = None
+        self._rolling_budget = None
+        self._budget_end_ms = None
 
     def _emit(self, event, **values):
         # Diagnostics are presentation, never an authority or execution gate.
@@ -176,11 +179,15 @@ class MaintenanceBinding:
         return await asyncio.shield(self.loop.run_in_executor(self._pool, function))
 
     async def _mount(self, budget):
+        if callable(budget):
+            self._rolling_budget, budget = budget, None
+
         def create():
             self._thread = threading.get_ident()
             self.connection = sqlite3.connect(self.schedule_path, isolation_level=None)
             if budget is not None:
                 self.api.Maintenance(self.host._store).configure_budget(budget)
+            self._set_budget_window()
         try:
             await self._run_owned(create)
             if not self._closed and not self.host._closing:
@@ -194,24 +201,35 @@ class MaintenanceBinding:
         if threading.get_ident() != self._thread:
             raise RuntimeError("maintenance_schedule_thread_mismatch")
 
-    def _lane(self, stream, kind, provider):
+    def _set_budget_window(self):
+        if self._rolling_budget is not None:
+            window = self._rolling_budget(self.clock())
+            if self._budget_end_ms != window.end_ms:
+                self.api.Maintenance(self.host._store).configure_budget(window)
+                self.window_id, self._budget_end_ms = window.window_id, window.end_ms
+
+    def _lane(self, access, stream, kind, provider):
         selector = self.warm_adoption_selector if kind == "warm" else self.cold_adoption_selector
-        executor = create_executor(self.delivery, self.access, provider,
+        executor = create_executor(self.delivery, access, provider,
             authorized=self._authorized, clock=self.clock, ready=self._ready, kind=kind, selector=selector,
             automatic_cold_context=kind=="cold" and self.automatic_cold_context)
-        return self.api.RuntimeLane(kind + ":" + stream, self.access, stream,
+        max_sources = getattr(provider, "max_sources", 100)
+        return self.api.RuntimeLane(kind + ":" + stream, access, stream,
             provider.pipeline_version, executor, context=self._context,
+            max_events=max_sources, max_sources=max_sources,
             materialize_raw=False, failure_policy="hold")
 
     def _refresh(self, streams):
         self._check_thread()
         offered = []
         for access, stream in streams:
-            if access != self.access:
+            # Multi-scope desktop maintenance still runs each SDK lane with
+            # the exact scope granted by this Host's Session receipt.
+            if access.user_id != self.host.config.user_id or (self.access is not None and access != self.access):
                 continue
-            offered.append(self._lane(stream, "warm", self.warm_provider))
+            offered.append(self._lane(access, stream, "warm", self.warm_provider))
             if self.cold_provider is not None:
-                offered.append(self._lane(stream, "cold", self.cold_provider))
+                offered.append(self._lane(access, stream, "cold", self.cold_provider))
         by_key = {lane.key: lane for lane in offered}
         previous = []
         if self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='eidema_runtime'").fetchone():
@@ -327,6 +345,7 @@ class MaintenanceBinding:
         while not self._closed and not self.host._closing:
             await self._wake.wait()
             self._wake.clear()
+            budget_wake = None
             while not self._closed and not self.host._closing:
                 # The first complete inventory is essential on reopen: a
                 # partial source prefix cannot redefine a durable SDK binding.
@@ -340,6 +359,7 @@ class MaintenanceBinding:
                         self._refresh(streams)
                         if self.runtime is None:
                             return self.api.RuntimeReport("idle", code="no_events")
+                        self._set_budget_window()
                         return self.runtime.tick(window_id=self.window_id)
                     report = await self._run_owned(turn)
                     self._ticks += 1
@@ -387,10 +407,16 @@ class MaintenanceBinding:
                         self.runtime.request_scan()
                     self._wake.clear()
                     continue
+                if any(code in ("budget_exhausted", "outside_budget_window")
+                       for _, _, code in report.observations):
+                    budget_wake = self._budget_end_ms
                 if report.scan_remaining:
                     await asyncio.sleep(0)
                     continue
-                self._next_wake = report.wake_at_ms
+                self._next_wake = min(
+                    (wake for wake in (report.wake_at_ms, budget_wake) if wake is not None),
+                    default=None)
+                budget_wake = None
                 if self._next_wake is None:
                     self._state = "waiting_event"
                     break

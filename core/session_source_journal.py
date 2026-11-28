@@ -25,14 +25,16 @@ _publication_observer = None
 _publication_owner = None
 _publication_scope = None
 _publication_formation = None
+_publication_capture = True
 
 # The existing Session owner still serializes read/prepare/write. This short
 # boundary orders native file installation with formation dispatch/completion.
 commit_lock = threading.RLock()
 
 
-def configure_publication(observer=None, *, owner=None, scope_for_session=None, formation_for_session=None):
-    global _publication_observer, _publication_owner, _publication_scope, _publication_formation
+def configure_publication(observer=None, *, owner=None, scope_for_session=None, formation_for_session=None,
+                          capture=True):
+    global _publication_observer, _publication_owner, _publication_scope, _publication_formation, _publication_capture
     if observer is not None and (not callable(observer) or owner is None):
         raise ValueError("publication_observer_owner_required")
     if observer is not None and _publication_observer is not None:
@@ -46,6 +48,7 @@ def configure_publication(observer=None, *, owner=None, scope_for_session=None, 
     _publication_observer, _publication_owner = observer, owner if observer is not None else None
     _publication_scope = scope_for_session
     _publication_formation = formation_for_session
+    _publication_capture = capture
 
 
 def enabled():
@@ -557,4 +560,4 @@ session_scope = None
 
 
 def writes_enabled(session_id):
-    return enabled() and (session_scope is None or session_scope(session_id))
+    return enabled() and _publication_capture and (session_scope is None or session_scope(session_id))

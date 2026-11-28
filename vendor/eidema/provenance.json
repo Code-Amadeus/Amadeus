@@ -2,15 +2,14 @@
   "schema": "amadeus.eidema-wheel.v1",
   "source": {
     "project": "Eidema",
-    "revision": "de0d7dc5e0f82c7f1ad77f23375b6ba9e998ae79",
-    "tree": "3a0967a8b59828aad4f3a464dc655ff1671cb57d",
-    "url": "https://github.com/Code-Amadeus/Eidema.git"
+    "revision": "fcded43c98faf9f1618e0ea6f8eaf5a01272610f",
+    "tree": "4651bc69aa8ebce7e1c85013313ded18ca86cb5b"
   },
-  "source_date_epoch": 1795831668,
+  "source_date_epoch": 1795834446,
   "build": {
     "command": "python tools/package_eidema.py build --source <Eidema-checkout> --revision <reviewed-commit>",
     "python": "3.12.10",
-    "setuptools": "83.0.0",
+    "setuptools": "84.2.1",
     "wheel": "0.47.0",
     "uv": "uv 0.12.8 (68209e5c6 2026-08-31 x86_64-pc-windows-msvc)",
     "reproducible_builds": 2,
@@ -21,7 +20,7 @@
   },
   "package": {
     "name": "eidema",
-    "version": "0.2.0.dev2",
+    "version": "0.2.0a1",
     "requires_python": ">=3.10",
     "requires_dist": [
       "numpy>=1.24",
@@ -30,9 +29,9 @@
     ]
   },
   "artifact": {
-    "filename": "eidema-0.2.0.dev2-py3-none-any.whl",
-    "sha256": "23c206274ff9c5ed9db9d88b61361cccce6eb5bc9d990f406ca0e2ace21e101b",
-    "size": 126168
+    "filename": "eidema-0.2.0a1-py3-none-any.whl",
+    "sha256": "6ed17735e45150e5461e7b04c3ec1d57899f7324b5bf206fe683e216b0f59c88",
+    "size": 130589
   },
   "host_policy_metadata": {
     "path": "server/memory_policy_metadata.py",

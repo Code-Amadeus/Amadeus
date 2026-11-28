@@ -153,7 +153,8 @@ class HostMemoryService:
         self._publication_lock = asyncio.Lock()
         self.output_speech = None
         self._state = "starting" if config.enabled else "disabled"
-        self._semantic_state = "warming" if config.semantic_enabled and config.enabled else "disabled"
+        self._semantic_state = ("warming" if config.semantic_enabled and config.enabled
+            and (config.use_enabled or config.extraction_enabled) else "disabled")
         self._semantic_reason = self._semantic_state
         self._automatic_threshold = config.semantic_threshold
         self._threshold_calibrated = False
@@ -230,7 +231,8 @@ class HostMemoryService:
                 if self._exclusions_ready:
                     self._source_policy_reason = "ready"
                 self._state = "ready" if self.config.enabled else "disabled"
-                if self.config.enabled and self.config.semantic_enabled and not self._closing:
+                if (self.config.enabled and self.config.semantic_enabled and not self._closing
+                        and (self.config.use_enabled or self.config.extraction_enabled)):
                     self._index_task = asyncio.create_task(self._prewarm())
             await self._db.run(opened, timeout=None, on_completed=installed)
             if self.config.enabled and self.config.source_runtime_enabled and not self._closing:
@@ -467,7 +469,8 @@ class HostMemoryService:
             # Known generated answers carry whole-output dependencies. A later
             # partial source mask cannot safely turn their remainder into an
             # independent assertion. Ordinary sources retain partial masking.
-            if key in self._derived_sources and (spans or not self.config.enabled or self._store is None):
+            if key in self._derived_sources and (
+                    spans or not self.config.use_enabled or not self.config.enabled or self._store is None):
                 continue
             projected = exclude_source_spans(row, spans)
             if projected is not None:
@@ -521,13 +524,35 @@ class HostMemoryService:
                 if self.config.enabled and self.config.source_runtime_enabled else {}),
             "threshold_calibrated":self._threshold_calibrated, "history_exclusions_ready":self._exclusions_ready}
 
+    def runtime_status(self):
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            installed = version("eidema")
+        except PackageNotFoundError:
+            installed = None
+        binding = self._maintenance
+        return {
+            "sdk_version": installed,
+            "state": self._state,
+            "use_enabled": self.config.enabled and self.config.use_enabled,
+            "extraction_enabled": self.config.enabled and self.config.extraction_enabled,
+            "semantic_state": self._semantic_state,
+            "source_delivery": self._sources.state if self._sources is not None else "disabled",
+            "maintenance": (binding.status()["state"] if binding is not None
+                            else "unavailable" if self.config.extraction_enabled else "disabled"),
+        }
+
     async def request(self, method, params):
+        if method == "memory.status" and not params:
+            return {"ok": True, "runtime": self.runtime_status()}
         context = self.context(params.get("session_id", ""),
             token=None if method == "memory.status" else params.get("context_token", ""))
         if method == "memory.status":
             status = await self.status(context)
             self.context(context["session_id"], token=context["context_token"])
             return {"ok":True, "context":context, "enabled":self.config.enabled, "status":status,
+                "use_enabled":self.config.enabled and self.config.use_enabled,
                 "scopes":[{"kind":kind, "label":kind, "available":kind != "project" or bool(context["project_id"])}
                     for kind in ("character", "shared", "project")]}
         self._available()
@@ -654,7 +679,7 @@ class HostMemoryService:
     async def recall_for_session(self, session_id, query, turn_id="", *, deadline=None):
         # Automatic recall has no consumer until a relevance gate is configured.
         # Indexing, explicit core search and independent source filtering still run.
-        if not self.config.enabled or self._automatic_threshold is None:
+        if not self.config.enabled or not self.config.use_enabled or self._automatic_threshold is None:
             return None
         self._available()
         deadline = deadline if deadline is not None else deadline_now() + self.config.recall_timeout_s
@@ -672,7 +697,7 @@ class HostMemoryService:
         return MemoryTurnReference(context, result, deadline)
 
     async def validate_reference(self, reference, *, deadline=None):
-        if not isinstance(reference, MemoryTurnReference):
+        if not self.config.use_enabled or not isinstance(reference, MemoryTurnReference):
             return None
         # Retrieval may already have completed before an independent role RAG
         # wait. Final validity has one short window at use, never another recall.
@@ -706,6 +731,8 @@ class HostMemoryService:
     async def lookup_for_session(self, session_id, query, *, input_id="", turn_id="", question="",
                                  prepare_choice=False):
         """Explicit search in the Host-bound scope of a previously accepted turn."""
+        if not self.config.use_enabled:
+            raise MemoryRequestError("disabled")
         if not isinstance(query, str) or not query.strip() or len(query) > 2000:
             raise MemoryRequestError("invalid_request")
         self._available()

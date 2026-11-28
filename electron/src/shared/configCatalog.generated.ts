@@ -305,6 +305,45 @@ export const catalogGroups: CatalogGroup[] = [
     }
   },
   {
+    "id": "memory",
+    "title": {
+      "en-US": "Memory",
+      "zh-CN": "记忆"
+    },
+    "description": {
+      "en-US": "Saved memories stay on this desktop. Changes apply after restarting the backend.",
+      "zh-CN": "已保存的记忆留在本机。设置在后端重启后生效。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "AMADEUS_MEMORY_USE_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use memory in replies",
+          "zh-CN": "在回复中使用记忆"
+        },
+        "description": {
+          "en-US": "Let the character recall saved or formed memories. A cloud character receives the permitted evidence needed for the reply.",
+          "zh-CN": "允许角色查阅此前手动保存和自动形成的记忆。使用云端角色时，获准用于回答的依据会交给该角色的服务商。"
+        },
+        "default": false
+      },
+      "AMADEUS_MEMORY_EXTRACTION_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Form memories from new chats",
+          "zh-CN": "从新对话形成记忆"
+        },
+        "description": {
+          "en-US": "Allow DeepSeek Flash at api.deepseek.com to process eligible new messages and previously permitted comparison evidence, with speaker roles and record times. This uses your DeepSeek API key.",
+          "zh-CN": "允许 api.deepseek.com 的 DeepSeek Flash 处理获准的新消息和用于比较的旧依据，包括说话者角色和记录时间。使用你的 DeepSeek API 密钥。"
+        },
+        "default": false
+      }
+    }
+  },
+  {
     "id": "presentation",
     "title": {
       "en-US": "Language & captions",

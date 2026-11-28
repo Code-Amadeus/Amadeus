@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="Current architecture"/></a>
-  <a href="./docs/alpha-0.17.1-alpha.1.md"><img src="https://img.shields.io/badge/version-0.17.1_Alpha_1_candidate-b94b43?labelColor=191a1d" alt="0.17.1 Alpha 1 candidate"/></a>
+  <a href="./docs/alpha-0.18.0-alpha.1.md"><img src="https://img.shields.io/badge/version-0.18_Alpha_1_candidate-b94b43?labelColor=191a1d" alt="0.18 Alpha 1 candidate"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — reference platform"/></a>
@@ -51,7 +51,8 @@ the Host owns identity, state, permissions, persistence, and recovery.
 
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. This branch targets
-> **0.17.1 Alpha 1 candidate**, not a published or self-contained desktop release.
+> **0.18 Alpha 1**, a source preview. The [Alpha guide](docs/alpha-0.18.0-alpha.1.md)
+> explains the Eidema dependency and the two optional memory settings.
 > Amadeus first-party code is open-source under the
 > [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 > Third-party code and external assets retain their own terms.
@@ -140,7 +141,9 @@ automatically; choose an installation profile supported on your platform.
 
 [![Current Amadeus architecture: Host authority, Work Providers, Provider-scoped MCP/Skills, AUIP AppSessions, voice, and SpriteForge presentation](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
 
-The dashed **Memory & Persona Runtime** is a roadmap extension. Its two-way connection to Main Chat represents proposed context retrieval and updates; storage, memory formation, persona updates, and lifecycle mechanisms remain to be designed.
+The memory runtime uses the independent Eidema SDK. The Alpha integrates local
+memory storage and explicit recall with optional background formation. Persona
+updates remain on the roadmap.
 
 Three separations are deliberate:
 

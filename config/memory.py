@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.catalog import read_catalog_value
 from config.environment import EnvironmentReader
 from config.memory_jina import JINA_MODEL_ID
 
@@ -29,9 +30,18 @@ class MemoryConfig:
     # and from the larger internal candidate pool's codepoint budget.
     context_bytes: int = 4096
     source_runtime_enabled: bool = False
+    use_enabled: bool = True
+    extraction_enabled: bool = False
+    capture_sources: bool = True
 
     @classmethod
     def from_environment(cls, reader: EnvironmentReader):
+        use_key = "AMADEUS_MEMORY_USE_ENABLED"
+        extraction_key = "AMADEUS_MEMORY_EXTRACTION_ENABLED"
+        legacy_sources = reader.boolean("AMADEUS_MEMORY_SOURCE_RUNTIME_ENABLED", False)
+        use = (read_catalog_value(reader, use_key) if reader.configured(use_key)
+               else legacy_sources or reader.configured("AMADEUS_MEMORY_ENABLED"))
+        extract = read_catalog_value(reader, extraction_key)
         values = cls(
             enabled=reader.boolean("AMADEUS_MEMORY_ENABLED", True),
             semantic_enabled=reader.boolean("AMADEUS_MEMORY_SEMANTIC_ENABLED", True),
@@ -46,7 +56,10 @@ class MemoryConfig:
             explicit_lookup_timeout_s=reader.number("AMADEUS_MEMORY_EXPLICIT_LOOKUP_TIMEOUT_S", 2.),
             explicit_validity_timeout_s=reader.number("AMADEUS_MEMORY_EXPLICIT_VALIDITY_TIMEOUT_S", 1.),
             context_bytes=reader.integer("AMADEUS_MEMORY_CONTEXT_BYTES", 4096),
-            source_runtime_enabled=reader.boolean("AMADEUS_MEMORY_SOURCE_RUNTIME_ENABLED", False),
+            source_runtime_enabled=use or extract or legacy_sources,
+            use_enabled=use,
+            extraction_enabled=extract,
+            capture_sources=extract or (legacy_sources and not reader.configured(extraction_key)),
         )
         if (not values.user_id or values.model_backend not in ("", "jina-onnx-q4", "e5") or (values.semantic_threshold is not None and not -1 <= values.semantic_threshold <= 1)
                 or not .01 <= values.recall_timeout_s <= 5

@@ -35,7 +35,8 @@ class SourceDelivery:
         self._receipt_observers = set()
         self.receipt_inventory_ready = False
         journal.configure_publication(self._published, owner=self, scope_for_session=self._scope,
-                                      formation_for_session=self.formation_allowed)
+                                      formation_for_session=self.formation_allowed,
+                                      capture=host.config.capture_sources)
         self._task = asyncio.create_task(self._run())
 
     @property

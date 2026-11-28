@@ -985,6 +985,8 @@ class CooperativeChatManager:
                     expected_workspace = project.canonical_path
                 return Path(expected_workspace).resolve() == Path(child.workspace).resolve()
 
+            memory_use = (self.memory if self.memory is not None and self.memory.config.enabled
+                          and self.memory.config.use_enabled else None)
             loop = CooperativeProviderLoop(self.runtime, self.query, self.allocate,
                 provider=self.provider, context_requirements={provider:replace(requirements,
                     workspace_access="read") if requirements.workspace_access == "write" else requirements
@@ -993,17 +995,17 @@ class CooperativeChatManager:
                 role_reference=self.role_reference,
                 memory_reference=(lambda text, turn_id, *, deadline:self.memory.recall_for_session(
                     session_id, text, turn_id, deadline=deadline))
-                    if self.memory is not None else None,
-                memory_validate=self.memory.validate_reference if self.memory is not None else None,
+                    if memory_use is not None else None,
+                memory_validate=memory_use.validate_reference if memory_use is not None else None,
                 memory_lookup=(lambda query, **ownership:self.memory.lookup_for_session(session_id, query, **ownership))
-                    if self.memory is not None else None,
-                memory_lookup_validate=self.memory.validate_lookup if self.memory is not None else None,
+                    if memory_use is not None else None,
+                memory_lookup_validate=memory_use.validate_lookup if memory_use is not None else None,
                 memory_lookup_delivery=self.memory.lookup_delivery if self.memory is not None else None,
                 memory_lookup_followup=(self.memory.supplement_lookup
-                    if self.memory is not None and self.memory.config.source_runtime_enabled else None),
-                memory_source_lookup=(self.memory is not None and self.memory.config.source_runtime_enabled),
-                scoped_memory_lookup=(self.memory is not None and self.memory.config.source_runtime_enabled
-                    and getenv("AMADEUS_MVP_SCOPED_RECALL") == "1"),
+                    if memory_use is not None and memory_use.config.source_runtime_enabled else None),
+                memory_source_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled),
+                scoped_memory_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled
+                    and getenv("AMADEUS_MVP_SCOPED_RECALL", "1") == "1"),
                 memory_lookup_status=lambda turn_id, status:bus.emit_now(Method.CHAT_MEMORY_LOOKUP,
                     {"session_id":session_id, "turn_id":turn_id, "status":status}),
                 memory_history_derived=self.memory.history_is_derived if self.memory is not None else None,

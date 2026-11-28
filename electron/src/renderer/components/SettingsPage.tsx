@@ -49,6 +49,32 @@ interface Props {
   diagnostics?: ReactNode
 }
 
+function MemoryRuntimeStatus({ send, connected }: Pick<Props, 'send' | 'connected'>) {
+  const { t } = useI18n()
+  const [runtime, setRuntime] = useState<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    setRuntime(null)
+    if (!connected) return
+    let active = true
+    send('memory.status', {}).then(result => {
+      if (active && result.ok === true && typeof result.runtime === 'object') {
+        setRuntime(result.runtime as Record<string, unknown>)
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [connected, send])
+
+  return <div className="settings-meta-text" role="status">
+    {runtime === null ? t('Memory status is available when the backend connects.')
+      : typeof runtime.sdk_version === 'string' ? t('Eidema {version} installed', { version: runtime.sdk_version })
+      : t('Eidema is missing from the backend. Run uv sync --locked in Amadeus.')}
+    {runtime?.extraction_enabled === true && runtime.maintenance === 'unavailable'
+      ? <div>{t('Background formation is unavailable. Check the DeepSeek API key in Models.')}</div> : null}
+    {runtime?.use_enabled === true && runtime.semantic_state === 'unavailable'
+      ? <div>{t('Semantic memory search is unavailable. See the installation guide to prepare the model.')}</div> : null}
+  </div>
+}
+
 // 'extensions' is the Plugins presentation; Settings itself lists the sections below.
 type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'diagnostics' | 'extensions' | SceneConfigureSection
 const SETTINGS_SECTIONS: Array<[SettingsSection, string, FluentIconName]> = [
@@ -934,6 +960,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     }
   }
   const startupConfiguration = catalogConfiguration('desktop_startup', desktop)
+  const memoryConfiguration = catalogConfiguration('memory', desktop)
   const interfaceConfiguration = catalogConfiguration('desktop_interface', desktop)
   const renderRuntimeGroup = (id: string, icon: FluentIconName) => {
     const group = catalogGroups.find(group => group.id === id)!
@@ -1375,6 +1402,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </SettingsGroup>
                 <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together."
                   action={<SettingsButton onClick={() => openCharacters('overview')}>{t('Open Characters')}</SettingsButton>} />
+                <SettingsGroup title={memoryConfiguration.label} detail={memoryConfiguration.description}>
+                  <MemoryRuntimeStatus send={send} connected={connected} />
+                  {memoryConfiguration.fields.map(field =>
+                    <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
+                </SettingsGroup>
                 <div id="settings-language"><SettingsGroup title={catalogGroups.find(group => group.id === 'presentation')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'presentation')!.description['en-US']}>
                   {interfaceConfiguration.fields.filter(field => field.key !== 'AMADEUS_UI_THEME').map(field => field.key === 'AMADEUS_UI_LOCALE'
                     ? <ComboCard key={field.key} icon="Language" title={field.label} content={field.description || ''} value={locale}
