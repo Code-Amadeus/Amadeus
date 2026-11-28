@@ -2,27 +2,27 @@
   "id": "memory",
   "title": { "en-US": "Memory", "zh-CN": "记忆" },
   "description": {
-    "en-US": "Saved memories stay on this desktop. Changes apply after restarting the backend.",
-    "zh-CN": "已保存的记忆留在本机。设置在后端重启后生效。"
+    "en-US": "Saved notes are stored on this device and can be managed in the Memory panel. Changes apply after restarting the backend.",
+    "zh-CN": "记忆笔记保存在本机，可在记忆面板手动管理。设置在后端重启后生效。"
   },
   "desktop": true,
   "apply": "backend_restart",
   "config": {
     "AMADEUS_MEMORY_USE_ENABLED": {
       "type": "boolean",
-      "title": { "en-US": "Use memory in replies", "zh-CN": "在回复中使用记忆" },
+      "title": { "en-US": "Let the character look up memories", "zh-CN": "允许角色查阅记忆" },
       "description": {
-        "en-US": "Let the character recall saved or formed memories. A cloud character receives the permitted evidence needed for the reply.",
-        "zh-CN": "允许角色查阅此前手动保存和自动形成的记忆。使用云端角色时，获准用于回答的依据会交给该角色的服务商。"
+        "en-US": "Look up saved notes and eligible chat history when needed. With a cloud character, selected evidence is sent to its model provider.",
+        "zh-CN": "按需查阅已有笔记和获准的会话原话。使用云端角色时，本次选中的依据会发给该角色的模型服务商。"
       },
       "default": false
     },
     "AMADEUS_MEMORY_EXTRACTION_ENABLED": {
       "type": "boolean",
-      "title": { "en-US": "Form memories from new chats", "zh-CN": "从新对话形成记忆" },
+      "title": { "en-US": "Automatically build memories from new chats", "zh-CN": "从新对话自动积累记忆" },
       "description": {
-        "en-US": "Use your DeepSeek API key to send eligible new messages, speaker roles, and record times to DeepSeek Flash at api.deepseek.com in the background. Review suggestions in the Memory panel.",
-        "zh-CN": "使用你的 DeepSeek API 密钥，在后台将获准的新消息、说话者角色和记录时间交给 api.deepseek.com 的 DeepSeek Flash。可在记忆面板审阅建议。"
+        "en-US": "Index eligible new messages locally. With your DeepSeek API key configured, DeepSeek Flash at api.deepseek.com receives their text, speaker roles, and record times to suggest memories in the background. This can run even when character lookup is off.",
+        "zh-CN": "将获准的新消息纳入本地记忆索引。配置 DeepSeek API 密钥后，后台会发送这些消息的原文、说话者角色和记录时间给 DeepSeek Flash（api.deepseek.com）生成记忆建议。角色查阅关闭时，此项也可独立运行。"
       },
       "default": false
     }

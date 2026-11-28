@@ -8,15 +8,16 @@ Open **Settings → General → Memory**. The panel reports the version of Eidem
 installed in the backend. The two switches are saved independently and apply
 after restarting the backend.
 
-- **Use memory in replies** allows the character to look up previously saved or
-  formed notes and permitted conversation evidence. When a cloud character
+- **Let the character look up memories** allows the character to look up
+  saved notes and permitted conversation evidence. When a cloud character
   reads evidence, its model provider receives the selected material. Use the
   explicit memory lookup button or ask the character to recall something.
-- **Form memories from new chats** runs separate, bounded background requests
-  to DeepSeek Flash (low reasoning) at `api.deepseek.com` using the DeepSeek API
-  key configured in Models. The request includes eligible text, speaker roles
-  and record times. This switch is off by default. It enrolls new committed messages.
-  Unregistered older conversations require a separate import.
+- **Automatically build memories from new chats** enrolls eligible new messages
+  in the local index. With a key configured in Models, it sends their text,
+  speaker roles and record times to DeepSeek Flash (low reasoning) at
+  `api.deepseek.com` in separate, bounded background requests. This switch is
+  off by default and can run with character lookup off. Unregistered older
+  conversations require a separate import.
 
 In **Memory → Review suggestions**, inspect generated statements and their
 source quotes, including any stated conditions. Save a supported suggestion as
