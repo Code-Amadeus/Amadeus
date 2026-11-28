@@ -16,7 +16,7 @@ class RankedLookup:
     question_time: dict
     current: object | None
     source_matches: tuple = ()
-    match_model: tuple | None = None
+    match_query: object | None = None
 
 
 @dataclass(frozen=True)
@@ -56,35 +56,13 @@ class SourceLookup:
                       self.api.MemoryNotFound, self.api.MemoryValidationError)
 
     def rank(self, access, query, *, current, question_time, prepare_choice=False):
-        model = self.store._embedder
-        version = model.version if model is not None else None
-        dimensions = model.dimensions if model is not None else None
-        vector, error = None, None
-
-        def current_model():
-            return self.store._embedder is model and (model is None or
-                (model.version == version and model.dimensions == dimensions))
-
-        def embedding(embedder, text, recent):
-            nonlocal vector, error
-            if embedder is not model or not current_model():
-                raise ValueError("lookup_embedder_changed")
-            if vector is None and error is None:
-                try:
-                    prepare = getattr(embedder, "prepare_query", None)
-                    vector = tuple(embedder.embed_query(prepare(text, context=recent) if prepare else text))
-                except Exception as exc:
-                    error = exc
-            if error is not None:
-                raise error
-            return vector
-
+        lookup_query = self.store.prepare_lookup_query(query)
         options = dict(limit=16, candidate_limit=32, max_chars=131072, query_wait_ms=100,
-                       _query_embedding=embedding)
+                       lookup_query=lookup_query)
         retrieval = self.delivery.retrieval
         matches = ()
         if (prepare_choice and current is not None and question_time.get("status") == "known"
-                and callable(getattr(model, "split_passage", None))):
+                and lookup_query.supports_passage_split):
             from server.memory_original_choice import WIDE_LIMIT
 
             raw, matches = retrieval.lookup_sources_with_matches(access, query, match_limit=WIDE_LIMIT,
@@ -92,17 +70,11 @@ class SourceLookup:
         else:
             raw = retrieval.lookup_sources(access, query, **options)
 
-        def can_resolve(ref):
-            try:
-                self.evidence._plan(access, ref, "lookup", False, include_notes=True)
-            except self.stale:
-                return False
-            return True
-
         notes = self.store.recall(access, query, now_ms=time.time_ns() // 1_000_000,
             ranking="semantic_first", purpose="lookup", limit=16, max_chars=131072,
-            _query_embedding=embedding, max_vectors=4096, _reference_eligible=can_resolve)
-        comparable = current_model()
+            lookup_query=lookup_query, max_vectors=4096,
+            reference_filter=lambda ref: self.evidence.can_deliver(access, ref))
+        comparable = lookup_query.model_is_current
         domains = (
             [(item.reference, item.semantic_score if comparable else None, item.lexical_match)
              for item in raw.items if item.source != current],
@@ -115,7 +87,7 @@ class SourceLookup:
         if not comparable:
             matches = ()
         return RankedLookup(_merge(domains), coverage, question_time, current, matches,
-                            (model, version, dimensions) if matches else None)
+                            lookup_query if matches else None)
 
     def search_originals(self, access, query):
         return self.delivery.retrieval.lookup_sources(access, query, limit=16, candidate_limit=32,
@@ -124,11 +96,9 @@ class SourceLookup:
     def require_reads(self, access, reads, view, *, purpose="lookup", record_watches=None):
         """Check current Session entries even if replay has yet to reach SQLite."""
         outputs = (*reads.outputs, *(item.source for item in reads.sources))
-        current_outputs = set()
-        with self.store._lock:
-            self.store._check()
-            ancestry = self.store._output_dependencies(
-                access, outputs, purpose, candidates=reads.candidates, current_outputs=current_outputs)
+        resolved = self.store.resolve_output_ancestry(access, outputs,
+            purpose=purpose, candidates=reads.candidates)
+        ancestry = resolved.read_set
         pins = (*reads.sources, *ancestry.sources)
         memories = {ref.memory_id for ref in (*reads.memories, *ancestry.memories)}
         identities = {(span.namespace, span.record_key) for span in (
@@ -140,7 +110,7 @@ class SourceLookup:
                     for source in pending["sources"])
                 for pending in policy.value["pending"]):
             raise MemoryRequestError("conflict")
-        states = {output: view.output_state(output) for output in current_outputs}
+        states = {output: view.output_state(output) for output in resolved.current_outputs}
         signatures = view.signatures(pins, output_states=states.values())
         self.delivery.require_current(signatures)
         if record_watches is not None:

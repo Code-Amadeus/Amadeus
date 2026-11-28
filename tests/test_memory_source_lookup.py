@@ -110,7 +110,7 @@ async def test_shared_cross_session_lookup_through_chat_wire(pending_host, tmp_p
         assert SAVED in [entry["text"] for entry in packet["entries"]]
         assert ranking.call_count == 1 and len(packet["groups"]) <= 8
         output = memory.SourceSpan(**journal.coordinate(ctx.session_id, ctx.publications[-1]["message_id"], 1))
-        reads = host._store._output_direct_reads(USER, output)
+        reads = host._store.output_read_set(access, output)
         assert len(reads.memories) == 1 and ORIGINAL in json.dumps(packet, ensure_ascii=False)
         assert memory.SourceSpan(**journal.coordinate("earlier", "previous", 1)) in [
             pin.source for pin in reads.sources

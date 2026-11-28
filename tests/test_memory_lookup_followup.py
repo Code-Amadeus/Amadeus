@@ -10,7 +10,7 @@ from core import session_manager as sessions
 from core import session_source_journal as journal
 from test_cooperative_pending_turn import pending_host as pending_host
 from test_memory_source_delivery import wait_for
-from test_memory_source_lookup import USER, send, wire
+from test_memory_source_lookup import send, wire
 
 
 MATCH = "lantern"
@@ -121,7 +121,7 @@ async def test_order_edge_and_dependency_have_the_same_authority(pending_host, t
         add("earlier", "end", ENDPOINT, role="assistant")
         if scope == "withheld":
             hide("earlier", "bridge")
-        await indexed(host, ctx.session_id, MATCH, (ANCHOR, ENDPOINT))
+        _, access = await indexed(host, ctx.session_id, MATCH, (ANCHOR, ENDPOINT))
         await send(ctx, direct=True, question=MATCH)
         assert len(pack) == 1
         records = {record["text"]: record["source_id"] for record in pack[0]["records"]}
@@ -129,7 +129,7 @@ async def test_order_edge_and_dependency_have_the_same_authority(pending_host, t
         assert pack[0].get("source_order", []) == (
             [[records[ANCHOR], records[ENDPOINT], 2]] if scope == "allowed" else [])
         output = span(ctx.session_id, ctx.publications[0]["message_id"])
-        pins = host._store._output_direct_reads(USER, output).sources
+        pins = host._store.output_read_set(access, output).sources
         assert (span("earlier", "bridge") in {pin.source for pin in pins}) == (scope == "allowed")
     finally:
         await host.close()
@@ -165,13 +165,13 @@ async def test_semantic_followup_shares_the_budget_and_keeps_actual_first_reads(
         for index, body in enumerate(originals):
             add("earlier", f"record-{index}", body)
         add("earlier", "additional", extra)
-        await indexed(host, ctx.session_id, MATCH, originals)
+        _, access = await indexed(host, ctx.session_id, MATCH, originals)
         await indexed(host, ctx.session_id, "harbor", (extra,))
         await send(ctx, direct=True, question=MATCH)
         assert len(frames) == (2 if releases else 1)
         assert [event["text"] for event in ctx.publications] == [FINAL if releases else FIRST_DRAFT]
         output = span(ctx.session_id, ctx.publications[0]["message_id"])
-        pins = host._store._output_direct_reads(USER, output).sources
+        pins = host._store.output_read_set(access, output).sources
         keys = {pin.source for pin in pins}
         assert span("earlier", f"record-{originals.index(removed[0])}") in keys
         if releases:

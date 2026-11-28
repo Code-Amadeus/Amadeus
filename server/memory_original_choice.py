@@ -63,8 +63,8 @@ def prepare(lookup, access, ranked, originals, view, baseline_reads, question):
 
 
 def _wide_choice(lookup, access, ranked, originals, view, baseline_reads, question, cutoff):
-    model, version, dimensions = ranked.match_model
-    if lookup.store._embedder is not model or (model.version, model.dimensions) != (version, dimensions):
+    split_passage = ranked.match_query.passage_splitter()
+    if split_passage is None:
         return None
     scores = {}
     for match in ranked.source_matches:
@@ -77,7 +77,7 @@ def _wide_choice(lookup, access, ranked, originals, view, baseline_reads, questi
     if len(scores) <= len(originals) or tuple(scores)[:len(originals)] != tuple(originals):
         return None
     return _render_choice(lookup, access, scores, view, baseline_reads, question, cutoff,
-                          scores=scores, split_passage=model.split_passage)
+                          scores=scores, split_passage=split_passage)
 
 
 def _excerpt(text, chunk_scores, split_passage):

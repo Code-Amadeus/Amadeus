@@ -1,6 +1,7 @@
 """The packaged SDK keeps scoped selection behind explicit Host admission."""
 
 import json
+from unittest.mock import Mock
 
 import pytest
 
@@ -8,8 +9,9 @@ from core import session_manager as sessions
 from core import session_source_journal as journal
 from test_cooperative_pending_turn import pending_host as pending_host
 from test_memory_lookup_followup import add
+from test_memory_recall import SyntheticMultilingualEmbedder
 from test_memory_source_delivery import wait_for
-from test_memory_source_lookup import USER, send, wire
+from test_memory_source_lookup import send, wire
 
 
 @pytest.mark.parametrize(("enabled", "direct", "revoke"), [
@@ -59,7 +61,7 @@ async def test_scoped_choice_needs_explicit_opt_in_and_retains_selector_reads(
             assert [row["text"] for row in answer_packets[-1]["records"]] == [originals[-1]]
             output = host._api.SourceSpan(**journal.coordinate(
                 ctx.session_id, ctx.publications[-1]["message_id"], 1))
-            reads = host._store._output_direct_reads(USER, output)
+            reads = host._store.output_read_set(access, output)
             assert {host._api.SourceSpan(**journal.coordinate("earlier", f"record-{i}", 1))
                     for i in range(len(originals))} <= {pin.source for pin in reads.sources}
         if revoke:
@@ -67,5 +69,46 @@ async def test_scoped_choice_needs_explicit_opt_in_and_retains_selector_reads(
             assert "Selected original is current." not in [row["text"] for row in ctx.publications]
         assert ctx.host.adapter.calls == 0 and not ctx.host.work.list_work_items()
         assert host._maintenance is None  # Selection grants no background execution.
+    finally:
+        await host.close()
+
+
+async def test_wide_scoped_choice_uses_matched_splits_and_seals_selector_reads(pending_host, tmp_path, monkeypatch):
+    class SplitEmbedder(SyntheticMultilingualEmbedder):
+        def split_passage(self, text):
+            return [text[index:index + 120] for index in range(0, len(text), 120)]
+
+    ctx = pending_host
+    host = await wire(ctx, tmp_path, monkeypatch, embedder=SplitEmbedder())
+    originals = [f"lantern record {index}: " + "bounded witness text " * 41 for index in range(18)]
+    selector_rows, delivered = [], []
+
+    async def role(messages, **options):
+        frame = json.loads(messages[-1]["content"])
+        if "sources" in frame:
+            selector_rows.extend(frame["sources"])
+            target = next(row for row in frame["sources"] if originals[-1].startswith(row["text"]))
+            return json.dumps({"groups": [[target["id"]]]})
+        delivered.extend(row["text"] for row in frame["current"]["memory_reference"]["records"])
+        return "Selected the complete source."
+
+    ctx.manager.query = role
+    try:
+        sessions.create_session("earlier", activate=False)
+        for index, body in enumerate(originals):
+            add("earlier", f"record-{index}", body)
+        access = host._access(host.context(ctx.session_id))
+        retrieval = host._api.Retrieval(host._store)
+        await wait_for(lambda: retrieval.coverage(access, target_kind="source"),
+                       lambda coverage: coverage.indexed_documents == len(originals))
+        seal = Mock(wraps=host._store.register_output_use)
+        monkeypatch.setattr(host._store, "register_output_use", seal)
+        await send(ctx, direct=True, question="lantern")
+        assert len(selector_rows) == len(originals)
+        assert all(row["excerpt"] == [0, len(row["text"])] and len(row["text"].encode("utf8")) <= 720
+                   for row in selector_rows)
+        assert delivered == [originals[-1]]
+        seal.assert_called_once()
+        assert len(seal.call_args.args[1].sources) == len(originals)
     finally:
         await host.close()

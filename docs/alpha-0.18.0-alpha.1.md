@@ -1,6 +1,7 @@
 # Amadeus 0.18 Alpha 1
 
-This source preview integrates the independent [Eidema 0.2 Alpha SDK](https://github.com/Code-Amadeus/Eidema/releases/tag/v0.2.0-alpha.1).
+This source preview bundles `eidema==0.2.0a2` from the independent
+[Eidema SDK](https://github.com/Code-Amadeus/Eidema).
 
 ## Memory settings
 

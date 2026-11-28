@@ -872,7 +872,7 @@ class HostMemoryService:
 
     def _current_history_outputs(self, context, spans):
         access = self._access(context)
-        allowed = self._store._filter_recall_use_read_sets(
+        allowed = self._store.filter_output_read_sets(
             access, spans, now_ms=time.time_ns() // 1_000_000)
         view = self._sources.view(access)
         valid, signatures = [], {}

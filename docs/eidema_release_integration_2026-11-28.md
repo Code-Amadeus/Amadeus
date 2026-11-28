@@ -12,15 +12,38 @@ by default or assert that a desktop/model quality run has passed.
   `7632424925b1cd6fd578c97d27e0e1af5488284eea457759199a3e35742a4e48`.
 - Native stage manifest SHA-256:
   `c39e4eda45fa230950205ce4511abbbdfb96be0abb7f34873aaefed7db632c16`.
-- Independent Eidema source: `fcded43c98faf9f1618e0ea6f8eaf5a01272610f`;
-  wheel `eidema-0.2.0a1-py3-none-any.whl`, SHA-256
-  `6ed17735e45150e5461e7b04c3ec1d57899f7324b5bf206fe683e216b0f59c88`.
+- Independent Eidema source `514cb4b5e2e8e4a0f210e3f7014ea2c3cee55e0e`.
+  The wheel is `eidema-0.2.0a2-py3-none-any.whl` with SHA-256
+  `234283607d95311d66a62c9a7b78d9061596e468eb9d72a51f45deb67f861454`.
 
 The ordinary changed Host modules and effective Host/LLM/TTS deltas were compared
 with the archive baseline and applied to the merged checkout. The SDK is installed
 from the pinned wheel through the existing packaging contract. Product imports do
 not load archive build directories, SDK source overlays, trial transport or trial
 observation harnesses.
+
+## Alpha.2 interface qualification
+
+The live lookup path uses public SDK interfaces for query sharing, evidence
+preflight and output lineage. Each mixed lookup encodes at most once, only when
+there are eligible vectors. The Host still owns Session freshness, receiver
+permissions and the exact selection and answer request format. Schema 19,
+the maintenance checkpoint store and the speech binding retain their existing
+contracts.
+
+The fixed-receipt comparison used Amadeus `19e198fb` with Eidema
+`0.2.0a1` as the baseline. Both arms fixed the clocks, synthetic identifiers
+and source-delivery frontier. All 24 scenarios matched, including the exact
+message content for 33 requests, 20 recorded output read sets, published
+text and queued speech text. The comparison also covered a wide selection
+that saw 18 original excerpts and delivered one complete record. All
+selector reads remained in its durable dependency set.
+
+The schema round trip opened the same synthetic store in `0.2.0a1`,
+`0.2.0a2` and `0.2.0a1` again. The old SDK still recognized the forget
+operation performed with the new SDK. The comparison used fixed provider
+responses. Live model behavior and physical audio latency have their own
+desktop acceptance runs.
 
 ## Explicit preview lifecycle
 

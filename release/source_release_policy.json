@@ -13,7 +13,7 @@
     "server/memory_policy_metadata.py",
     "vendor/eidema/README.md",
     "vendor/eidema/provenance.json",
-    "vendor/eidema/eidema-0.2.0a1-py3-none-any.whl",
+    "vendor/eidema/eidema-0.2.0a2-py3-none-any.whl",
     "docs/alpha-0.18.0-alpha.1.md",
     "tools/extension_package.py",
     "tools/check_extension_contract.py",
