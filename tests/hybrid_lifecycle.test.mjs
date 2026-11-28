@@ -73,6 +73,7 @@ function fixture(t, { contextAvailable = true, noVideo = false, blankRecovery = 
   const start = source.indexOf('class SpriteRenderer {'), end = source.indexOf('class SpriteForgeRuntime {', start);
   const context = { window: host, app: { ticker, renderer }, PIXI: host.PIXI,
     frameRateController: { effectiveMaxFps: 30 }, renderBudget: { textureSampling: true },
+    poseFadeMs: 0,
     console: { log() {}, warn() {} }, setTimeout, clearTimeout };
   vm.createContext(context);
   vm.runInContext(source.slice(start, end) + '\nglobalThis.SpriteRenderer=SpriteRenderer;', context);

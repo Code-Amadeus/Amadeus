@@ -31,6 +31,7 @@ from config.settings import (
     GRAPHICS_PROFILE,
     RENDER_EFFECTIVE_MAX_FPS,
     RENDER_EFFECTIVE_MAX_RESOLUTION,
+    RENDER_POSE_FADE_MS,
     RENDER_TEXTURE_SAMPLING,
     RENDER_BC7_CACHE,
     WALLPAPER_SFX_GATE_LOG,
@@ -770,6 +771,7 @@ class WallpaperEngineBridgeHost:
             "graphicsProfile": GRAPHICS_PROFILE,
             "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
             "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
+            "renderPoseFadeMs": RENDER_POSE_FADE_MS,
             **params,
         }
         if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
@@ -825,6 +827,10 @@ class WallpaperEngineBridgeHost:
         return RENDER_TEXTURE_SAMPLING
 
     @property
+    def render_pose_fade_ms(self) -> int:
+        return RENDER_POSE_FADE_MS
+
+    @property
     def graphics_profile(self) -> str:
         return GRAPHICS_PROFILE
 
@@ -857,6 +863,7 @@ class WallpaperEngineBridgeHost:
                 "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
                 "renderMaxResolution": RENDER_EFFECTIVE_MAX_RESOLUTION,
                 "renderTextureSampling": RENDER_TEXTURE_SAMPLING,
+                "renderPoseFadeMs": RENDER_POSE_FADE_MS,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,

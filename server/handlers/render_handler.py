@@ -12,6 +12,7 @@ from config.settings import (
     GRAPHICS_PROFILE,
     RENDER_EFFECTIVE_MAX_FPS,
     RENDER_EFFECTIVE_MAX_RESOLUTION,
+    RENDER_POSE_FADE_MS,
     RENDER_TEXTURE_SAMPLING,
 )
 from server.protocol import Method
@@ -78,6 +79,7 @@ class RenderHandler(RequestHandler):
             "graphicsProfile": GRAPHICS_PROFILE,
             "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
             "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
+            "renderPoseFadeMs": RENDER_POSE_FADE_MS,
         }
         if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
             query_params["renderMaxResolution"] = RENDER_EFFECTIVE_MAX_RESOLUTION

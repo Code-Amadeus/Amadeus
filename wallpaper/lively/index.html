@@ -43,6 +43,8 @@
       var renderMaxResolution = renderMaxResolutionValue === null
         ? null
         : Number(renderMaxResolutionValue);
+      var poseFadeValue = params.get("renderPoseFadeMs");
+      var renderPoseFadeMs = poseFadeValue === null ? null : Number(poseFadeValue);
       var sliceHost = params.get("sliceHost") === "electron" ? "electron" : "";
 
       // This wrapper can be served either by the backend (normally 17777) or
@@ -74,6 +76,9 @@
             renderMaxResolution = renderMaxResolution !== null && renderMaxResolution > 0
               ? renderMaxResolution
               : (info.renderMaxResolution == null ? null : Number(info.renderMaxResolution));
+            if (poseFadeValue === null) {
+              renderPoseFadeMs = info.renderPoseFadeMs == null ? null : Number(info.renderPoseFadeMs);
+            }
             if (info.sliceHost === "electron") sliceHost = "electron";
           }
         } catch (error) {
@@ -99,6 +104,9 @@
       url += "&renderTextureSampling=" + (renderTextureSampling ? "1" : "0");
       if (renderMaxResolution !== null && renderMaxResolution > 0) {
         url += "&renderMaxResolution=" + encodeURIComponent(renderMaxResolution);
+      }
+      if (renderPoseFadeMs !== null && Number.isFinite(renderPoseFadeMs) && renderPoseFadeMs >= 0) {
+        url += "&renderPoseFadeMs=" + encodeURIComponent(renderPoseFadeMs);
       }
       if (sliceHost) url += "&sliceHost=" + encodeURIComponent(sliceHost);
       document.getElementById("amadeus-wallpaper").src = url;
