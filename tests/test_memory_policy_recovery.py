@@ -289,6 +289,32 @@ async def test_single_owner_atomic_snapshot_needs_no_discarded_operation_lookup(
         await service.close()
 
 
+@pytest.mark.parametrize(("version", "indexes", "core_error", "allowed"), [
+    ((3, 45, 1), ("memory_fts", "retrieval_fts"), False, True),
+    ((3, 45, 1), ("memory_fts",), True, False),
+    ((3, 45, 1), ("unknown_fts",), False, False),
+    ((3, 46, 1), ("memory_fts",), False, False),
+])
+def test_recovery_validates_core_pages_despite_legacy_fts_reports(
+    monkeypatch, version, indexes, core_error, allowed,
+):
+    from server.memory_policy_recovery import PolicyRecoveryError, _check_core_integrity
+
+    monkeypatch.setattr(sqlite3, "sqlite_version_info", version)
+    db = Mock()
+    findings = [(f"malformed inverted index for FTS5 table main.{name}",) for name in indexes]
+    if core_error:
+        findings.append(("database disk image is malformed",))
+    db.execute.return_value.fetchall.return_value = findings
+
+    if allowed:
+        _check_core_integrity(db)
+    else:
+        with pytest.raises(PolicyRecoveryError, match="core_unreadable"):
+            _check_core_integrity(db)
+    db.execute.assert_called_once_with("PRAGMA quick_check")
+
+
 async def test_recovery_cli_rebuilds_damaged_sidecar_preserving_originals_and_exclusions(host):
     from server.memory_policy_recovery import recover_source_policy
     from server.memory_source_policy import SourcePolicyProjection

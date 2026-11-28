@@ -18,6 +18,24 @@ class PolicyRecoveryError(ValueError):
     pass
 
 
+def _check_core_integrity(db):
+    findings = db.execute("PRAGMA quick_check").fetchall()
+    if findings == [("ok",)]:
+        return
+    # SQLite 3.44 through 3.46.0 can report a malformed inverted index after
+    # an ordinary FTS5 secure-delete. The sidecar is rebuilt from relational
+    # authority. Require the full page check to report no other problem.
+    # https://www.sqlite.org/releaselog/3_46_1.html
+    legacy_fts_findings = {
+        ("malformed inverted index for FTS5 table main.memory_fts",),
+        ("malformed inverted index for FTS5 table main.retrieval_fts",),
+    }
+    if ((3, 44, 0) <= sqlite3.sqlite_version_info < (3, 46, 1)
+            and findings and all(row in legacy_fts_findings for row in findings)):
+        return
+    raise PolicyRecoveryError("core_unreadable")
+
+
 def _pristine_v1_core(db):
     """Prove no prior durable work, including records without a user column."""
     states = db.execute("SELECT singleton,schema_version,change_seq,cleanup_pending FROM store_state").fetchall()
@@ -64,8 +82,7 @@ def recover_source_policy(db_path, user_id, *, api=None):
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.1)) as db:
                 db.execute("PRAGMA query_only=ON")
                 db.execute("BEGIN")
-                if db.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
-                    raise PolicyRecoveryError("core_unreadable")
+                _check_core_integrity(db)
                 projection.bootstrap_v1()
                 schema_version = db.execute("SELECT schema_version FROM store_state WHERE singleton=1").fetchone()[0]
                 namespaces = projection._core_namespaces(db, schema_version)
