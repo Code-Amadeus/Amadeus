@@ -115,12 +115,19 @@ function pageHarness(respond = () => undefined, options = {}) {
 async function ready(t, respond, options) { const page = pageHarness(respond, options); t.after(() => page.dispose()); await page.flush(); return page }
 function finish(page) { const { params } = page.sends.at(-1); page.emit('chat.complete', { session_id: params.session_id, turn_id: params.turn_id, full_text: '' }) }
 
-test('the composer exposes a labelled native one-shot button and an independent live status', async t => {
+test('lookup and application interaction live under the plus before the model selector', async t => {
   const page = await ready(t)
+  const toolbar = page.find(node => node.props?.className === 'chat-composer-tools')
+  const [more, provider] = toolbar.props.children
+  const [trigger, actions] = more.props.children
+  assert.equal(provider.type, 'select')
+  assert.equal(trigger.props['aria-label'], 'More chat actions')
+  assert.equal(trigger.props.popoverTarget, actions.props.id)
+  assert.equal(actions.props.popover, 'auto')
+  assert.deepEqual(actions.props.children.map(text), ['Search saved memories', 'Application interaction'])
   assert.equal(page.lookup.type, 'button', 'native buttons provide Tab, Enter and Space activation')
   assert.equal(page.lookup.props.type, 'button')
-  assert.equal(page.lookup.props['aria-label'], 'Search saved memories')
-  assert.equal(text(page.lookup), '')
+  assert.equal(page.lookup.props.popoverTargetAction, 'hide')
   assert.match(page.lookup.props.title, /once.*text.*2000/)
   assert.equal(page.lookup.props['aria-describedby'], 'chat-memory-lookup-feedback')
   const status = page.find(node => node.props?.id === 'chat-memory-lookup-feedback')
@@ -132,7 +139,7 @@ test('the composer exposes a labelled native one-shot button and an independent 
 
 test('Chinese UI translates the button, validation and all backend status labels', async t => {
   const page = await ready(t, undefined, { locale: 'zh-CN' })
-  assert.equal(page.lookup.props['aria-label'], '查已存记忆')
+  assert.equal(text(page.lookup), '查已存记忆')
   page.lookupNow()
   assert.equal(page.feedback, translations['Enter specific text to search saved memories.'])
   for (const label of Object.values(memoryLookupStatusText)) assert.ok(translations[label], label)
@@ -151,10 +158,9 @@ test('the application toggle shares desktop settings and follows Host configurat
     },
     markRuntimeSettingsApplied: async (values, revisions) => { applied.push({ values, revisions }) },
   } })
-  const toggle = () => page.find(node => node.props?.['aria-label'] === 'Let Amadeus interact with applications')
+  const toggle = () => page.find(node => node.props?.['aria-pressed'] !== undefined && text(node) === 'Application interaction')
   page.type('keep this draft')
   assert.equal(toggle().props['aria-pressed'], true)
-  assert.equal(text(toggle()), '')
   toggle().props.onClick()
   await page.flush()
   assert.equal(toggle().props['aria-pressed'], false)

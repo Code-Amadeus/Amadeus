@@ -1766,6 +1766,49 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             />
 
             <div className="chat-composer-tools">
+              <div className="chat-composer-more">
+                <button
+                  type="button"
+                  className="chat-composer-more-trigger"
+                  title={t('More chat actions')}
+                  aria-label={t('More chat actions')}
+                  popoverTarget="chat-composer-actions"
+                >
+                  <FluentIcon name="Add" size={16} aria-hidden="true" />
+                </button>
+                <div
+                  id="chat-composer-actions"
+                  className="chat-composer-actions"
+                  popover="auto"
+                  role="group"
+                  aria-label={t('More chat actions')}
+                >
+                  <button
+                    type="button"
+                    className="chat-composer-action chat-memory-lookup-button"
+                    title={t('Search once using the text in this input. Text only, up to 2000 characters.')}
+                    aria-describedby="chat-memory-lookup-feedback"
+                    popoverTarget="chat-composer-actions"
+                    popoverTargetAction="hide"
+                    onClick={() => { void handleMemoryLookup() }}
+                  >
+                    <FluentIcon name="MemorySearch" size={16} aria-hidden="true" />
+                    {t('Search saved memories')}
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-composer-action"
+                    title={t('Let Amadeus interact with applications')}
+                    aria-pressed={auipEnabled}
+                    disabled={!connected || auipEnabled === undefined || auipSaving}
+                    onClick={() => { void handleAuipToggle() }}
+                  >
+                    <FluentIcon name="Tiles" size={16} aria-hidden="true" />
+                    {t('Application interaction')}
+                    {auipEnabled && <FluentIcon name="Checkmark" size={14} className="ml-auto" aria-hidden="true" />}
+                  </button>
+                </div>
+              </div>
               <select value={provider} onChange={e => { void handleProviderChange(e.target.value) }} className="chat-select chat-select-model">
                 {chatProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
@@ -1803,29 +1846,6 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 className="hidden"
                 onChange={handleVisionFileChange}
               />
-
-              <button
-                type="button"
-                onClick={() => { void handleMemoryLookup() }}
-                title={t('Search once using the text in this input. Text only, up to 2000 characters.')}
-                aria-label={t('Search saved memories')}
-                aria-describedby="chat-memory-lookup-feedback"
-                className="chat-round-button chat-memory-lookup-button"
-              >
-                <FluentIcon name="MemorySearch" size={16} aria-hidden="true" />
-              </button>
-
-              <button
-                type="button"
-                className="chat-round-button"
-                title={t('Let Amadeus interact with applications')}
-                aria-label={t('Let Amadeus interact with applications')}
-                aria-pressed={auipEnabled}
-                disabled={!connected || auipEnabled === undefined || auipSaving}
-                onClick={() => { void handleAuipToggle() }}
-              >
-                <FluentIcon name="Tiles" size={16} aria-hidden="true" />
-              </button>
 
               <button onClick={handleSend} disabled={!connected || !sessionReady || sessionSwitching || (!input.trim() && !pendingVisualAttachment)}
                 className="chat-send-button"
