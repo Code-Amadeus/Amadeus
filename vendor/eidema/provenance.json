@@ -2,10 +2,10 @@
   "schema": "amadeus.eidema-wheel.v1",
   "source": {
     "project": "Eidema",
-    "revision": "514cb4b5e2e8e4a0f210e3f7014ea2c3cee55e0e",
-    "tree": "ec4a9549220858dbda1009817f4ced2bbe903713"
+    "revision": "d23e1efe77c042d43a50d83127a88a5e5c8c65cb",
+    "tree": "461bffad9ff296a5c22e218606c18127598f20e3"
   },
-  "source_date_epoch": 1795848615,
+  "source_date_epoch": 1795850686,
   "build": {
     "command": "python tools/package_eidema.py build --source <Eidema-checkout> --revision <reviewed-commit>",
     "python": "3.12.10",
@@ -20,24 +20,26 @@
   },
   "package": {
     "name": "eidema",
-    "version": "0.2.0a2",
+    "version": "0.2.0a3",
     "requires_python": ">=3.10",
     "requires_dist": [
       "numpy>=1.24",
       "sentence-transformers>=3; extra == \"local-embeddings\"",
+      "onnxruntime>=1.20; extra == \"onnx\"",
+      "tokenizers>=0.20; extra == \"onnx\"",
       "pytest>=8; extra == \"test\""
     ]
   },
   "artifact": {
-    "filename": "eidema-0.2.0a2-py3-none-any.whl",
-    "sha256": "234283607d95311d66a62c9a7b78d9061596e468eb9d72a51f45deb67f861454",
-    "size": 130216
+    "filename": "eidema-0.2.0a3-py3-none-any.whl",
+    "sha256": "9f56d9102bcb922ce963958163cd6faa12e02d6f2676e9ec8da6231404b0dfab",
+    "size": 145699
   },
   "host_policy_metadata": {
     "path": "server/memory_policy_metadata.py",
     "wheel_member": "eidema/policy_metadata.py",
-    "contract": "policy-metadata-19-v1",
-    "sha256": "1945be4dfb18c0c280eca4ba3f034c917c44e17c86c2db811e02bce38937a87b",
-    "size": 26195
+    "contract": "policy-metadata-20-v1",
+    "sha256": "eb8c90e743304b1bd58a2e809568e4579653fc7098da5ccd26035386dd76bdac",
+    "size": 27460
   }
 }

@@ -8,15 +8,13 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from hashlib import sha256
 from itertools import islice
 import json
 import logging
 from pathlib import Path
-import sqlite3
 import threading
-from types import SimpleNamespace
 
 from server.memory_formation import create_executor
 
@@ -129,7 +127,7 @@ class MaintenanceBinding:
         self._foreground_busy = self._closed = False
         self._task = self._mount_task = self._close_task = None
         self._unsubscribe = None
-        self.connection = self.runtime = None
+        self.runtime = None
         self.lanes = ()
         self._thread = None
         self._state, self._error, self._next_wake = "starting", None, None
@@ -189,7 +187,8 @@ class MaintenanceBinding:
 
         def create():
             self._thread = threading.get_ident()
-            self.connection = sqlite3.connect(self.schedule_path, isolation_level=None)
+            self.api.MaintenanceRuntime.import_legacy_checkpoint(
+                self.host._store, self.schedule_path, runtime_id=self.runtime_id)
             if budget is not None:
                 self.api.Maintenance(self.host._store).configure_budget(budget)
             self._set_budget_window()
@@ -216,7 +215,7 @@ class MaintenanceBinding:
     def _lane(self, access, stream, kind, provider):
         selector = self.warm_adoption_selector if kind == "warm" else self.cold_adoption_selector
         authorized = self._authorized if kind == "warm" or self.cold_generation_enabled else lambda: False
-        executor = create_executor(self.delivery, access, provider,
+        executor = create_executor(self.host._source_lookup.source_port, access, provider,
             authorized=authorized, clock=self.clock, ready=self._ready, kind=kind, selector=selector,
             automatic_cold_context=kind=="cold" and self.automatic_cold_context)
         max_sources = getattr(provider, "max_sources", 100)
@@ -227,12 +226,8 @@ class MaintenanceBinding:
 
     def _refresh(self, streams):
         self._check_thread()
-        previous = []
-        if self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='eidema_runtime'").fetchone():
-            row = self.connection.execute("SELECT binding FROM eidema_runtime WHERE runtime_id=?",
-                                          (self.runtime_id,)).fetchone()
-            previous = [] if row is None else json.loads(row[0])
-        bound_keys = {bound[0] for bound in previous}
+        previous = self.api.MaintenanceRuntime.bound_lane_keys(self.host._store, self.runtime_id)
+        bound_keys = set(previous)
         offered = []
         for access, stream in streams:
             # Multi-scope desktop maintenance still runs each SDK lane with
@@ -246,64 +241,14 @@ class MaintenanceBinding:
         by_key = {lane.key: lane for lane in offered}
         if not bound_keys.issubset(by_key):
             raise self.api.MemoryConflict("known_source_generation_missing")
-        ordered = [by_key.pop(bound[0]) for bound in previous]
+        ordered = [by_key.pop(key) for key in previous]
         lanes = tuple(ordered) + tuple(lane for lane in offered if lane.key in by_key)
         if tuple((lane.key, lane.pipeline_version) for lane in lanes) == tuple(
                 (lane.key, lane.pipeline_version) for lane in self.lanes):
             return
         if not lanes:
             return
-        runtime_class = self.api.MaintenanceRuntime
-        if self.resource_ready is not None:
-            # The SDK checks resources before it computes coalescing/cadence.
-            # Desktop owners have no shared idle wake. Let the original SDK
-            # reach its own due/budget verdict before the executor checks the
-            # actual resource. No body read or provider call precedes that
-            # executor check (or the final native dispatch check).
-            sdk_runtime = runtime_class
-
-            class DesktopMaintenanceRuntime(sdk_runtime):
-                def __init__(self, *args, **options):
-                    super().__init__(*args, **options)
-                    self._index_waits = set()
-
-                @staticmethod
-                def _gate(lane):
-                    authority = SimpleNamespace(executor=SimpleNamespace(
-                        authorized=lane.executor.authorized, ready=None))
-                    return sdk_runtime._gate(authority)
-
-                def _work_metadata(self, lane, state, *, before_gate=False):
-                    result = super()._work_metadata(lane, state, before_gate=before_gate)
-                    if self.store._embedder is not None:
-                        self._index_waits.clear()
-                    resolved, active, waiting = result
-                    # Keep the original pre-authority metadata/gate ordering.
-                    # After authority, only a task already proven index-only
-                    # may yield its priority to ordinary SDK formation policy.
-                    if (not before_gate and resolved
-                            and (lane.key, resolved[0].task_id) in self._index_waits):
-                        return (), active, waiting
-                    return result
-
-                def _postwork(self, lane, state, task, delivery, progress):
-                    report = super()._postwork(lane, state, task, delivery, progress)
-                    step = report.step
-                    key = (lane.key, task.task_id)
-                    if (self.store._embedder is None and step is not None
-                            and step.stage in ("done", "abandoned")
-                            and not step.remaining and step.post_pending
-                            and key not in self._index_waits):
-                        # Semantic/projection work settled; only unavailable
-                        # embedding remains. Preserve the durable checkpoint.
-                        # Reconsider once, then await sources/SDK deadlines or
-                        # the Host's existing embedder-attachment notification.
-                        self._index_waits.add(key)
-                        return replace(report, wake_at_ms=self.clock())
-                    return report
-
-            runtime_class = DesktopMaintenanceRuntime
-        runtime = runtime_class(self.connection, self.host._store, lanes,
+        runtime = self.api.MaintenanceRuntime(self.host._store, lanes,
             runtime_id=self.runtime_id, sync=self._sync, clock=self.clock, config=self.config)
         # SDK initialization verifies exact prior policy/identity bindings and
         # permits only extension. Publish callbacks only after it succeeds.
@@ -312,7 +257,7 @@ class MaintenanceBinding:
         # SDK policy. Reapply False on reopen, so a prior opt-in cannot leak into
         # a default binding. Cold pipelines and unrelated streams are untouched.
         for lane in lanes:
-            if lane.executor._work_class == "warm":
+            if lane.key.startswith("warm:"):
                 runtime.maintenance.configure_reformation(lane.access, lane.stream_id,
                     lane.pipeline_version, enabled=self.reformation_enabled)
         self.lanes, self.runtime = lanes, runtime
@@ -391,8 +336,9 @@ class MaintenanceBinding:
                             asyncio.wrap_future(settled), return_exceptions=True))
                     await asyncio.sleep(0)
                     continue
-                if (self.resource_ready is not None and report.step is not None
-                        and report.step.code == "resource_busy"):
+                if (report.code == "resource_busy" or (
+                        report.unit is None and not report.scan_remaining and report.wake_at_ms is None
+                        and any(code == "resource_busy" for _, _, code in report.observations))):
                     self._state, self._next_wake = "waiting_resource", None
                     self._emit("maintenance_resource_wait")
                     try:
@@ -405,7 +351,10 @@ class MaintenanceBinding:
                             if self._ready():
                                 break
                             try:
-                                await asyncio.wait_for(self._wake.wait(), .05)
+                                if self.resource_ready is None:
+                                    await self._wake.wait()
+                                else:
+                                    await asyncio.wait_for(self._wake.wait(), .1)
                             except TimeoutError:
                                 pass
                     except Exception as error:
@@ -476,8 +425,6 @@ class MaintenanceBinding:
                         await asyncio.gather(self._mount_task, return_exceptions=True)
                     if self._task is not None:
                         await asyncio.gather(self._task, return_exceptions=True)
-                    if self.connection is not None:
-                        await self._run_owned(self.connection.close)
                 finally:
                     self._pool.shutdown(wait=True)
                     self._state, self._next_wake = "closed", None

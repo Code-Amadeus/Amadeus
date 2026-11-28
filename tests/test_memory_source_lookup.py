@@ -27,12 +27,15 @@ QUESTION = "前に話した抹茶を覚えている？"
 ANSWER = "練習のあとに抹茶を注文したわ。"
 
 
-async def wire(context, tmp_path, monkeypatch, *, embedder=None, scoped_recall_enabled=True):
+async def wire(context, tmp_path, monkeypatch, *, embedder=None, scoped_recall_enabled=True, speech=False):
     monkeypatch.setenv("AMADEUS_SESSION_JOURNAL_ENABLED", "0")
     config = MemoryConfig(semantic_enabled=embedder is not None, source_runtime_enabled=True,
                           user_id=USER, db_path=tmp_path / "memory.sqlite3",
                           scoped_recall_enabled=scoped_recall_enabled)
     host = HostMemoryService(config, embedder_factory=(lambda: embedder) if embedder else None)
+    if speech:
+        from server.memory_output_speech import install
+        install(host)
     host.start()
     await host._startup
     assert host._source_lookup is not None

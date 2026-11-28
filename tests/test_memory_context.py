@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from server import memory_context
-from server.memory_context import serialize_reference, estimate_reply_tokens, pack_reference
+from eidema import lookup as memory_context
+from eidema.lookup import serialize_reference, estimate_reply_tokens, pack_reference
 
 
 def candidate(text, identity="memory", version=1, condition=None):

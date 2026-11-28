@@ -1,4 +1,4 @@
-"""Synthetic schema18/19 metadata, binding and recovery boundary controls."""
+"""Synthetic schema 18 through 20 metadata, binding and recovery controls."""
 import builtins
 from contextlib import closing
 from dataclasses import asdict
@@ -25,24 +25,24 @@ OUTPUT = {**SOURCE, "record_key": json.dumps(["A", "output", MEMORY_TEXT_PROJECT
 
 
 def schema(path, version):
-    # Reconstruct schema18 from the bundled canonical SQL by removing only the
-    # two schema19 evidence_only columns. The copied reader verifies every
-    # resulting physical column and initial row against its SDK-owned manifest.
     sql = files(eidema).joinpath("schema.sql").read_text(encoding="utf-8")
-    if version == 18:
-        line = "    evidence_only INTEGER NOT NULL DEFAULT 0 CHECK(evidence_only IN (0,1)),\n"
-        assert sql.count(line) == 2
-        sql = sql.replace(line, "").replace("VALUES(1,19)", "VALUES(1,18)")
     with closing(sqlite3.connect(path)) as db:
         db.executescript(sql)
+    downgrade(path, version)
+    with closing(sqlite3.connect(path)) as db:
         assert metadata.is_pristine_core(db)
 
 
-def downgrade18(path):
+def downgrade(path, version):
+    if version == 20:
+        return
     with closing(sqlite3.connect(path)) as db, db:
-        db.execute("ALTER TABLE source_states DROP COLUMN evidence_only")
-        db.execute("ALTER TABLE source_changes DROP COLUMN evidence_only")
-        db.execute("UPDATE store_state SET schema_version=18")
+        db.execute("DROP TABLE eidema_runtime_lanes")
+        db.execute("DROP TABLE eidema_runtime")
+        if version == 18:
+            db.execute("ALTER TABLE source_states DROP COLUMN evidence_only")
+            db.execute("ALTER TABLE source_changes DROP COLUMN evidence_only")
+        db.execute("UPDATE store_state SET schema_version=?", (version,))
 
 
 def seed_policy(path, version, users=(USER,)):
@@ -56,7 +56,7 @@ def seed_policy(path, version, users=(USER,)):
         db.execute("UPDATE store_state SET change_seq=3")
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 @pytest.mark.parametrize("sidecar", ["missing", "damaged", "bound"])
 def test_metadata_bootstrap_is_read_only_sdk_independent_and_body_free(tmp_path, monkeypatch, version, sidecar):
     path = tmp_path / "core.sqlite3"
@@ -92,7 +92,7 @@ def test_metadata_bootstrap_is_read_only_sdk_independent_and_body_free(tmp_path,
     assert reads and {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()} == before
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 @pytest.mark.parametrize("sidecar", ["missing", "damaged", "bound"])
 def test_mixed_core_requires_validated_binding_and_keeps_pending(tmp_path, version, sidecar):
     path = tmp_path / "core.sqlite3"
@@ -116,7 +116,7 @@ def test_mixed_core_requires_validated_binding_and_keeps_pending(tmp_path, versi
     assert {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()} == before
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 def test_empty_constructor_cannot_bind_foreign_first_sdk_write(tmp_path, version):
     path = tmp_path / "core.sqlite3"
     projection = SourcePolicyProjection(path, USER)
@@ -128,8 +128,7 @@ def test_empty_constructor_cannot_bind_foreign_first_sdk_write(tmp_path, version
                        operation_id="save", item_id="item", text="foreign synthetic body", now_ms=1)
     finally:
         store.close()
-    if version == 18:
-        downgrade18(path)
+    downgrade(path, version)
     before = path.read_bytes()
     with pytest.raises(SourcePolicyBindingMismatch):
         projection.bootstrap_v1()
@@ -137,7 +136,7 @@ def test_empty_constructor_cannot_bind_foreign_first_sdk_write(tmp_path, version
     assert path.read_bytes() == before and not projection.path.exists()
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 async def test_host_open_foreign_materialization_refuses_history(tmp_path, version):
     path = tmp_path / "core.sqlite3"
     service = HostMemoryService(MemoryConfig(enabled=False, semantic_enabled=False, db_path=path, user_id=USER))
@@ -154,7 +153,7 @@ async def test_host_open_foreign_materialization_refuses_history(tmp_path, versi
         await service.close()
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 @pytest.mark.parametrize("sidecar", ["missing", "damaged", "bound"])
 async def test_host_history_fallback_masks_sources_and_known_outputs_without_sdk(tmp_path, monkeypatch, version, sidecar):
     path = tmp_path / "core.sqlite3"
@@ -186,7 +185,7 @@ async def test_host_history_fallback_masks_sources_and_known_outputs_without_sdk
         await service.close()
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 @pytest.mark.parametrize("users", [("synthetic-B",), (USER, "synthetic-B")], ids=["foreign", "mixed"])
 def test_recovery_checks_new_source_stream_owners(tmp_path, version, users):
     path = tmp_path / "core.sqlite3"
@@ -202,7 +201,7 @@ def test_recovery_checks_new_source_stream_owners(tmp_path, version, users):
     assert (path.read_bytes(), sidecar.read_bytes()) == before
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 def test_later_live_prepare_and_rollback_keep_exact_policy(tmp_path, version):
     path = tmp_path / "core.sqlite3"
     seed_policy(path, version)
@@ -222,7 +221,7 @@ def test_later_live_prepare_and_rollback_keep_exact_policy(tmp_path, version):
     assert old.path.read_bytes() == before and reader.value["pending"] == old.value["pending"]
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 @pytest.mark.parametrize("mutation", [
     "UPDATE maintenance_clock SET last_reservation_ms=1",
     "INSERT INTO origins(memory_id,namespace,record_key,revision,start_cp,end_cp) VALUES('orphan','synthetic','source',1,NULL,NULL)",
@@ -244,7 +243,7 @@ def test_recovery_requires_physical_pristine_proof(tmp_path, version, mutation):
     assert not list(tmp_path.glob("*.policy-recovery-*"))
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 def test_pristine_recovery_uses_existing_sdk_owner_and_preserves_core(tmp_path, version):
     path = tmp_path / "core.sqlite3"
     schema(path, version)
@@ -260,7 +259,7 @@ def test_pristine_recovery_uses_existing_sdk_owner_and_preserves_core(tmp_path, 
     assert loaded.ready and loaded._bound and loaded.value["version"] == 2
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 def test_recovery_keeps_exclusive_owner_requirement_without_sdk(tmp_path, monkeypatch, version):
     path = tmp_path / "core.sqlite3"
     schema(path, version)
@@ -277,7 +276,7 @@ def test_recovery_keeps_exclusive_owner_requirement_without_sdk(tmp_path, monkey
     assert not list(tmp_path.glob("*.source-policy.sqlite3"))
 
 
-@pytest.mark.parametrize("version", [18, 19])
+@pytest.mark.parametrize("version", [18, 19, 20])
 def test_real_sdk_raw_output_revocation_survives_fallback(tmp_path, version):
     path = tmp_path / "core.sqlite3"
     store = eidema.MemoryStore(path)
@@ -298,8 +297,7 @@ def test_real_sdk_raw_output_revocation_survives_fallback(tmp_path, version):
         assert expected and expected[0]["source"] == OUTPUT
     finally:
         store.close()
-    if version == 18:
-        downgrade18(path)
+    downgrade(path, version)
     projection = SourcePolicyProjection(path, USER)
     projection.bootstrap_v1()
     assert projection.value["retirements"] == expected

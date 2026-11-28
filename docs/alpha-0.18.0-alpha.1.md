@@ -1,6 +1,6 @@
 # Amadeus 0.18 Alpha 1
 
-This source preview bundles `eidema==0.2.0a2` from the independent
+This source preview bundles `eidema==0.2.0a3` from the independent
 [Eidema SDK](https://github.com/Code-Amadeus/Eidema).
 
 ## Memory settings
@@ -46,6 +46,12 @@ Warm formation can publish a whole verbatim user report after validating the
 source and span, with permission for explicit lookup. Other proposals stay
 pending until review. Formation requests use a separate daily budget.
 Foreground replies do not wait for a forming or comparing model call.
+
+This SDK uses SQLite schema 20. On upgrade, existing maintenance checkpoints
+are imported into the memory database. The old scheduler file stays in place.
+Keep a consistent copy of the pre-upgrade data if you need to return to an
+older SDK. Pending speech is checked against the same source and note versions
+used to publish the corresponding reply.
 
 The model provider interface remains open to other hosts and local LLMs. This
 release's background configuration uses DeepSeek Flash. Use of a cloud character

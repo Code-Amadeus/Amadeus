@@ -107,9 +107,15 @@ def synthesis_selector(native, registry, playback, np):
             token = JOB_TICKETS.set(tickets)
             try:
                 if not all(registry.current_ticket(ticket) for ticket in tickets):
-                    await playback.add_to_playlist(
-                        np.empty(0, dtype=np.float32), 24000, sentence_id, "",
-                        playback_epoch=options.get("interrupt_epoch"))
+                    try:
+                        await playback.add_to_playlist(
+                            np.empty(0, dtype=np.float32), 24000, sentence_id, "",
+                            playback_epoch=options.get("interrupt_epoch"))
+                    finally:
+                        # This branch never enters the backend that owns the permit.
+                        semaphore = options.get("task_semaphore")
+                        if semaphore is not None:
+                            semaphore.release()
                     return
                 return await backend(text, sentence_id, is_first, **options)
             finally:

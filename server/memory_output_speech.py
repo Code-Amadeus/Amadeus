@@ -147,24 +147,8 @@ def delivery_type(native, registry):
 
 def install(host):
     """Install before starting the memory Host or creating its Chat ingress."""
-    if host.output_speech is not None:
-        raise ValueError("speech binding already installed")
-
     registry = NativeSpeechRegistry(host)
-    sync_projection = host._sync_projection
-    close = host.close
-    host.output_speech = registry
-
-    def sync():
-        sync_projection()
-        registry.project_retirements()
-
-    async def close_host():
-        registry.close()
-        await close()
-
-    host._sync_projection = sync
-    host.close = close_host
+    host.attach_output_speech(registry)
     return registry
 
 
@@ -180,10 +164,6 @@ def bind_pipeline(pipeline, manager, registry):
     from tts.contract import TTSRequest
     from tts.utterance_scheduler import TTSUtteranceScheduler, UtteranceSegment
 
-    old_scheduler = pipeline._utterance_scheduler
-    old_selector = pipeline.select_synthesis
-    if type(old_scheduler) is not TTSUtteranceScheduler:
-        raise ValueError("unexpected utterance scheduler")
     bounded = speech.scheduler_type(TTSUtteranceScheduler, UtteranceSegment, TTSRequest)
 
     class BoundScheduler(bounded):
@@ -194,5 +174,7 @@ def bind_pipeline(pipeline, manager, registry):
             return ((previous.source if previous else None) == (upcoming.source if upcoming else None)
                     and super()._can_append(current, segment))
 
-    pipeline._utterance_scheduler = BoundScheduler(logger=pipeline.logger)
-    pipeline.select_synthesis = speech.synthesis_selector(old_selector, registry, manager, np)
+    pipeline.configure_speech_guard(
+        scheduler_factory=BoundScheduler,
+        synthesis_guard=lambda native: speech.synthesis_selector(native, registry, manager, np),
+    )

@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, Mock
 import numpy as np
 import pytest
 
+from eidema.onnx import OnnxTextEmbedder, _QueryTokenizer
+
 from config.environment import EnvironmentReader
 from config.memory import MemoryConfig
 from config.memory_jina import JINA_CONTRACT, JINA_MEMORY_VERSION, JINA_MODEL_ID, MemoryModelError
@@ -35,10 +37,14 @@ class CharacterTokenizer:
 
 @pytest.fixture
 def adapter():
-    model = jina._JinaModel.__new__(jina._JinaModel)
-    model._lock, model.np = RLock(), np
+    model = OnnxTextEmbedder.__new__(OnnxTextEmbedder)
+    model._lock = RLock()
+    model.version = JINA_MEMORY_VERSION
+    for attr in ("dimensions", "query_prefix", "document_prefix", "max_tokens", "max_passage_tokens", "max_history_tokens"):
+        setattr(model, attr, JINA_CONTRACT[attr])
+    model.output_name = JINA_CONTRACT["output"]
     model.tokenizer = CharacterTokenizer()
-    model.query_tokenizer = jina._QueryTokenizer(model.tokenizer)
+    model.query_tokenizer = _QueryTokenizer(model.tokenizer)
     model.padding = {}
     def inference(outputs, values):
         assert outputs == ["sentence_embedding"]
@@ -47,16 +53,14 @@ def adapter():
         vector[:, :2] = [3, 4]
         return [vector]
     model.session = SimpleNamespace(run=Mock(side_effect=inference))
-    value = jina.MemoryJinaEmbedder.__new__(jina.MemoryJinaEmbedder)
-    value._model = model
-    return value
+    return model
 
 
 def test_default_selects_jina_and_explicit_e5_keeps_live_rag_owner(monkeypatch):
     config = MemoryConfig.from_environment(EnvironmentReader({}))
     assert config.model == JINA_MODEL_ID and config.model_backend == ""
     constructor = Mock(return_value="jina")
-    monkeypatch.setattr(jina, "MemoryJinaEmbedder", constructor)
+    monkeypatch.setattr(jina, "create_jina_embedder", constructor)
     assert local_embeddings.create_memory_embedder(config.model) == "jina"
     constructor.assert_called_once_with(None, version="")
     legacy = Mock(return_value="e5")
@@ -87,7 +91,7 @@ def test_exact_prefix_special_token_boundary_and_selected_normalized_output(adap
     # The complete prefixed input includes both special tokens at the boundary.
     limit = JINA_CONTRACT["max_passage_tokens"]
     text = "x" * (limit - 12)
-    assert len(adapter._model.tokenizer.encode("Document: " + text).ids) == limit
+    assert len(adapter.tokenizer.encode("Document: " + text).ids) == limit
     vectors = adapter.embed_passages([text, "short"])
     assert len(vectors) == 2 and len(vectors[0]) == 768
     assert np.allclose(vectors[0][:2], [.6, .8])
@@ -97,49 +101,49 @@ def test_exact_prefix_special_token_boundary_and_selected_normalized_output(adap
     assert len(adapter.embed_query("x" * 247)) == 768  # Query prefix is 7.
     with pytest.raises(ValueError, match="query_too_long"):
         adapter.embed_query("x" * 248)
-    assert not adapter._model.tokenizer.padding
+    assert not adapter.tokenizer.padding
 
 
 def test_lossless_chunks_and_bounded_current_input_priority(adapter):
     for text in ("abc " * 4000, "中国語と日本語🙂\n" * 400):
         chunks = adapter.split_passage(text)
         assert len(chunks) > 1 and "".join(chunks) == text
-        assert all(adapter._model.fits("Document: " + chunk, max_tokens=JINA_CONTRACT["max_passage_tokens"]) for chunk in chunks)
+        assert all(adapter._fits("Document: " + chunk, max_tokens=JINA_CONTRACT["max_passage_tokens"]) for chunk in chunks)
         prepared = adapter.prepare_query(text, context=("OPTIONAL_HISTORY",))
         assert text.startswith(prepared) and "OPTIONAL_HISTORY" not in prepared
-        assert adapter._model.fits("Query: " + prepared)
+        assert adapter._fits("Query: " + prepared)
     query = adapter.prepare_query("CURRENT_INPUT", context=("RECENT", "OLD" * 500))
     assert query.startswith("CURRENT_INPUT\nRECENT\n")
-    assert adapter._model.fits("Query: " + query)
+    assert adapter._fits("Query: " + query)
 
 
 def test_invalid_output_fails_and_releases_tokenizer_padding(adapter):
     for output in (np.zeros((1, 768)), np.full((1, 768), np.nan), np.ones((1, 3))):
-        adapter._model.session.run.side_effect = None
-        adapter._model.session.run.return_value = [output]
+        adapter.session.run.side_effect = None
+        adapter.session.run.return_value = [output]
         with pytest.raises(ValueError, match="invalid_embedding|zero_embedding"):
             adapter.embed_query("input")
-        assert not adapter._model.tokenizer.padding
+        assert not adapter.tokenizer.padding
 
 
 def test_same_verified_snapshot_reuses_one_resource(tmp_path, monkeypatch):
     constructor = Mock(return_value=object())
     monkeypatch.setattr(jina, "_owners", {})
     monkeypatch.setattr(jina, "verify_jina_snapshot", lambda path: Path(path).resolve())
-    monkeypatch.setattr(jina, "_JinaModel", constructor)
-    assert jina._get_model(tmp_path) is jina._get_model(tmp_path / ".")
+    monkeypatch.setattr(jina, "_load_model", constructor)
+    assert jina.create_jina_embedder(tmp_path) is jina.create_jina_embedder(tmp_path / ".")
     constructor.assert_called_once()
 
 
 def test_unqualified_runtime_and_version_rejected_without_loader(monkeypatch):
     monkeypatch.setattr(jina, "package_version", lambda name:"unexpected")
     with pytest.raises(MemoryModelError, match="model_unsupported"):
-        jina._JinaModel(Path("unused"))
+        jina._load_model(Path("unused"))
     with pytest.raises(MemoryModelError, match="model_unsupported"):
-        jina.MemoryJinaEmbedder("unused", version="e5-version")
+        jina.create_jina_embedder("unused", version="e5-version")
     monkeypatch.setattr(jina, "package_version", Mock(side_effect=jina.PackageNotFoundError("onnxruntime")))
     with pytest.raises(ImportError, match="memory_runtime_missing"):
-        jina._JinaModel(Path("unused"))
+        jina._load_model(Path("unused"))
 
 
 def _synthetic_manifest(tmp_path, monkeypatch):
@@ -296,7 +300,7 @@ def test_explicit_download_uses_the_same_pinned_verification(tmp_path, monkeypat
 
 @pytest.mark.parametrize("passage_cap", [64, 96])
 def test_maximum_text_and_condition_index_with_final_lossless_chunker(adapter, tmp_path, monkeypatch, passage_cap):
-    monkeypatch.setitem(JINA_CONTRACT, "max_passage_tokens", passage_cap)
+    monkeypatch.setattr(adapter, "max_passage_tokens", passage_cap)
     import eidema
     from server.memory_service import (MAX_MEMORY_TEXT_CHARS, MAX_MEMORY_CONDITION_CHARS,
         MEMORY_INDEX_CHUNK_LIMIT)
@@ -315,12 +319,12 @@ def test_maximum_text_and_condition_index_with_final_lossless_chunker(adapter, t
             text=text, condition=condition, now_ms=1)
         # The former count-only ceiling rejects the same legal, lossless input.
         assert store.run_index_batch(limit=1, max_chunks=128).failed == 1
-        assert adapter._model.session.run.call_count == 0
+        assert adapter.session.run.call_count == 0
         outcome = store.run_index_batch(limit=1, max_chunks=MEMORY_INDEX_CHUNK_LIMIT, retry_failed=True)
         assert outcome.indexed == 1 and outcome.failed == 0
         memory = store.detail(access, saved.memory_id).memory
         assert memory.index_state == "ready" and memory.text == text and memory.condition == condition
-        assert adapter._model.session.run.call_count == len(chunks)
+        assert adapter.session.run.call_count == len(chunks)
     finally:
         store.close()
 
@@ -352,7 +356,7 @@ def test_pathological_fragmentation_above_cap_fails_truthfully(adapter, tmp_path
         outcome = store.run_index_batch(limit=1, max_chunks=MEMORY_INDEX_CHUNK_LIMIT)
         assert outcome.failed == 1 and outcome.indexed == 0
         assert store.detail(access, saved.memory_id).memory.index_state == "failed"
-        adapter._model.session.run.assert_not_called()
+        adapter.session.run.assert_not_called()
     finally:
         store.close()
 
@@ -362,7 +366,9 @@ async def test_default_jina_gate_and_explicit_override_are_truthful(tmp_path, mo
     from server.memory_service import HostMemoryService
     # Exercise the default factory without loading weights. Only the Host
     # configuration grants automatic admission.
-    monkeypatch.setattr(jina, "_get_model", lambda path: object())
+    monkeypatch.setattr(jina, "verify_jina_snapshot", lambda path: Path(path))
+    monkeypatch.setattr(jina, "_owners", {})
+    monkeypatch.setattr(jina, "_load_model", lambda path: SimpleNamespace(version=JINA_MEMORY_VERSION, dimensions=768))
     service = HostMemoryService(MemoryConfig(db_path=tmp_path / "gate.sqlite3", semantic_threshold=override))
     service.start()
     try:
@@ -387,7 +393,7 @@ async def test_default_jina_gate_and_explicit_override_are_truthful(tmp_path, mo
 
 @pytest.mark.parametrize("history_cap", [64, 96])
 def test_optional_history_budget_preserves_both_turns_head_tail_and_current(adapter, monkeypatch, history_cap):
-    monkeypatch.setitem(JINA_CONTRACT, "max_history_tokens", history_cap)
+    monkeypatch.setattr(adapter, "max_history_tokens", history_cap)
     current = "CURRENT_QUESTION"
     recent = ("HEAD_A " + "a" * 200 + " TAIL_A", "HEAD_B " + "b" * 200 + " TAIL_B")
     prepared = adapter.prepare_query(current, context=recent)
@@ -395,14 +401,14 @@ def test_optional_history_budget_preserves_both_turns_head_tail_and_current(adap
     for anchor in ("HEAD_A", "TAIL_A", "HEAD_B", "TAIL_B"):
         assert anchor in prepared
     assert prepared.count("\n[…]\n") == 2
-    count = lambda text:len(adapter._model.tokenizer.encode("Query: " + text).ids)
+    count = lambda text:len(adapter.tokenizer.encode("Query: " + text).ids)
     assert count(prepared) - count(current) <= history_cap
     assert count(prepared) <= JINA_CONTRACT["max_tokens"]
 
 
 @pytest.mark.parametrize("history_cap", [64, 96])
 def test_short_history_stays_verbatim_and_unused_share_goes_to_other_turn(adapter, monkeypatch, history_cap):
-    monkeypatch.setitem(JINA_CONTRACT, "max_history_tokens", history_cap)
+    monkeypatch.setattr(adapter, "max_history_tokens", history_cap)
     recent = ("Recent complete statement.", "Older complete statement.")
     assert adapter.prepare_query("CURRENT", context=recent) == "CURRENT\n" + "\n".join(recent)
     prepared = adapter.prepare_query("CURRENT", context=("short", "HEAD " + "x" * 200 + " TAIL"))
@@ -414,33 +420,33 @@ def test_short_history_stays_verbatim_and_unused_share_goes_to_other_turn(adapte
     "中国語と日本語🙂\n" * 100, "x" * 231 + " FINAL_CONSTRAINT"])
 def test_history_never_changes_current_only_256token_projection(adapter, monkeypatch, current):
     from eidema import prepare_embedding_query
-    monkeypatch.setitem(JINA_CONTRACT, "max_history_tokens", 64)
-    expected = prepare_embedding_query(adapter._model.query_tokenizer, current,
+    monkeypatch.setattr(adapter, "max_history_tokens", 64)
+    expected = prepare_embedding_query(adapter.query_tokenizer, current,
         max_tokens=256, prefix="Query: ")
     assert adapter.prepare_query(current) == expected
     with_history = adapter.prepare_query(current, context=("long previous topic " * 100, "older context " * 100))
     assert with_history.startswith(expected)
-    if expected != current or len(adapter._model.tokenizer.encode("Query: " + expected).ids) >= 255:
+    if expected != current or len(adapter.tokenizer.encode("Query: " + expected).ids) >= 255:
         assert with_history == expected
-    assert len(adapter._model.tokenizer.encode("Query: " + with_history).ids) <= 256
+    assert len(adapter.tokenizer.encode("Query: " + with_history).ids) <= 256
 
 
 @pytest.mark.parametrize("passage_cap", [64, 96])
 def test_offset_splitter_tokenizes_linearly_and_preserves_unicode_code_and_whitespace(adapter, monkeypatch, passage_cap):
-    monkeypatch.setitem(JINA_CONTRACT, "max_passage_tokens", passage_cap)
-    tokenizer = adapter._model.tokenizer
+    monkeypatch.setattr(adapter, "max_passage_tokens", passage_cap)
+    tokenizer = adapter.tokenizer
     encode = Mock(wraps=tokenizer.encode)
     monkeypatch.setattr(tokenizer, "encode", encode)
     text = ("字🙂 C:/src/file_12.py  \n\t" * 100) + "   \n"
     chunks = adapter.split_passage(text)
     assert "".join(chunks) == text
     assert encode.call_count <= len(chunks) + 3
-    assert all(adapter._model.fits("Document: " + chunk, max_tokens=passage_cap) for chunk in chunks)
+    assert all(adapter._fits("Document: " + chunk, max_tokens=passage_cap) for chunk in chunks)
 
 
 @pytest.mark.parametrize("passage_cap", [64, 96])
 def test_duplicate_byte_offsets_and_prefix_retokenization_stay_lossless_and_bounded(adapter, monkeypatch, passage_cap):
-    monkeypatch.setitem(JINA_CONTRACT, "max_passage_tokens", passage_cap)
+    monkeypatch.setattr(adapter, "max_passage_tokens", passage_cap)
     class ByteTokenizer(CharacterTokenizer):
         def encode(self, value):
             ids, offsets = [1], [(0, 0)]
@@ -452,11 +458,11 @@ def test_duplicate_byte_offsets_and_prefix_retokenization_stay_lossless_and_boun
                 ids.extend([11] * 3)  # Exact prefix boundary can differ from source tokenization.
                 offsets.extend([(10, 11)] * 3)
             return SimpleNamespace(ids=[*ids, 2], offsets=[*offsets, (0, 0)])
-    adapter._model.tokenizer = ByteTokenizer()
+    adapter.tokenizer = ByteTokenizer()
     for text in ("#🙂中a  \n" * 30, chr(0x10ffff) * 36864 + "\n"):
         chunks = adapter.split_passage(text)
         assert "".join(chunks) == text
-        assert all(adapter._model.fits("Document: " + chunk, max_tokens=passage_cap) for chunk in chunks)
+        assert all(adapter._fits("Document: " + chunk, max_tokens=passage_cap) for chunk in chunks)
         from server.memory_service import MEMORY_INDEX_CHUNK_LIMIT
         assert len(chunks) <= MEMORY_INDEX_CHUNK_LIMIT <= 4096
 
@@ -473,9 +479,9 @@ def test_processing_contract_change_invalidates_previous_192token_profile():
 
 
 def test_long_current_final_constraint_survives_history_budget(adapter, monkeypatch):
-    monkeypatch.setitem(JINA_CONTRACT, "max_history_tokens", 64)
+    monkeypatch.setattr(adapter, "max_history_tokens", 64)
     current = "x" * 220 + " KEEP_FINAL_CONSTRAINT"
-    assert len(adapter._model.tokenizer.encode("Query: " + current).ids) <= 256
+    assert len(adapter.tokenizer.encode("Query: " + current).ids) <= 256
     assert adapter.prepare_query(current, context=("previous unrelated topic " * 50,)) == current
 
 
@@ -485,7 +491,7 @@ def test_short_passage_units_allow_foreground_query_then_finish_index(adapter, t
     import threading
     import time
     import eidema
-    monkeypatch.setitem(JINA_CONTRACT, "max_passage_tokens", passage_cap)
+    monkeypatch.setattr(adapter, "max_passage_tokens", passage_cap)
     first, release_first, second, release_second, queried = (threading.Event() for _ in range(5))
     original_passages, original_query = adapter.embed_passages, adapter.embed_query
     consumed = []

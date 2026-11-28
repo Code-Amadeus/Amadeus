@@ -2,24 +2,6 @@
 from datetime import datetime, timedelta, timezone
 
 
-def admitted_time_metadata(records, pins, view):
-    """Use only pins and Session rows already admitted/verified by this view."""
-    from core import session_source_journal as journal
-
-    offsets, instants = {}, {}
-    for row, pin in zip(records, pins, strict=True):
-        sid, mid, _ = journal.decode(pin.source)
-        # No view lookup/read: require_reads has checked this exact snapshot.
-        source = view.files[sid][4][mid]
-        assert (source["revision"], source["created_at_ms"]) == (
-            pin.source.revision, pin.recorded_at_ms)
-        identifier = row["source_id"]
-        offsets[identifier] = source.get("utc_offset_minutes")
-        if row["recorded_time"]["status"] == "known":
-            instants.setdefault(pin.recorded_at_ms, []).append(identifier)
-    return {"offsets": offsets, "recorded_order": [instants[at] for at in sorted(instants)]}
-
-
 def compact_clock(clock, offset=None, *, precision="minute"):
     """Render a Host UTC clock at its originating offset, or explicitly UTC."""
     if precision not in {"minute", "day"}:

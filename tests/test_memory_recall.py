@@ -310,7 +310,7 @@ async def test_automatic_reference_has_four_item_and_named_token_estimate_bounds
     admitted = await service.validate_reference(await service.recall_for_session("A", "绿色饮品"))
     payload = {key:value for key, value in admitted.items() if key != "coverage"}
     assert 0 < len(payload["entries"]) <= 4
-    from server.memory_context import serialize_reference, estimate_reply_tokens
+    from eidema.lookup import serialize_reference, estimate_reply_tokens
     budget = admitted["coverage"]["context_budget"]
     size = len(serialize_reference(payload).encode("utf-8"))
     assert size <= service.config.context_bytes

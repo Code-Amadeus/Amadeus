@@ -22,7 +22,6 @@ from core import session_manager as sm
 from core import session_source_journal as journal
 from core.chat_history_projection import MEMORY_TEXT_PROJECTION_VERSION, exclude_source_spans
 from server.memory_source_policy import SourcePolicyProjection, SourcePolicyUnavailable, SourcePolicyBindingMismatch
-from server.memory_context import estimate_reply_tokens, pack_reference
 from server.reference_deadline import await_until, deadline_now
 
 logger = logging.getLogger(__name__)
@@ -235,11 +234,14 @@ class HostMemoryService:
                     self._index_task = asyncio.create_task(self._prewarm())
             await self._db.run(opened, timeout=None, on_completed=installed)
             if self.config.enabled and self.config.source_runtime_enabled and not self._closing:
+                from eidema.lookup import LookupEngine
+                from server.memory_original_choice import RULE, EXCERPT_RULE
                 from server.memory_source_delivery import SourceDelivery
-                from server.memory_source_lookup import SourceLookup
+                from server.memory_source_lookup import AmadeusSourcePort
                 try:
                     self._sources = SourceDelivery(self)
-                    self._source_lookup = SourceLookup(self, self._sources)
+                    self._source_lookup = LookupEngine(self._store, AmadeusSourcePort(self, self._sources),
+                        source_errors=(MemoryRequestError,), choice_prompts=(RULE, EXCERPT_RULE))
                 except (AttributeError, ValueError) as exc:
                     logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
         except Exception as exc:
@@ -421,7 +423,18 @@ class HostMemoryService:
         self._exclusions, self._retirements = excluded, retired
         self._exclusions_ready = True
 
+    def attach_output_speech(self, registry):
+        """Bind the speech authority before starting the Host."""
+        if self.output_speech is not None or self._startup is not None or self._closing:
+            raise ValueError("speech_binding_requires_new_host")
+        self.output_speech = registry
+
     def _sync_projection(self):
+        self._refresh_source_projection()
+        if self.output_speech is not None:
+            self.output_speech.project_retirements()
+
+    def _refresh_source_projection(self):
         value = self._policy.value
         if self._projection_value is value:
             # Only successfully parsed values enter this cache. Readiness may
@@ -673,7 +686,7 @@ class HostMemoryService:
 
         if self._source_lookup is None:
             raise MemoryRequestError("disabled")
-        review = CandidateReview(self._source_lookup)
+        review = CandidateReview(self)
         if method == "memory.review_candidate":
             def mutation():
                 operation = review.decide(access, params, now_ms=time.time_ns() // 1_000_000)
@@ -733,6 +746,8 @@ class HostMemoryService:
     async def validate_reference(self, reference, *, deadline=None):
         if not self.config.use_enabled or not isinstance(reference, MemoryTurnReference):
             return None
+        from eidema.lookup import pack_reference
+
         # Retrieval may already have completed before an independent role RAG
         # wait. Final validity has one short window at use, never another recall.
         final_deadline = deadline_now() + MEMORY_FINAL_VALIDITY_TIMEOUT_S
@@ -907,8 +922,9 @@ class HostMemoryService:
         if not isinstance(reference, MemoryTurnReference):
             raise MemoryRequestError("invalid_request")
         context = reference.context
+        from eidema.lookup import RankedLookup, pack_reference
+
         if self._source_lookup is not None:
-            from server.memory_source_lookup import RankedLookup
             if isinstance(reference.result, RankedLookup):
                 return await self._validate_source_lookup(context, reference.result, original_choice=original_choice)
         self._lookup_context(context, reference.result.candidates)
@@ -932,15 +948,18 @@ class HostMemoryService:
         return MemoryLookupEvidence(context, tuple(selected), {**admitted, "coverage":coverage})
 
     async def _validate_source_lookup(self, context, ranked, *, original_choice=None):
+        from eidema.lookup import apply_excerpt_choice, estimate_reply_tokens
+
         self._lookup_context(context, ())
         deadline = deadline_now() + self.config.explicit_validity_timeout_s
         counter = self._reply_token_count or estimate_reply_tokens
         method = self._reply_token_count_method or "ascii_3_nonascii_2_nonbmp_4_estimate"
         choices = []
         options = {"_original_choice":(original_choice[0], choices)} if original_choice is not None else {}
-        reads, signatures, payload, package = await self._db.run(lambda:self._source_lookup.assemble(
+        assembly = await self._db.run(lambda:self._source_lookup.assemble(
             self._access(context), ranked, counter=counter, method=method, **options),
             timeout=self._remaining(deadline), priority=True)
+        reads, signatures, payload, package = assembly
         self._lookup_context(context, reads.memories)
         self._sources.require_current(signatures)
         self._remaining(deadline)
@@ -955,23 +974,24 @@ class HostMemoryService:
         # Selection never holds the DB lane or the publication boundary.
         proposal = await original_choice[1](list(choice.messages), json_output=True)
         self._lookup_context(context, evidence.candidates)
-        from server.memory_original_choice import apply
-
         try:
-            selected, checked = await self._db.run(lambda:apply(self._source_lookup,
-                self._access(context), evidence, choice, proposal, counter, method),
+            selected = await self._db.run(lambda:apply_excerpt_choice(self._source_lookup,
+                self._access(context), assembly, choice, proposal, counter, method),
                 timeout=self.config.explicit_validity_timeout_s, priority=True)
-            self._sources.require_current(checked)
+            self._sources.require_current(selected.signatures)
         except self._source_lookup.stale as error:
             if isinstance(error, MemoryRequestError) and error.code == "busy":
                 raise
             raise MemoryRequestError("conflict") from error
-        self._lookup_context(context, selected.candidates)
-        return selected
+        self._lookup_context(context, selected.read_set.memories)
+        return replace(evidence, candidates=selected.read_set.memories, payload=selected.payload,
+                       pack=selected.pack, read_set=selected.read_set)
 
     async def supplement_lookup(self, evidence, action, *, user_requested=False):
         if self._source_lookup is None or evidence.pack is None:
             raise MemoryRequestError("invalid_request")
+        from eidema.lookup import estimate_reply_tokens
+
         context = evidence.context
         self._lookup_context(context, evidence.candidates)
         access = self._access(context)
@@ -1076,6 +1096,8 @@ class HostMemoryService:
                 pass
             return
         self._closing = True
+        if self.output_speech is not None:
+            self.output_speech.close()
         async def finish():
             # Keep completion owners alive until already running work settles;
             # cancellation of a UI awaiter never orphans a SQLite owner/commit.

@@ -627,7 +627,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
     { name = "boto3", specifier = "==1.43.16" },
     { name = "cn2an", marker = "extra == 'local-models'", specifier = "==0.5.24" },
-    { name = "eidema", path = "vendor/eidema/eidema-0.2.0a2-py3-none-any.whl" },
+    { name = "eidema", path = "vendor/eidema/eidema-0.2.0a3-py3-none-any.whl" },
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = "==1.14.2" },
     { name = "fastapi", specifier = "==0.136.3" },
     { name = "ffmpeg-python", marker = "extra == 'local-models'", specifier = "==0.2.0" },
@@ -1199,22 +1199,24 @@ wheels = [
 
 [[package]]
 name = "eidema"
-version = "0.2.0a2"
-source = { path = "vendor/eidema/eidema-0.2.0a2-py3-none-any.whl" }
+version = "0.2.0a3"
+source = { path = "vendor/eidema/eidema-0.2.0a3-py3-none-any.whl" }
 dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { filename = "eidema-0.2.0a2-py3-none-any.whl", hash = "sha256:234283607d95311d66a62c9a7b78d9061596e468eb9d72a51f45deb67f861454" },
+    { filename = "eidema-0.2.0a3-py3-none-any.whl", hash = "sha256:9f56d9102bcb922ce963958163cd6faa12e02d6f2676e9ec8da6231404b0dfab" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.24" },
+    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },
     { name = "sentence-transformers", marker = "extra == 'local-embeddings'", specifier = ">=3" },
+    { name = "tokenizers", marker = "extra == 'onnx'", specifier = ">=0.20" },
 ]
-provides-extras = ["local-embeddings", "test"]
+provides-extras = ["local-embeddings", "onnx", "test"]
 
 [[package]]
 name = "einops"

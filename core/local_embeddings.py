@@ -113,8 +113,8 @@ def create_memory_embedder(model, *, backend="", version=""):
     if not backend:
         backend = "jina-onnx-q4" if model == JINA_MODEL_ID else "e5"
     if backend == "jina-onnx-q4":
-        from core.jina_embeddings import MemoryJinaEmbedder
-        return MemoryJinaEmbedder(None if model == JINA_MODEL_ID else model, version=version)
+        from core.jina_embeddings import create_jina_embedder
+        return create_jina_embedder(None if model == JINA_MODEL_ID else model, version=version)
     if backend == "e5":
         return MemoryE5Embedder(model, version=version)
     from config.memory_jina import MemoryModelError

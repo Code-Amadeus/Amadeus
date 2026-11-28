@@ -53,6 +53,7 @@ from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
+_synthesis_guard = None
 
 # Settings offers standard ×1, CUDA Graph ×1 and Parallel ×2. A runtime mode
 # switch only replaces the semaphore, so the TTS worker pool is sized for the
@@ -553,6 +554,16 @@ def discard_pending_tts(
             target_work_item,
         )
     return discarded
+
+
+def configure_speech_guard(*, scheduler_factory, synthesis_guard):
+    """Bind optional queued-playback authority during pipeline startup."""
+    global _utterance_scheduler, _synthesis_guard
+    if _synthesis_guard is not None or is_synthesis_busy():
+        raise ValueError("speech_guard_requires_new_pipeline")
+    scheduler = scheduler_factory(logger=logger)
+    guarded_synthesis = synthesis_guard(select_synthesis)
+    _utterance_scheduler, _synthesis_guard = scheduler, guarded_synthesis
 
 
 def configure(
@@ -1376,7 +1387,8 @@ async def play_sentence_worker():
                 for _ in range(job.consumed_count):
                     _pending_sentence_items.task_done()
                 continue
-            backend_name, synth = select_synthesis(
+            synthesis = _synthesis_guard if _synthesis_guard is not None else select_synthesis
+            backend_name, synth = synthesis(
                 job,
                 cuda_graph_enabled=_current_cuda_graph_enabled(),
                 experimental_enabled=_current_experimental_tts_enabled(),

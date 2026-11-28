@@ -1,17 +1,21 @@
 """The packaged SDK keeps scoped selection behind explicit Host admission."""
 
+import asyncio
 import json
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from core import session_manager as sessions
 from core import session_source_journal as journal
+from server.memory_service import MemoryLookupEvidence
 from test_cooperative_pending_turn import pending_host as pending_host
 from test_memory_lookup_followup import add
 from test_memory_recall import SyntheticMultilingualEmbedder
 from test_memory_source_delivery import wait_for
 from test_memory_source_lookup import send, wire
+from tts.contract import TTSRequest
 
 
 @pytest.mark.parametrize(("enabled", "direct", "revoke"), [
@@ -110,5 +114,76 @@ async def test_wide_scoped_choice_uses_matched_splits_and_seals_selector_reads(p
         assert delivered == [originals[-1]]
         seal.assert_called_once()
         assert len(seal.call_args.args[1].sources) == len(originals)
+    finally:
+        await host.close()
+
+
+@pytest.mark.parametrize("change", ["correct", "forget", "retire"])
+async def test_speech_guard_drops_revoked_memory_and_keeps_synthesis_available(
+    pending_host, tmp_path, monkeypatch, change,
+):
+    from server import memory_output_speech as speech
+    from tts import pipeline
+    from tts.utterance_scheduler import TTSUtteranceScheduler
+
+    ctx = pending_host
+    host = await wire(ctx, tmp_path, monkeypatch, speech=True)
+    registry = host.output_speech
+    queue = speech.queue(registry)
+    playback = SimpleNamespace(add_to_playlist=AsyncMock())
+    backend = AsyncMock()
+    monkeypatch.setattr(pipeline, "select_synthesis", lambda *_args, **_options: ("test", backend))
+    monkeypatch.setattr(pipeline, "_utterance_scheduler", TTSUtteranceScheduler(logger=pipeline.logger))
+    monkeypatch.setattr(pipeline, "_synthesis_guard", None)
+    speech.bind_pipeline(pipeline, playback, registry)
+    context = host.context(ctx.session_id)
+    access = host._access(context)
+    original = "The blue rehearsal token goes in the left drawer."
+    try:
+        if change == "retire":
+            sessions.create_session("earlier", activate=False)
+            add("earlier", "token", original)
+            lookup = await wait_for(lambda: host._source_lookup.search_originals(access, "rehearsal token"), bool)
+            value = host._sources.view(access).pin(lookup[0])
+            reads = host._store.capture_read_set(access, sources=(value,), now_ms=1)
+            evidence = MemoryLookupEvidence(context, (), {}, read_set=reads, pack=object())
+        else:
+            save = await host.request("memory.remember", {
+                **context, "operation_id": "save", "item_id": "token", "text": original,
+            })
+            item = save["operation"]
+            candidates = host._store.recall(access, "rehearsal token", now_ms=1).candidates
+            evidence = MemoryLookupEvidence(context, candidates, {})
+        async with host.lookup_delivery(evidence, message_id="queued-answer") as started:
+            event = {"message_id": "queued-answer", "revision": 1}
+            with registry.sentence_scope(registry.selected(ctx.session_id, event)):
+                await queue.put(TTSRequest("queued-answer", original, is_first=True))
+            started()
+        await queue.put(TTSRequest("independent", "We can still talk.", is_first=True))
+        request, independent = await queue.get(), await queue.get()
+        assert registry.current_ticket(registry.ticket_for_sentence(request.sentence_id))
+        if change == "retire":
+            assert sessions.delete_session("earlier")
+        else:
+            result = await host.request("memory." + change, {
+                **context, "operation_id": change, "item_id": "token",
+                "memory_id": item["memory_id"], "expected_version": item["row_version"],
+                **({"text": "The blue rehearsal token moved."} if change == "correct" else {}),
+            })
+            assert result["ok"]
+        assert not registry.current_ticket(registry.ticket_for_sentence(request.sentence_id))
+
+        # Exercise the actual injected segment and synthesis boundaries.
+        def synthesis_for(item):
+            segment = pipeline._utterance_scheduler._to_segment(item)
+            return pipeline._synthesis_guard(SimpleNamespace(segments=(segment,)))[1]
+
+        permit = asyncio.BoundedSemaphore(1)
+        await permit.acquire()
+        await synthesis_for(request)(request.text, request.sentence_id, True, task_semaphore=permit)
+        backend.assert_not_called()
+        assert playback.add_to_playlist.await_args.args[0].size == 0 and not permit.locked()
+        await synthesis_for(independent)(independent.text, independent.sentence_id, True)
+        backend.assert_awaited_once()
     finally:
         await host.close()

@@ -363,6 +363,13 @@ class SessionReadView:
         sid, _, incarnation, _, events, _ = self._source(pin.source)
         return (sid, incarnation), tuple(events).index(pin.source.record_key)
 
+    def recorded_offset(self, pin):
+        """Read the originating offset from the already admitted snapshot."""
+        sid, mid, _ = journal.decode(pin.source)
+        row = self.files[sid][4][mid]
+        assert (row["revision"], row["created_at_ms"]) == (pin.source.revision, pin.recorded_at_ms)
+        return row.get("utc_offset_minutes")
+
     def relative(self, anchor, offset):
         """Locate a committed slot without crossing an unavailable message."""
         sid, mid, _, _, events, rows = self._source(anchor.source)

@@ -10,10 +10,10 @@ _SAVABLE = frozenset(("fact", "preference", "instruction", "event"))
 
 
 class CandidateReview:
-    def __init__(self, lookup):
-        self.lookup = lookup
-        self.api = lookup.api
-        self.candidates = self.api.Candidates(lookup.store)
+    def __init__(self, host):
+        self.host, self.lookup = host, host._source_lookup
+        self.api, self.delivery = host._api, host._sources
+        self.candidates = self.api.Candidates(host._store)
 
     @staticmethod
     def _summary(candidate):
@@ -31,7 +31,7 @@ class CandidateReview:
         return [self._summary(candidate) for candidate in self.candidates.list(access)]
 
     def _evidence(self, access, candidate_id, version):
-        policy = self.lookup.host._policy
+        policy = self.host._policy
         policy_value = policy.value
         if not policy.ready or policy_value["pending"]:
             raise MemoryRequestError("conflict")
@@ -39,7 +39,7 @@ class CandidateReview:
         candidate = self.candidates.detail(access, candidate_id)
         if candidate.state != "pending" or candidate.row_version != version:
             raise MemoryRequestError("conflict")
-        view = self.lookup.delivery.view(access)
+        view = self.delivery.view(access)
         # This is a local review surface. The cap bounds source reads and UI
         # payload size without spending the role's chat-context budget.
         result = self.lookup.evidence.assemble(
@@ -85,15 +85,15 @@ class CandidateReview:
 
         # Let the SDK verify the exact operation replay, including after the
         # accepted proposal is no longer pending or the saved note was erased.
-        if self.lookup.store.operation_status(access, operation_id=common["operation_id"],
+        if self.host._store.operation_status(access, operation_id=common["operation_id"],
                                                item_id=common["item_id"]) is not None:
             return accept()
         candidate, _, signatures, policy_value = self._evidence(access, candidate_id, version)
         if candidate.comparison is not None or candidate.kind != kind:
             raise MemoryRequestError("invalid_request")
         with journal.commit_lock:
-            policy = self.lookup.host._policy
+            policy = self.host._policy
             if not policy.ready or policy.value is not policy_value:
                 raise MemoryRequestError("conflict")
-            self.lookup.delivery.require_current(signatures)
+            self.delivery.require_current(signatures)
             return accept()

@@ -217,6 +217,8 @@ async def test_waiting_for_foreground_does_not_tick_and_suggestions_can_be_revie
         assert sessions.append_session_message(source_session, role="user", content=text,
                                                turn_id="turn", message_id="tag")
         waiting = await wait_for(binding.status, lambda state: state["state"] == "waiting_resource")
+        assert not config.db_path.with_suffix(".maintenance.sqlite3").exists()
+        assert eidema.MaintenanceRuntime.bound_lane_keys(host._store, binding.runtime_id)
         prior_probes = len(probes)
         binding.resume()  # Explicit notices also cannot reenter SQLite while busy.
         await wait_for(lambda: len(probes), lambda count: count >= prior_probes + 3)

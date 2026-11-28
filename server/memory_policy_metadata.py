@@ -1,12 +1,12 @@
-"""SDK-owned stdlib-only schema 18/19 policy metadata reader.
+"""SDK-owned stdlib-only schema 18 through 20 policy metadata reader.
 
-Host distribution is a byte-identical build copy. Contract: policy-metadata-19-v1.
+Host distribution is a byte-identical build copy. Contract: policy-metadata-20-v1.
 No Memory, candidate, source or vector body is selected. Schema metadata and
 initial-state signatures are generated from canonical Eidema schema.sql.
 """
 from __future__ import annotations
 
-CONTRACT_VERSION = "policy-metadata-19-v1"
+CONTRACT_VERSION = "policy-metadata-20-v1"
 
 
 def _exclusion_rows(db, user_id):
@@ -29,19 +29,24 @@ def _owner_namespaces(db):
         "SELECT user_id FROM " + table for table in tables)))
 
 
+def _schema_table_types(version):
+    excluded = TABLE_EXCLUSIONS.get(version, ())
+    return {table: kind for table, kind in SCHEMA_TABLE_TYPES.items() if table not in excluded}
+
+
 def validate_schema(db):
     state = db.execute("SELECT schema_version FROM store_state WHERE singleton=1").fetchone()
     if state is None or state[0] not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError("unsupported_source_policy_schema")
     tables = {row[1]:row[2] for row in db.execute("PRAGMA main.table_list")
               if not row[1].startswith("sqlite_") and row[2] != "shadow"}
-    if tables != SCHEMA_TABLE_TYPES:
+    version = state[0]
+    if tables != _schema_table_types(version):
         raise ValueError("incomplete_source_policy_schema")
     # Column names allow legitimate migrated representations while refusing
     # missing authority/provenance fields. Pristine proof below is stricter.
-    version = state[0]
-    for table, columns in SCHEMA_COLUMNS.items():
-        expected = COLUMN_OVERRIDES.get(version, {}).get(table, columns)
+    for table in tables:
+        expected = COLUMN_OVERRIDES.get(version, {}).get(table, SCHEMA_COLUMNS[table])
         actual = tuple(row[1] for row in db.execute('PRAGMA table_info("' + table + '")'))
         if actual != tuple(row[1] for row in expected):
             raise ValueError("incomplete_source_policy_schema")
@@ -65,15 +70,15 @@ def read_source_policy_metadata(db, user_id):
 
 
 def is_pristine_core(db):
-    """Prove canonical initial schema 18/19 state, including unowned domain rows.
+    """Prove canonical initial state, including unowned domain rows.
 
     Every required non-shadow table must exist with its native column schema.
     Body-bearing tables are checked with SELECT 1 only. Seeded metadata rows
     must equal canonical schema initialization; no user-derived state survives.
     """
     version = validate_schema(db)
-    for table, columns in SCHEMA_COLUMNS.items():
-        expected = COLUMN_OVERRIDES.get(version, {}).get(table, columns)
+    for table in _schema_table_types(version):
+        expected = COLUMN_OVERRIDES.get(version, {}).get(table, SCHEMA_COLUMNS[table])
         actual = [tuple(row) for row in db.execute('PRAGMA table_info("' + table + '")')]
         if actual != expected:
             raise ValueError("incomplete_source_policy_schema")
@@ -88,13 +93,15 @@ def is_pristine_core(db):
 
 
 # BEGIN GENERATED SCHEMA MANIFEST -- generated from the canonical schema files.
-SUPPORTED_SCHEMA_VERSIONS = (18, 19)
-SCHEMA_SHA256 = 'c0c43ae7430d0239cbcc14b46d70891883a7c207a6af646b171928bd6adbed58'
+SUPPORTED_SCHEMA_VERSIONS = (18, 19, 20)
+SCHEMA_SHA256 = 'a762ac9249d439a003eacbb62e5cf0baae7949d3e06a0280883172d690895cec'
 SCHEMA_TABLE_TYPES = {'candidate_comparisons': 'table',
  'candidate_evidence': 'table',
  'candidate_submissions': 'table',
  'candidates': 'table',
  'derived_authorizations': 'table',
+ 'eidema_runtime': 'table',
+ 'eidema_runtime_lanes': 'table',
  'embeddings': 'table',
  'exclusions': 'table',
  'forgotten': 'table',
@@ -165,6 +172,19 @@ SCHEMA_COLUMNS = {'candidate_comparisons': [(0, 'candidate_id', 'TEXT', 0, None,
                             (4, 'pipeline_version', 'TEXT', 1, None, 0),
                             (5, 'generation', 'INTEGER', 1, None, 0),
                             (6, 'enabled', 'INTEGER', 1, '0', 0)],
+ 'eidema_runtime': [(0, 'runtime_id', 'TEXT', 0, None, 1),
+                    (1, 'binding', 'TEXT', 1, None, 0),
+                    (2, 'next_lane', 'INTEGER', 1, None, 0),
+                    (3, 'last_clock_ms', 'INTEGER', 0, None, 0)],
+ 'eidema_runtime_lanes': [(0, 'runtime_id', 'TEXT', 1, None, 1),
+                          (1, 'lane_key', 'TEXT', 1, None, 2),
+                          (2, 'observed_received', 'INTEGER', 1, '0', 0),
+                          (3, 'first_dirty_ms', 'INTEGER', 0, None, 0),
+                          (4, 'last_change_ms', 'INTEGER', 0, None, 0),
+                          (5, 'postprocessed_position', 'INTEGER', 1, '0', 0),
+                          (6, 'post_task_id', 'TEXT', 0, None, 0),
+                          (7, 'post_offset', 'INTEGER', 1, '0', 0),
+                          (8, 'post_reformation_task_id', 'TEXT', 0, None, 0)],
  'embeddings': [(0, 'memory_id', 'TEXT', 1, None, 1),
                 (1, 'row_version', 'INTEGER', 1, None, 0),
                 (2, 'embedding_version', 'TEXT', 1, None, 2),
@@ -246,8 +266,7 @@ SCHEMA_COLUMNS = {'candidate_comparisons': [(0, 'candidate_id', 'TEXT', 0, None,
                          (4, 'max_input_tokens', 'INTEGER', 1, None, 0),
                          (5, 'max_output_tokens', 'INTEGER', 1, None, 0),
                          (6, 'max_cost_units', 'INTEGER', 1, None, 0)],
- 'maintenance_clock': [(0, 'singleton', 'INTEGER', 0, None, 1),
-                       (1, 'last_reservation_ms', 'INTEGER', 1, '0', 0)],
+ 'maintenance_clock': [(0, 'singleton', 'INTEGER', 0, None, 1), (1, 'last_reservation_ms', 'INTEGER', 1, '0', 0)],
  'memories': [(0, 'memory_id', 'TEXT', 0, None, 1),
               (1, 'root_id', 'TEXT', 1, None, 0),
               (2, 'user_id', 'TEXT', 1, None, 0),
@@ -412,7 +431,7 @@ SCHEMA_COLUMNS = {'candidate_comparisons': [(0, 'candidate_id', 'TEXT', 0, None,
                  (1, 'schema_version', 'INTEGER', 1, None, 0),
                  (2, 'change_seq', 'INTEGER', 1, '0', 0),
                  (3, 'cleanup_pending', 'INTEGER', 1, '0', 0)]}
-INITIAL_METADATA_ROWS = {'maintenance_clock': [(1, 0)], 'store_state': [(1, 19, 0, 0)]}
+INITIAL_METADATA_ROWS = {'maintenance_clock': [(1, 0)], 'store_state': [(1, 20, 0, 0)]}
 COLUMN_OVERRIDES = {18: {'source_changes': [(0, 'stream_id', 'TEXT', 1, None, 1),
                          (1, 'position', 'INTEGER', 1, None, 2),
                          (2, 'namespace', 'TEXT', 1, None, 0),
@@ -436,4 +455,5 @@ COLUMN_OVERRIDES = {18: {'source_changes': [(0, 'stream_id', 'TEXT', 1, None, 1)
                         (8, 'state_version', 'INTEGER', 1, None, 0),
                         (9, 'lookup_allowed', 'INTEGER', 1, '0', 0),
                         (10, 'derived_use_mask', 'INTEGER', 1, '0', 0)]}}
-INITIAL_ROW_OVERRIDES = {18: {'store_state': [(1, 18, 0, 0)]}}
+TABLE_EXCLUSIONS = {18: ('eidema_runtime', 'eidema_runtime_lanes'), 19: ('eidema_runtime', 'eidema_runtime_lanes')}
+INITIAL_ROW_OVERRIDES = {18: {'store_state': [(1, 18, 0, 0)]}, 19: {'store_state': [(1, 19, 0, 0)]}}
