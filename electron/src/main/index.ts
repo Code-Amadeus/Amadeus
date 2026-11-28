@@ -1111,7 +1111,11 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       console.error(`[electron-slice:renderer] ${message} (${sourceId}:${line})`)
     }
   })
-  window.webContents.on('render-process-gone', () => {
+  window.webContents.on('render-process-gone', (_event, details) => {
+    // A renderer that exits or never starts (for example when Chromium cannot
+    // create sandboxed processes) only fails loadURL with a generic ERR_FAILED
+    // and emits no did-fail-load, so this is the one place that knows why.
+    console.error(`[electron-slice] renderer process gone: ${details.reason} (exit ${details.exitCode})`)
     resetElectronSliceRenderReadiness(window)
     if (platformPolicy.hostMode === 'scene') electronCanvasLifecycle.reset()
   })

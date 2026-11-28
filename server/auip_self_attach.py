@@ -25,7 +25,7 @@ from server.attention_request import (
 )
 from server.auip_app_source import ArtifactSource, discover_exported_auip_apps
 from server.auip_contract import AuipProtocolError, parse_manifest
-from server.auip_runtime import AuipRuntime
+from server.auip_runtime import AuipRuntime, ai_interaction_enabled
 
 
 SELF_ATTACH_TIMEOUT_S = 5 * 60.0
@@ -57,6 +57,9 @@ class AuipSelfAttachCoordinator:
         instance_id: str,
         entry_url: str,
     ) -> dict[str, Any]:
+        if not ai_interaction_enabled():
+            # Offer no play options; the app stays standalone, as with "Not now".
+            raise AuipProtocolError("auip_interaction_disabled")
         parsed = parse_manifest(manifest)
         clean_instance = str(instance_id or "").strip()
         if not _INSTANCE_ID.fullmatch(clean_instance):

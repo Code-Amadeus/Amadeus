@@ -246,3 +246,21 @@ test('Work readiness remains unknown without backend facts regardless of a store
     assert.equal(capabilities.find(item => item.id === 'work_execution').state, 'unknown')
   }
 })
+
+test('turning AI application interaction off reads as a choice that points to its switch', () => {
+  const snapshot = configuredSnapshot()
+  snapshot.model_roles = [group('auip_action', true, {}, { active: true, status_ok: true })]
+  const availability = [{ provider_id: 'pi', configured: true, ready: true, registered: true, reason: 'ready' }]
+  const find = settings => exports.buildCapabilityProfiles(settings, availability)
+    .find(item => item.id === 'application_interaction')
+  const on = find({ ...snapshot, auip_interaction_enabled: true })
+  assert.equal(on.state, 'ready')
+  assert.equal(on.configureSection, 'models')
+  const off = find({ ...snapshot, auip_interaction_enabled: false })
+  assert.equal(off.state, 'inactive')
+  assert.equal(off.stateLabel, 'Turned off')
+  assert.equal(off.configureSection, 'providers')
+  assert.match(off.scenes.find(scene => scene.sceneId === 'chat').detail, /used manually/)
+  // An older backend that does not report the switch keeps the previous projection.
+  assert.equal(find(snapshot).state, 'ready')
+})

@@ -27,7 +27,11 @@ from server.auip_participant import (
     AuipParticipantProposal,
     ControllerCallable,
 )
-from server.auip_runtime import PENDING_ACTION_TIMEOUT_S, AuipRuntime, runtime
+from server.auip_runtime import (
+    PENDING_ACTION_TIMEOUT_S,
+    AuipRuntime,
+    runtime,
+)
 from server.event_bus import bus
 from server.protocol import Method
 
@@ -100,6 +104,11 @@ class AuipEngagementCoordinator:
 
     async def set_mode(self, *, app_session_id: str, mode: str) -> dict[str, Any]:
         clean_requested = str(mode or "").strip().lower()
+        if (
+            clean_requested in {"collaborate", "delegate"}
+            and not self.runtime.ai_interaction_in_effect()
+        ):
+            raise AuipProtocolError("auip_interaction_disabled")
         if clean_requested == "delegate" and (
             self.controller is None or self.role_authorizer is None
         ):
@@ -129,6 +138,8 @@ class AuipEngagementCoordinator:
         expected_revision: int | None = None,
         current_role_response: str = "",
     ) -> dict[str, Any]:
+        if not self.runtime.ai_interaction_in_effect():
+            raise AuipProtocolError("auip_interaction_disabled")
         if str(reason or "") == "explicit_step":
             self._cancel_deferred_automatic(app_session_id)
         b2_unavailable = bool(
@@ -220,6 +231,9 @@ class AuipEngagementCoordinator:
                 self._remember_receipt(receipt_key)
         if app_session_id and str(payload.get("status") or "") != "active":
             self._cancel_receipt_watch(app_session_id)
+        if not self.runtime.ai_interaction_in_effect():
+            # Receipt bookkeeping above stays truthful; no new turn is offered.
+            return
         event = payload.get("event") if isinstance(payload.get("event"), dict) else None
         if event is None:
             return

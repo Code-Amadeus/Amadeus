@@ -151,6 +151,50 @@ async def test_role_entry_proposal_does_not_authorize_launch(entry_host, failure
     assert context.host.adapter.calls == 0
 
 
+async def test_interaction_off_skips_entry_query_and_prompt_until_turned_back_on(
+        entry_host, monkeypatch):
+    from config import settings
+
+    context, state, _launch, _item, _attempt, artifact = entry_host
+    original_query = context.manager.query
+    prompts = []
+
+    async def query(messages, *, on_text=None):
+        frame = json.loads(messages[-1]["content"])
+        if frame["source_kind"] == "user":
+            prompts.append(messages[0]["content"])
+        if settings.AUIP_INTERACTION_ENABLED:
+            return await original_query(messages, on_text=on_text)
+        if frame["source_kind"] != "user":
+            return "わかったわ。"
+        # The role contract offers op=auip only beside Host launch candidates.
+        raw = json.dumps({"action":None, "say":"いいわ。"}, ensure_ascii=False)
+        if on_text is not None:
+            await on_text(raw)
+        return raw
+
+    context.manager.query = query
+    text = "刚才那个 2048 再打开吧，咱们接着玩。"
+    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", False)
+    assert context.manager.prefetch_auip_entry_context(context.session_id) is None
+    await context.handler.send_text(text, session_id=context.session_id, turn_id="off")
+    await context.finish()
+    ingress = context.manager.ingresses[context.session_id]
+    assert ingress.receipts["off"]["state"] != "auip_entry_pending"
+    assert state.captures == []
+    assert len(prompts) == 1 and "[AUIP launchable applications]" not in prompts[0]
+    assert not [p for m, p in state.events if m == Method.AUIP_LAUNCH_REQUESTED]
+
+    monkeypatch.setattr(settings, "AUIP_INTERACTION_ENABLED", True)
+    await context.handler.send_text(text, session_id=context.session_id, turn_id="on")
+    await context.finish()
+    assert ingress.receipts["on"]["state"] == "auip_entry_pending"
+    assert len(state.captures) == 1
+    assert "[AUIP launchable applications]" in prompts[-1]
+    event, = [p for m, p in state.events if m == Method.AUIP_LAUNCH_REQUESTED]
+    assert event["artifact_id"] == artifact.artifact_id
+
+
 async def test_independent_inactive_launch_and_work_settle_through_existing_owners(
         entry_host):
     context, state, _launch, item, _attempt, artifact = entry_host
