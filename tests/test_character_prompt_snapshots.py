@@ -385,7 +385,10 @@ def _capture_prompts(character_id: str = "kurisu", override: str = "", startup_f
             startup_facts["english_editor"] = prompts.get_character_prompt_config()
             settings.RAG_ENABLED = True
             rag_calls = []
-            service = SimpleNamespace(reference=lambda query: rag_calls.append(query) or "Synthetic Kurisu corpus")
+            async def reference_async(query):
+                rag_calls.append(query)
+                return "Synthetic Kurisu corpus"
+            service = SimpleNamespace(reference_async=reference_async)
             with patch.object(rag, "get_character_rag", return_value=service):
                 startup_facts["rag_result"] = runner.run(rag.role_character_reference("synthetic topic"))
             startup_facts["rag_calls"] = rag_calls

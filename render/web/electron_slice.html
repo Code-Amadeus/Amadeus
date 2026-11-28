@@ -238,9 +238,10 @@
     .composer-tool:focus-visible, .has-chat-controls .wallpaper-keyboard-composer-send:focus-visible { outline: 2px solid #9ccbbb; outline-offset: 2px; }
     .composer-tool:disabled { opacity: .4; cursor: not-allowed; }
     .composer-tool[aria-pressed="true"] { color: #a8e8cf; }
+    .composer-auip[aria-pressed="true"] { background: #a8e8cf20; }
     .composer-tool small { position: absolute; right: -2px; top: -1px; font: 9px ui-monospace, monospace; color: #a9bbb5; }
     .composer-voice small { display: none; }
-    .composer-voice-label { font: 11px system-ui, sans-serif; color: #819a93; margin-left: 4px; letter-spacing: 0; }
+    .composer-voice-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px system-ui, sans-serif; color: #819a93; margin-left: 4px; letter-spacing: 0; }
     .has-chat-controls .wallpaper-keyboard-composer-send {
       display: grid; place-items: center; width: 28px; height: 28px; min-width: 28px; padding: 0;
       border: 0; border-radius: 50%; background: #bee0d1; color: #17352a; box-shadow: none;

@@ -35,7 +35,8 @@ class ChatRoleDelivery(RequestHandler):
             return False
         if not complete:
             await bus.emit(Method.CHAT_TOKEN, {
-                "token":visible_text, "turn_id":message_id,
+                "token":visible_text, "turn_id":event["cause"],
+                **({"message_id":message_id} if message_id != event["cause"] else {}),
                 "session_id":session_id})
             return True
         self.receipts.append({"message_id":message_id, "session_id":session_id,

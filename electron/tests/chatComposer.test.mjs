@@ -46,7 +46,7 @@ const byClass = (root, className) => elements(root, node => attribute(node, 'cla
 test('the chat header owns the render toggle: pressed while requested, disabled offline', () => {
   const [bar] = byClass(tree, 'chat-bar')
   assert.ok(bar, 'chat header')
-  const [toggle] = elements(bar, node => opening(node).tagName.getText(tree) === 'SettingsButton' && attribute(node, 'aria-pressed') !== undefined)
+  const [toggle] = elements(bar, node => opening(node).tagName.getText(tree) === 'SettingsButton' && attribute(node, 'title') === "t('Character render')")
   assert.ok(toggle, 'render toggle in the chat header')
   assert.equal(attribute(toggle, 'aria-pressed'), 'renderRequested')
   assert.equal(attribute(toggle, 'onClick'), 'onToggleRender')

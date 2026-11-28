@@ -2375,6 +2375,28 @@ ipcMain.handle('chat-avatars.clear', (event, role: ChatAvatarRole) => {
     }
   }
 })
+ipcMain.handle('wallpaper-auip.setting', (event, phase: unknown, value: unknown) => {
+  const isWindowsComposer = process.platform === 'win32'
+    && event.senderFrame === event.sender.mainFrame
+    && (event.sender === electronSliceWindow?.webContents || event.sender === electronCanvasLifecycle.window?.webContents)
+  if (!isWindowsComposer) return { ok: false }
+  const key = 'AUIP_INTERACTION_ENABLED'
+  try {
+    if (phase === 'save' && typeof value === 'boolean') {
+      const saved = desktopSettings.update(process.env, { values: { [key]: value } })
+      const revisions = saved.pendingRevisions as Record<string, number> | undefined
+      return { ok: true, revision: revisions?.[key] }
+    }
+    if (phase === 'applied' && typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+      desktopSettings.markApplied(process.env, { [key]: value })
+      return { ok: true }
+    }
+  } catch {
+    return { ok: false }
+  }
+  return { ok: false }
+})
+
 ipcMain.handle('main-window.focus', (event) => {
   const isWindowsSlice = process.platform === 'win32'
     && (event.sender === electronSliceWindow?.webContents || event.sender === electronCanvasLifecycle.window?.webContents)

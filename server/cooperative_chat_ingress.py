@@ -198,13 +198,13 @@ def _shared_role_history(session_id: str, current_turn_id: str) -> tuple[dict, .
     """Read one originating Session snapshot without consulting another Session."""
 
     if sm.get_current_session_id() == session_id:
-        history = sm.conversation_history.snapshot()
+        recent = sm.conversation_history.recent_with_source_identity()
     else:
-        history, _ = sm._read_session_history(session_id)
+        recent = sm.committed_session_recent(session_id)
     rows = []
     # The Session keeps every message; the role sees the same recent window
     # as every other Main Chat prompt.
-    for row in history.recent():
+    for row in recent:
         role = str(row.get("role") or "")
         text = str(row.get("content") or "")
         turn_id = str(row.get("turn_id") or "")
@@ -212,10 +212,31 @@ def _shared_role_history(session_id: str, current_turn_id: str) -> tuple[dict, .
             continue
         if turn_id and turn_id == current_turn_id:
             continue
+        source = {"session_id": session_id, "message_id": row.get("message_id"), "revision": row.get("revision")}
+        if "incarnation" in row:
+            source["incarnation"] = row["incarnation"]
         rows.append({"source":"user" if role == "user" else "kurisu",
-            "text":text,
+            "text":text, "_source":source,
             "input_id" if role == "user" else "cause":turn_id})
     return tuple(rows)
+
+
+def _masked_history_execution_references(session_id, ledger, history, masked_turn_ids):
+    """Join only masked turns to their frozen, exact accepted user source."""
+    from server.turn_admission import capture_turn_admission
+
+    sources = []
+    for row in history:
+        turn_id = row.get("input_id")
+        source = row.get("_source") or {}
+        if (row.get("source") != "user" or turn_id not in masked_turn_ids
+                or source.get("session_id") != session_id or not source.get("message_id")):
+            continue
+        admission = capture_turn_admission(session_id=session_id, turn_id=turn_id,
+            utterance_id=source["message_id"], transcript=row["text"])
+        sources.append({"root_id":admission.root_id, "utterance_id":admission.utterance_id,
+            "transcript_hash":admission.transcript_hash, "turn_id":turn_id})
+    return ledger.history_execution_references("chat:" + session_id, sources) if sources else ()
 
 
 class CooperativeChatIngress:
@@ -236,8 +257,9 @@ class CooperativeChatIngress:
             "text":row["content"],
             "input_id" if row["role"] == "user" else "cause":str(row.get("turn_id") or "")}
             for row in history.recent() if row["role"] in {"user", "assistant"} and row["content"])
-        loop.history_source = lambda turn_id:_shared_role_history(
-            self.session_id, turn_id)
+        loop.history_source = lambda turn_id:_shared_role_history(self.session_id, turn_id)
+        loop.history_execution_references = lambda history, masked_turn_ids:_masked_history_execution_references(
+            self.session_id, ledger, history, masked_turn_ids)
         self.receipts = loop.receipts
         self.utterance_by_turn: dict[str, str] = {}
         self.scope_request = scope_request
@@ -308,7 +330,7 @@ class CooperativeChatIngress:
                 interaction_branch_routing_lease=interaction_branch_routing_lease, **_kwargs)
 
     async def _run(self, text, *, turn_admission=None, visual_context=None,
-                   gui_callback=None, interaction_branch_routing_lease=None, **_kwargs):
+                   gui_callback=None, interaction_branch_routing_lease=None, memory_lookup=False, **_kwargs):
         admission = turn_admission
         if admission is None or admission.session_id != self.session_id:
             raise TurnAuthorityError("cooperative Chat requires its Host-bound Session")
@@ -347,13 +369,22 @@ class CooperativeChatIngress:
                     await self.handler._interrupt_background_interaction()
             require_live_turn()
             if not recorded:
-                if not sm.append_session_message(self.session_id, role="user", content=text, turn_id=turn_id):
+                if not sm.append_session_message(self.session_id, role="user", content=text,
+                        turn_id=turn_id, message_id=admission.utterance_id):
                     raise TurnAuthorityError("cooperative Chat source could not be recorded")
                 recorded = True
             return admission
 
         if not admission.pending:
             await confirm_for_acceptance()
+        if memory_lookup:
+            # The explicit read has no Work/AUIP routing or model interpretation.
+            # Keep its original admitted source, confirmation and loop task owner.
+            await self.loop.submit(text, input_id=key, turn_id=turn_id,
+                admission_check=require_live_turn, turn_admission=admission,
+                acceptance_check=confirm_for_acceptance, memory_lookup=memory_lookup)
+            return next((row["text"] for row in reversed(self.loop.history)
+                if row.get("source") == "kurisu" and row.get("cause") == turn_id), "")
         independent_auip = None
         auip_entry = None
         planned_after_work = None
@@ -759,6 +790,7 @@ class CooperativeChatManager:
                  destination: WorkDestinationService | None = None,
                  work_planner: Callable | None = None,
                  role_reference: Callable | None = None,
+                 memory=None,
                  hybrid_head: Callable | None = None,
                  attention: AttentionRequestCoordinator = attention_requests):
         if not isinstance(handler, ChatHandler):
@@ -775,6 +807,7 @@ class CooperativeChatManager:
         self.query = query
         self.persona = persona
         self.role_reference = role_reference
+        self.memory = memory
         self.hybrid_head = hybrid_head
         self.publish_factory = publish_factory
         self.role_provider_selector = role_provider_selector
@@ -951,12 +984,34 @@ class CooperativeChatManager:
                     expected_workspace = project.canonical_path
                 return Path(expected_workspace).resolve() == Path(child.workspace).resolve()
 
+            memory_use = (self.memory if self.memory is not None and self.memory.config.enabled
+                          and self.memory.config.use_enabled else None)
             loop = CooperativeProviderLoop(self.runtime, self.query, self.allocate,
                 provider=self.provider, context_requirements={provider:replace(requirements,
                     workspace_access="read") if requirements.workspace_access == "write" else requirements
                     for provider, requirements in self.context_requirements.items()},
                 persona=self.persona, publish=publisher, owns_runtime=False,
                 role_reference=self.role_reference,
+                memory_reference=(lambda text, turn_id, *, deadline:self.memory.recall_for_session(
+                    session_id, text, turn_id, deadline=deadline))
+                    if memory_use is not None else None,
+                memory_validate=memory_use.validate_reference if memory_use is not None else None,
+                memory_lookup=(lambda query, **ownership:self.memory.lookup_for_session(session_id, query, **ownership))
+                    if memory_use is not None else None,
+                memory_lookup_validate=memory_use.validate_lookup if memory_use is not None else None,
+                memory_lookup_delivery=self.memory.lookup_delivery if self.memory is not None else None,
+                memory_lookup_followup=(self.memory.supplement_lookup
+                    if memory_use is not None and memory_use.config.source_runtime_enabled else None),
+                memory_source_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled),
+                scoped_memory_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled
+                    and memory_use.config.scoped_recall_enabled),
+                memory_lookup_status=lambda turn_id, status:bus.emit_now(Method.CHAT_MEMORY_LOOKUP,
+                    {"session_id":session_id, "turn_id":turn_id, "status":status}),
+                memory_history_derived=self.memory.history_is_derived if self.memory is not None else None,
+                memory_history_token=self.memory.history_policy_token if self.memory is not None else None,
+                memory_history_reference=(lambda rows:self.memory.history_dependencies(session_id, rows))
+                    if self.memory is not None else None,
+                memory_timeout_s=self.memory.config.recall_timeout_s if self.memory is not None else .15,
                 hybrid_head=self.hybrid_head,
                 work_proposals_only=self.work_planner is not None,
                 initial_destination=initial_destination,

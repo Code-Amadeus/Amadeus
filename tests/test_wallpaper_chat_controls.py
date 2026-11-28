@@ -123,7 +123,47 @@ async def test_image_is_forwarded_with_the_same_session_as_text():
     handler._chat_send_fn = AsyncMock(return_value={"status": "ok"})
     visual = {"mode": "attachment", "frame": {"dataUrl": "data:image/jpeg;base64,AA=="}}
     assert (await handler._route_chat_submit({"text": "look", "visual": visual}))["ok"]
-    handler._chat_send_fn.assert_awaited_once_with("look", "s1", visual)
+    handler._chat_send_fn.assert_awaited_once_with("look", "s1", visual, False)
+
+
+async def test_wallpaper_explicit_search_uses_current_session_and_lookup_intent():
+    handler = WallpaperHandler()
+    handler._ensure_chat_session_fn = AsyncMock(return_value={"ok": True, "current_session_id": "current"})
+    handler._chat_send_fn = AsyncMock(return_value={"status": "ok"})
+    result = await handler._route_chat_submit({"text": "Where is the saved note?", "memory_lookup": True,
+                                              "session_id": "untrusted-override"})
+    assert result["ok"]
+    handler._chat_send_fn.assert_awaited_once_with("Where is the saved note?", "current", None, True)
+
+
+async def test_wallpaper_application_toggle_only_applies_the_shared_boolean_setting():
+    deps = owners()
+    config = deps["system"].handle
+    config.return_value = {"auip_interaction_enabled": True}
+    status = await wallpaper_chat_control({"action": "status"}, **deps,
+        memory_status=lambda: {"sdk_version": "0.2.0a1", "use_enabled": True})
+    assert status["auip_interaction_enabled"] and status["memory_use_enabled"]
+    assert not (await wallpaper_chat_control({"action": "auip_set", "enabled": "false"}, **deps))["ok"]
+    config.assert_awaited_once_with(Method.SYSTEM_GET_CONFIG, {})
+    config.return_value = {"values": {"auip_interaction_enabled": False}}
+    assert await wallpaper_chat_control({"action": "auip_set", "enabled": False}, **deps) == {
+        "ok": True, "auip_interaction_enabled": False,
+    }
+    config.assert_awaited_with(Method.SYSTEM_SET_CONFIG, {"values": {"auip_interaction_enabled": False}})
+
+
+async def test_wallpaper_application_projection_delivers_only_the_user_setting():
+    handler = WallpaperHandler()
+    host = SimpleNamespace(composer_event=Mock())
+    handler._wallpaper_host = host
+    handler._chat_control_fn = AsyncMock()
+    await handler._forward_composer_event(Method.SYSTEM_CONFIG, {
+        "updated": ["auip_interaction_enabled"],
+        "values": {"auip_interaction_enabled": False, "chat_supports_images": True},
+    })
+    host.composer_event.assert_called_once_with({
+        "method": Method.SYSTEM_CONFIG, "params": {"auip_interaction_enabled": False},
+    })
 
 
 @pytest.mark.parametrize("enabled", [False, True])

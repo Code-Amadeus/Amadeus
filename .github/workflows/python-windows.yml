@@ -42,7 +42,9 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install locked environment (T1 + dev tooling)
         shell: bash
-        run: uv sync --locked --extra dev
+        run: |
+          python tools/package_eidema.py check
+          uv sync --locked --extra dev
       - name: Verify environment
         run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
       - name: Run Python suites

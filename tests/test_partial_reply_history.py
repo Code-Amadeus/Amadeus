@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core import session_manager as sm
-import core.chat_history_projection as hp
 import core.turn_coordinator as tc
 from server.cooperative_context_store import CooperativeContextStore
 from server.control_ledger import ControlLedgerStore
@@ -27,8 +26,7 @@ def isolated_history(tmp_path, monkeypatch):
     monkeypatch.setattr(sm, "_SESSION_SELECTION_REVISION", 0)
     monkeypatch.setattr(sm, "_activation_guard", None)
     history = sm.ConversationHistory()
-    for module in (sm, hp):
-        monkeypatch.setattr(module, "conversation_history", history)
+    monkeypatch.setattr(sm, "conversation_history", history)
     monkeypatch.setattr(tc, "coordinator", tc.TurnCoordinator())
     monkeypatch.setattr(ChatHandler, "_turn_allows_visible_emit", AsyncMock(return_value=True))
     sm.create_session("A")
@@ -179,6 +177,7 @@ async def test_partial_cleanup_never_restores_interrupted_tail(streaming_role, i
     # Cooperative ingress records the accepted user row before role output.
     sm.append_session_message("A", role="user", content="Question", turn_id="interrupted")
     stream = host.delivery.begin_stream("interrupted")
+    identity = stream.event["message_id"]
     await stream.feed("Heard prefix. Unheard tail.")
 
     def interrupt():
@@ -193,6 +192,25 @@ async def test_partial_cleanup_never_restores_interrupted_tail(streaming_role, i
         interrupt()
     assert [(row["turn_id"], row["content"]) for row in assistant_rows()] == [
         ("interrupted", "Heard prefix. [interrupted by user]")]
+    assert assistant_rows()[0]["message_id"] == identity
+    assert assistant_rows()[0]["created_at_ms"] == stream.event["created_at_ms"]
+    assert ("A", "interrupted") not in sm._active_assistant_replies
+
+
+async def test_active_stream_interruption_targets_its_identity_among_turn_publications(streaming_role):
+    host = streaming_role
+    host.delivery.record_display = sm.append_session_message
+    sm.append_session_message("A", role="user", content="Question", turn_id="turn")
+    sm.append_session_message("A", role="assistant", content="An earlier publication.",
+        turn_id="turn", message_id="earlier-publication")
+    stream = host.delivery.begin_stream("turn")
+    await stream.feed("Current prefix. Unheard tail.")
+    assert sm.persist_interrupted_assistant_turn("A", turn_id="turn", heard_content="Current prefix.")
+    stream.abort()
+    rows = assistant_rows()
+    assert [(row["message_id"], row["content"]) for row in rows] == [
+        ("earlier-publication", "An earlier publication."),
+        (stream.event["message_id"], "Current prefix. [interrupted by user]")]
 
 
 @pytest.mark.parametrize("accepted", [True, False])
@@ -269,6 +287,6 @@ async def test_tts_interrupt_retains_origin_when_playback_drain_switches_session
     await handler.handle(Method.TTS_INTERRUPT, {"annotate_history":True,
         "turn_id":"voice", "accumulated_text":"Full original reply.", "session_id":"untrusted"})
     assert sm.get_current_session_id() == "B"
-    assert sm.conversation_history.dialog == [{"role":"user", "content":"Only B"}]
+    assert [(row["role"], row["content"]) for row in sm.conversation_history.dialog] == [("user", "Only B")]
     assert assistant_rows("B") == []
     assert assistant_rows("A")[0]["content"] == "Heard prefix. [interrupted by user]"

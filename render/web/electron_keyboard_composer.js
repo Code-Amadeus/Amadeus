@@ -48,6 +48,8 @@
       composerRoot.querySelector(".wallpaper-keyboard-composer-hints").innerHTML =
         '<button class="composer-image composer-tool" type="button" aria-label="Attach image" title="添加图片" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></button>' +
         '<button class="composer-voice composer-tool" type="button" aria-label="Voice input" title="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></button>' +
+        '<button class="composer-memory composer-tool" type="button" aria-label="Search saved memories" title="用输入框里的文字查找已保存的记忆" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4M8 7h6M8 11h2"/><circle cx="16" cy="15" r="4"/><path d="m19 18 3 3"/></svg></button>' +
+        '<button class="composer-auip composer-tool" type="button" aria-label="Let Amadeus interact with applications" title="允许 Amadeus 与应用交互" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/></svg></button>' +
         '<span class="composer-voice-label">待唤醒</span><input class="composer-file" type="file" accept="image/*" hidden>';
     }
     if (options.controls) composerRoot.insertAdjacentHTML("beforeend",
@@ -62,6 +64,8 @@
     const status = composerRoot.querySelector(".wallpaper-keyboard-composer-status");
     const imageButton = composerRoot.querySelector(".composer-image");
     const voiceButton = composerRoot.querySelector(".composer-voice");
+    const memoryButton = composerRoot.querySelector(".composer-memory");
+    const auipButton = composerRoot.querySelector(".composer-auip");
     const newChatButton = composerRoot.querySelector(".composer-new-chat");
     const fileInput = composerRoot.querySelector(".composer-file");
     const preview = composerRoot.querySelector(".composer-attachment");
@@ -74,11 +78,27 @@
     let bridgePort = "";
     let bridgeToken = "";
     let sending = false;
+    let memoryUseEnabled = false;
+    let auipEnabled;
+    let auipSaving = false;
     let composerBounds = null;
     let initialLayoutPending = true;
 
     function updateSendState() {
-      sendButton.disabled = sending || (!String(input.value || "").trim() && !attachment);
+      const draft = String(input.value || "").trim();
+      sendButton.disabled = sending || (!draft && !attachment);
+      if (memoryButton) {
+        const validQuery = draft && Array.from(draft).length <= 2000;
+        memoryButton.disabled = !memoryUseEnabled || sending || !validQuery || Boolean(attachment);
+        memoryButton.title = !memoryUseEnabled ? "请在记忆设置中启用「在回复中使用记忆」"
+          : attachment ? "取下图片后才能查找记忆" : "用输入框里的文字查找记忆 · 最多 2000 字符";
+      }
+      if (auipButton) {
+        auipButton.disabled = typeof auipEnabled !== "boolean" || auipSaving
+          || typeof window.amadeus?.saveApplicationInteraction !== "function";
+        auipButton.setAttribute("aria-pressed", String(auipEnabled === true));
+        auipButton.title = auipEnabled === true ? "关闭应用交互" : "允许 Amadeus 与应用交互";
+      }
       if (options.controls) closeButton.disabled = sending;
       if (imageButton) imageButton.disabled = sending || !supportsImages;
       if (voiceButton) voiceButton.disabled = sending || otherVoiceActive;
@@ -137,9 +157,9 @@
       if (!composerRoot.hidden) resizeInput();
     }
 
-    async function submit() {
+    async function submit(memoryLookup = false) {
       const text = String(input.value || "").trim() || (attachment ? "请看这张图片。" : "");
-      if (!text || sending) return;
+      if (!text || sending || (memoryLookup && memoryButton.disabled)) return;
       if (!bridgePort || !bridgeToken) {
         status.textContent = "CONNECTING";
         return;
@@ -147,9 +167,10 @@
       sending = true;
       input.disabled = true;
       updateSendState();
-      status.textContent = "SENDING";
+      status.textContent = memoryLookup ? "正在提交记忆查找…" : "SENDING";
       try {
         const payload = { text: text };
+        if (memoryLookup) payload.memory_lookup = true;
         if (attachment) payload.visual = {
           request: true, mode: "attachment", scope: "user_image", source: "user_image",
           attachment: { name: attachment.name, byteLength: attachment.byteLength },
@@ -161,7 +182,7 @@
         input.value = "";
         resizeInput();
         updateSendState();
-        status.textContent = "SENT";
+        status.textContent = memoryLookup ? "已提交记忆查找" : "SENT";
         window.setTimeout(function () {
           if (!sending) status.textContent = "";
         }, 1200);
@@ -209,6 +230,8 @@
     async function refreshCapabilities() {
       try {
         const result = await request({ action: "status" });
+        auipEnabled = result.auip_interaction_enabled;
+        memoryUseEnabled = result.memory_use_enabled === true;
         supportsImages = result.supports_images === true;
         imageButton.title = supportsImages ? "短按添加图片 · 长按切换持续观察 · 右键选择窗口" : "当前聊天模型不支持图片";
         imageButton.setAttribute("aria-pressed", String(result.watching === true));
@@ -280,6 +303,24 @@
     }
 
     if (options.controls) {
+      memoryButton.addEventListener("click", function () { void submit(true); });
+      auipButton.addEventListener("click", async function () {
+        if (auipButton.disabled) return;
+        const enabled = !auipEnabled;
+        auipSaving = true;
+        updateSendState();
+        try {
+          const saved = await window.amadeus.saveApplicationInteraction(enabled);
+          if (!saved.ok) throw new Error("application_interaction_setting_not_saved");
+          const result = await request({ action: "auip_set", enabled });
+          auipEnabled = result.auip_interaction_enabled;
+          if (saved.revision) {
+            const applied = await window.amadeus.markApplicationInteractionApplied(saved.revision);
+            if (!applied.ok) throw new Error("application_interaction_setting_unconfirmed");
+          }
+        } catch (error) { showError(error); }
+        finally { auipSaving = false; updateSendState(); }
+      });
       composerRoot.querySelector(".composer-console").addEventListener("click", async function () {
         try {
           if (!await window.amadeus?.focusMainWindow?.()) throw new Error("控制台暂不可用，请从托盘打开 Amadeus");
@@ -367,6 +408,8 @@
           listening = payload.source === "wake";
           otherVoiceActive = !listening;
         }
+      } else if (event.method === "system.config" && typeof payload.auip_interaction_enabled === "boolean") {
+        auipEnabled = payload.auip_interaction_enabled;
       }
       renderVoiceState();
     }

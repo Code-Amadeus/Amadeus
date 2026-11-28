@@ -14,6 +14,7 @@ import ChatSessionRail, {
 import ChatWorkActivityCard from './ChatWorkActivityCard'
 import FluentIcon from './FluentIcon'
 import ProjectAppsPanel, { type ProjectAppSummary } from './ProjectAppsPanel'
+import MemoryPanel from './MemoryPanel'
 import { SettingsButton } from './SettingsPrimitives'
 import type { WorkFileSummary } from './WorkFilesPanel'
 import CrtWorkWidget from './work/CrtWorkWidget'
@@ -43,6 +44,10 @@ import {
   chatTranslationCandidates,
   chatTranslationKey,
 } from './chatTranslationState'
+import {
+  acceptMemoryLookupReceipt, memoryLookupStatusText,
+  type MemoryLookupReceipt, type MemoryLookupRequest,
+} from './chatMemoryLookup'
 import { useI18n } from '../i18n'
 import { useActiveCharacter } from '../activeCharacter'
 import { startupCharacterSelection } from '../../shared/characterStartup'
@@ -159,6 +164,17 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [streamingText, setStreamingText] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [input, setInput] = useState('')
+  const [memoryLookupReceipt, setMemoryLookupReceipt] = useState<MemoryLookupReceipt | null>(null)
+  const [memoryLookupNotice, setMemoryLookupNotice] = useState('')
+  const memoryLookupRequestRef = useRef<MemoryLookupRequest | null>(null)
+  const memoryLookupReceiptRef = useRef<MemoryLookupReceipt | null>(null)
+  const clearMemoryLookup = useCallback(() => {
+    if (activeStreamTurnIdRef.current === memoryLookupRequestRef.current?.turnId) activeStreamTurnIdRef.current = ''
+    memoryLookupRequestRef.current = null
+    memoryLookupReceiptRef.current = null
+    setMemoryLookupReceipt(null)
+    setMemoryLookupNotice('')
+  }, [])
   const [provider, setProvider] = useState('deepseek')
   // Configured model connection groups from the backend; null until the first config arrives.
   const [modelConnections, setModelConnections] = useState<Array<{ id: string; configured?: boolean }> | null>(null)
@@ -176,6 +192,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [sessionSelectionNotice, setSessionSelectionNotice] = useState('')
   const sessionSelectionRef = useRef({ pending: 0 })
   const [projectCorrectionOpen, setProjectCorrectionOpen] = useState(false)
+  const [memoryOpen, setMemoryOpen] = useState(false)
+  const [memoryVisited, setMemoryVisited] = useState(false)
   const [projectViewId, setProjectViewId] = useState('')
   const [projectApps, setProjectApps] = useState<ProjectAppSummary[]>([])
   const [projectFiles, setProjectFiles] = useState<WorkFileSummary[]>([])
@@ -192,6 +210,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     title: string
   } | null>(null)
   const [asrListening, setAsrListening] = useState(false)
+  const [auipEnabled, setAuipEnabled] = useState<boolean>()
+  const [auipSaving, setAuipSaving] = useState(false)
+  const [auipNotice, setAuipNotice] = useState('')
   const [pendingVisualAttachment, setPendingVisualAttachment] = useState<VisualAttachment | null>(null)
   const [visionVideoMode, setVisionVideoMode] = useState(false)
   const [visionWindowPickerOpen, setVisionWindowPickerOpen] = useState(false)
@@ -264,6 +285,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     const sessionId = String(res.current_session_id || session?.id || '')
     if (sessionId || 'current_session_id' in res) {
       if (activeSessionRef.current !== sessionId) {
+        clearMemoryLookup()
+        activeStreamTurnIdRef.current = ''
         setWorkActivities([])
       }
       activeSessionRef.current = sessionId
@@ -287,7 +310,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     setStreaming(false)
     setStreamingText('')
     streamingTextRef.current = ''
-  }, [toMessages])
+  }, [toMessages, clearMemoryLookup])
 
   const hydrateWorkActivities = useCallback(async (sessionId: string) => {
     if (!sessionId) {
@@ -305,10 +328,11 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const selectSession = useCallback((
     method: string, params: Record<string, unknown> = {}, fallbackNotice?: string,
-  ) => (
-    runSessionSelection(sessionSelectionRef.current, setSessionSwitching,
+  ) => {
+    clearMemoryLookup()
+    return runSessionSelection(sessionSelectionRef.current, setSessionSwitching,
       () => send(method, params), applySessionPayload, setSessionSelectionNotice, fallbackNotice)
-  ), [send, applySessionPayload])
+  }, [send, applySessionPayload, clearMemoryLookup])
 
   const loadSession = useCallback(async (id: string, closeArtifactView = false) => {
     try {
@@ -584,6 +608,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   // restore legacy persisted sessions
   useEffect(() => {
     if (!connected) {
+      clearMemoryLookup()
       setSessionReady(false)
       return
     }
@@ -602,7 +627,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       }
     })()
     return () => { cancelled = true }
-  }, [connected, refreshSessions, restoreOwnedSession])
+  }, [connected, refreshSessions, restoreOwnedSession, clearMemoryLookup])
 
   // load initial config + subscribe to config changes (cross-page sync)
   useEffect(() => {
@@ -611,6 +636,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (res?.llm_provider) setProvider(String(res.llm_provider))
       if (Array.isArray(res?.model_connections)) setModelConnections(res.model_connections)
       setCanUseMultimodal(res?.chat_supports_images === true)
+      if (typeof res?.auip_interaction_enabled === 'boolean') setAuipEnabled(res.auip_interaction_enabled)
       // The selected mode survives disabling vision; it is not the enabled state.
       setVisionVideoMode(res?.vision_enabled === true && res?.vision_mode === 'watching')
     }).catch(() => {})
@@ -621,6 +647,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const connections = p.model_connections ?? values.model_connections
       if (Array.isArray(connections)) setModelConnections(connections)
       if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
+      if (typeof values.auip_interaction_enabled === 'boolean') setAuipEnabled(values.auip_interaction_enabled)
       setVisionVideoMode(values.vision_enabled === true && values.vision_mode === 'watching')
     })
     return unsub
@@ -648,12 +675,26 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   // subscribe to backend events
   useEffect(() => {
     const unsubs: Array<() => void> = []
+    unsubs.push(subscribe('chat.memory_lookup', (p) => {
+      const previous = memoryLookupReceiptRef.current
+      const receipt = acceptMemoryLookupReceipt(memoryLookupRequestRef.current, previous, p,
+        activeSessionRef.current, interruptedTurnIdsRef.current, sessionSelectionRef.current.pending > 0)
+      if (receipt === previous) return
+      memoryLookupReceiptRef.current = receipt
+      setMemoryLookupReceipt(receipt)
+      setMemoryLookupNotice('')
+    }))
     unsubs.push(subscribe('chat.user', (p) => {
       const sessionId = String(p.session_id ?? '')
       if (sessionId && activeSessionRef.current && sessionId !== activeSessionRef.current) return
       const text = String(p.text ?? '').trim()
       if (!text) return
-      upsertUserMessage(String(p.turn_id ?? ''), text)
+      const turnId = typeof p.turn_id === 'string' ? p.turn_id : ''
+      if (sessionId && sessionId === activeSessionRef.current && turnId) {
+        if (memoryLookupRequestRef.current && turnId !== memoryLookupRequestRef.current.turnId) clearMemoryLookup()
+        activeStreamTurnIdRef.current = turnId
+      }
+      upsertUserMessage(turnId, text)
     }))
     unsubs.push(subscribe('chat.token', (p) => {
       if (!chatEventMatchesSession(p, activeSessionRef.current, interruptedTurnIdsRef.current)) return
@@ -711,6 +752,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const streamedText = streamingTextRef.current.trim()
       const turnId = eventTurnId || activeStreamTurnId || lastAssistantTurnIdRef.current
       if (turnId) interruptedTurnIdsRef.current.add(turnId)
+      if (memoryLookupRequestRef.current?.turnId === turnId) clearMemoryLookup()
       setMessages(prev => patchInterruptedMessage(prev, {
         turnId: eventTurnId,
         activeTurnId: activeStreamTurnId,
@@ -725,6 +767,23 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }))
     unsubs.push(subscribe('chat.error', (p) => {
       if (!chatEventMatchesSession(p, activeSessionRef.current, interruptedTurnIdsRef.current)) return
+      const lookupRequest = memoryLookupRequestRef.current
+      if (lookupRequest && lookupRequest.turnId === p.turn_id) {
+        lookupRequest.pending = false
+        const receipt = memoryLookupReceiptRef.current
+        if (receipt && receipt.status !== 'searching') {
+          setMemoryLookupNotice('The reply could not be generated.')
+        } else {
+          clearMemoryLookup()
+          setMemoryLookupNotice('This turn did not finish.')
+        }
+        if (activeStreamTurnIdRef.current === p.turn_id) activeStreamTurnIdRef.current = ''
+        setStreaming(false)
+        setStreamingText('')
+        streamingTextRef.current = ''
+        return
+      }
+      if (activeStreamTurnIdRef.current === p.turn_id) activeStreamTurnIdRef.current = ''
       setMessages(prev => [...prev, { role: 'system', text: `Error: ${p.error}` }])
       setStreaming(false)
       setStreamingText('')
@@ -769,12 +828,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (p.status === 'idle') setAsrListening(false)
     }))
     return () => unsubs.forEach(fn => fn())
-  }, [subscribe, refreshSessions, upsertAssistantMessage, upsertUserMessage, applySessionPayload, hydrateWorkActivities])
+  }, [subscribe, refreshSessions, upsertAssistantMessage, upsertUserMessage, applySessionPayload, hydrateWorkActivities, clearMemoryLookup])
 
   const handleSend = useCallback(async () => {
     const typedText = input.trim()
     const text = typedText || (pendingVisualAttachment ? '请看这张图片。' : '')
     if (!text || !connected || !sessionReady || sessionSelectionRef.current.pending > 0) return
+    clearMemoryLookup()
     const visual =
       canUseMultimodal && pendingVisualAttachment
         ? {
@@ -812,8 +872,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     setStreamingText('')
     streamingTextRef.current = ''
     setStreaming(false)
+    const turnId = crypto.randomUUID()
     try {
-      const turnId = crypto.randomUUID()
       interruptedTurnIdsRef.current.delete(turnId)
       activeStreamTurnIdRef.current = turnId
       await send('chat.send', {
@@ -825,9 +885,94 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       })
       if (pendingVisualAttachment) setPendingVisualAttachment(null)
     } catch {
+      if (activeStreamTurnIdRef.current === turnId) activeStreamTurnIdRef.current = ''
       setMessages(prev => [...prev, { role: 'system', text: 'Send failed: backend unreachable' }])
     }
-  }, [input, connected, sessionReady, canUseMultimodal, pendingVisualAttachment, send, provider, selectSession])
+  }, [input, connected, sessionReady, canUseMultimodal, pendingVisualAttachment, send, provider, selectSession, clearMemoryLookup])
+
+  const handleAuipToggle = useCallback(async () => {
+    if (!connected || auipEnabled === undefined || auipSaving) return
+    const values = { auip_interaction_enabled: !auipEnabled }
+    setAuipSaving(true)
+    setAuipNotice('')
+    try {
+      const saved = await persistDesktopRuntimeSettings(values)
+      const result = await send('system.set_config', { values })
+      const applied = (result.values as Record<string, unknown> | undefined)?.auip_interaction_enabled
+      if (applied !== values.auip_interaction_enabled) throw new Error('AUIP setting was not acknowledged')
+      setAuipEnabled(applied)
+      await markRuntimeSettingsApplied(values, saved.pendingRevisions)
+    } catch {
+      setAuipNotice('Could not confirm the application interaction setting.')
+    } finally {
+      setAuipSaving(false)
+    }
+  }, [connected, auipEnabled, auipSaving, send])
+
+  const handleMemoryLookup = useCallback(async () => {
+    const text = input.trim()
+    const reject = (notice: string) => setMemoryLookupNotice(notice)
+    if (!connected || !sessionReady || !activeSessionRef.current) {
+      reject('Connect and open a chat before searching saved memories.')
+      return
+    }
+    if (sessionSelectionRef.current.pending > 0) {
+      reject('Wait for the chat switch before searching saved memories.')
+      return
+    }
+    if (streaming || activeStreamTurnIdRef.current || memoryLookupRequestRef.current?.pending
+      || memoryLookupReceiptRef.current?.status === 'searching') {
+      reject('Wait for the current turn before searching saved memories.')
+      return
+    }
+    if (pendingVisualAttachment || artifactContext) {
+      reject('Memory search uses text only. Remove the image or artifact context first.')
+      return
+    }
+    if (!text) {
+      reject('Enter specific text to search saved memories.')
+      inputRef.current?.focus()
+      return
+    }
+    if (Array.from(text).length > 2000) {
+      reject('Memory search accepts up to 2000 characters. Shorten your draft and try again.')
+      return
+    }
+    clearMemoryLookup()
+    const request = { sessionId: activeSessionRef.current, turnId: crypto.randomUUID(), pending: true }
+    memoryLookupRequestRef.current = request
+    interruptedTurnIdsRef.current.delete(request.turnId)
+    activeStreamTurnIdRef.current = request.turnId
+    try {
+      const response = await send('chat.send', {
+        text, provider, turn_id: request.turnId, session_id: request.sessionId, memory_lookup: true,
+      })
+      if (memoryLookupRequestRef.current !== request || !request.pending) return
+      if (response.status === 'replayed') {
+        clearMemoryLookup()
+        setMemoryLookupNotice('This request was already accepted earlier; no new memory search was started. Your draft was kept.')
+        if (activeStreamTurnIdRef.current === request.turnId) activeStreamTurnIdRef.current = ''
+        return
+      }
+      if (response.ok === false || response.status !== 'ok') throw new Error('Memory search rejected')
+      setInput(previous => previous === input ? '' : previous)
+    } catch {
+      if (memoryLookupRequestRef.current !== request || !request.pending) return
+      const receipt = memoryLookupReceiptRef.current
+      if (receipt && receipt.status !== 'searching') {
+        setMemoryLookupNotice('Reply completion could not be confirmed. Your draft was kept.')
+      } else {
+        clearMemoryLookup()
+        setMemoryLookupNotice('Memory search request failed. Your draft was kept.')
+      }
+      if (activeStreamTurnIdRef.current === request.turnId) activeStreamTurnIdRef.current = ''
+      setStreaming(false)
+      setStreamingText('')
+      streamingTextRef.current = ''
+    } finally {
+      request.pending = false
+    }
+  }, [input, connected, sessionReady, streaming, pendingVisualAttachment, artifactContext, send, provider, clearMemoryLookup])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1356,6 +1501,17 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       />
 
       <div className="flex flex-col min-w-0 flex-1 h-full relative">
+      {memoryVisited && activeSession && connected && sessionReady && !sessionSwitching && (
+        <MemoryPanel
+          key={`${activeSession}:${currentCharacterId}:${activeContext?.projectId || ''}`}
+          sessionId={activeSession}
+          characterName={activeCharacter?.short_name || currentCharacterId}
+          projectName={activeContext?.projectName}
+          visible={memoryOpen}
+          send={send}
+          onClose={() => setMemoryOpen(false)}
+        />
+      )}
       {sessionSelectionNotice && (
         <div
           role="alert"
@@ -1459,6 +1615,15 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             )}
           </div>
         )}
+        <SettingsButton
+          size="small"
+          disabled={!connected || !sessionReady || !activeSession || sessionSwitching}
+          aria-pressed={memoryOpen}
+          onClick={() => { setMemoryVisited(true); setMemoryOpen(true) }}
+          title={t('Manage saved memories')}
+        >
+          <FluentIcon name="Album" size={14} /> {t('Memory')}
+        </SettingsButton>
         <SettingsButton
           size="small"
           aria-pressed={renderRequested}
@@ -1601,6 +1766,49 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             />
 
             <div className="chat-composer-tools">
+              <div className="chat-composer-more">
+                <button
+                  type="button"
+                  className="chat-composer-more-trigger"
+                  title={t('More chat actions')}
+                  aria-label={t('More chat actions')}
+                  popoverTarget="chat-composer-actions"
+                >
+                  <FluentIcon name="Add" size={16} aria-hidden="true" />
+                </button>
+                <div
+                  id="chat-composer-actions"
+                  className="chat-composer-actions"
+                  popover="auto"
+                  role="group"
+                  aria-label={t('More chat actions')}
+                >
+                  <button
+                    type="button"
+                    className="chat-composer-action chat-memory-lookup-button"
+                    title={t('Search once using the text in this input. Text only, up to 2000 characters.')}
+                    aria-describedby="chat-memory-lookup-feedback"
+                    popoverTarget="chat-composer-actions"
+                    popoverTargetAction="hide"
+                    onClick={() => { void handleMemoryLookup() }}
+                  >
+                    <FluentIcon name="MemorySearch" size={16} aria-hidden="true" />
+                    {t('Search saved memories')}
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-composer-action"
+                    title={t('Let Amadeus interact with applications')}
+                    aria-pressed={auipEnabled}
+                    disabled={!connected || auipEnabled === undefined || auipSaving}
+                    onClick={() => { void handleAuipToggle() }}
+                  >
+                    <FluentIcon name="Tiles" size={16} aria-hidden="true" />
+                    {t('Application interaction')}
+                    {auipEnabled && <FluentIcon name="Checkmark" size={14} className="ml-auto" aria-hidden="true" />}
+                  </button>
+                </div>
+              </div>
               <select value={provider} onChange={e => { void handleProviderChange(e.target.value) }} className="chat-select chat-select-model">
                 {chatProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
@@ -1646,6 +1854,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 <FluentIcon name="Send" size={16} />
               </button>
             </div>
+
+            <p id="chat-memory-lookup-feedback" role="status" aria-live="polite" aria-atomic="true" className="chat-memory-lookup-feedback">
+              {memoryLookupReceipt && t(memoryLookupStatusText[memoryLookupReceipt.status])}
+              {memoryLookupReceipt && memoryLookupNotice ? ' ' : ''}
+              {memoryLookupNotice && t(memoryLookupNotice)}
+            </p>
+            {auipNotice && <p role="status" className="chat-memory-lookup-feedback">{t(auipNotice)}</p>}
 
             {visionWindowPickerOpen && (
               <div className="chat-window-picker">

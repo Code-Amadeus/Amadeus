@@ -271,6 +271,7 @@ class ChatHandler(RequestHandler):
         turn_id: str = "",
         source: str = "",
         pending: bool = False,
+        memory_lookup: bool = False,
     ) -> dict[str, Any]:
         return await self._handle_send(
             {
@@ -281,6 +282,7 @@ class ChatHandler(RequestHandler):
                 "turn_id": turn_id or uuid.uuid4().hex,
                 "source": source,
                 "pending": pending,
+                **({"memory_lookup":memory_lookup} if memory_lookup is not False else {}),
             }
         )
 
@@ -289,6 +291,18 @@ class ChatHandler(RequestHandler):
 
         if self._closed:
             raise TurnAuthorityError("Chat ingress is closed")
+        memory_lookup = params.get("memory_lookup", False)
+        if type(memory_lookup) is not bool:
+            raise TurnAuthorityError("memory_lookup must be a boolean")
+        if memory_lookup:
+            query = params.get("text")
+            if (not isinstance(query, str) or not query.strip() or len(query) > 2000
+                    or params.get("visual") is not None):
+                raise TurnAuthorityError("memory lookup requires nonempty plain text of at most 2000 characters")
+            try:
+                query.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise TurnAuthorityError("memory lookup requires valid Unicode text") from exc
         # Capture only consumed transport fields. Source evidence has its existing
         # bounded projection; cloning the entire request would bypass that bound.
         session_id = str(params.get("session_id") or sm.get_current_session_id() or "")
@@ -306,7 +320,7 @@ class ChatHandler(RequestHandler):
         captured_params = {
             "text": text, "turn_id": turn_id, "source": source, "session_id": session_id,
             "pending": pending, "provider": params.get("provider"),
-            "visual": deepcopy(params.get("visual")),
+            "visual": deepcopy(params.get("visual")), "memory_lookup":memory_lookup,
         }
         selection_revision = sm.get_session_selection_revision() if self._control_ledger is not None else None
         # Never cancel the transport's enclosing Task (e.g. the WS read loop).
@@ -471,6 +485,7 @@ class ChatHandler(RequestHandler):
                 interaction_branch_routing_lease,
                 turn_admission,
                 history_snapshot,
+                memory_lookup=params.get("memory_lookup", False),
             )
         )
         self._stream_tasks.add(self._stream_task)
@@ -553,9 +568,11 @@ class ChatHandler(RequestHandler):
         interaction_branch_routing_lease: dict[str, Any] | None = None,
         turn_admission: TurnAdmissionRecord | None = None,
         history_snapshot: ConversationHistory | None = None,
+        *, memory_lookup: bool = False,
     ) -> None:
         try:
-            visual_context = await self._prepare_visual_context(text=text, visual_request=visual_request)
+            visual_context = (None if memory_lookup else
+                await self._prepare_visual_context(text=text, visual_request=visual_request))
             runner = self._turn_runner
             if runner is None:
                 raise TurnAuthorityError("the admitted turn has no execution owner")
@@ -570,6 +587,7 @@ class ChatHandler(RequestHandler):
                 ),
                 turn_admission=turn_admission,
                 history_snapshot=history_snapshot,
+                **({"memory_lookup":True} if memory_lookup else {}),
             )
             if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
                 logger.info("drop stale chat completion turn_id=%s", turn_id)

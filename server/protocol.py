@@ -26,8 +26,21 @@ class Envelope(TypedDict):
 # ── method constants ────────────────────────────────────────────────────────
 
 class Method(str, Enum):
+    # Explicit, Host-scoped durable memory operations.
+    MEMORY_STATUS = "memory.status"
+    MEMORY_LIST = "memory.list"
+    MEMORY_GET = "memory.get"
+    MEMORY_REMEMBER = "memory.remember"
+    MEMORY_CORRECT = "memory.correct"
+    MEMORY_FORGET_PREVIEW = "memory.forget_preview"
+    MEMORY_FORGET = "memory.forget"
+    MEMORY_SOURCES = "memory.sources"
+    MEMORY_CANDIDATES = "memory.candidates"
+    MEMORY_CANDIDATE = "memory.candidate"
+    MEMORY_REVIEW_CANDIDATE = "memory.review_candidate"
     # Chat
     CHAT_SEND          = "chat.send"
+    CHAT_MEMORY_LOOKUP = "chat.memory_lookup"
     CHAT_ABORT         = "chat.abort"
     CHAT_PERMISSION_RESOLVE = "chat.permission.resolve"
     CHAT_TRANSLATE     = "chat.translate"

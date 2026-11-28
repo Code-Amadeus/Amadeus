@@ -1,23 +1,119 @@
-"""Conversation-history projection for one completed chat turn.
+"""Canonical source text and model-history projection.
 
-The role stream may finish after the user switches Session or after a pending
-turn is discarded.  This module owns those projection guards and the optional
-Browser branch stamp; it does not own model streaming or work dispatch.
+Live ingress and delivery own admission, Session identity and interruptions.
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
+import re
+from typing import Any
 
 from config.settings import (
     EMO_HISTORY_POLICIES,
     EMO_HISTORY_POLICY,
-    PENDING_TURN_GATE_TIMEOUT_S,
 )
-from core.session_manager import conversation_history, get_current_session_id
 
-logger = logging.getLogger("chat_history_projection")
+# Offsets into this text are Python/Unicode code-point offsets. Never normalize
+# Unicode, whitespace, punctuation or case; a rule change requires a new version.
+MEMORY_TEXT_PROJECTION_VERSION = "amadeus-memory-text-v1"
+_MEMORY_ASSISTANT_SYNTAX = re.compile(
+    r"<think>.*?(?:</think>|$)|</think>|"
+    r"\[(?:PARAM|EXPR|HOTKEY|EMO|ANIM|DELEGATE|CONTROL|AUIP)\b[^\]]*(?:\]|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def exclude_source_spans(message: dict[str, Any], spans: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Mask canonical text; accepted execution facts are supplied independently.
+
+    Canonical offsets never index raw assistant text. An unavailable old
+    revision/projection cannot be mapped safely, so omit that message.
+    """
+    if not spans:
+        return dict(message)
+    if any(span["revision"] != message.get("revision")
+            or span["projection_version"] != MEMORY_TEXT_PROJECTION_VERSION for span in spans):
+        return None
+    raw = message["content"]
+    kept = []
+    cursor = 0
+    if message["role"] == "assistant":
+        for syntax in _MEMORY_ASSISTANT_SYNTAX.finditer(raw):
+            kept.extend(range(cursor, syntax.start()))
+            cursor = syntax.end()
+    kept.extend(range(cursor, len(raw)))
+    canonical = "".join(raw[index] for index in kept)
+    removed = {}
+    for span in spans:
+        start, end = span.get("start_cp"), span.get("end_cp")
+        if start is None or end is None:
+            return None
+        if not 0 <= start <= end <= len(kept):
+            return None
+        removed.update({index:span.get("reason") for index in range(start, end)})
+    # For an excluded assistant source, use its canonical text view first:
+    # hidden thought/control syntax can contain copies outside the canonical
+    # coordinates. The durable controls/Host execution ledger stay untouched.
+    # An omission boundary must not manufacture adjacent words or phrases.
+    output = []
+    in_omission = False
+    for index, char in enumerate(canonical):
+        if index in removed:
+            if not in_omission:
+                output.append({"preference_changed":"[earlier assertion superseded]",
+                    "corrected_by_user":"[earlier assertion corrected]"}.get(removed[index], "[memory source omitted]"))
+            in_omission = True
+        else:
+            output.append(char)
+            in_omission = False
+    content = "".join(output)
+    return {**message, "content":content} if content.strip() else None
+
+
+def project_role_history(rows) -> list[dict[str, Any]]:
+    """Apply current exclusion facts to a frozen role-history snapshot."""
+    from core.session_manager import project_model_history
+
+    result = []
+    for row in rows:
+        source = row.get("_source")
+        text = row.get("text", "")
+        if source is not None:
+            projected = project_model_history(source["session_id"], [{
+                **source, "role":"user" if row["source"] == "user" else "assistant",
+                "content":text}])
+            if not projected:
+                continue
+            text = projected[0]["content"]
+        result.append({**{key:value for key, value in row.items() if key != "_source"}, "text":text})
+    return result
+
+
+def project_memory_source(session_id: str, message: dict[str, Any], *,
+                          expected_revision: int | None = None,
+                          incarnation: str | None = None) -> dict[str, Any]:
+    """Project one identified Session revision, without changing model history.
+
+    Call through Session's durable source reader. This function never allocates
+    identity or infers historical time, and never substitutes current content
+    for a requested older revision. M0 retains only the current revision.
+    """
+    revision = message.get("revision")
+    if (not message.get("message_id") or type(revision) is not int or revision < 1
+            or (expected_revision is not None and revision != expected_revision)):
+        raise ValueError("Session source identity/revision is unavailable")
+    role, content = message["role"], message["content"]
+    text = _MEMORY_ASSISTANT_SYNTAX.sub("", content) if role == "assistant" else content
+    projected = {
+        "session_id": session_id, "message_id": message["message_id"],
+        "turn_id": message.get("turn_id"), "role": role, "revision": revision,
+        "created_at_ms": message.get("created_at_ms"),
+        "utc_offset_minutes": message.get("utc_offset_minutes"),
+        "projection_version": MEMORY_TEXT_PROJECTION_VERSION, "text": text,
+    }
+    if incarnation is not None:
+        projected["incarnation"] = incarnation
+    return projected
 
 
 def project_inline_role_history(
@@ -60,95 +156,3 @@ def project_completed_role_history(text: str) -> str:
 
     _visible, _actions, parts = StreamTagParser(stop_after_control=False).process_chunk_parts(text)
     return project_inline_role_history(parts)
-
-
-async def turn_allows_history(turn_id: str) -> bool:
-    """Return whether the turn coordinator permits durable chat projection."""
-
-    if not turn_id:
-        return True
-    try:
-        from core.turn_coordinator import get_turn_coordinator
-
-        coordinator = get_turn_coordinator()
-        gate = coordinator.turn_gate(turn_id)
-        if gate == "wait":
-            gate = await asyncio.to_thread(
-                coordinator.wait_turn_decided,
-                turn_id,
-                PENDING_TURN_GATE_TIMEOUT_S,
-            )
-        return gate != "drop"
-    except Exception:
-        return True
-
-
-def stamp_branch_entries(branch_id: str, count: int = 2) -> None:
-    """Mark entries only for the exact branch captured by this turn."""
-
-    try:
-        from server.interaction_branch import get_interaction_branch_coordinator
-
-        coordinator = get_interaction_branch_coordinator()
-        expected_branch_id = str(branch_id or "").strip()
-        if coordinator is None or not expected_branch_id:
-            return
-        branch = coordinator.active_branch_for_session(get_current_session_id() or "")
-        if branch is None or branch.branch_id != expected_branch_id:
-            return
-        for entry in conversation_history.dialog[-max(1, count) :]:
-            if isinstance(entry, dict):
-                entry["branch_id"] = expected_branch_id
-    except Exception:
-        logger.debug("branch entry stamping failed", exc_info=True)
-
-
-async def project_completed_turn(
-    *,
-    session_id: str,
-    question: str,
-    history_response: str,
-    visible_response: str,
-    turn_id: str,
-    interaction_branch_id: str = "",
-) -> bool:
-    """Project one accepted turn into its originating Session history."""
-
-    current_session_id = get_current_session_id()
-    if current_session_id != session_id:
-        logger.warning(
-            "[scope guard] session switched (turn=%r, current=%r); "
-            "skipping history write.",
-            session_id,
-            current_session_id,
-        )
-        return False
-    if not await turn_allows_history(turn_id):
-        logger.info(
-            "[pending guard] turn %s discarded; skipping history write.",
-            turn_id,
-        )
-        return False
-
-    # The pending-turn gate may block while the UI switches conversations.
-    # Revalidate at the write boundary so a completion from Session A cannot
-    # mutate the globally loaded transcript for Session B.
-    current_session_id = get_current_session_id()
-    if current_session_id != session_id:
-        logger.warning(
-            "[scope guard] session switched while turn %s awaited admission "
-            "(turn=%r, current=%r); skipping history write.",
-            turn_id,
-            session_id,
-            current_session_id,
-        )
-        return False
-
-    conversation_history.add_user(question)
-    conversation_history.add_assistant(
-        history_response or visible_response,
-        turn_id=turn_id,
-    )
-    if interaction_branch_id:
-        stamp_branch_entries(interaction_branch_id, 2)
-    return True

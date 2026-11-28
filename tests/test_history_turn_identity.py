@@ -18,9 +18,11 @@ def test_assistant_entry_carries_turn_id():
     history = ConversationHistory()
     history.add_assistant("reply", turn_id="turn_normal")
 
-    assert history.dialog == [
-        {"role": "assistant", "content": "reply", "turn_id": "turn_normal"}
-    ]
+    assert len(history.dialog) == 1
+    row = history.dialog[0]
+    assert (row["role"], row["content"], row["turn_id"]) == ("assistant", "reply", "turn_normal")
+    assert row["message_id"] and row["revision"] == 1
+    assert isinstance(row["created_at_ms"], int) and isinstance(row["utc_offset_minutes"], int)
 
 
 def test_interruption_targets_requested_turn_not_latest_assistant():

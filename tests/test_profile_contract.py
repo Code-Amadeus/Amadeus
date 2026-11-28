@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from packaging.markers import default_environment
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import parse_wheel_filename
 
 ROOT = Path(__file__).resolve().parents[1]
 UV = shutil.which("uv")
@@ -80,15 +81,19 @@ def _selected_requirements(
         if not line or line.startswith(("#", "--")):
             continue
         if line.startswith(("./", "../", "/")):
-            # uv exports directory sources as requirements-file paths, not
-            # PEP 508 strings. Read the declared name rather than guessing it
-            # from the directory, then retain the source URL and marker.
+            # uv exports local sources as requirements-file paths, not PEP 508
+            # strings. Read directory metadata or the standardized wheel name,
+            # then retain the source URL and marker.
             path, separator, marker = line.partition(" ; ")
-            project_dir = (root / path).resolve()
-            project = tomllib.loads(
-                (project_dir / "pyproject.toml").read_text(encoding="utf-8")
-            )["project"]
-            line = f"{project['name']} @ {project_dir.as_uri()}"
+            source_path = (root / path).resolve()
+            if source_path.suffix == ".whl":
+                name, _, _, _ = parse_wheel_filename(source_path.name)
+            else:
+                project = tomllib.loads(
+                    (source_path / "pyproject.toml").read_text(encoding="utf-8")
+                )["project"]
+                name = project["name"]
+            line = f"{name} @ {source_path.as_uri()}"
             if separator:
                 line += f" ; {marker}"
         requirement = Requirement(line)
@@ -128,6 +133,13 @@ def test_exported_local_source_without_marker(tmp_path: Path) -> None:
     assert selected["local-package"].url == tmp_path.as_uri()
 
 
+def test_exported_wheel_source_keeps_package_identity_and_marker(tmp_path: Path) -> None:
+    path = tmp_path / "vendor/eidema/eidema-0.1.1-py3-none-any.whl"
+    output = "./vendor/eidema/eidema-0.1.1-py3-none-any.whl ; sys_platform == 'linux'"
+    assert _selected_requirements(output, "linux", root=tmp_path)["eidema"].url == path.as_uri()
+    assert "eidema" not in _selected_requirements(output, "win32", root=tmp_path)
+
+
 @pytest.mark.parametrize("line", ["not a requirement", "aiohttp==3.14.3 ; invalid_marker"])
 def test_invalid_exported_registry_requirement_is_not_ignored(line: str) -> None:
     with pytest.raises(InvalidRequirement):
@@ -150,6 +162,7 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
     for platform in ("win32", "darwin", "linux"):
         selected = _selected_requirements(result.stdout, platform)
         assert "aiohttp" in selected
+        assert "eidema" in selected
         assert not selected.keys() & {
             "torch", "torchaudio", "silero-vad", "onnxruntime", "faiss-cpu", "sentence-transformers",
             "av", "ffmpeg-python",

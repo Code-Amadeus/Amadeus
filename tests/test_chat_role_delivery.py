@@ -52,7 +52,7 @@ async def test_no_renderer_reply_does_not_block_publication_or_speech(monkeypatc
     assert publication.receipts[-1]["published"] is True
     assert delivery.receipts[-1]["state"] == "published"
     assert (await delivery.handle(Method.CHAT_ROLE_RECEIVED,
-        {"session_id":"A", "message_id":"run", "accepted":True}))["accepted"]
+        {"session_id":"A", "message_id":delivery.receipts[-1]["message_id"], "accepted":True}))["accepted"]
 
 
 async def test_live_role_message_reuses_session_display_tag_projection(monkeypatch):
@@ -320,7 +320,7 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
         "CooperativeHostDelivery": CooperativeHostDelivery,
         "chat_role_delivery": SimpleNamespace(publish=AsyncMock(return_value=visible),
             publish_partial=AsyncMock(return_value=visible), allows=AsyncMock(return_value=visible)),
-        "cooperative_deliveries": {}, "chat_runtime": runtime,
+        "cooperative_deliveries": {}, "chat_runtime": runtime, "output_speech": None,
         "work_observer": SimpleNamespace(finish_external_presentation=AsyncMock(),
             begin_external_result=AsyncMock()),
         "e2e_no_tts": False, "logger": Mock(), "_speak_vn_reaction": vn_voice,
@@ -434,7 +434,8 @@ async def test_fragmented_json_streams_first_sentence_then_records_and_finishes_
         assert all(item.turn_id == "reply" for item in items)
         host.playback.mark_turn_last_sentence.assert_called_once_with(items[-1].sentence_id, "reply")
         host.history.assert_called_once_with("A", role="assistant",
-            content=' 一😀。二"尾\\', turn_id="reply", message_id=ANY)
+            content=' 一😀。二"尾\\', turn_id="reply", message_id=ANY,
+            created_at_ms=ANY, utc_offset_minutes=ANY)
         host.narration.assert_not_called()
         assert len(host.display.receipts) == len(host.delivery.receipts) == len(calls) == 1
         assert host.delivery.receipts[0]["narration"]["accepted"] is True
@@ -445,7 +446,9 @@ async def test_fragmented_json_streams_first_sentence_then_records_and_finishes_
             if method == Method.CHAT_ROLE_MESSAGE]
         assert partials and all("EMO" not in payload["token"] for payload in partials)
         assert partials[-1]["token"] == '一😀。二"尾\\'
-        assert finals == [{"message_id":"reply", "session_id":"A",
+        message_id = host.history.call_args.kwargs["message_id"]
+        assert all(payload["turn_id"] == "reply" and payload["message_id"] == message_id for payload in partials)
+        assert finals == [{"message_id":message_id, "session_id":"A", "turn_id":"reply",
             "text":'一😀。二"尾\\'}]
     finally:
         await loop.close()
@@ -547,7 +550,8 @@ async def test_interrupted_stream_cannot_publish_or_enqueue_tail(streaming_role,
         assert host.emitted
         assert all(method == Method.CHAT_TOKEN
             and payload["token"] == "前句。" for method, payload in host.emitted)
-        host.history.assert_called_once_with("A", role="assistant", content="前句。", turn_id="reply")
+        host.history.assert_called_once_with("A", role="assistant", content="前句。", turn_id="reply",
+            message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
         host.playback.mark_turn_last_sentence.assert_not_called()
         assert not host.display.receipts
     finally:
@@ -576,7 +580,8 @@ async def test_streamed_null_cannot_be_replaced_by_a_duplicate_action(streaming_
         assert str(raised.value.__cause__) == "invalid coordination JSON"
         assert isinstance(raised.value.__cause__.__cause__, ValueError)
         assert not loop.children and not loop.receipts
-        host.history.assert_called_once_with("A", role="assistant", content="暂时。", turn_id="reply")
+        host.history.assert_called_once_with("A", role="assistant", content="暂时。", turn_id="reply",
+            message_id=ANY, created_at_ms=ANY, utc_offset_minutes=ANY)
     finally:
         await loop.close()
 
@@ -602,7 +607,8 @@ async def test_streamed_identical_duplicate_null_settles_once_without_action(str
         assert "".join(item.text for item in queued) == say
         assert all(item.turn_id == "duplicate-null" for item in queued)
         host.history.assert_called_once_with(
-            "A", role="assistant", content=say, turn_id="duplicate-null", message_id=ANY)
+            "A", role="assistant", content=say, turn_id="duplicate-null", message_id=ANY,
+            created_at_ms=ANY, utc_offset_minutes=ANY)
         assert len([row for row in loop.history if row["source"] == "kurisu"]) == 1
         assert host.emitted[-1][1]["text"] == say
         assert len(host.display.receipts) == len(host.delivery.receipts) == 1
@@ -634,7 +640,8 @@ async def test_streamed_null_ignores_extra_root_data_and_never_executes(streamin
         assert "".join(item.text for item in queued) == say
         assert all(item.turn_id == "null-extra-data" for item in queued)
         host.history.assert_called_once_with(
-            "A", role="assistant", content=say, turn_id="null-extra-data", message_id=ANY)
+            "A", role="assistant", content=say, turn_id="null-extra-data", message_id=ANY,
+            created_at_ms=ANY, utc_offset_minutes=ANY)
         assert len([row for row in loop.history if row["source"] == "kurisu"]) == 1
         assert len(host.display.receipts) == len(host.delivery.receipts) == 1
     finally:

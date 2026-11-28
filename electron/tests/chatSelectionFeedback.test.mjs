@@ -51,6 +51,7 @@ function harness(request) {
   const context = vm.createContext({
     Error,
     useCallback: fn => fn,
+    clearMemoryLookup: () => {},
     runSessionSelection,
     automaticSessionSelection,
     activeSession: 'current',

@@ -272,13 +272,14 @@ def test_session_activation_boundary_can_durably_retire_pending_focus(context, t
     monkeypatch.setattr(sm, "conversation_history", sm.ConversationHistory())
     sm.create_session("voice")
     sm.conversation_history.add_user("original conversation")
+    original = sm.conversation_history.snapshot().dialog
     sm.create_session("other", activate=False)
     record = admitted(context)
     sealed = context.control.seal(record, decision(context.b))
     observed = []
 
     def retire(old, new):
-        observed.append((old, new, sm.conversation_history.dialog.copy()))
+        observed.append((old, new, sm.conversation_history.snapshot().dialog))
         context.ledger.discard(record.root_id)
 
     sm.configure_activation_guard(retire)
@@ -293,9 +294,14 @@ def test_session_activation_boundary_can_durably_retire_pending_focus(context, t
             monkeypatch.setattr(sm.os, "remove", refuse_remove)
         assert sm.delete_session("voice") is (operation == "delete")
         assert sm.get_current_session_id() == (None if operation == "delete" else "voice")
-    assert observed == [("voice", "other" if operation == "load" else None, [
-        {"role": "user", "content": "original conversation"},
-    ])]
+    assert observed == [("voice", "other" if operation == "load" else None, original)]
+    source, = observed[0][2]
+    assert (source["role"], source["content"]) == ("user", "original conversation")
+    assert source is not original[0]
+    assert isinstance(source["message_id"], str) and source["message_id"]
+    assert type(source["created_at_ms"]) is int and source["created_at_ms"] > 0
+    assert type(source["utc_offset_minutes"]) is int and -1440 < source["utc_offset_minutes"] < 1440
+    assert source["revision"] == 1
     # Reopen the actual SQLite owner: invalidation is not an in-memory marker.
     with closing(ControlLedgerStore(context.path)) as reopened:
         assert reopened.get_admission(record.root_id)["lifecycle"] == "discarded"

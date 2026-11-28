@@ -14,6 +14,7 @@ import sys
 
 BASE_IMPORTS = (
     "aiohttp",
+    "eidema",
     "fastapi",
     "google.genai",
     "mcp",

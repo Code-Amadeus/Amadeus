@@ -9,6 +9,12 @@
   },
   "archive_prefix": "amadeus-{version}",
   "required_files": [
+    "tools/package_eidema.py",
+    "server/memory_policy_metadata.py",
+    "vendor/eidema/README.md",
+    "vendor/eidema/provenance.json",
+    "vendor/eidema/eidema-0.2.0a3-py3-none-any.whl",
+    "docs/alpha-0.18.0-alpha.1.md",
     "tools/extension_package.py",
     "tools/check_extension_contract.py",
     "tools/probes/extension_contract_pi.py",
@@ -79,6 +85,7 @@
     "README_ZH.md",
     "ROADMAP.md",
     "main.py",
+    "reply_usage.py",
     "run_electron_utf8.bat",
     "SECURITY.md",
     "SUPPORT.md",
@@ -181,6 +188,7 @@
     "wallpaper"
   ],
   "include_files": [
+    "docs/alpha-0.18.0-alpha.1.md",
     "docs/extension_authoring.md",
     "docs/extension_validation_history_2026-10-13.md",
     "docs/japanese_pronunciation_dictionary.md",
@@ -249,6 +257,7 @@
     "README_ZH.md",
     "ROADMAP.md",
     "main.py",
+    "reply_usage.py",
     "run_electron_utf8.bat",
     "start_hybrid_llm.bat",
     "start_llm_server.bat",

@@ -53,6 +53,8 @@ def fake_models(monkeypatch):
         IndexFlatL2=Index, write_index=write_index, read_index=read_index,
     ))
     monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=Embedder))
+    monkeypatch.setattr("core.local_embeddings.get_local_embedding_model", lambda model:Embedder(
+        model, device="cpu", local_files_only=True, trust_remote_code=False))
     return calls
 
 

@@ -222,6 +222,49 @@ async def test_pending_confirmation_timeout_retires_source_without_execution(pen
     assert not await context.launcher.resolve("Unconfirmed page")
 
 
+@pytest.mark.parametrize("confirmed", [False, True])
+async def test_explicit_lookup_waits_for_voice_confirmation_and_uses_ingress_owner(pending_host, tmp_path, monkeypatch, confirmed):
+    from config.memory import MemoryConfig
+    from server.memory_service import HostMemoryService
+
+    context = pending_host
+    service = HostMemoryService(MemoryConfig(semantic_enabled=False, db_path=tmp_path / "memory.sqlite3"))
+    service.start()
+    await service._startup
+    context.manager.memory = service
+    bound = service.context(context.session_id)
+    await service.request("memory.remember", {"session_id":context.session_id,
+        "context_token":bound["context_token"], "operation_id":"save", "item_id":"save-item",
+        "text":"私は抹茶が好きです。", "scope":"character"})
+    frames = []
+    async def query(messages, **_kwargs):
+        frame = json.loads(messages[-1]["content"])
+        frames.append(frame)
+        if frame["source_kind"] == "user":
+            context.queried.set()
+            return '{"action":{"op":"memory_lookup","query":"抹茶"},"say":"探してみる。"}'
+        assert frame["current"]["memory_reference"]["entries"]
+        return "抹茶を覚えているわ。"
+    context.manager.query = query
+    lookup = Mock(wraps=service._store.recall)
+    monkeypatch.setattr(service._store, "recall", lookup)
+    try:
+        assert await context.launcher.launch("保存した好きな物を探して")
+        await asyncio.wait_for(context.queried.wait(), 3)
+        assert lookup.call_count == 0 and context.publications == []
+        if confirmed:
+            assert await context.launcher.resolve("保存した好きな物を探して")
+        else:
+            assert not await context.launcher.resolve("別の言い直し")
+        await context.finish()
+        assert lookup.call_count == int(confirmed)
+        assert len(frames) == 1 + int(confirmed)
+        assert len(context.publications) == int(confirmed)
+        assert context.host.adapter.calls == 0 and context.host.work.list_work_items() == []
+    finally:
+        await service.close()
+
+
 @pytest.mark.parametrize("action", ["none", "leave", "step"])
 async def test_pending_auip_waits_for_confirmation_before_read_action_or_rendering(pending_host, action):
     context = pending_host

@@ -53,6 +53,7 @@ from config.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
+_synthesis_guard = None
 
 # Settings offers standard ×1, CUDA Graph ×1 and Parallel ×2. A runtime mode
 # switch only replaces the semaphore, so the TTS worker pool is sized for the
@@ -85,6 +86,15 @@ _exp_tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
 _synthesis_cost = SynthesisCostModel()
 _tts_interrupt_epoch: int = 0
 _active_stream_queues: set[asyncio.Queue] = set()
+# The scheduler owns dequeued work until the existing synthesis task takes it.
+_preparing_synthesis_jobs = 0
+_synthesis_tasks: set[asyncio.Task] = set()
+
+
+def is_synthesis_busy() -> bool:
+    """Include dequeued/paused jobs, synthesis, and scheduler lookahead."""
+    return bool(_preparing_synthesis_jobs or _utterance_scheduler._buffer
+                or any(not task.done() for task in tuple(_synthesis_tasks)))
 
 
 def japanese_dictionary_status() -> dict:
@@ -546,6 +556,16 @@ def discard_pending_tts(
     return discarded
 
 
+def configure_speech_guard(*, scheduler_factory, synthesis_guard):
+    """Bind optional queued-playback authority during pipeline startup."""
+    global _utterance_scheduler, _synthesis_guard
+    if _synthesis_guard is not None or is_synthesis_busy():
+        raise ValueError("speech_guard_requires_new_pipeline")
+    scheduler = scheduler_factory(logger=logger)
+    guarded_synthesis = synthesis_guard(select_synthesis)
+    _utterance_scheduler, _synthesis_guard = scheduler, guarded_synthesis
+
+
 def configure(
     tts_runtime=None,
     tts_executor=None,
@@ -739,6 +759,19 @@ def _start_tts_producer(stream_factory, sentence_id, interrupt_epoch):
     def stopped():
         return stop.is_set() or _is_interrupted(interrupt_epoch)
 
+    def publish(item):
+        # This stream has one recipient and cannot continue after it closes.
+        if stop.is_set():
+            return False
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, item)
+        except RuntimeError:
+            if not loop.is_closed():
+                raise
+            stop.set()
+            return False
+        return True
+
     def produce():
         stream = None
         started = time.perf_counter()
@@ -748,13 +781,12 @@ def _start_tts_producer(stream_factory, sentence_id, interrupt_epoch):
             logger.info("[WorkerThread] TTS producer started: %s", sentence_id)
             stream = stream_factory()
             for item in stream:
-                if stopped():
+                if stopped() or not publish(item):
                     break
-                loop.call_soon_threadsafe(queue.put_nowait, item)
             logger.info("[WorkerThread] TTS producer completed: %s", sentence_id)
         except Exception as exc:
             logger.exception("[WorkerThread] TTS producer failed (%s)", sentence_id)
-            loop.call_soon_threadsafe(queue.put_nowait, ("__ERROR__", exc))
+            publish(("__ERROR__", exc))
         finally:
             close = getattr(stream, "close", None)
             if callable(close):
@@ -762,7 +794,7 @@ def _start_tts_producer(stream_factory, sentence_id, interrupt_epoch):
                     close()
                 except Exception:
                     logger.debug("[WorkerThread] TTS stream close failed: %s", sentence_id, exc_info=True)
-            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", None))
+            publish(("__DONE__", None))
         return time.perf_counter() - started
 
     return queue, loop.run_in_executor(_tts_executor, produce), stop
@@ -1298,15 +1330,21 @@ async def play_sentence_worker():
 
     职责简化：仅调度，播放完全交给 PlaybackManager。
     """
+    global _preparing_synthesis_jobs
     logger.info("sentence processing worker started")
     while True:
         task_semaphore = None
         permit_owned = False
+        preparing_owned = False
         gate = None
         job_epoch = _tts_interrupt_epoch
 
         async def before_grouping(segment):
-            nonlocal task_semaphore, permit_owned, gate, job_epoch
+            nonlocal task_semaphore, permit_owned, gate, job_epoch, preparing_owned
+            global _preparing_synthesis_jobs
+            # No await between dequeue and this claim, including permission/slot waits.
+            _preparing_synthesis_jobs += 1
+            preparing_owned = True
             job_epoch = int(segment.tts_epoch) if segment.tts_epoch is not None else _tts_interrupt_epoch
             # Turn permission precedes resource ownership. Final grouping uses
             # the text and playback cover available after the engine is ready.
@@ -1349,7 +1387,8 @@ async def play_sentence_worker():
                 for _ in range(job.consumed_count):
                     _pending_sentence_items.task_done()
                 continue
-            backend_name, synth = select_synthesis(
+            synthesis = _synthesis_guard if _synthesis_guard is not None else select_synthesis
+            backend_name, synth = synthesis(
                 job,
                 cuda_graph_enabled=_current_cuda_graph_enabled(),
                 experimental_enabled=_current_experimental_tts_enabled(),
@@ -1419,7 +1458,9 @@ async def play_sentence_worker():
                 emotion=job.emotion,
             )
 
-            spawn_background(tts_coro)
+            synthesis_task = spawn_background(tts_coro)
+            _synthesis_tasks.add(synthesis_task)
+            synthesis_task.add_done_callback(_synthesis_tasks.discard)
             permit_owned = False  # synthesis now owns the acquired permit
             for _ in range(job.consumed_count):
                 _pending_sentence_items.task_done()
@@ -1430,6 +1471,8 @@ async def play_sentence_worker():
         except Exception as e:
             logger.error(f"sentence processing worker failed: {e}", exc_info=True)
         finally:
+            if preparing_owned:
+                _preparing_synthesis_jobs -= 1
             if permit_owned:
                 task_semaphore.release()
 

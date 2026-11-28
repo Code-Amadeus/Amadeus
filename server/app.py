@@ -55,7 +55,7 @@ except CharacterLoadError as exc:
 from llm.character_voice_lines import voice_line
 
 if TYPE_CHECKING:
-    pass
+    from server.memory_startup import DesktopMemoryMaintenance
 
 from tts.pre_translation_runtime import (
     configured_default_enabled as _configured_pre_translation_default,
@@ -355,8 +355,9 @@ def _http_request_authenticated(headers, auth_policy: LocalAuthPolicy) -> bool:
 
 # bootstrap.
 
-async def bootstrap(port: int = 17777) -> None:
-    """Mirrors main.py's main() init sequence, minus GUI."""
+async def bootstrap(port: int = 17777, *,
+                    memory_maintenance: "DesktopMemoryMaintenance | None" = None) -> None:
+    """Normal desktop startup; optional maintenance is trusted Python input."""
     global _EXTENSION_STARTUP_SNAPSHOT
     global vts_manager, player, playback_manager, tts_runtime, asr_manager, wake_service
     global tts_executor, translation_executor, pending_actions, pending_sentence_items
@@ -364,6 +365,10 @@ async def bootstrap(port: int = 17777) -> None:
     global work_status_narrator
 
     from llm.character_prompts import active_character
+    from server.memory_startup import DesktopMemoryMaintenance
+
+    if memory_maintenance is not None and not isinstance(memory_maintenance, DesktopMemoryMaintenance):
+        raise ValueError("trusted_desktop_memory_maintenance_required")
 
     active_character()  # Validate the pinned startup pack before runtime composition.
 
@@ -485,6 +490,24 @@ async def bootstrap(port: int = 17777) -> None:
         provider_cancel=provider_runtime.cancel,
         current_session_id=_work_session_manager.get_current_session_id,
     )
+    from config.memory import MemoryConfig
+    from server.memory_service import HostMemoryService
+
+    memory_service = HostMemoryService(MemoryConfig.from_environment(settings._ENV),
+        project_for_session=work_ledger.session_project,
+        **({"formation_for_session": memory_maintenance.formation_for_session}
+           if memory_maintenance is not None else {}))
+    configured_extraction = memory_maintenance is None and memory_service.config.extraction_enabled
+    if configured_extraction:
+        from server.memory_preview import configured_maintenance
+        memory_service.formation_for_session = lambda session_id: bool(session_id)
+        memory_maintenance = configured_maintenance(memory_service, settings.DEEPSEEK_API_KEY)
+    output_speech = None
+    if memory_service.config.enabled and memory_service.config.use_enabled:
+        from server import memory_output_speech as speech_retirement
+        output_speech = speech_retirement.install(memory_service)
+    memory_service.start()
+    _work_session_manager.configure_model_history_projection(memory_service.project_history)
     work_preview = WorkPreviewManager(work_ledger_store)
     auip_launch = AuipLaunchCoordinator(
         artifacts=work_ledger_store, work_roster=work_ledger, attention=attention_requests,
@@ -501,6 +524,7 @@ async def bootstrap(port: int = 17777) -> None:
         extra_capability_packages=lambda: (*extension_runtime.capability_packages(), *auip_app_capability_packages(
             auip_launch.candidates(_attention_session_manager.get_current_session_id() or "")
         )),
+        memory=memory_service,
     ))
     # References needed by existing domain runtime owners; registration below
     # includes every factory result, including handlers without app bindings.
@@ -787,6 +811,8 @@ async def bootstrap(port: int = 17777) -> None:
 
     # audio player.
     from tts.playback import StreamPlayerWithBuffer as _SPB, PlaybackManager as _PM, SubtitleHooks as _SH
+    if output_speech is not None:
+        _SPB, _PM = speech_retirement.player_types(_SPB, _PM, output_speech)
     from server import presentation_runtime, wallpaper_subtitle_runtime
     from server.wallpaper_subtitle_translator import translate_wallpaper_subtitle
     from tts.sentence_state import pre_translation_cache
@@ -1278,7 +1304,11 @@ async def bootstrap(port: int = 17777) -> None:
     except Exception:
         logger.exception("failed to configure server pre-translation cache")
     pending_actions = Queue()
-    pending_sentence_items = asyncio.Queue(maxsize=3)
+    pending_sentence_items = (asyncio.Queue(maxsize=3) if output_speech is None else
+        speech_retirement.queue(output_speech, maxsize=3))
+    if output_speech is not None and not e2e_no_tts and TTS_BACKEND != "disabled":
+        import tts.pipeline as speech_pipeline
+        speech_retirement.bind_pipeline(speech_pipeline, playback_manager, output_speech)
     exp_tts_semaphore = asyncio.Semaphore(tts_concurrency)
     exp_play_condition = asyncio.Condition()
 
@@ -1775,7 +1805,7 @@ async def bootstrap(port: int = 17777) -> None:
     cooperative_deliveries = {}
 
     async def _query_cooperative_chat(messages, *, visual_context=None, on_text=None,
-                                      json_output=None):
+                                      json_output=None, selection_turn_id=None):
         from server.cooperative_delivery import query_role_messages
         from llm.prompts import (
             finalize_system_prompt_language,
@@ -1783,8 +1813,9 @@ async def bootstrap(port: int = 17777) -> None:
         )
 
         role_messages = [dict(message) for message in messages]
-        role_messages[0]["content"] = finalize_system_prompt_language(
-            role_messages[0]["content"])
+        if selection_turn_id is None:
+            role_messages[0]["content"] = finalize_system_prompt_language(
+                role_messages[0]["content"])
         # The same query port also serves typed-reference and other generic
         # JSON decisions. Only the loop's explicit sources select role mode.
         try:
@@ -1798,8 +1829,9 @@ async def bootstrap(port: int = 17777) -> None:
 
         return await query_role_messages(_llm_client_mod.remote_llm_messages_query,
             role_messages,
-            turn_id=str((frame.get("current") or {}).get("turn_id") or "")
-                if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else "",
+            turn_id=selection_turn_id if selection_turn_id is not None else (
+                str((frame.get("current") or {}).get("turn_id") or "")
+                if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else ""),
             json_output=(source_kind not in ("provider", "host_receipt")
                 if json_output is None else json_output),
             on_text=on_text, visual_context=visual_context,
@@ -1811,7 +1843,9 @@ async def bootstrap(port: int = 17777) -> None:
     def _cooperative_publisher(session_id):
         from core import session_manager as cooperative_sessions
 
-        delivery = CooperativeHostDelivery(session_id=session_id,
+        delivery_type = (CooperativeHostDelivery if output_speech is None else
+            speech_retirement.delivery_type(CooperativeHostDelivery, output_speech))
+        delivery = delivery_type(session_id=session_id,
             display=chat_role_delivery.publish, narration_sink=_speak_cooperative_chat,
             role_stream_factory=lambda cause, gui_callback=None,
                 auip_background_capture_release=None:
@@ -1844,6 +1878,7 @@ async def bootstrap(port: int = 17777) -> None:
         persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
         role_provider_selector=_select_cooperative_role_provider,
         role_reference=role_character_reference,
+        memory=memory_service,
         hybrid_head=hybrid_local_head,
         permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
         permission_store=work_ledger_store,
@@ -2348,13 +2383,14 @@ async def bootstrap(port: int = 17777) -> None:
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
         canvas_action_fn=canvas_action_router.route,
-        chat_send_fn=lambda text, session_id, visual: chat_h.send_text(
+        chat_send_fn=lambda text, session_id, visual, memory_lookup: chat_h.send_text(
             text, provider=_current_llm_provider(), visual=visual,
-            session_id=session_id, source="wallpaper_keyboard",
+            session_id=session_id, source="wallpaper_keyboard", memory_lookup=memory_lookup,
         ),
         chat_control_fn=(lambda action: wallpaper_chat_control(
             action, session=session_h, asr=asr_h, system=sys_h, wake=wake_h,
             voice_start=lambda: _start_asr_from_wake(continuous=True),
+            memory_status=memory_service.runtime_status,
         )) if sys.platform == "win32" else None,
         ensure_chat_session_fn=lambda: session_h.ensure_current_session(
             source="wallpaper_keyboard"
@@ -2376,6 +2412,15 @@ async def bootstrap(port: int = 17777) -> None:
     auip_presentation_callback = project_auip_update
     bus.on(Method.AUIP_UPDATED, auip_presentation_callback)
     output_idle_probe = lambda: not (chat_h.is_busy() or _tts_is_observer_output_busy())
+
+    def _maintenance_resources_ready() -> bool:
+        # Owner facts only: this probe never awaits, reads memory or writes DB.
+        # A queued audio item can precede the playback-ready event transition.
+        recognizer = asr_manager
+        return not (chat_h.is_busy() or _tts_is_observer_output_busy()
+            or bool(playback_manager.pending_audio)
+            or _tts_pipeline.is_synthesis_busy()
+            or (recognizer is not None and recognizer.is_recognizing()))
     work_observer.configure(
         is_chat_busy=chat_h.is_busy,
         is_tts_busy=_tts_is_observer_output_busy,
@@ -2454,7 +2499,16 @@ async def bootstrap(port: int = 17777) -> None:
     # Cancelling executor Futures cannot stop their threads: signal and join them.
     vts_worker_stop = threading.Event()
     vts_workers: list[asyncio.Future] = []
+    maintenance_binding = None
     try:
+        if memory_maintenance is not None:
+            try:
+                maintenance_binding = await memory_maintenance.bind(
+                    memory_service, resource_ready=_maintenance_resources_ready)
+            except Exception as error:
+                if not configured_extraction:
+                    raise
+                logger.warning("Memory background formation unavailable (%s)", type(error).__name__)
         vts_workers.append(loop.run_in_executor(None, _vts_action_mod.action_worker, vts_worker_stop))
         if vts_manager.connected and VTS_HEARTBEAT_ENABLED:
             vts_workers.append(loop.run_in_executor(None, _vts_action_mod.heartbeat_worker, vts_worker_stop))
@@ -2462,6 +2516,11 @@ async def bootstrap(port: int = 17777) -> None:
         logger.info(f"backend server ready on ws://127.0.0.1:{port}/ws")
         await server_task  # wait for server to finish
     finally:
+        # Stop admission before any slow foreground/shared-owner teardown.
+        # Already issued work retains the Store until the normal Host join.
+        shutdown_binding = maintenance_binding or memory_service._maintenance
+        if shutdown_binding is not None:
+            shutdown_binding.stop()
         work_status_narrator = None
 
         async def _close_runtime() -> None:
@@ -2525,6 +2584,10 @@ async def bootstrap(port: int = 17777) -> None:
             await work_ledger.drain_provider_facts()
             await work_observer.close()
             await work_preview.close_all()
+            await memory_service.close()
+            if memory_maintenance is not None:
+                await memory_service.wait_closed()
+            _work_session_manager.configure_model_history_projection(None)
             work_settled = (not work_ledger.store.list_unresolved_provider_attempts(limit=1)
                             and not work_ledger.store.list_writer_leases(active_only=True))
             work_ledger.close()

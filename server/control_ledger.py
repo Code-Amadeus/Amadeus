@@ -1127,6 +1127,39 @@ class ControlLedgerStore:
         with self._lock:
             return self._row(self._db, "control_effect_outbox", "effect_id", effect_id)
 
+    def history_execution_references(self, source_scope: str, sources):
+        """Bounded structural facts from accepted plans, never control prose.
+
+        Each caller supplies a committed user source's Host root, utterance and
+        transcript digest. Both indexed joins are exact identity lookups; no
+        payload, target, receipt text or full-ledger scan reaches this reader.
+        Acceptance is historical evidence, never a new execution grant.
+        """
+        if not source_scope.startswith("chat:") or len(sources) > 60:
+            raise ValueError("invalid history source scope")
+        result, seen = [], set()
+        with self._lock:
+            for source in sources:
+                rows = self._db.execute("""SELECT e.effect_id,e.kind,e.state,
+                        json_extract(r.receipt_json,'$.outcome') AS outcome
+                    FROM control_admissions a JOIN control_effect_outbox e ON e.root_id=a.root_id
+                    LEFT JOIN control_effect_receipts r ON r.effect_id=e.effect_id
+                    WHERE a.root_id=? AND a.source_scope=? AND a.utterance_id=?
+                        AND a.transcript_hash=? AND a.authority_mode='turn_decision'
+                        AND a.accepted_at IS NOT NULL AND a.plan_id IS NOT NULL
+                    ORDER BY e.ordinal LIMIT ?""", (source["root_id"], source_scope,
+                    source["utterance_id"], source["transcript_hash"], 128 - len(result))).fetchall()
+                for row in rows:
+                    if row["effect_id"] not in seen:
+                        seen.add(row["effect_id"])
+                        result.append({"effect_id":row["effect_id"], "kind":row["kind"],
+                            "state":row["state"], "turn_id":source["turn_id"],
+                            **({"outcome":row["outcome"]} if row["outcome"] in {
+                                "succeeded", "failed", "cancelled"} else {})})
+                if len(result) == 128:
+                    break
+        return tuple(result)
+
     def get_receipt(self, effect_id: str):
         with self._lock:
             row = self._db.execute(

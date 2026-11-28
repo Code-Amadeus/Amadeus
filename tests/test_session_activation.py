@@ -30,7 +30,10 @@ def sessions(tmp_path, monkeypatch):
 
 
 def state():
-    return sm.get_current_session_id(), deepcopy(sm.conversation_history.__dict__)
+    # Persisted-file metadata is a cache, not conversation/selection state.
+    return sm.get_current_session_id(), deepcopy({
+        key:value for key, value in sm.conversation_history.__dict__.items()
+        if key != "_file_state"})
 
 
 def test_title_replacement_failure_preserves_entire_conversation(sessions, monkeypatch):
@@ -156,7 +159,7 @@ def test_interrupted_cooperative_turn_persists_before_publish(sessions):
         heard_content="前半。後半",
     )
     data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
-    assert data["dialog"][-2:] == [
+    assert [{key:row[key] for key in ("role", "content", "turn_id")} for row in data["dialog"][-2:]] == [
         {"role": "user", "content": "follow up", "turn_id": "interrupted-run"},
         {
             "role": "assistant",
@@ -178,7 +181,7 @@ def test_interrupted_turn_does_not_rewrite_prior_identified_assistant(sessions):
         heard_content="partial reply",
     )
     data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
-    assert data["dialog"][-2:] == [
+    assert [{key:row[key] for key in ("role", "content", "turn_id")} for row in data["dialog"][-2:]] == [
         {"role": "user", "content": "next", "turn_id": "new-run"},
         {
             "role": "assistant",
@@ -246,7 +249,8 @@ def test_correlated_append_targets_original_session_without_selecting_it(session
     assert sm.append_session_message("A", role="assistant", content="A displayed reply", turn_id="a-run")
     assert state() == before and sm.get_session_selection_revision() == revision
     data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
-    assert data["dialog"][-1] == {"role":"assistant", "content":"A displayed reply", "turn_id":"a-run"}
+    assert {key:data["dialog"][-1][key] for key in ("role", "content", "turn_id")} == {
+        "role":"assistant", "content":"A displayed reply", "turn_id":"a-run"}
     assert all(row["content"] != "UNSAVED_B" for row in data["dialog"])
     assert sm.save_session("B")
     assert sm.load_session("A")[0]
@@ -301,7 +305,7 @@ def test_async_display_receipt_persists_to_its_origin_after_selection_changes(se
             record_display=sm.append_session_message)
         assert await publication({"source":"kurisu", "cause":"provider-run-A", "text":"A question"})
         assert sm.get_current_session_id() == "B"
-        assert sm.conversation_history.dialog == [{"role":"user", "content":"B_ONLY"}]
+        assert [(row["role"], row["content"]) for row in sm.conversation_history.dialog] == [("user", "B_ONLY")]
         assert publication.receipts[0]["published"] and publication.receipts[0]["history_recorded"]
         data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
         assert data["dialog"][-1]["content"] == "A question"
@@ -331,7 +335,9 @@ def test_legacy_history_keeps_configuration_metadata_title_and_singleton(session
     assert sm.load_session("B") == (True, True)
     assert seen == [("A", "B", before)]
     assert sm.conversation_history is singleton
-    assert sm.conversation_history.dialog == dialog
+    assert len(sm.conversation_history.dialog) == len(dialog)
+    assert all(sm.conversation_history.dialog[0][key] == value for key, value in dialog[0].items())
+    assert sm.conversation_history.dialog[0]["created_at_ms"] is None
     # A saved window size is legacy data; the Host policy decides what a model sees.
     assert sm.conversation_history.max_rounds == sm.PROMPT_HISTORY_ROUNDS
     assert sm.conversation_history.summary_token_threshold == 200

@@ -3,14 +3,28 @@
 from server.protocol import Method
 
 
-async def wallpaper_chat_control(payload: dict, *, session, asr, system, wake, voice_start) -> dict:
+async def wallpaper_chat_control(
+    payload: dict, *, session, asr, system, wake, voice_start, memory_status=None,
+) -> dict:
     action = payload.get("action")
     source = "wake"
     if action == "status":
         config = await system.handle(Method.SYSTEM_GET_CONFIG, {})
+        memory = memory_status() if memory_status is not None else {}
         return {"ok": True, "supports_images": bool(config.get("chat_supports_images")),
                 "watching": bool(config.get("vision_enabled") and config.get("vision_mode") == "watching"),
+                "auip_interaction_enabled": config.get("auip_interaction_enabled"),
+                "memory_use_enabled": bool(memory.get("sdk_version") and memory.get("use_enabled")),
                 "voice": asr.listening_state(), "wake": await wake.status()}
+    if action == "auip_set":
+        enabled = payload.get("enabled")
+        if type(enabled) is not bool:
+            return {"ok": False, "error": "invalid_application_interaction_setting"}
+        result = await system.handle(Method.SYSTEM_SET_CONFIG, {"values": {"auip_interaction_enabled": enabled}})
+        applied = result.get("values", {}).get("auip_interaction_enabled")
+        if applied is not enabled:
+            return {"ok": False, "error": "application_interaction_setting_unconfirmed"}
+        return {"ok": True, "auip_interaction_enabled": applied}
     if action in {"vision_toggle", "vision_windows", "vision_select"}:
         config = await system.handle(Method.SYSTEM_GET_CONFIG, {})
         if not config.get("chat_supports_images"):

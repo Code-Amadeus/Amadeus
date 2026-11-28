@@ -253,13 +253,14 @@ wheels = [
 
 [[package]]
 name = "amadeus"
-version = "0.17.1a1"
+version = "0.18.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
+    { name = "eidema" },
     { name = "fastapi" },
     { name = "google-genai" },
     { name = "httpx" },
@@ -562,6 +563,10 @@ local-rocm = [
     { name = "wordsegment", marker = "sys_platform == 'win32'" },
     { name = "x-transformers", marker = "sys_platform == 'win32'" },
 ]
+memory = [
+    { name = "onnxruntime" },
+    { name = "tokenizers" },
+]
 rag = [
     { name = "faiss-cpu" },
     { name = "huggingface-hub" },
@@ -622,6 +627,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
     { name = "boto3", specifier = "==1.43.16" },
     { name = "cn2an", marker = "extra == 'local-models'", specifier = "==0.5.24" },
+    { name = "eidema", path = "vendor/eidema/eidema-0.2.0a3-py3-none-any.whl" },
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = "==1.14.2" },
     { name = "fastapi", specifier = "==0.136.3" },
     { name = "ffmpeg-python", marker = "extra == 'local-models'", specifier = "==0.2.0" },
@@ -647,6 +653,7 @@ requires-dist = [
     { name = "numba", marker = "extra == 'local-models'", specifier = "==0.65.1" },
     { name = "numpy", specifier = "==1.26.4" },
     { name = "onnxruntime", marker = "extra == 'local-models'", specifier = "==1.26.0" },
+    { name = "onnxruntime", marker = "extra == 'memory'", specifier = "==1.26.0" },
     { name = "openai", specifier = "==2.38.0" },
     { name = "openai-codex", specifier = "==0.154.0" },
     { name = "opencc", marker = "extra == 'local-models'", specifier = "==1.3.1" },
@@ -683,6 +690,7 @@ requires-dist = [
     { name = "starlette", specifier = "==1.3.1" },
     { name = "tojyutping", marker = "extra == 'local-models'", specifier = "==3.2.0" },
     { name = "tokenizers", marker = "extra == 'local-models'", specifier = "==0.22.1" },
+    { name = "tokenizers", marker = "extra == 'memory'", specifier = "==0.22.1" },
     { name = "torch", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'local-mps'", specifier = "==2.7.0" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'local-cpu') or (sys_platform == 'win32' and extra == 'local-cpu')", specifier = "==2.7.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "amadeus", extra = "local-cpu" } },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'local-cu128') or (sys_platform == 'win32' and extra == 'local-cu128')", specifier = "==2.7.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "amadeus", extra = "local-cu128" } },
@@ -715,7 +723,7 @@ requires-dist = [
     { name = "wordsegment", marker = "extra == 'local-models'", specifier = "==1.3.1" },
     { name = "x-transformers", marker = "extra == 'local-models'", specifier = "==2.19.6" },
 ]
-provides-extras = ["acp", "rag", "voice", "vad", "torch-cpu", "local-models", "local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm", "dev"]
+provides-extras = ["acp", "memory", "rag", "voice", "vad", "torch-cpu", "local-models", "local-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm", "dev"]
 
 [package.metadata.requires-dev]
 extension-authoring = [
@@ -1188,6 +1196,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/f5/8c50757d198b8ca30ddb91e8b8f0247a8dca04ff2ec30755245f0ab1ff0c/editdistance-0.8.1-cp312-cp312-win32.whl", hash = "sha256:87533cf2ebc3777088d991947274cd7e1014b9c861a8aa65257bcdc0ee492526", size = 81039, upload-time = "2024-02-10T07:44:04.134Z" },
     { url = "https://files.pythonhosted.org/packages/28/f0/65101e51dc7c850e7b7581a5d8fa8721a1d7479a0dca6c08386328e19882/editdistance-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:09f01ed51746d90178af7dd7ea4ebb41497ef19f53c7f327e864421743dffb0a", size = 79853, upload-time = "2024-02-10T07:44:05.687Z" },
 ]
+
+[[package]]
+name = "eidema"
+version = "0.2.0a3"
+source = { path = "vendor/eidema/eidema-0.2.0a3-py3-none-any.whl" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { filename = "eidema-0.2.0a3-py3-none-any.whl", hash = "sha256:bbb193fe37c8291fdcb359e9cac574b5fbc1a7c573e81503f71881ea4dd3cdfa" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },
+    { name = "sentence-transformers", marker = "extra == 'local-embeddings'", specifier = ">=3" },
+    { name = "tokenizers", marker = "extra == 'onnx'", specifier = ">=0.20" },
+]
+provides-extras = ["local-embeddings", "onnx", "test"]
 
 [[package]]
 name = "einops"

@@ -28,6 +28,22 @@ from test_cooperative_pending_turn import pending_host as pending_host
 from test_cooperative_planned_work import planned
 
 
+def published_sources(publisher, session_id):
+    history, _ = sm._read_session_history(session_id)
+    by_identity = {row["message_id"]:row for row in history.dialog}
+    result = []
+    for receipt in publisher.receipts:
+        assert receipt["session_id"] == session_id and receipt["state"] == "published"
+        source = by_identity[receipt["message_id"]]
+        assert source["role"] == "assistant" and source["turn_id"]
+        assert isinstance(source["message_id"], str) and source["message_id"]
+        assert type(source["created_at_ms"]) is int and source["created_at_ms"] > 0
+        assert type(source["utc_offset_minutes"]) is int and -1440 < source["utc_offset_minutes"] < 1440
+        assert source["revision"] == 1
+        result.append(source)
+    return result
+
+
 @pytest.fixture
 def composition(pending_host):
     context = pending_host
@@ -118,11 +134,14 @@ async def test_independent_effects_use_exact_work_clause_and_one_real_publicatio
             assert not context.spoken
         else:
             assert len(publisher.receipts) == len(context.spoken) == 1
-            assert publisher.receipts[0]["message_id"] == "compound"
+            published, = published_sources(publisher, context.session_id)
+            assert published["turn_id"] == "compound"
             if failure == "none":
                 assert context.spoken[0]["display_text"] == work_line + "\n" + app_line
         replay = await context.handler.send_text(text, session_id=context.session_id, turn_id="compound")
         assert replay["status"] == "replayed"
+        if failure != "presentation":
+            assert published_sources(publisher, context.session_id) == [published]
         context.manager.auip_router.assert_awaited_once()
         if failure not in {"work_refused", "work_unknown"}:
             context.manager._stop_active_work = AsyncMock(return_value={"state":"stopped"})
@@ -169,7 +188,8 @@ async def test_slow_app_does_not_hold_work_acceptance_or_later_chat(composition,
         result = ingress.receipts["slow-compound"]
         assert result["work"]["run_id"] == work["run_id"]
         assert result["auip"]["outcome"]["ok"] is True
-        assert not any(row["message_id"] == "slow-compound" for row in publisher.receipts)
+        assert not any(row["turn_id"] == "slow-compound"
+            for row in published_sources(publisher, context.session_id))
         assert context.host.adapter.calls == context.manager.auip_router.await_count == 1
         assert context.host.runtime.get_run(work["run_id"]).status == "running"
     finally:
@@ -311,7 +331,8 @@ async def test_independent_app_does_not_wait_for_work_interpretation(composition
         assert receipt["auip"]["state"] == "auip_applied"
         assert context.host.adapter.calls == int(not supersede)
         assert context.manager.auip_router.await_count == 1
-        assert any(row["message_id"] == "slow-work" for row in publisher.receipts) is not supersede
+        assert any(row["turn_id"] == "slow-work"
+            for row in published_sources(publisher, context.session_id)) is not supersede
     finally:
         release_query.set()
         context.host.adapter.release.set()

@@ -60,6 +60,24 @@ def test_source_archive_contains_desktop_setup_entrypoints_and_user_guides(tmp_p
             assert archive.read(f"amadeus-test/{path}") == (ROOT / path).read_bytes()
 
 
+def test_source_archive_contains_reply_usage_runtime_dependency(tmp_path: Path):
+    policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
+    dependency = "reply_usage.py"
+    selected, excluded = select_paths([dependency], policy)
+    assert not excluded, "The installed LLM client imports this top-level module"
+    assert dependency in policy["required_files"]
+    report = {
+        "release_ready": True,
+        "version": "test",
+        "source_date_epoch": 1700000000,
+        "selected_files": [{"path": path} for path in selected],
+    }
+    output = tmp_path / "runtime-source.zip"
+    create_archive(root=ROOT, output=output, report=report, policy=policy, modes={})
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read(f"amadeus-test/{dependency}") == (ROOT / dependency).read_bytes()
+
+
 def test_companion_code_ships_but_optional_media_does_not():
     policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
     code = ["render/companion_pack.py", "render/web/companion_atlas.js",

@@ -15,6 +15,7 @@ on:
       - wallpaper/**
       - electron/resources/windows-wallpaper/**
       - tools/build_source_release.py
+      - tools/package_eidema.py
       - tools/stage_japanese_dictionary.py
       - tools/probes/verify_bundled_dictionary.py
       - electron/scripts/build-runtime-resources.cjs
@@ -57,6 +58,9 @@ jobs:
 
       - name: Verify included third-party provenance
         run: python tools/check_third_party_provenance.py --release-ready
+
+      - name: Verify the pinned Eidema core artifact
+        run: python tools/package_eidema.py check
 
       - name: Select distribution inputs
         shell: pwsh
@@ -119,7 +123,9 @@ jobs:
 
       - name: Verify extracted Python environment
         working-directory: ${{ env.SOURCE_ROOT }}
-        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
+        run: |
+          python tools/package_eidema.py check
+          uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
 
       - name: Verify the extracted bundled dictionary with the native frontend
         if: env.CODE_ONLY_DISTRIBUTION == 'false'

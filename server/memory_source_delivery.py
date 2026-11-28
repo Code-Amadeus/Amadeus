@@ -1,0 +1,416 @@
+"""Advance Eidema from the durable Session journal and build its raw search cache."""
+from __future__ import annotations
+
+import asyncio
+from collections import OrderedDict
+from dataclasses import dataclass, replace
+import logging
+from pathlib import Path
+
+from core import session_manager as sessions
+from core import session_source_journal as journal
+from core.chat_history_projection import project_memory_source
+from eidema.retrieval import MAX_SOURCE_CHARS
+from server.memory_service import MemoryRequestError
+
+logger = logging.getLogger(__name__)
+SOURCE_PAGE = 8
+MATERIALIZE_PAGE = 4
+
+
+class SourceDelivery:
+    def __init__(self, host):
+        self.host = host
+        self.api = host._api
+        self.maintenance = self.api.Maintenance(host._store)
+        self.retrieval = self.api.Retrieval(host._store)
+        self.loop = asyncio.get_running_loop()
+        self._wake = asyncio.Event()
+        self._pending = OrderedDict()
+        self._failed = set()
+        self._state = "starting"
+        # Receipt metadata comes only from this receiver's committed SDK ACKs.
+        # It is an inventory for optional owners, never a second durable cursor.
+        self._accepted = OrderedDict()
+        self._receipt_observers = set()
+        self.receipt_inventory_ready = False
+        journal.configure_publication(self._published, owner=self, scope_for_session=self._scope,
+                                      formation_for_session=self.formation_allowed,
+                                      capture=host.config.capture_sources)
+        self._task = asyncio.create_task(self._run())
+
+    @property
+    def state(self):
+        return "degraded" if self._state == "idle" and self._failed else self._state
+
+    def accepted_streams(self):
+        return tuple(self._accepted)
+
+    def accepted_receipt(self, access, stream):
+        """Last received ACK and journal head, with no content or new reads."""
+        position, head, _ = self._accepted[access, stream]
+        return position, head
+
+    def formation_streams(self):
+        """Snapshot current formation eligibility of received Session streams."""
+        grants = {}
+        streams = []
+        for (_, stream), (_, _, session_id) in tuple(self._accepted.items()):
+            if session_id not in grants:
+                grants[session_id] = self.formation_allowed(session_id)
+            if grants[session_id]:
+                streams.append(stream)
+        return tuple(streams)
+
+    def subscribe_receipts(self, callback):
+        """Observe completed reception without source bodies or authority."""
+        if not callable(callback):
+            raise ValueError("receipt_callback_required")
+        self._receipt_observers.add(callback)
+        return lambda: self._receipt_observers.discard(callback)
+
+    def _received(self, accepted, *, inventory_ready=False):
+        changed = False
+        for key, position in accepted.items():
+            if self._accepted.get(key) != position:
+                self._accepted[key] = position
+                changed = True
+        if inventory_ready and not self.receipt_inventory_ready:
+            self.receipt_inventory_ready = True
+            changed = True
+        if changed:
+            for callback in tuple(self._receipt_observers):
+                callback()
+
+    def _scope(self, session_id, character):
+        return journal.scope_fields(self.host.config.user_id, character,
+                                    self.host.project_for_session(session_id) or None)
+
+    def formation_allowed(self, session_id):
+        """Current trusted Host decision; source or model metadata cannot grant it."""
+        try:
+            callback = getattr(self.host, "formation_for_session", None)
+            return callback is not None and callback(session_id) is True
+        except Exception:
+            return False
+
+    def _enqueue(self, path):
+        if not self.host._closing:
+            self._pending[path] = None
+            self._wake.set()
+
+    def _published(self, path, *, generation=None, retired=False, changes=()):
+        # This observer runs after the journal commit, before its caller can acknowledge it.
+        speech = self.host.output_speech
+        if speech is not None and generation is not None:
+            speech.source_committed(generation, retired=retired, changes=changes)
+        self.loop.call_soon_threadsafe(self._enqueue, path)
+
+    async def close(self):
+        journal.configure_publication(owner=self)
+        self._task.cancel()
+        await asyncio.gather(self._task, return_exceptions=True)
+
+    async def _step(self, fn):
+        while True:
+            async with self.host._publication_lock:
+                try:
+                    return await self.host._db.run(fn, timeout=None)
+                except MemoryRequestError as exc:
+                    if exc.code != "busy":
+                        raise
+            await asyncio.sleep(.01)
+
+    def _inventory(self):
+        return sorted(Path(sessions._SESSION_DIR).glob("*.json"))
+
+    @staticmethod
+    def _path(session_id):
+        path = Path(sessions._session_path(session_id))
+        if path.resolve().parent != Path(sessions._SESSION_DIR).resolve():
+            raise ValueError("source_outside_session_directory")
+        return path
+
+    def _change(self, event):
+        return self.api.SourceChange(**{
+            **event,
+            "source": self.api.SourceSpan(**event["source"]),
+            "formation_allowed": journal.allows_formation(event),
+        })
+
+    def _replay_page(self, path, affected, accepted=None):
+        data = journal.read(self._path(path.stem))
+        for generation in data.get(journal.FIELD, {}).get("generations", ()):
+            scope = self.api.MemoryScope(**generation["scope"])
+            events = generation["events"]
+            if scope.user_id != self.host.config.user_id or not events:
+                continue
+            access = self.api.AccessScope(scope.user_id, scope.character_id, scope.project_id)
+            affected[access] = None
+            stream = generation["stream_id"]
+            self.maintenance.register_stream(access, stream, scope)
+            position = self.maintenance.progress(access, stream, "journal-v1").received_position
+            if position > len(events):
+                raise ValueError("source_journal_receiver_ahead")
+            page = events[max(0, position - 1):position + SOURCE_PAGE]
+            received = position
+            if page:
+                received = self.maintenance.append_changes(
+                    access, stream, [self._change(event) for event in page])
+            if accepted is not None:
+                accepted[access, stream] = received, len(events), data["session_id"]
+            snapshot = self.host._store.source_policy(access)
+            if snapshot.change_seq > self.host._policy.value["change_seq"]:
+                self.host._policy.reconcile(snapshot)
+            if position < len(events):
+                return True
+        return False
+
+    def _current_text(self, access, pin):
+        view = self.view(access)
+        try:
+            content = view.read(pin, discoverable=True)
+            self.require_current(view.signatures((pin,)))
+        except (FileNotFoundError, MemoryRequestError):
+            return None
+        return content.text
+
+    def view(self, access, *, purpose="lookup"):
+        return SessionReadView(self, access, purpose=purpose)
+
+    @staticmethod
+    def require_current(signatures):
+        try:
+            for path, signature in signatures:
+                if sessions._session_file_signature(path) != signature:
+                    raise MemoryRequestError("conflict")
+        except OSError:
+            raise MemoryRequestError("conflict") from None
+
+    def _materialize_page(self, access, after):
+        # An unresolved Host-side privacy operation can precede the SDK barrier.
+        if not self.host._policy.ready or self.host._policy.value["pending"]:
+            return None, False
+        pins, cursor = self.retrieval.unmaterialized_sources(access, limit=MATERIALIZE_PAGE, after=after)
+        indexed = False
+        for pin in pins:
+            try:
+                text = self._current_text(access, pin)
+                if text and len(text) <= MAX_SOURCE_CHARS:
+                    self.retrieval.materialize_source(access, pin, text)
+                    indexed = True
+            except (FileNotFoundError, self.api.MemoryNotFound, self.api.MemoryConflict):
+                # The next journal page or a later publication supersedes this pin.
+                continue
+        return cursor, indexed
+
+    async def _run(self):
+        try:
+            for path in await self._step(self._inventory):
+                self._enqueue(path)
+            if not self._pending:
+                self._received({}, inventory_ready=True)
+            while True:
+                self._state = "idle"
+                await self._wake.wait()
+                self._wake.clear()
+                self._state = "indexing"
+                affected = {}
+                while self._pending:
+                    path, _ = self._pending.popitem(last=False)
+                    accepted = {}
+                    try:
+                        more = await self._step(lambda: self._replay_page(path, affected, accepted))
+                    except Exception as exc:
+                        self._failed.add(path)
+                        logger.warning("[Memory] source journal delivery failed (%s)", type(exc).__name__)
+                    else:
+                        self._failed.discard(path)
+                        self.host._sync_projection()
+                        if more:
+                            self._pending[path] = None
+                    # A committed ACK is observable even if a later policy
+                    # projection step failed. It remains metadata, not a grant.
+                    self._received(accepted)
+                    await asyncio.sleep(0)
+                # Startup consumers must see the whole retained generation set
+                # before comparing an SDK binding's immutable persisted prefix.
+                self._received({}, inventory_ready=True)
+                for access in affected:
+                    after = None
+                    while True:
+                        after, indexed = await self._step(lambda: self._materialize_page(access, after))
+                        if indexed:
+                            self.host._schedule_index()
+                        if after is None:
+                            break
+                        await asyncio.sleep(0)
+        except Exception as exc:
+            self._state = "unavailable"
+            logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
+
+
+@dataclass(frozen=True)
+class _SessionSnapshot:
+    path: Path
+    signature: tuple[int, ...]
+    scope: dict
+    generation: dict | None
+    events: dict
+    rows: dict
+
+
+class SessionReadView:
+    """One read operation over exact committed Session versions."""
+
+    def __init__(self, delivery, access, *, purpose="lookup"):
+        if purpose not in ("lookup", "formation"):
+            raise ValueError("invalid_session_read_purpose")
+        self.purpose = purpose
+        self.delivery = delivery
+        self.access = access
+        self.files = {}
+
+    def _session(self, sid, incarnation):
+        if sid not in self.files:
+            path = self.delivery._path(sid)
+            signature = sessions._session_file_signature(path)
+            data = journal.read(path)
+            live = journal.live(data)
+            if live is None and journal.FIELD in data:
+                raise MemoryRequestError("conflict")
+            generation = live["generations"][-1] if live is not None else None
+            events = {}
+            if generation is not None:
+                scope = generation["scope"]
+                for event in generation["events"]:
+                    events.setdefault(event["source"]["record_key"], []).append(event)
+            else:
+                scope = self.delivery._scope(sid, sessions._stored_character_id(data, sid))
+            rows = {row["message_id"]: row for row in data["dialog"]}
+            self.files[sid] = _SessionSnapshot(path, signature, scope, generation, events, rows)
+        snapshot = self.files[sid]
+        scope, generation = snapshot.scope, snapshot.generation
+        current_incarnation = generation["incarnation"] if generation is not None else None
+        if (current_incarnation != incarnation or scope["user_id"] != self.access.user_id
+                or scope["character_id"] != self.access.character_id
+                or scope["project_id"] not in (None, self.access.project_id)):
+            raise MemoryRequestError("conflict")
+        return snapshot
+
+    def _source(self, source):
+        sid, mid, incarnation = journal.decode(source)
+        snapshot = self._session(sid, incarnation)
+        if snapshot.generation is None:
+            raise MemoryRequestError("conflict")
+        return sid, mid, incarnation, snapshot.generation["stream_id"], snapshot.events, snapshot.rows
+
+    def pin(self, item):
+        pin = self._pin(item.source)
+        if pin.state_version != item.reference.target_version:
+            raise MemoryRequestError("conflict")
+        return pin
+
+    def _pin(self, source):
+        *_, stream, _events, _rows = self._source(source)
+        if self.purpose == "formation":
+            pin = self.delivery.maintenance.formation_input(self.access, source)
+        else:
+            pin = self.delivery.maintenance.lookup_input(self.access, stream, source, discoverable=True)
+        self._row(pin, discoverable=True)
+        return pin
+
+    def _row(self, pin, *, discoverable=False):
+        source = pin.source
+        sid, mid, incarnation, _stream, events, rows = self._source(source)
+        row = rows.get(mid)
+        revisions = events.get(source.record_key)
+        if row is None or not revisions or (row["revision"], row["created_at_ms"]) != (
+                source.revision, pin.recorded_at_ms):
+            raise MemoryRequestError("conflict")
+        current = self.delivery._change(revisions[-1])
+        allowed = (current.formation_allowed and not current.evidence_only
+                   and self.delivery.formation_allowed(sid)
+                   and row["role"] in ("user", "assistant")
+                   if self.purpose == "formation" else current.lookup_allowed)
+        if (current.action != "upsert" or current.source != source or not allowed
+                or (discoverable and current.evidence_only)
+                or (current.policy_revision, current.recorded_at_ms) !=
+                    (pin.policy_revision, pin.recorded_at_ms)):
+            raise MemoryRequestError("conflict")
+        version = current.position
+        for event in reversed(revisions[:-1]):
+            if self.delivery._change(event) != replace(current, position=event["position"]):
+                break
+            version = event["position"]
+        if version != pin.state_version:
+            raise MemoryRequestError("conflict")
+        return sid, incarnation, row
+
+    def read(self, pin, *, max_chars=MAX_SOURCE_CHARS, max_bytes=4_000_000, discoverable=False):
+        sid, incarnation, row = self._row(pin, discoverable=discoverable)
+        source = pin.source
+        text = project_memory_source(sid, row, expected_revision=source.revision,
+                                     incarnation=incarnation)["text"]
+        if len(text) > max_chars or len(text.encode("utf8")) > max_bytes:
+            raise MemoryRequestError("source_budget")
+        speaker = self.access.user_id if row["role"] == "user" else self.access.character_id
+        return self.delivery.api.SourceContent(source, text, row["role"], speaker)
+
+    def output_state(self, output):
+        """Check a bound assistant reply against its committed Session row.
+
+        Replies can carry memory dependencies while new source capture is off.
+        Original evidence still needs a journal receipt through _source.
+        """
+        sid, mid, incarnation = journal.decode(output)
+        snapshot = self._session(sid, incarnation)
+        row = snapshot.rows.get(mid)
+        if row is None or row["role"] != "assistant" or row["revision"] != output.revision:
+            raise MemoryRequestError("conflict")
+        heads = snapshot.events.get(output.record_key)
+        if heads:
+            head = heads[-1]
+            if head["action"] != "upsert" or head["source"]["revision"] != output.revision:
+                raise MemoryRequestError("conflict")
+            return sid, head["position"]
+        return sid, 0
+
+    def signatures(self, pins, *, output_states=()):
+        signatures = {}
+        session_ids = {self._row(pin)[0] for pin in pins}
+        session_ids.update(sid for sid, _ in output_states)
+        for sid in session_ids:
+            snapshot = self.files[sid]
+            signatures[snapshot.path] = snapshot.signature
+        return tuple(signatures.items())
+
+    def position(self, pin):
+        sid, _, incarnation, _, events, _ = self._source(pin.source)
+        return (sid, incarnation), tuple(events).index(pin.source.record_key)
+
+    def recorded_offset(self, pin):
+        """Read the originating offset from the already admitted snapshot."""
+        sid, mid, _ = journal.decode(pin.source)
+        row = self.files[sid].rows[mid]
+        assert (row["revision"], row["created_at_ms"]) == (pin.source.revision, pin.recorded_at_ms)
+        return row.get("utc_offset_minutes")
+
+    def relative(self, anchor, offset):
+        """Locate a committed slot without crossing an unavailable message."""
+        sid, mid, _, _, events, rows = self._source(anchor.source)
+        keys = tuple(events)
+        at = keys.index(anchor.source.record_key)
+        index = at + offset
+        if not 0 <= index < len(keys):
+            raise MemoryRequestError("conflict")
+        entry = events[keys[index]][-1]
+        source = self.delivery.api.SourceSpan(**entry["source"])
+        _, target, _ = journal.decode(source)
+        dialog = tuple(rows)
+        # Journal ordering remembers removed slots, and the live transcript
+        # also detects intervening rows written while capture was paused.
+        if target not in rows or dialog.index(target) - dialog.index(mid) != offset:
+            raise MemoryRequestError("conflict")
+        pin = self._pin(source)
+        return pin, rows[target]["role"]
