@@ -248,6 +248,7 @@ asyncio_default_fixture_loop_scope = "function"
 # Listed explicitly rather than auto-discovered. A flat layout invites
 # discovery to also pick up vendored trees (GPT_SoVITS), build scratch, and
 # test directories, which would change what `import` resolves to.
+py-modules = ["reply_usage"]
 packages = [
     "characters",
     "agent_host",

@@ -15,10 +15,10 @@ from server.cooperative_provider_loop import LoopConflict
 from server.event_bus import bus
 from server.memory_service import HostMemoryService, MemoryRequestError
 from server.protocol import Method
-from test_cooperative_pending_turn import pending_host
+from test_cooperative_pending_turn import pending_host as pending_host
 from test_memory_explicit_lookup import lookup_loop, proposed
 from test_memory_recall import semantic_service, SyntheticMultilingualEmbedder
-from test_memory_service import host, remember, forget
+from test_memory_service import forget, host as host, remember
 
 
 def observe(loop):

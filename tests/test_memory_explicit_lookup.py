@@ -18,7 +18,7 @@ from server.cooperative_provider_loop import LoopConflict
 from server.protocol import Method
 from test_cooperative_character_rag import loop_for
 from test_memory_recall import semantic_service
-from test_memory_service import host, remember, forget
+from test_memory_service import forget, host as host, remember
 
 
 def lookup_loop(host, query, *, inline=False):
