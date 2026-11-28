@@ -51,6 +51,7 @@ from wallpaper.scene_assets import (
     _load_wallpaper_ui_config,
     _prepare_background_asset,
     _prepare_scenario_payload,
+    _wallpaper_image_size,
 )
 
 if TYPE_CHECKING:
@@ -750,6 +751,7 @@ class WallpaperEngineBridgeHost:
         self._keyboard_input_toggle_bounds = _keyboard_input_toggle_bounds_norm()
         self._keyboard_composer_bounds = _keyboard_composer_bounds_norm()
         self._slice_bounds = _desktop_slice_bounds_norm()
+        self._wallpaper_image_size = _wallpaper_image_size()
         self._ready = False
         self.on_ready: Optional[Callable[[], None]] = None
         self._background_asset = _prepare_background_asset()
@@ -809,6 +811,10 @@ class WallpaperEngineBridgeHost:
         return dict(self._keyboard_composer_bounds)
 
     @property
+    def wallpaper_image_size(self) -> list[int]:
+        return list(self._wallpaper_image_size)
+
+    @property
     def asset_version(self) -> str:
         return _wallpaper_asset_revision()
 
@@ -862,6 +868,7 @@ class WallpaperEngineBridgeHost:
                 "canvasBounds": self._canvas_bounds,
                 "keyboardInputToggleBounds": self._keyboard_input_toggle_bounds,
                 "keyboardComposerBounds": self._keyboard_composer_bounds,
+                "wallpaperImageSize": self._wallpaper_image_size,
             },
         )
         self._init_scene()

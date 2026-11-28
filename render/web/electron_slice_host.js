@@ -3,6 +3,7 @@
 
   const params = new URLSearchParams(window.location.search || "");
   const windowsComposer = params.get("windowsComposer") === "1";
+  const freeControls = params.get("freeControls") === "1";
   let initialCanvasPending = windowsComposer;
   const surface = window.createCrtCanvasSurface();
   const keyboardComposer = window.createWallpaperKeyboardComposer
@@ -13,6 +14,7 @@
   let canvasBounds = null;
   let keyboardInputToggleBounds = null;
   let keyboardComposerBounds = null;
+  let wallpaperImageSize = null;
   let eventSource = null;
   let shapeFrame = 0;
   let shapeFlushTimer = 0;
@@ -41,7 +43,24 @@
   }
 
   function projectToSlice(bounds) {
-    if (!bounds || !sliceBounds || !sliceBounds.width || !sliceBounds.height) return null;
+    if (!bounds) return null;
+    if (freeControls) {
+      // The transparent window spans the whole display while the wallpaper art
+      // covers it like a desktop "fill": reproduce the scene's
+      // aspect-preserving cover transform so normalized art coordinates land
+      // where the artwork actually paints them.
+      const image = wallpaperImageSize || [window.innerWidth, window.innerHeight];
+      const scale = Math.max(window.innerWidth / image[0], window.innerHeight / image[1]);
+      const offsetX = (window.innerWidth - image[0] * scale) / 2;
+      const offsetY = (window.innerHeight - image[1] * scale) / 2;
+      return {
+        x: offsetX + bounds.x * image[0] * scale,
+        y: offsetY + bounds.y * image[1] * scale,
+        width: bounds.width * image[0] * scale,
+        height: bounds.height * image[1] * scale,
+      };
+    }
+    if (!sliceBounds || !sliceBounds.width || !sliceBounds.height) return null;
     return {
       x: (bounds.x - sliceBounds.x) / sliceBounds.width * window.innerWidth,
       y: (bounds.y - sliceBounds.y) / sliceBounds.height * window.innerHeight,
@@ -56,6 +75,7 @@
     const toggle = projectToSlice(keyboardInputToggleBounds);
     const composer = projectToSlice(keyboardComposerBounds);
     if (keyboardComposer && toggle && composer) keyboardComposer.layout(toggle, composer);
+    applyControlPositions();
     scheduleShapeUpdate();
   }
 
@@ -79,6 +99,176 @@
       scheduleShapeUpdate();
     }
   }
+
+  // --- Optional draggable Work controls (freeControls=1) -------------------
+  // The Work status button and the task card keep their authored positions by
+  // default. With freeControls the slice window spans the display and each
+  // control can be dragged anywhere on it; positions persist as normalized
+  // window coordinates through the main process (the 127.0.0.1:<assetPort>
+  // origin changes every run, so localStorage cannot hold them), and a
+  // right-click restores the authored position.
+
+  const DRAG_THRESHOLD_PX = 5;
+  const EDGE_MARGIN_PX = 24;
+  const CONTROL_SELECTORS = {
+    status: ".crt-canvas-surface-status",
+    card: ".crt-canvas-surface-card",
+  };
+  let savedControlPositions = {};
+  let suppressClickOn = null;
+
+  function controlRoot() {
+    return document.querySelector(".crt-canvas-surface");
+  }
+
+  function loadControlPositions() {
+    const bridge = window.amadeus;
+    if (!bridge || typeof bridge.getControlPositions !== "function") return;
+    bridge.getControlPositions().then(saved => {
+      const positions = {};
+      for (const key of Object.keys(CONTROL_SELECTORS)) {
+        const pos = saved && saved[key];
+        const x = pos && Number(pos.x);
+        const y = pos && Number(pos.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) positions[key] = { x, y };
+      }
+      savedControlPositions = positions;
+      applyControlPositions();
+    }).catch(() => { /* unreadable storage starts clean */ });
+  }
+
+  function persistControlPositions() {
+    const bridge = window.amadeus;
+    if (!bridge || typeof bridge.setControlPositions !== "function") return;
+    bridge.setControlPositions(savedControlPositions)
+      .catch(() => { /* a dropped save still leaves dragging functional */ });
+  }
+
+  loadControlPositions();
+
+  // Controls stay absolutely positioned inside the surface root so their
+  // stylesheet sizes keep working; pinning only replaces their left/top with
+  // pixel offsets converted from window coordinates.
+  function pinAt(element, clientX, clientY, rootRect) {
+    element.style.left = Math.round(clientX - rootRect.left) + "px";
+    element.style.top = Math.round(clientY - rootRect.top) + "px";
+    element.style.right = "auto";
+  }
+
+  function applyControlPositions() {
+    if (!freeControls) return;
+    const root = controlRoot();
+    if (!root) return;
+    const rootRect = root.getBoundingClientRect();
+    for (const key of Object.keys(CONTROL_SELECTORS)) {
+      const pos = savedControlPositions[key];
+      const element = pos && document.querySelector(CONTROL_SELECTORS[key]);
+      if (!element) continue;
+      pinAt(element, pos.x * window.innerWidth, pos.y * window.innerHeight, rootRect);
+    }
+  }
+
+  function rememberControlPosition(key, element) {
+    const rect = element.getBoundingClientRect();
+    if (!window.innerWidth || !window.innerHeight) return;
+    savedControlPositions[key] = {
+      x: Math.min(Math.max(rect.left / window.innerWidth, -1), 1),
+      y: Math.min(Math.max(rect.top / window.innerHeight, -1), 1),
+    };
+    persistControlPositions();
+  }
+
+  function resetControlPosition(key, element) {
+    delete savedControlPositions[key];
+    persistControlPositions();
+    element.style.left = "";
+    element.style.top = "";
+    element.style.right = "";
+    scheduleShapeUpdate();
+  }
+
+  function beginControlDrag(element) {
+    const root = controlRoot();
+    const rect = element.getBoundingClientRect();
+    const rootRect = root ? root.getBoundingClientRect() : { left: 0, top: 0 };
+    pinAt(element, rect.left, rect.top, rootRect);
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, rootRect };
+  }
+
+  function dragPinnedControl(element, pin, dx, dy) {
+    const margin = Math.min(EDGE_MARGIN_PX, Math.max(8, Math.min(pin.width, pin.height) / 2));
+    const left = Math.min(Math.max(pin.left + dx, margin - pin.width), window.innerWidth - margin);
+    const top = Math.min(Math.max(pin.top + dy, margin - pin.height), window.innerHeight - margin);
+    pinAt(element, left, top, pin.rootRect);
+  }
+
+  // The click that ends a drag must not toggle the control. The flag is read
+  // by a single document capture listener; a cancelled drag may never produce
+  // the click, so the flag clears itself on the next task.
+  function suppressResultClick(element) {
+    suppressClickOn = element;
+    window.setTimeout(() => {
+      if (suppressClickOn === element) suppressClickOn = null;
+    }, 0);
+  }
+
+  function attachControlDrag(key, element, handlePredicate) {
+    if (!element) return;
+    element.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      if (handlePredicate && !handlePredicate(event)) return;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let pin = null;
+      const onMove = (move) => {
+        if (pin === null
+          && Math.hypot(move.clientX - startX, move.clientY - startY) < DRAG_THRESHOLD_PX) return;
+        if (pin === null) pin = beginControlDrag(element);
+        dragPinnedControl(element, pin, move.clientX - startX, move.clientY - startY);
+        scheduleShapeUpdate();
+      };
+      const onDone = () => {
+        window.removeEventListener("pointermove", onMove, true);
+        window.removeEventListener("pointerup", onDone, true);
+        window.removeEventListener("pointercancel", onDone, true);
+        if (pin === null) return;
+        rememberControlPosition(key, element);
+        suppressResultClick(element);
+      };
+      window.addEventListener("pointermove", onMove, true);
+      window.addEventListener("pointerup", onDone, true);
+      window.addEventListener("pointercancel", onDone, true);
+    });
+    element.addEventListener("contextmenu", (event) => {
+      if (handlePredicate && !handlePredicate(event)) return;
+      event.preventDefault();
+      resetControlPosition(key, element);
+    });
+  }
+
+  function enableDraggableControls() {
+    const root = controlRoot();
+    // Let pinned controls leave the authored surface rect; the card clips its
+    // own content, so unclipping the root exposes nothing extra.
+    if (root) root.style.overflow = "visible";
+    attachControlDrag("status", document.querySelector(CONTROL_SELECTORS.status));
+    attachControlDrag("card", document.querySelector(CONTROL_SELECTORS.card), (event) => (
+      event.target
+      && typeof event.target.closest === "function"
+      && Boolean(event.target.closest(".crt-canvas-semantic-header"))
+    ));
+    document.addEventListener("click", (event) => {
+      if (!suppressClickOn) return;
+      const element = suppressClickOn;
+      suppressClickOn = null;
+      if (element.contains(event.target)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
+  }
+
+  // -------------------------------------------------------------------------
 
   function visibleInteractiveRects() {
     const targets = [
@@ -149,6 +339,15 @@
     canvasBounds = normalizeBounds(info.canvasBounds);
     keyboardInputToggleBounds = normalizeBounds(info.keyboardInputToggleBounds);
     keyboardComposerBounds = normalizeBounds(info.keyboardComposerBounds);
+    wallpaperImageSize = normalizeImageSize(info.wallpaperImageSize);
+    function normalizeImageSize(value) {
+      if (!Array.isArray(value) || value.length < 2) return null;
+      const width = Number(value[0]);
+      const height = Number(value[1]);
+      return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+        ? [width, height]
+        : null;
+    }
     window.__amadeusBridgePort = bridgePort;
     window.__amadeusBridgeToken = String(info.bridgeToken || "");
     if (keyboardComposer) keyboardComposer.configure(bridgePort, window.__amadeusBridgeToken);
@@ -176,6 +375,7 @@
   }
 
   async function start() {
+    if (freeControls) enableDraggableControls();
     layoutSurface();
     const root = document.body;
     if (root) {

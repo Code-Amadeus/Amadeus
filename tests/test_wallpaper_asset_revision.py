@@ -21,6 +21,7 @@ from wallpaper.scene_assets import (
     _desktop_slice_bounds_norm,
     _keyboard_composer_bounds_norm,
     _keyboard_input_toggle_bounds_norm,
+    _wallpaper_image_size,
 )
 
 
@@ -166,6 +167,32 @@ def test_electron_slice_encloses_the_separate_input_toggle_and_composer() -> Non
     assert {key: round(value, 6) for key, value in slice_bounds.items()} == {
         "x": 0.1, "y": 0.2, "width": 0.72, "height": 0.74,
     }
+
+
+def test_bridge_info_exposes_the_wallpaper_art_size_for_cover_projection() -> None:
+    assert _wallpaper_image_size({"img_size": [1000, 500]}) == [1000, 500]
+    assert _wallpaper_image_size({"img_size": ["bad", 500]}) == [1672, 941]
+    assert _wallpaper_image_size({"img_size": "corrupt"}) == [1672, 941]
+    assert _wallpaper_image_size({"img_size": [0, -3]}) == [1, 1]
+
+    class Host:
+        asset_port = 17778
+        bridge_port = 17797
+        action_token = "token"
+        asset_version = "asset-revision"
+        url = "http://127.0.0.1:17778/wallpaper"
+        lively_url = "http://127.0.0.1:17778/lively"
+        slice_host = "electron"
+        slice_bounds = {"x": 0.25, "y": 0.2, "width": 0.5, "height": 0.5}
+        wallpaper_image_size = [1672, 941]
+
+    handler = WallpaperHandler()
+    handler._wallpaper_host = Host()
+    assert handler.bridge_info()["wallpaperImageSize"] == [1672, 941]
+
+    host = object.__new__(wallpaper_engine_bridge.WallpaperEngineBridgeHost)
+    host._wallpaper_image_size = [1672, 941]
+    assert host.wallpaper_image_size == [1672, 941]
 
 
 def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui() -> None:
@@ -740,6 +767,9 @@ if __name__ == "__main__":
 
     test_electron_slice_encloses_the_separate_input_toggle_and_composer()
     print("ok: Electron Slice encloses the separate input toggle and composer")
+
+    test_bridge_info_exposes_the_wallpaper_art_size_for_cover_projection()
+    print("ok: bridge info exposes the wallpaper art size for cover projection")
 
     test_wallpaper_keyboard_submit_reuses_the_chat_transport()
     print("ok: keyboard submit reuses the primary chat transport")
