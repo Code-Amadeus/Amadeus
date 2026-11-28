@@ -185,6 +185,44 @@ test('candidate review shows only current evidence and retries the same versione
   assert.match(panel.text, /No memory suggestions to review/)
 })
 
+test('failed suggestion inspection leaves no selected version or review action', async () => {
+  const first = { candidate_id: 'available', row_version: 1, kind: 'fact',
+    scope: 'character', created_at_ms: 1000, savable: true }
+  const stale = { ...first, candidate_id: 'stale', row_version: 2, kind: 'preference' }
+  const rowLabel = item => state.suggestionKindText(item.kind) + 'Current character · ' + new Date(item.created_at_ms).toLocaleString()
+  const panel = panelHarness((method, params) => {
+    if (method === 'memory.status') return { ...backend(method), candidate_review_available: true }
+    if (method === 'memory.candidates') return ok({ candidates: [first, stale] })
+    if (method === 'memory.candidate') {
+      if (params.candidate_id === stale.candidate_id) return { ok: false, error: 'conflict' }
+      return ok({ candidate: { ...first, text: 'A verified statement.',
+        quotes: [{ speaker_role: 'user', text: 'A verified quote.' }] } })
+    }
+    if (method === 'memory.review_candidate') return ok({ operation: { status: 'rejected' } })
+    return backend(method)
+  })
+  await panel.flush()
+  panel.button('Review suggestions').props.onClick(); await panel.flush()
+  panel.button(rowLabel(first)).props.onClick(); await panel.flush()
+  assert.match(panel.text, /A verified quote/)
+  assert.ok(panel.button('Dismiss suggestion'))
+
+  panel.button(rowLabel(stale)).props.onClick(); await panel.flush()
+  assert.match(panel.text, /Refresh and inspect the latest version/)
+  assert.doesNotMatch(panel.text, /A verified quote/)
+  assert.equal(panel.button(rowLabel(stale)).props['aria-pressed'], false)
+  assert.equal(panel.button('Save as memory'), undefined)
+  assert.equal(panel.button('Dismiss suggestion'), undefined)
+  assert.ok(!panel.requests.some(request => request.method === 'memory.review_candidate'))
+
+  panel.button(rowLabel(first)).props.onClick(); await panel.flush()
+  panel.button('Dismiss suggestion').props.onClick(); await panel.flush()
+  const review = panel.requests.find(request => request.method === 'memory.review_candidate')
+  assert.equal(review.params.candidate_id, first.candidate_id)
+  assert.equal(review.params.expected_version, first.row_version)
+  assert.equal(review.params.decision, 'dismiss')
+})
+
 test('manual save waits for the committed result and retries an uncertain outcome with identical identities', async () => {
   const commit = deferred(); let saves = 0
   const panel = panelHarness(method => method === 'memory.remember' ? ++saves === 1 ? commit.promise : backend(method) : backend(method))

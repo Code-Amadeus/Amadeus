@@ -40,7 +40,6 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
   const [reviewAvailable, setReviewAvailable] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestions, setSuggestions] = useState<MemorySuggestion[]>([])
-  const [reviewTarget, setReviewTarget] = useState<MemorySuggestion | null>(null)
   const [suggestion, setSuggestion] = useState<MemorySuggestionDetail | null>(null)
   const [editor, setEditor] = useState<Editor>('inspect')
   const [text, setText] = useState('')
@@ -71,7 +70,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
     ++listGeneration.current
     pageRequest.current.serial++; pageRequest.current.active = false
     setLoading(true); setPageLoading(false); setItems([]); setNextCursor(null); setError('')
-    setSuggestions([]); setReviewTarget(null); setSuggestion(null)
+    setSuggestions([]); setSuggestion(null)
     try {
       const snapshot = await connection.request('memory.status')
       if (!connection.active || revision !== reads.current) return
@@ -147,7 +146,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
   const inspectSuggestion = async (item: MemorySuggestion) => {
     if (locked) return
     const revision = ++reads.current
-    setLoading(true); setError(''); setReceipt(''); setReviewTarget(item); setSuggestion(null)
+    setLoading(true); setError(''); setReceipt(''); setSuggestion(null)
     try {
       const result = await connection.request('memory.candidate', {
         candidate_id: item.candidate_id, expected_version: item.row_version,
@@ -245,10 +244,10 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
     : value === 'project' ? t('Current character and Project') : t('Current character')
 
   const decideSuggestion = (decision: 'save' | 'dismiss') => {
-    if (locked || !reviewTarget || (decision === 'save' && !suggestion?.savable)) return
+    if (locked || !suggestion || (decision === 'save' && !suggestion.savable)) return
     void perform(memoryAttempt('memory.review_candidate', {
-      candidate_id: reviewTarget.candidate_id, expected_version: reviewTarget.row_version, decision,
-      ...(decision === 'save' ? { kind: suggestion!.kind } : {}),
+      candidate_id: suggestion.candidate_id, expected_version: suggestion.row_version, decision,
+      ...(decision === 'save' ? { kind: suggestion.kind } : {}),
     }))
   }
 
@@ -316,24 +315,22 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
           {!loading && suggestions.length === 0 && <p className="memory-empty">{t('No memory suggestions to review.')}</p>}
           <div className="memory-list" aria-label={t('Review suggestions')}>
             {suggestions.map(item => <button key={item.candidate_id} className="memory-list-item" type="button"
-              aria-pressed={reviewTarget?.candidate_id === item.candidate_id} disabled={locked}
+              aria-pressed={suggestion?.candidate_id === item.candidate_id} disabled={locked}
               onClick={() => { void inspectSuggestion(item) }}>
               <span className="memory-list-text">{t(suggestionKindText(item.kind))}</span>
               <span className="memory-note">{scopeName(item.scope)} · {new Date(item.created_at_ms).toLocaleString()}</span>
             </button>)}
           </div>
-          {reviewTarget && <CardShell vertical>
-            <h3 className="settings-group-title">{t(suggestionKindText(reviewTarget.kind))}</h3>
-            {suggestion && <>
-              <p className="memory-body">{suggestion.text}</p>
-              {suggestion.condition && <p className="memory-note">{t('Applies when {condition}', { condition: suggestion.condition })}</p>}
-              {suggestion.quotes.map((quote, index) => <div key={index}>
-                <p className="memory-note">{t(quote.speaker_role === 'user' ? 'Quote from your message' : 'Quote from the character’s message')}</p>
-                <pre className="memory-source-preview">{quote.text}</pre>
-              </div>)}
-            </>}
+          {suggestion && <CardShell vertical>
+            <h3 className="settings-group-title">{t(suggestionKindText(suggestion.kind))}</h3>
+            <p className="memory-body">{suggestion.text}</p>
+            {suggestion.condition && <p className="memory-note">{t('Applies when {condition}', { condition: suggestion.condition })}</p>}
+            {suggestion.quotes.map((quote, index) => <div key={index}>
+              <p className="memory-note">{t(quote.speaker_role === 'user' ? 'Quote from your message' : 'Quote from the character’s message')}</p>
+              <pre className="memory-source-preview">{quote.text}</pre>
+            </div>)}
             <div className="memory-actions">
-              {suggestion?.savable && <SettingsButton tone="primary" disabled={locked}
+              {suggestion.savable && <SettingsButton tone="primary" disabled={locked}
                 onClick={() => decideSuggestion('save')}>{t('Save as memory')}</SettingsButton>}
               <SettingsButton disabled={locked} onClick={() => decideSuggestion('dismiss')}>{t('Dismiss suggestion')}</SettingsButton>
             </div>

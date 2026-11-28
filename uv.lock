@@ -1205,7 +1205,7 @@ dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { filename = "eidema-0.2.0a3-py3-none-any.whl", hash = "sha256:9f56d9102bcb922ce963958163cd6faa12e02d6f2676e9ec8da6231404b0dfab" },
+    { filename = "eidema-0.2.0a3-py3-none-any.whl", hash = "sha256:bbb193fe37c8291fdcb359e9cac574b5fbc1a7c573e81503f71881ea4dd3cdfa" },
 ]
 
 [package.metadata]
