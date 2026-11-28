@@ -741,7 +741,7 @@ Windows 下推荐用开源的
 Windows 默认先打开控制台（`AMADEUS_WINDOWS_STARTUP_MODE=window`）。可通过侧栏
 **Wallpaper**，或在 **设置 → 常规 → 启动方式** 中选择直接进入壁纸。
 启用后，托管壁纸模式管理 Lively 2.2.1.0 的准备、挂载，并在正常选择 **Quit Amadeus** 时恢复原壁纸；
-`--no-wallpaper` 可启动普通窗口。首次缺少宿主时通过 winget 安装，源码环境首次构建辅助程序需要 .NET 8 SDK。
+`--no-wallpaper` 可启动普通窗口。首次缺少宿主时通过 winget 安装；辅助程序是随源码提供的 Python 脚本，由后端解释器运行，无需构建或 .NET SDK。
 输入框和异常退出限制仍见 [#185](https://github.com/Code-Amadeus/Amadeus/issues/185)。
 详见 [Windows 生命周期与实验](docs/windows_wallpaper_lifecycle.md)。
 

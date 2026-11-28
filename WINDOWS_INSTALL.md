@@ -16,7 +16,7 @@ Amadeus 不会替用户下载模型、游戏、第三方 Agent 或付费服务�
 |---|---|---|
 | 任何功能 | Git、[uv](https://docs.astral.sh/uv/)（`winget install astral-sh.uv`）、Node.js 22（参考 `22.21.1`） | Python 3.12 由 uv 管理，不需要系统 Python |
 | 文字对话（默认） | DeepSeek API key | 填入 `.env` 的 `DEEPSEEK_API_KEY`，或 Settings → Models |
-| **桌面壁纸** | **[Lively Wallpaper](https://github.com/rocksdanister/lively)** 与 Windows App Installer（winget）；源码运行另需 **.NET 8 SDK** | 首次进入壁纸时 Amadeus 会用 winget 安装固定版本 Lively 2.2.1.0；没有 winget 就要用户先装 App Installer。已装的 Microsoft Store 版 Lively 若未运行，需要用户先手动启动一次 |
+| **桌面壁纸** | **[Lively Wallpaper](https://github.com/rocksdanister/lively)** 与 Windows App Installer（winget） | 首次进入壁纸时 Amadeus 会用 winget 安装固定版本 Lively 2.2.1.0；没有 winget 就要用户先装 App Installer。已装的 Microsoft Store 版 Lively 若未运行，需要用户先手动启动一次 |
 | 用 Wallpaper Engine 当宿主 | Wallpaper Engine（Steam），设 `AMADEUS_WALLPAPER_HOST=external` | 手工添加本地网页 URL，见下文 |
 | 远程语音（推荐） | Fish Audio API key | 推荐 S2.1 + Kurisu 音色，见下文 |
 | 本地语音（T4） | NVIDIA 显卡与支持 CUDA 12.4 的驱动；Qwen ASR 与 GPT-SoVITS 资产包 | 资产从[资源中心](https://code-amadeus.github.io/#resources)下载，用 `tools/external_assets.py` 安装 |
@@ -126,7 +126,7 @@ Copy-Item .env.example .env
 | 日文字典预热（本地 TTS） | 本地 TTS | `uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"`，避免首次合成时临时下载 |
 | Browser Work 的浏览器 | Browser Work | `uv run --locked --no-sync python -m playwright install chromium` |
 | 端口空闲，没有其他 Amadeus 在运行 | 所有启动（`5173` 只影响桌面） | `Get-NetTCPConnection -LocalPort 5173,17777 -State Listen -ErrorAction SilentlyContinue` 无输出即空闲。`5173` 被占用时在 `.env` 设 `AMADEUS_DEV_PORT`；`17777` 被占用时先问用户是否已有 Amadeus 在运行，不要结束未知进程 |
-| 壁纸辅助程序（要用壁纸时） | 壁纸 | `dotnet --list-sdks` 含 8.x 后运行 `powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly` |
+| 壁纸状态（要用壁纸时） | 壁纸 | 辅助程序随源码提供，无需构建。`.venv\Scripts\python.exe -I -S electron\resources\windows-wallpaper\helper.py inspect` 只读输出状态：`recoveryPending` 为 `true` 时先按「故障排查」恢复上次会话；`executable` 为空时，首次进入壁纸会用 winget 安装 Lively（已装但未运行的 Store 版见下方手动项） |
 
 **手动（用户完成，Agent 提示并等待确认）**
 
@@ -134,7 +134,7 @@ Copy-Item .env.example .env
 |---|---|---|
 | 填写 `DEEPSEEK_API_KEY`（用到时还有 Fish Audio 等其他密钥） | 用到对应服务时；可启动后再填 | 密钥属于用户。可以启动后在 Settings 中填写（加密存储），或由用户自己编辑 `.env` |
 | 从[资源中心](https://code-amadeus.github.io/#resources)下载资产包 | 本地语音、角色动画 | 需要用户访问下载页；Google Drive 分卷要先用 `Assemble-Kurisu.ps1` 合并成完整 ZIP |
-| 安装 .NET 8 SDK、NVIDIA 驱动、Windows App Installer（winget） | 壁纸、T4 GPU 构建 | 系统级安装，需要管理员权限或 UAC 确认 |
+| 安装 NVIDIA 驱动、Windows App Installer（winget） | 壁纸、T4 GPU 构建 | 系统级安装，需要管理员权限或 UAC 确认 |
 | 已装但未运行的 Microsoft Store 版 Lively 先手动打开一次 | 壁纸 | 图形界面操作；否则壁纸 setup 会拒绝重复安装 |
 | 首次进入壁纸时 Lively 安装过程中的 Windows 权限弹窗 | 壁纸 | 需要用户点击确认 |
 | 获取 Live2D Cubism Core（用 Live2D 时） | Live2D | 用户须按 Live2D 条款自行获取，Amadeus 不分发 |
@@ -218,13 +218,14 @@ uv run --locked --no-sync python -m server.app --port 17777
 首次进入壁纸时 Amadeus 会：
 
 1. 检查 Lively；缺失时用 winget 安装固定版本 **Lively 2.2.1.0**（需要 Windows App Installer）。
-2. 首次构建壁纸辅助程序（源码运行需要 **.NET 8 SDK**）。
-3. 挂载 Amadeus 场景；从托盘选 **Quit Amadeus** 时恢复原壁纸。
+2. 挂载 Amadeus 场景；从托盘选 **Quit Amadeus** 时恢复原壁纸。
+
+壁纸辅助程序是随源码提供的 Python 脚本，由后端所用的同一解释器运行，不需要额外构建或 .NET SDK。
 
 也可以预先手动准备：
 
 ```powershell
-powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1
+powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -Python .venv\Scripts\python.exe
 ```
 
 - 已安装且正在运行的 Microsoft Store 版 Lively 可直接复用；未运行的 Store 版需要用户先手动启动一次，
@@ -232,7 +233,7 @@ powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1
 - 启动参数 `--no-wallpaper` / `AMADEUS_WALLPAPER=0` 强制普通窗口，`--wallpaper` /
   `AMADEUS_WALLPAPER=1` 强制进入壁纸，均优先于 GUI 设置。
 - 异常退出后的手动恢复（先关闭 Amadeus）：
-  `build\windows-wallpaper\host\Amadeus.Wallpaper.exe recover`
+  `.venv\Scripts\python.exe -I -S electron\resources\windows-wallpaper\helper.py recover`
 - 输入框与异常退出的已知问题见 [#185](https://github.com/Code-Amadeus/Amadeus/issues/185)。
 
 **用 Wallpaper Engine 或手工管理 Lively**：设 `AMADEUS_WALLPAPER_HOST=external`，启动 Amadeus 后把下面的
@@ -284,10 +285,9 @@ Windows 专属。取文方式二选一：
 | 拉新源码后校验器报版本不符 | 按目标 Tier 与 Build 重跑完整的 `uv sync`。 |
 | `vad` 校验报 `not a locked build` | torch 不来自任何 build extra。重跑带 `--extra torch-cpu` 或 `--extra local-<build>` 的命令。 |
 | `--require-cuda-device` 失败 | 检查 NVIDIA 驱动是否支持 CUDA 12.4（`cu124`）或 12.8（`cu128`）。 |
-| 首次进入壁纸失败，提示需要 winget | 安装 Windows App Installer 后重试；也可先运行 `scripts\setup_windows_wallpaper.ps1`。 |
-| 壁纸辅助程序构建失败 | 安装 .NET 8 SDK，再运行 `scripts\setup_windows_wallpaper.ps1 -BuildOnly -Rebuild`。 |
+| 首次进入壁纸失败，提示需要 winget | 安装 Windows App Installer 后重试；也可先运行 `scripts\setup_windows_wallpaper.ps1 -Python .venv\Scripts\python.exe`。 |
 | setup 拒绝安装 Lively | 已有未运行的 Store 版 Lively，先手动启动它一次。 |
-| 退出后桌面壁纸没恢复 | 关闭 Amadeus 后运行 `build\windows-wallpaper\host\Amadeus.Wallpaper.exe recover`。 |
+| 退出后桌面壁纸没恢复 | 关闭 Amadeus 后运行 `.venv\Scripts\python.exe -I -S electron\resources\windows-wallpaper\helper.py recover`。 |
 | Browser Work 报找不到浏览器 | 运行 `uv run --locked --no-sync python -m playwright install chromium`。 |
 | `local-cpu` 下本地 TTS 报 CUDA 错误 | 设 `TTS_DEVICE=cpu`。 |
 | 改了源码但桌面端没变化 | `cd electron && npm run build`。 |

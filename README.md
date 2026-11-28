@@ -847,8 +847,9 @@ host for Amadeus's web wallpaper. Windows opens the control panel by default
 change **Settings → General → Startup mode** to enter wallpaper directly.
 When enabled, managed wallpaper mode prepares Lively 2.2.1.0, mounts the scene,
 and restores the previous wallpaper on normal **Quit Amadeus**. `--no-wallpaper`
-opens an ordinary window. Missing Lively is installed through winget; source
-builds need .NET 8 SDK for the helper's first build. Input-surface and abnormal-exit
+opens an ordinary window. Missing Lively is installed through winget; the helper
+is a checked-in Python script run by the backend interpreter, so no build step or
+.NET SDK is needed. Input-surface and abnormal-exit
 limitations remain tracked in [#185](https://github.com/Code-Amadeus/Amadeus/issues/185). See the
 [Windows lifecycle and experiments](docs/windows_wallpaper_lifecycle.md).
 
