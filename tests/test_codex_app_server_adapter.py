@@ -85,13 +85,22 @@ class _FakeTurn:
 
 
 class _FakeThread:
-    def __init__(self, thread_id: str, turn: _FakeTurn) -> None:
+    def __init__(
+        self,
+        thread_id: str,
+        turn: _FakeTurn,
+        *,
+        queued_turns: list[_FakeTurn] | None = None,
+    ) -> None:
         self.id = thread_id
         self.next_turn = turn
+        self.queued_turns = list(queued_turns or [])
         self.turn_calls: list[tuple[str, dict[str, Any]]] = []
 
     async def turn(self, task: str, **kwargs):
         self.turn_calls.append((task, dict(kwargs)))
+        if len(self.turn_calls) > 1 and self.queued_turns:
+            return self.queued_turns.pop(0)
         return self.next_turn
 
 
@@ -113,18 +122,32 @@ class _FakeCodex:
         self.read_threads = dict(read_threads or {})
         self.reads: list[tuple[str, bool]] = []
         self.closes = 0
+        # Native loaded-thread bookkeeping: a loaded thread owns the bound
+        # connection's runtime until unsubscribe + unload conclude.
+        self.loaded: set[str] = set()
+        self.unsubscribes: list[str] = []
+        self.unload_on_unsubscribe = True
+        self.unload_gate: asyncio.Event | None = None
+        self.unsubscribe_error: Exception | None = None
+        self.order: list[tuple[str, str]] = []
 
     async def thread_start(self, **kwargs):
         self.starts.append(dict(kwargs))
         thread = self.threads.pop(0)
         self.opened_threads[thread.id] = thread
+        self.loaded.add(thread.id)
+        self.order.append(("open", thread.id))
         return thread
 
     async def thread_resume(self, thread_id: str, **kwargs):
         self.resumes.append((thread_id, dict(kwargs)))
-        thread = self.threads.pop(0)
-        assert thread.id == thread_id
-        self.opened_threads[thread.id] = thread
+        thread = self.opened_threads.get(thread_id)
+        if thread is None:
+            thread = self.threads.pop(0)
+            assert thread.id == thread_id
+            self.opened_threads[thread.id] = thread
+        self.loaded.add(thread_id)
+        self.order.append(("open", thread_id))
         return thread
 
     async def turn_correlated(
@@ -146,6 +169,23 @@ class _FakeCodex:
         self.reads.append((thread_id, include_turns))
         return self.read_threads[thread_id]
 
+    async def thread_unsubscribe(self, thread_id: str):
+        self.unsubscribes.append(thread_id)
+        self.order.append(("release", thread_id))
+        if self.unsubscribe_error is not None:
+            raise self.unsubscribe_error
+        if thread_id not in self.loaded:
+            return SimpleNamespace(status="notLoaded")
+        if self.unload_gate is not None:
+            await self.unload_gate.wait()
+        if self.unload_on_unsubscribe:
+            self.loaded.discard(thread_id)
+        return SimpleNamespace(status="unsubscribed")
+
+    async def thread_loaded_list(self, cursor: str | None = None):
+        del cursor
+        return SimpleNamespace(data=sorted(self.loaded), next_cursor=None)
+
     async def thread_inject_items(
         self,
         thread_id: str,
@@ -166,6 +206,7 @@ class _FakeCodex:
 
     async def close(self) -> None:
         self.closes += 1
+        self.order.append(("close", ""))
 
 
 @pytest.mark.parametrize("fail_checkpoint", [False, True])
@@ -1678,7 +1719,10 @@ def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(
         sync_desktop_provider=False,
     )
     asyncio.run(adapter._ensure_codex())
-    assert captured[0].config_overrides == ("features.fast_mode=true",)
+    assert captured[0].config_overrides == (
+        "features.fast_mode=true",
+        "thread_unload_delay_secs=0",
+    )
 
 
 def test_sdk_adapter_rejects_unknown_service_tier() -> None:
@@ -2333,7 +2377,12 @@ def test_sdk_cancel_does_not_wait_for_mechanical_event_backlog() -> None:
         assert outcome["confirmed"] is True
         assert outcome["cancelled"] is True
         assert elapsed < 0.5
-        assert len(emitted) == 1
+        # Only Host lifecycle facts may follow the one pre-cancel event; the
+        # 40-event mechanical backlog must never gate the interrupt path.
+        assert {event.type for event in emitted} <= {
+            "context.delivered",
+            "native.release",
+        }
         result = await asyncio.wait_for(run_task, timeout=2)
         assert result.status == "cancelled"
 

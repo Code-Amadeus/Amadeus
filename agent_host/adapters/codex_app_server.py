@@ -3,6 +3,15 @@
 The SDK owns the App Server process, JSON-RPC transport, native thread/turn
 state, event routing and execution controls. This module deliberately owns
 only the boundary mapping required by :mod:`agent_host.provider_runtime`.
+
+One boundary exception is connection ownership: a loaded native thread owns
+the MCP runtime that the App Server spawned for the explicitly bound
+connections, and that ownership is exclusive while the thread is loaded. The
+Host therefore treats each Work's native thread as the release unit: when its
+last dependent Host run ends, the adapter unsubscribes the thread and confirms
+the App Server unloaded it before another Work may create an owner of the
+same connection. A terminal model turn is evidence about the turn, never
+confirmation that this resource settlement completed.
 """
 
 from __future__ import annotations
@@ -36,8 +45,10 @@ from openai_codex.generated.v2_all import (
     SkillsListResponse,
     ReasoningEffort,
     ThreadInjectItemsResponse,
+    ThreadLoadedListResponse,
     ThreadResumeParams,
     ThreadStartParams,
+    ThreadUnsubscribeResponse,
     TurnStartParams,
 )
 
@@ -296,6 +307,32 @@ class _ApprovalAwareAsyncCodex(AsyncCodex):
         await self._ensure_initialized()
         return await self._client.thread_read(thread_id, include_turns=include_turns)
 
+    async def thread_unsubscribe(self, thread_id: str) -> ThreadUnsubscribeResponse:
+        """Drop this client's subscription so an idle thread can unload.
+
+        The typed client has no convenience method for this wire request, so
+        it goes through the same routed request transport as the other
+        low-traffic RPCs.
+        """
+
+        await self._ensure_initialized()
+        return await self._client.request(
+            "thread/unsubscribe",
+            {"threadId": thread_id},
+            response_model=ThreadUnsubscribeResponse,
+        )
+
+    async def thread_loaded_list(self, cursor: str | None = None) -> ThreadLoadedListResponse:
+        """List the threads the App Server currently holds in memory."""
+
+        await self._ensure_initialized()
+        params: dict[str, Any] = {"cursor": cursor} if cursor else {}
+        return await self._client.request(
+            "thread/loaded/list",
+            params,
+            response_model=ThreadLoadedListResponse,
+        )
+
     async def turn_correlated(
         self,
         thread_id: str,
@@ -375,6 +412,7 @@ class CodexAppServerAdapter:
         approval_mode: str | None = None,
         turn_timeout_s: float | None = None,
         cancel_confirm_timeout_s: float | None = None,
+        release_confirm_timeout_s: float | None = None,
         approval_timeout_s: float | None = None,
         mcp_connections: tuple[McpConnectionSpec, ...] | None = None,
     ) -> None:
@@ -483,6 +521,18 @@ class CodexAppServerAdapter:
                 )
             ),
         )
+        self.release_confirm_timeout_s = max(
+            0.5,
+            float(
+                release_confirm_timeout_s
+                if release_confirm_timeout_s is not None
+                else getattr(
+                    settings,
+                    "CODEX_APP_SERVER_RELEASE_CONFIRM_TIMEOUT_S",
+                    30,
+                )
+            ),
+        )
         self.approval_timeout_s = max(
             1.0,
             float(
@@ -499,7 +549,20 @@ class CodexAppServerAdapter:
         self._active: dict[str, _ActiveTurn] = {}
         self._starting: dict[str, _StartingTurn] = {}
         self._pending_approvals: dict[str, _PendingApproval] = {}
+        # Native threads whose loaded MCP runtime this Host still owns, keyed
+        # by thread id -> dependent Host run ids. The last ending run releases
+        # the thread; while the set is non-empty the thread is deliberately
+        # retained so sibling runs share one owner of the bound connections.
+        self._thread_runs: dict[str, set[str]] = {}
+        self._closed = False
         self._approval_condition = threading.Condition()
+        # Clear while any thread release is being confirmed. Every codex-bound
+        # MCP connection is spawned per loaded thread, so any thread open must
+        # wait for all in-flight releases to conclude before it may create a
+        # new owner of the same bound resource.
+        self._pending_releases: set[str] = set()
+        self._release_gate = asyncio.Event()
+        self._release_gate.set()
         self._sdk_lock = asyncio.Lock()
         self._desktop_provider_lock = asyncio.Lock()
         self._desktop_provider_bridge: CodexDesktopProviderBridge | None = None
@@ -545,7 +608,7 @@ class CodexAppServerAdapter:
             raise CodexAppServerStartupUnavailable(snapshot)
         return snapshot
 
-    async def close(self) -> None:
+    async def close(self) -> dict[str, Any] | None:
         with self._approval_condition:
             active_turns = tuple(self._active.values())
             for active in active_turns:
@@ -553,9 +616,31 @@ class CodexAppServerAdapter:
                 active.steer_ready.set()
             self._release_pending_approvals()
         codex = self._codex
+        self._closed = True
         self._codex = None
-        if codex is not None and not self._injected_codex:
-            await codex.close()
+        release_errors: list[str] = []
+        if codex is not None:
+            # Confirmed thread settlement precedes shared transport teardown:
+            # each loaded thread still owns the MCP runtime spawned for its
+            # bound connections until the App Server finishes unsubscribing
+            # and unloading it. The App Server alone owns how its MCP children
+            # and the applications they launched exit; the Host never reaches
+            # into that process tree.
+            self._pending_releases.add("close")
+            self._release_gate.clear()
+            try:
+                async with self._sdk_lock:
+                    for thread_id in tuple(self._thread_runs):
+                        self._thread_runs.pop(thread_id, None)
+                        outcome = await self._release_native_thread(codex, thread_id)
+                        if outcome["status"] != "released":
+                            release_errors.append(f"{thread_id}:{outcome['status']}")
+            finally:
+                self._pending_releases.discard("close")
+                if not self._pending_releases:
+                    self._release_gate.set()
+            if not self._injected_codex:
+                await codex.close()
         if not self._injected_codex:
             # Closing our SDK wakes registered stream queues with transport EOF.
             # An injected SDK remains its external owner's shutdown responsibility.
@@ -567,6 +652,9 @@ class CodexAppServerAdapter:
                 for active in active_turns:
                     if active.stream_task is not None:
                         self._stream_finished(active, active.stream_task)
+        if release_errors:
+            return {"settled": False, "errors": release_errors}
+        return None
 
     async def run(
         self,
@@ -587,11 +675,25 @@ class CodexAppServerAdapter:
         starting = _StartingTurn()
         self._starting[run_id] = starting
         state = _StreamState()
+        codex: Any | None = None
+        opened_thread_id = ""
+        result: ProviderRunResult | None = None
         try:
             codex = await self._ensure_codex()
             await self._ensure_desktop_provider_config(codex)
             skill_notice = await codex.prepare_skills(cwd) if provider_skills(self.provider_id) else ''
-            thread = await self._open_thread(codex, request, cwd)
+            while self._pending_releases:
+                await self._release_gate.wait()
+            async with self._sdk_lock:
+                # Opening a thread creates a new owner of the bound MCP
+                # connections, so it can only proceed after an earlier
+                # owner's unload confirmation concluded, never while that
+                # teardown is still unconfirmed.
+                if self._closed:
+                    raise RuntimeError("Codex adapter is closed")
+                thread = await self._open_thread(codex, request, cwd)
+                opened_thread_id = str(thread.id)
+                self._thread_runs.setdefault(opened_thread_id, set()).add(run_id)
             await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
                 type="session.opened", session=self._session(str(thread.id), request.session)))
             task_text = await self._prepare_desktop_handoff(
@@ -603,7 +705,7 @@ class CodexAppServerAdapter:
             if skill_notice:
                 task_text += '\n\n' + skill_notice
             if starting.cancel_requested:
-                return ProviderRunResult(
+                result = ProviderRunResult(
                     status="cancelled",
                     metadata={"codex": {
                         "cwd": str(cwd),
@@ -613,6 +715,7 @@ class CodexAppServerAdapter:
                     }},
                     session=self._session(str(thread.id), request.session),
                 )
+                return result
             # No await may separate the cancellation check from this marker.
             # A cancellation before it prevents submission; one after it waits
             # for the exact returned turn rather than guessing by thread.
@@ -651,7 +754,7 @@ class CodexAppServerAdapter:
                 # reconciliation evidence and refuse to make an ordinary Retry
                 # eligible by pretending this was a definite rejection.
                 thread_id = str(thread.id)
-                return ProviderRunResult(
+                result = ProviderRunResult(
                     status="orphaned",
                     error=f"Codex turn submission acknowledgement is unknown: {exc}",
                     metadata={
@@ -667,6 +770,7 @@ class CodexAppServerAdapter:
                     },
                     session=self._session(thread_id, request.session),
                 )
+                return result
             active = _ActiveTurn(
                 run_id=run_id,
                 thread_id=str(thread.id),
@@ -703,23 +807,25 @@ class CodexAppServerAdapter:
             metadata = self._result_metadata(active, state, cwd, status)
             activity_evidence = self._activity_evidence(state)
             if status == "completed":
-                return ProviderRunResult(
+                result = ProviderRunResult(
                     status="done",
                     result=final_message,
                     metadata=metadata,
                     activity_evidence=activity_evidence,
                     session=active.session,
                 )
+                return result
             if status == "interrupted":
-                return ProviderRunResult(
+                result = ProviderRunResult(
                     status="cancelled",
                     result=final_message,
                     metadata=metadata,
                     activity_evidence=activity_evidence,
                     session=active.session,
                 )
+                return result
             error = self._turn_error(terminal_payload) or f"Codex turn ended as {status}"
-            return ProviderRunResult(
+            result = ProviderRunResult(
                 status="error",
                 result=final_message,
                 error=error,
@@ -727,8 +833,9 @@ class CodexAppServerAdapter:
                 activity_evidence=activity_evidence,
                 session=active.session,
             )
+            return result
         except _TurnDeadlineExceeded:
-            return ProviderRunResult(
+            result = ProviderRunResult(
                 status="error",
                 error=f"Codex turn timed out after {self._request_timeout(request):g}s",
                 metadata=(
@@ -741,12 +848,13 @@ class CodexAppServerAdapter:
                 ),
                 session=active.session if active is not None else None,
             )
+            return result
         except asyncio.CancelledError:
             if active is not None:
                 self._begin_interrupt(active)
             raise
         except Exception as exc:
-            return ProviderRunResult(
+            result = ProviderRunResult(
                 status="error",
                 error=f"Codex SDK run failed: {exc}",
                 metadata={
@@ -761,6 +869,7 @@ class CodexAppServerAdapter:
                 ),
                 session=active.session if active is not None else None,
             )
+            return result
         finally:
             starting.active_ready.set()
             if self._starting.get(run_id) is starting:
@@ -771,6 +880,17 @@ class CodexAppServerAdapter:
                     if active.stream_task is None or active.stream_task.done():
                         if self._active.get(run_id) is active:
                             self._active.pop(run_id, None)
+            release = await self._settle_native_thread(codex, opened_thread_id, run_id, result)
+            if release is not None:
+                # Release facts are Host-observed bookkeeping, appended to the
+                # already-computed result so a cleanup failure can never
+                # overwrite the business outcome it followed.
+                if result is not None:
+                    codex_metadata = result.metadata.setdefault("codex", {})
+                    codex_metadata["thread_release"] = release["status"]
+                    if release.get("detail"):
+                        codex_metadata["thread_release_detail"] = release["detail"]
+                await self._emit_native_release(run_id, opened_thread_id, release, emit)
 
     async def reconcile_submission(
         self,
@@ -989,10 +1109,150 @@ class CodexAppServerAdapter:
             "turn_id": active.turn_id,
         }
 
+    async def _settle_native_thread(
+        self,
+        codex: Any | None,
+        thread_id: str,
+        run_id: str,
+        result: ProviderRunResult | None,
+    ) -> dict[str, str] | None:
+        """Release the run's native thread when its last dependent run ends.
+
+        A loaded thread owns the MCP runtime spawned for the bound
+        connections, and that ownership is exclusive. Release is protocol
+        work, ordered before transport teardown: ``thread/unsubscribe`` drops
+        this client's subscription, the managed ``thread_unload_delay_secs=0``
+        lets the App Server retire the thread and settle its MCP runtime, and
+        ``thread/loaded/list`` confirms settlement before another Work may
+        open an owner of the same connection.
+        """
+
+        if codex is None or not thread_id:
+            return None
+        dependents = self._thread_runs.get(thread_id)
+        if dependents is not None:
+            dependents.discard(run_id)
+        if dependents:
+            return {"status": "shared", "detail": "thread_owned_by_dependent_run"}
+        if result is not None and result.status == "orphaned":
+            # The submission acknowledgement was lost, so the native turn may
+            # still be live. Closing its thread would terminate unknown work;
+            # the dead transport already released the runtime that owned it.
+            # Keep the entry so close() still owns a graceful unsubscribe.
+            return {"status": "retained", "detail": "native_outcome_unknown"}
+        self._thread_runs.pop(thread_id, None)
+        # Once this run decides to release, a later Work's open must wait for
+        # the conclusion. The gate is released even on failure so the next
+        # owner proceeds on the honest unconfirmed/failed state rather than
+        # deadlocking.
+        pending_key = f"{thread_id}:{run_id}"
+        self._pending_releases.add(pending_key)
+        self._release_gate.clear()
+        try:
+            async with self._sdk_lock:
+                return await self._release_native_thread(codex, thread_id)
+        finally:
+            self._pending_releases.discard(pending_key)
+            if not self._pending_releases:
+                self._release_gate.set()
+
+    async def _release_native_thread(self, codex: Any, thread_id: str) -> dict[str, str]:
+        """Unsubscribe one thread and confirm the App Server unloaded it."""
+
+        unsubscribe = getattr(codex, "thread_unsubscribe", None)
+        loaded_list = getattr(codex, "thread_loaded_list", None)
+        if not callable(unsubscribe) or not callable(loaded_list):
+            # Externally owned clients may predate this contract. Do not
+            # fabricate a release; the state is explicit instead.
+            return {"status": "unsupported", "detail": "client_lacks_thread_release"}
+        try:
+            # The reply travels the SDK's single reader, which can sit behind
+            # another run's pending approval callback. Bound the whole release
+            # to the same confirmation budget so an unread reply surfaces as
+            # an honest failure instead of stalling the release gate.
+            response = await asyncio.wait_for(
+                unsubscribe(thread_id), timeout=self.release_confirm_timeout_s
+            )
+            raw_status = getattr(response, "status", "") or ""
+            native_status = str(getattr(raw_status, "value", raw_status))
+        except Exception as exc:
+            return {
+                "status": "release_failed",
+                "detail": f"thread_unsubscribe:{exc.__class__.__name__}",
+            }
+        confirm_deadline = time.monotonic() + self.release_confirm_timeout_s
+        try:
+            while time.monotonic() < confirm_deadline:
+                if not await asyncio.wait_for(
+                    self._thread_is_loaded(loaded_list, thread_id),
+                    timeout=max(0.1, confirm_deadline - time.monotonic()),
+                ):
+                    return {"status": "released", "detail": native_status}
+                await asyncio.sleep(0.1)
+        except Exception as exc:
+            return {
+                "status": "release_failed",
+                "detail": f"thread_loaded_list:{exc.__class__.__name__}",
+            }
+        return {
+            "status": "release_unconfirmed",
+            "detail": native_status or "unsubscribe_accepted",
+        }
+
+    async def _thread_is_loaded(
+        self,
+        loaded_list: Callable[..., Any],
+        thread_id: str,
+    ) -> bool:
+        """Page the App Server's loaded-thread list for one id."""
+
+        cursor: str | None = None
+        while True:
+            response = await loaded_list() if cursor is None else await loaded_list(cursor=cursor)
+            data = getattr(response, "data", None)
+            if data is None and isinstance(response, dict):
+                data = response.get("data")
+            for entry in data or ():
+                if str(getattr(entry, "id", entry)) == thread_id:
+                    return True
+            cursor = getattr(response, "next_cursor", None)
+            if cursor is None and isinstance(response, dict):
+                cursor = response.get("nextCursor") or response.get("next_cursor")
+            if not cursor:
+                return False
+
+    async def _emit_native_release(
+        self,
+        run_id: str,
+        thread_id: str,
+        release: dict[str, str],
+        emit: EmitProviderEvent,
+    ) -> None:
+        """Publish the Host-observed release fact; emission must not undo it."""
+
+        try:
+            await emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=run_id,
+                    type="native.release",
+                    payload={
+                        "thread_id": thread_id,
+                        "release": release["status"],
+                        "detail": str(release.get("detail") or ""),
+                    },
+                    metadata={"native_thread_id": thread_id},
+                )
+            )
+        except Exception:
+            logger.exception("Codex native release event emission failed")
+
     async def _ensure_codex(self) -> Any:
         if self._codex is not None:
             return self._codex
         async with self._sdk_lock:
+            if self._closed:
+                raise RuntimeError("Codex adapter is closed")
             if self._codex is None:
                 config = self._codex_config()
                 self._codex = (
@@ -1008,6 +1268,7 @@ class CodexAppServerAdapter:
             config_overrides=(
                 *self._provider_config_overrides(),
                 *self._service_tier_config_overrides(),
+                *self._thread_release_config_overrides(),
                 *codex_mcp_config_overrides(self._mcp_connections),
             ),
             env=self._codex_process_env_with_provider_key(),
@@ -1027,6 +1288,21 @@ class CodexAppServerAdapter:
         if self.service_tier == "fast":
             return ("features.fast_mode=true",)
         return ()
+
+    @staticmethod
+    def _thread_release_config_overrides() -> tuple[str, ...]:
+        """Unload a thread as soon as its last subscriber detaches.
+
+        The upstream default holds an unreferenced thread resident; while it
+        stays loaded it also keeps ownership of the MCP runtime spawned for
+        the explicitly bound connections. The Host releases a Work's thread as
+        its finalization step and needs the App Server's unload to begin at
+        unsubscribe, so this managed runtime drops the retention delay. The
+        delay applies only to the App Server process Amadeus itself spawns;
+        an injected SDK remains its external owner's configuration.
+        """
+
+        return ("thread_unload_delay_secs=0",)
 
     def _provider_bridge(self) -> CodexDesktopProviderBridge | None:
         if self._desktop_provider_bridge is not None:
