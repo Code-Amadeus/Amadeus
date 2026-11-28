@@ -2,10 +2,10 @@
 import builtins
 from contextlib import closing
 from dataclasses import asdict
+from importlib.resources import files
 import json
 from pathlib import Path
 import sqlite3
-import zipfile
 
 import eidema
 import pytest
@@ -28,8 +28,7 @@ def schema(path, version):
     # Reconstruct schema18 from the bundled canonical SQL by removing only the
     # two schema19 evidence_only columns. The copied reader verifies every
     # resulting physical column and initial row against its SDK-owned manifest.
-    with zipfile.ZipFile(Path(eidema.__file__).parents[1]) as wheel:
-        sql = wheel.read("eidema/schema.sql").decode()
+    sql = files(eidema).joinpath("schema.sql").read_text(encoding="utf-8")
     if version == 18:
         line = "    evidence_only INTEGER NOT NULL DEFAULT 0 CHECK(evidence_only IN (0,1)),\n"
         assert sql.count(line) == 2
