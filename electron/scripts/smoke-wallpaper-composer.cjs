@@ -11,6 +11,7 @@ fs.mkdirSync(output, { recursive: true })
 app.setPath('userData', path.join(output, 'composer-smoke-profile'))
 const actions = [], streams = []
 let voice = { active: false, source: '', continuous: false }, watching = false, failNext = false
+let auipInteraction = true
 const server = http.createServer(async (req, res) => {
   const route = new URL(req.url, 'http://localhost').pathname
   const json = value => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)) }
@@ -31,12 +32,17 @@ const server = http.createServer(async (req, res) => {
     assert.equal(req.headers['x-amadeus-bridge-token'], 'fixture-token')
     let body = ''; for await (const chunk of req) body += chunk
     const payload = JSON.parse(body); actions.push(payload)
-    if (payload.action === 'status') return json({ ok: true, supports_images: true, voice, wake: { running: !voice.active }, watching })
+    if (payload.action === 'status') return json({ ok: true, supports_images: true, voice, wake: { running: !voice.active },
+      watching, memory_use_enabled: true, auip_interaction_enabled: auipInteraction })
     if (failNext) { failNext = false; res.statusCode = 400; return json({ ok: false, error: 'injected_failure' }) }
     if (payload.action === 'voice_start') voice = { active: true, source: 'wake', continuous: true }
     if (payload.action === 'voice_stop' || payload.action === 'new_chat') voice = { active: false, source: '', continuous: false }
     if (payload.action === 'vision_toggle') watching = !watching
     if (payload.action === 'vision_windows') return json({ ok: true, windows: [{ hwnd: '42', title: 'Sample editor' }] })
+    if (payload.action === 'auip_set') {
+      auipInteraction = payload.enabled
+      return json({ ok: true, auip_interaction_enabled: auipInteraction })
+    }
     return json({ ok: true })
   }
   if (!route.startsWith('/render/web/') || route.includes('..')) { res.statusCode = 404; return res.end() }
@@ -69,6 +75,12 @@ app.whenReady().then(async () => {
   const url = `http://127.0.0.1:${server.address().port}/render/web/electron_slice.html`
   await win.loadURL(url + '?windowsComposer=1')
   await until(`document.querySelector('.composer-voice small')?.textContent === 'Zz'`)
+  await evaluate(`window.composerSetting = { saved: [], applied: [] }; window.consoleOpenCalls = 0;
+    window.amadeus = {
+      focusMainWindow: async () => { window.consoleOpenCalls++; return true },
+      saveApplicationInteraction: async enabled => { window.composerSetting.saved.push(enabled); return {ok:true, revision:7} },
+      markApplicationInteractionApplied: async revision => { window.composerSetting.applied.push(revision); return {ok:true} }
+    }; void 0`)
   assert.equal(await evaluate(`document.querySelector('#wallpaper-keyboard-composer').hidden`), true)
   assert.equal(await evaluate(`document.activeElement.tagName === 'TEXTAREA'`), false)
   assert.equal(await evaluate(`Boolean(document.querySelector('.crt-canvas-surface.expanded'))`), false)
@@ -77,10 +89,21 @@ app.whenReady().then(async () => {
   await press('.wallpaper-keyboard-composer-toggle')
   await until(`!document.querySelector('#wallpaper-keyboard-composer').hidden`)
   await until(`!document.querySelector('.composer-image').disabled`)
-  await evaluate(`window.consoleOpenCalls = 0; window.amadeus = { focusMainWindow: async () => { window.consoleOpenCalls++; return true } }; void 0`)
   await press('.composer-console')
   assert.equal(await evaluate('window.consoleOpenCalls'), 1)
   assert.equal(await evaluate(`document.querySelector('#wallpaper-keyboard-composer').hidden`), false)
+  await until(`!document.querySelector('.composer-auip').disabled`)
+  await press('.composer-auip')
+  await until(`document.querySelector('.composer-auip').getAttribute('aria-pressed') === 'false'`)
+  assert.deepEqual(await evaluate('window.composerSetting'), { saved: [false], applied: [7] })
+  const projection = { method: 'composerEvent', args: [{ method: 'system.config', params: { auip_interaction_enabled: true } }] }
+  for (const stream of streams) stream.write('data: ' + JSON.stringify(projection) + '\n\n')
+  await until(`document.querySelector('.composer-auip').getAttribute('aria-pressed') === 'true'`)
+  await evaluate(`(() => { const input = document.querySelector('textarea'); input.value = 'fresh note question'; input.dispatchEvent(new Event('input')); })()`)
+  await until(`!document.querySelector('.composer-memory').disabled`)
+  await press('.composer-memory')
+  await until(`document.querySelector('textarea').value === ''`)
+  assert.deepEqual(actions.find(a => a.memory_lookup), { text: 'fresh note question', memory_lookup: true })
 
   await evaluate(`window.filePickerCalls = 0; document.querySelector('.composer-file').click = () => window.filePickerCalls++; void 0`)
   await press('.composer-image')
@@ -114,6 +137,7 @@ app.whenReady().then(async () => {
       const input = document.querySelector('.composer-file'); input.files = files.files; input.dispatchEvent(new Event('change')); });
   })()`)
   await until(`!document.querySelector('.composer-attachment').hidden && !document.querySelector('.wallpaper-keyboard-composer-send').disabled`)
+  assert.equal(await evaluate(`document.querySelector('.composer-memory').disabled`), true)
   await screenshot('composer-expanded.png')
   const crop = await evaluate(`(() => { const r = document.querySelector('#wallpaper-keyboard-composer').getBoundingClientRect(); return {x: Math.floor(r.x)-10, y: Math.floor(r.y)-10, width: Math.ceil(r.width)+20, height: Math.ceil(r.height)+20} })()`)
   fs.writeFileSync(path.join(output, 'composer-detail.png'), (await win.webContents.capturePage(crop)).toPNG())

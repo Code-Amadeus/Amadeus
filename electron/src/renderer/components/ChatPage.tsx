@@ -210,6 +210,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     title: string
   } | null>(null)
   const [asrListening, setAsrListening] = useState(false)
+  const [auipEnabled, setAuipEnabled] = useState<boolean>()
+  const [auipSaving, setAuipSaving] = useState(false)
+  const [auipNotice, setAuipNotice] = useState('')
   const [pendingVisualAttachment, setPendingVisualAttachment] = useState<VisualAttachment | null>(null)
   const [visionVideoMode, setVisionVideoMode] = useState(false)
   const [visionWindowPickerOpen, setVisionWindowPickerOpen] = useState(false)
@@ -633,6 +636,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (res?.llm_provider) setProvider(String(res.llm_provider))
       if (Array.isArray(res?.model_connections)) setModelConnections(res.model_connections)
       setCanUseMultimodal(res?.chat_supports_images === true)
+      if (typeof res?.auip_interaction_enabled === 'boolean') setAuipEnabled(res.auip_interaction_enabled)
       // The selected mode survives disabling vision; it is not the enabled state.
       setVisionVideoMode(res?.vision_enabled === true && res?.vision_mode === 'watching')
     }).catch(() => {})
@@ -643,6 +647,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const connections = p.model_connections ?? values.model_connections
       if (Array.isArray(connections)) setModelConnections(connections)
       if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
+      if (typeof values.auip_interaction_enabled === 'boolean') setAuipEnabled(values.auip_interaction_enabled)
       setVisionVideoMode(values.vision_enabled === true && values.vision_mode === 'watching')
     })
     return unsub
@@ -884,6 +889,25 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       setMessages(prev => [...prev, { role: 'system', text: 'Send failed: backend unreachable' }])
     }
   }, [input, connected, sessionReady, canUseMultimodal, pendingVisualAttachment, send, provider, selectSession, clearMemoryLookup])
+
+  const handleAuipToggle = useCallback(async () => {
+    if (!connected || auipEnabled === undefined || auipSaving) return
+    const values = { auip_interaction_enabled: !auipEnabled }
+    setAuipSaving(true)
+    setAuipNotice('')
+    try {
+      const saved = await persistDesktopRuntimeSettings(values)
+      const result = await send('system.set_config', { values })
+      const applied = (result.values as Record<string, unknown> | undefined)?.auip_interaction_enabled
+      if (applied !== values.auip_interaction_enabled) throw new Error('AUIP setting was not acknowledged')
+      setAuipEnabled(applied)
+      await markRuntimeSettingsApplied(values, saved.pendingRevisions)
+    } catch {
+      setAuipNotice('Could not confirm the application interaction setting.')
+    } finally {
+      setAuipSaving(false)
+    }
+  }, [connected, auipEnabled, auipSaving, send])
 
   const handleMemoryLookup = useCallback(async () => {
     const text = input.trim()
@@ -1784,10 +1808,23 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 type="button"
                 onClick={() => { void handleMemoryLookup() }}
                 title={t('Search once using the text in this input. Text only, up to 2000 characters.')}
+                aria-label={t('Search saved memories')}
                 aria-describedby="chat-memory-lookup-feedback"
-                className="chat-memory-lookup-button"
+                className="chat-round-button chat-memory-lookup-button"
               >
-                {t('Search saved memories')}
+                <FluentIcon name="MemorySearch" size={16} aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                className="chat-round-button"
+                title={t('Let Amadeus interact with applications')}
+                aria-label={t('Let Amadeus interact with applications')}
+                aria-pressed={auipEnabled}
+                disabled={!connected || auipEnabled === undefined || auipSaving}
+                onClick={() => { void handleAuipToggle() }}
+              >
+                <FluentIcon name="Tiles" size={16} aria-hidden="true" />
               </button>
 
               <button onClick={handleSend} disabled={!connected || !sessionReady || sessionSwitching || (!input.trim() && !pendingVisualAttachment)}
@@ -1803,6 +1840,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               {memoryLookupReceipt && memoryLookupNotice ? ' ' : ''}
               {memoryLookupNotice && t(memoryLookupNotice)}
             </p>
+            {auipNotice && <p role="status" className="chat-memory-lookup-feedback">{t(auipNotice)}</p>}
 
             {visionWindowPickerOpen && (
               <div className="chat-window-picker">

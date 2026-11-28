@@ -2383,13 +2383,14 @@ async def bootstrap(port: int = 17777, *,
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
         canvas_action_fn=canvas_action_router.route,
-        chat_send_fn=lambda text, session_id, visual: chat_h.send_text(
+        chat_send_fn=lambda text, session_id, visual, memory_lookup: chat_h.send_text(
             text, provider=_current_llm_provider(), visual=visual,
-            session_id=session_id, source="wallpaper_keyboard",
+            session_id=session_id, source="wallpaper_keyboard", memory_lookup=memory_lookup,
         ),
         chat_control_fn=(lambda action: wallpaper_chat_control(
             action, session=session_h, asr=asr_h, system=sys_h, wake=wake_h,
             voice_start=lambda: _start_asr_from_wake(continuous=True),
+            memory_status=memory_service.runtime_status,
         )) if sys.platform == "win32" else None,
         ensure_chat_session_fn=lambda: session_h.ensure_current_session(
             source="wallpaper_keyboard"

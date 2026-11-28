@@ -43,7 +43,7 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
         self._canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None
-        self._chat_send_fn: Callable[[str, str, dict | None], Any] | None = None
+        self._chat_send_fn: Callable[[str, str, dict | None, bool], Any] | None = None
         self._chat_control_fn: Callable[[dict], Any] | None = None
         self._ensure_chat_session_fn: Callable[[], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
@@ -59,7 +59,7 @@ class WallpaperHandler(RequestHandler):
         wake_start_fn: Callable[[], Any] | None = None,
         wake_stop_fn: Callable[[], Any] | None = None,
         canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None,
-        chat_send_fn: Callable[[str, str, dict | None], Any] | None = None,
+        chat_send_fn: Callable[[str, str, dict | None, bool], Any] | None = None,
         ensure_chat_session_fn: Callable[[], Any] | None = None,
         chat_control_fn: Callable[[dict], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -92,6 +92,7 @@ class WallpaperHandler(RequestHandler):
             bus.on(Method.WALLPAPER_CANVAS, self._forward_canvas_event)
             bus.on(Method.ASR_STATUS, self._forward_asr_event)
             bus.on(Method.WAKE_STATUS, self._forward_composer_event)
+            bus.on(Method.SYSTEM_CONFIG, self._forward_composer_event)
             bus.on(Method.ATTENTION_UPDATED, self._forward_attention_event)
             bus.on(Method.SESSION_CHANGED, self._forward_attention_event)
             self._subscribed = True
@@ -221,7 +222,7 @@ class WallpaperHandler(RequestHandler):
     async def _route_chat_submit(self, payload: dict[str, Any]) -> dict[str, Any]:
         action = payload.get("action", "send")
         if action != "send":
-            if action not in {"status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select"} or self._chat_control_fn is None:
+            if action not in {"status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select", "auip_set"} or self._chat_control_fn is None:
                 return {"ok": False, "error": "unsupported_chat_action"}
             return await self._chat_control_fn(payload)
         text = str(payload.get("text") or "").strip()
@@ -241,7 +242,7 @@ class WallpaperHandler(RequestHandler):
         session_id = str(session.get("current_session_id") or "").strip()
         if not session_id:
             return {"ok": False, "error": "wallpaper_session_unavailable"}
-        result = send_chat(text, session_id, payload.get("visual"))
+        result = send_chat(text, session_id, payload.get("visual"), payload.get("memory_lookup", False))
         if hasattr(result, "__await__"):
             result = await result
         if isinstance(result, dict):
@@ -319,7 +320,12 @@ class WallpaperHandler(RequestHandler):
             return
         host = self._wallpaper_host
         if host is not None and hasattr(host, "composer_event"):
-            state = {key: params[key] for key in ("status", "source", "running", "continuous") if key in params}
+            if method == Method.SYSTEM_CONFIG:
+                if "auip_interaction_enabled" not in params.get("updated", ()):
+                    return
+                state = {"auip_interaction_enabled": params["values"]["auip_interaction_enabled"]}
+            else:
+                state = {key: params[key] for key in ("status", "source", "running", "continuous") if key in params}
             host.composer_event({"method": method, "params": state})
 
     async def _forward_attention_event(

@@ -277,9 +277,10 @@ def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
 
     chat._handle_send = capture_send
 
-    async def send_chat(text: str, session_id: str, visual: dict | None) -> dict:
+    async def send_chat(text: str, session_id: str, visual: dict | None, memory_lookup: bool) -> dict:
         return await chat.send_text(
             text, session_id=session_id, source="wallpaper_keyboard", visual=visual,
+            memory_lookup=memory_lookup,
         )
 
     handler = WallpaperHandler()
@@ -292,15 +293,18 @@ def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
     text_result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
     visual = {"request": True, "mode": "attachment"}
     image_result = asyncio.run(handler._route_chat_submit({"text": "look", "visual": visual}))
+    search_result = asyncio.run(handler._route_chat_submit({"text": "where was the note?", "memory_lookup": True}))
 
-    assert [item["text"] for item in submitted] == ["type on the desk", "look"]
+    assert [item["text"] for item in submitted] == ["type on the desk", "look", "where was the note?"]
     assert all(item["session_id"] == "wallpaper-session" for item in submitted)
     assert all(item["source"] == "wallpaper_keyboard" for item in submitted)
-    assert [item["visual"] for item in submitted] == [None, visual]
+    assert [item["visual"] for item in submitted] == [None, visual, None]
+    assert [item.get("memory_lookup", False) for item in submitted] == [False, False, True]
     assert submitted[0]["turn_id"] and submitted[1]["turn_id"]
     assert submitted[0]["turn_id"] != submitted[1]["turn_id"]
     assert text_result == {"ok": True, "status": "ok", "turn_id": submitted[0]["turn_id"]}
     assert image_result == {"ok": True, "status": "ok", "turn_id": submitted[1]["turn_id"]}
+    assert search_result == {"ok": True, "status": "ok", "turn_id": submitted[2]["turn_id"]}
 
 
 def test_wallpaper_keyboard_creates_a_session_only_when_one_is_absent() -> None:

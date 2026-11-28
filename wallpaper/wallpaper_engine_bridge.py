@@ -544,7 +544,7 @@ def _make_bridge_handler(
         def _route_chat_submit(self, payload: dict) -> dict:
             text = str(payload.get("text") or "").strip()
             action = payload.get("action", "send")
-            if action not in {"send", "status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select"}:
+            if action not in {"send", "status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select", "auip_set"}:
                 return {"ok": False, "error": "unsupported_chat_action"}
             if action == "send" and not text:
                 return {"ok": False, "error": "empty_message"}

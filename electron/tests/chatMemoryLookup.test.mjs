@@ -58,7 +58,10 @@ function pageHarness(respond = () => undefined, options = {}) {
     './MemoryPanel': { __esModule: true, default: 'memory-panel' },
     './SettingsPrimitives': { SettingsButton: 'button' },
     './work/CrtWorkWidget': { __esModule: true, default: 'work-widget' },
-    './desktopRuntimeSettings': { persistDesktopRuntimeSettings: async () => ({ persisted: true, pendingRevisions: {} }), markRuntimeSettingsApplied: async () => {} },
+    './desktopRuntimeSettings': options.runtimeSettings || {
+      persistDesktopRuntimeSettings: async () => ({ persisted: true, pendingRevisions: {} }),
+      markRuntimeSettingsApplied: async () => {},
+    },
     '../i18n': { useI18n: () => ({ t: (source, vars = {}) => (options.locale === 'zh-CN' ? translations[source] || source : source)
       .replace(/\{([^}]+)\}/g, (_, name) => String(vars[name] ?? `{${name}}`)) }) },
     '../activeCharacter': { useActiveCharacter: () => null },
@@ -91,7 +94,7 @@ function pageHarness(respond = () => undefined, options = {}) {
   const page = {
     requests, render,
     get input() { return find(node => node.type === 'textarea') },
-    get lookup() { return find(node => node.props?.className === 'chat-memory-lookup-button') },
+    get lookup() { return find(node => node.props?.className?.split(' ').includes('chat-memory-lookup-button')) },
     get feedback() { return text(find(node => node.props?.id === 'chat-memory-lookup-feedback')) },
     get bubbles() { return nodes(tree).filter(node => node.type === 'chat-bubble').map(node => ({ role: node.props.role, text: node.props.text })) },
     get sends() { return requests.filter(request => request.method === 'chat.send') },
@@ -116,7 +119,8 @@ test('the composer exposes a labelled native one-shot button and an independent 
   const page = await ready(t)
   assert.equal(page.lookup.type, 'button', 'native buttons provide Tab, Enter and Space activation')
   assert.equal(page.lookup.props.type, 'button')
-  assert.equal(text(page.lookup), 'Search saved memories')
+  assert.equal(page.lookup.props['aria-label'], 'Search saved memories')
+  assert.equal(text(page.lookup), '')
   assert.match(page.lookup.props.title, /once.*text.*2000/)
   assert.equal(page.lookup.props['aria-describedby'], 'chat-memory-lookup-feedback')
   const status = page.find(node => node.props?.id === 'chat-memory-lookup-feedback')
@@ -128,10 +132,38 @@ test('the composer exposes a labelled native one-shot button and an independent 
 
 test('Chinese UI translates the button, validation and all backend status labels', async t => {
   const page = await ready(t, undefined, { locale: 'zh-CN' })
-  assert.equal(text(page.lookup), '查已存记忆')
+  assert.equal(page.lookup.props['aria-label'], '查已存记忆')
   page.lookupNow()
   assert.equal(page.feedback, translations['Enter specific text to search saved memories.'])
   for (const label of Object.values(memoryLookupStatusText)) assert.ok(translations[label], label)
+})
+
+test('the application toggle shares desktop settings and follows Host configuration', async t => {
+  const saved = []
+  const applied = []
+  const page = await ready(t, (method, params) => {
+    if (method === 'system.get_config') return { auip_interaction_enabled: true, llm_provider: 'deepseek' }
+    if (method === 'system.set_config') return { values: params.values }
+  }, { runtimeSettings: {
+    persistDesktopRuntimeSettings: async values => {
+      saved.push(values)
+      return { persisted: true, pendingRevisions: { AUIP_INTERACTION_ENABLED: 7 } }
+    },
+    markRuntimeSettingsApplied: async (values, revisions) => { applied.push({ values, revisions }) },
+  } })
+  const toggle = () => page.find(node => node.props?.['aria-label'] === 'Let Amadeus interact with applications')
+  page.type('keep this draft')
+  assert.equal(toggle().props['aria-pressed'], true)
+  assert.equal(text(toggle()), '')
+  toggle().props.onClick()
+  await page.flush()
+  assert.equal(toggle().props['aria-pressed'], false)
+  assert.deepEqual(saved, [{ auip_interaction_enabled: false }])
+  assert.deepEqual(applied, [{ values: { auip_interaction_enabled: false }, revisions: { AUIP_INTERACTION_ENABLED: 7 } }])
+  assert.equal(page.input.props.value, 'keep this draft')
+  assert.equal(page.sends.length, 0)
+  page.emit('system.config', { values: { auip_interaction_enabled: true } })
+  assert.equal(toggle().props['aria-pressed'], true)
 })
 
 for (const query of ['Synthetic favourite game', '合成：以前提到的咖啡', '合成：前に話した旅行🪷']) {
