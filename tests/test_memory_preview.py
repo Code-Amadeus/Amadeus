@@ -38,7 +38,8 @@ def _completion(request, items):
     })
 
 
-def test_background_transport_is_bound_to_the_disclosed_provider(monkeypatch):
+@pytest.mark.parametrize("cold", [False, True])
+def test_background_transport_is_bound_to_the_disclosed_provider(monkeypatch, cold):
     observed = []
 
     def post(client, url, *, content, headers):
@@ -48,6 +49,8 @@ def test_background_transport_is_bound_to_the_disclosed_provider(monkeypatch):
         body = json.loads(content)
         assert body["model"] == "deepseek-flash" and body["thinking"] == {"type": "enabled"}
         assert body["reasoning_effort"] == "low" and body["max_tokens"] == 900
+        assert body["response_format"] == {"type": "json_object"}
+        assert "JSON object" in body["messages"][0]["content"]
         source, = json.loads(body["messages"][1]["content"])["sources"]
         assert source == {"source_id": "s0", "speaker_role": "user", "recorded_at_ms": 120,
                           "input_role": "incremental", "text": "The test lamp is blue."}
@@ -56,7 +59,7 @@ def test_background_transport_is_bound_to_the_disclosed_provider(monkeypatch):
         return _completion(httpx.Request("POST", url), [])
 
     monkeypatch.setattr(httpx.Client, "post", post)
-    provider = FlashMemoryProvider(eidema, "synthetic")
+    provider = FlashMemoryProvider(eidema, "synthetic", cold=cold)
     source = eidema.FormationSource("s0", "The test lamp is blue.", "user", "host-private-speaker-key", 120)
     request = provider.prepare((source,), max_output_tokens=900, timeout_ms=30_000)
     result = provider.generate(request.payload, max_output_tokens=900, timeout_ms=30_000)
