@@ -22,8 +22,7 @@ async def test_scoped_choice_needs_explicit_opt_in_and_retains_selector_reads(
     pending_host, tmp_path, monkeypatch, enabled, direct, revoke,
 ):
     ctx = pending_host
-    monkeypatch.setenv("AMADEUS_MVP_SCOPED_RECALL", "1" if enabled else "0")
-    host = await wire(ctx, tmp_path, monkeypatch)
+    host = await wire(ctx, tmp_path, monkeypatch, scoped_recall_enabled=enabled)
     originals = [f"lantern record {index}: " + "bounded witness text " * 55 for index in range(6)]
     selector_calls, answer_packets = [], []
 

@@ -242,7 +242,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
         def detach_projection(projector):
             assert projector is None and callbacks[-1] == "memory"
             callbacks.append("memory_projection")
-        memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close))
+        memory_service = SimpleNamespace(close=AsyncMock(side_effect=memory_close), _maintenance=None)
         session_manager = SimpleNamespace(configure_model_history_projection=Mock(side_effect=detach_projection))
 
         def close_ledger():
@@ -280,7 +280,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
                     return_value=[object()] if pending_work == "attempt" else []),
                     list_writer_leases=Mock(return_value=[object()] if pending_work == "lease" else []))),
             work_observer=SimpleNamespace(close=observer_closed), work_preview=SimpleNamespace(close_all=preview_closed),
-            memory_service=memory_service, _work_session_manager=session_manager,
+            memory_service=memory_service, memory_maintenance=None, _work_session_manager=session_manager,
             _stop_gui_render_runtime=Mock(), wake_service=None, asr_manager=None,
             _BACKEND_CLEANUP=SimpleNamespace(record_runtime_cleanup=cleanup_record))
         exec(compile(module, str(path), "exec"), namespace)

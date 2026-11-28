@@ -369,7 +369,6 @@ async def bootstrap(port: int = 17777, *,
 
     if memory_maintenance is not None and not isinstance(memory_maintenance, DesktopMemoryMaintenance):
         raise ValueError("trusted_desktop_memory_maintenance_required")
-    maintenance_binding = None
 
     active_character()  # Validate the pinned startup pack before runtime composition.
 
@@ -504,8 +503,7 @@ async def bootstrap(port: int = 17777, *,
         memory_service.formation_for_session = lambda session_id: bool(session_id)
         memory_maintenance = configured_maintenance(memory_service, settings.DEEPSEEK_API_KEY)
     output_speech = None
-    if ((memory_service.config.enabled and memory_service.config.use_enabled)
-            or os.environ.get("AMADEUS_TRIAL_SPEECH_RETIREMENT") == "1"):
+    if memory_service.config.enabled and memory_service.config.use_enabled:
         from server import memory_output_speech as speech_retirement
         output_speech = speech_retirement.install(memory_service)
     memory_service.start()
@@ -2500,6 +2498,7 @@ async def bootstrap(port: int = 17777, *,
     # Cancelling executor Futures cannot stop their threads: signal and join them.
     vts_worker_stop = threading.Event()
     vts_workers: list[asyncio.Future] = []
+    maintenance_binding = None
     try:
         if memory_maintenance is not None:
             try:

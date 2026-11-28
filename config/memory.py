@@ -1,5 +1,6 @@
 """Backend memory startup policy; no user identity or path comes from the UI."""
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from config.catalog import read_catalog_value
@@ -33,6 +34,7 @@ class MemoryConfig:
     use_enabled: bool = True
     extraction_enabled: bool = False
     capture_sources: bool = True
+    scoped_recall_enabled: bool = True
 
     @classmethod
     def from_environment(cls, reader: EnvironmentReader):
@@ -60,6 +62,7 @@ class MemoryConfig:
             use_enabled=use,
             extraction_enabled=extract,
             capture_sources=extract or (legacy_sources and not reader.configured(extraction_key)),
+            scoped_recall_enabled=reader.string("AMADEUS_MVP_SCOPED_RECALL", "1") == "1",
         )
         if (not values.user_id or values.model_backend not in ("", "jina-onnx-q4", "e5") or (values.semantic_threshold is not None and not -1 <= values.semantic_threshold <= 1)
                 or not .01 <= values.recall_timeout_s <= 5
@@ -68,3 +71,27 @@ class MemoryConfig:
                 or not 256 <= values.context_bytes <= 16384):
             raise ValueError("invalid_memory_configuration")
         return values
+
+
+# Standalone Session journal qualification can supply its own owner and grants.
+# A bound desktop Host supplies both directly and bypasses these defaults.
+def standalone_journal_enabled() -> bool:
+    return os.environ.get("AMADEUS_SESSION_JOURNAL_ENABLED") == "1"
+
+
+def standalone_journal_owner() -> tuple[str, str | None, str | None]:
+    return (
+        os.environ.get("AMADEUS_SESSION_JOURNAL_USER", ""),
+        os.environ.get("AMADEUS_SESSION_JOURNAL_CHARACTER"),
+        os.environ.get("AMADEUS_SESSION_JOURNAL_PROJECT") or None,
+    )
+
+
+def standalone_journal_grants() -> dict:
+    return dict(
+        lookup_allowed=os.environ.get("AMADEUS_JOURNAL_LOOKUP_ALLOWED", "1") == "1",
+        ordinary_allowed=os.environ.get("AMADEUS_JOURNAL_ORDINARY_ALLOWED", "1") == "1",
+        derived_lookup_allowed=os.environ.get("AMADEUS_JOURNAL_DERIVED_LOOKUP_ALLOWED", "1") == "1",
+        formation_allowed=os.environ.get("AMADEUS_JOURNAL_FORMATION_ALLOWED", "1") == "1",
+        policy_revision=os.environ.get("AMADEUS_JOURNAL_POLICY_REVISION", "g2-journal-grant-v1"),
+    )

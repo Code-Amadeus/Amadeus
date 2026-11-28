@@ -320,7 +320,7 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
         "CooperativeHostDelivery": CooperativeHostDelivery,
         "chat_role_delivery": SimpleNamespace(publish=AsyncMock(return_value=visible),
             publish_partial=AsyncMock(return_value=visible), allows=AsyncMock(return_value=visible)),
-        "cooperative_deliveries": {}, "chat_runtime": runtime,
+        "cooperative_deliveries": {}, "chat_runtime": runtime, "output_speech": None,
         "work_observer": SimpleNamespace(finish_external_presentation=AsyncMock(),
             begin_external_result=AsyncMock()),
         "e2e_no_tts": False, "logger": Mock(), "_speak_vn_reaction": vn_voice,

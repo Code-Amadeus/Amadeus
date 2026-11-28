@@ -18,7 +18,6 @@ import hashlib
 import inspect
 import json
 import logging
-from os import getenv
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -1005,7 +1004,7 @@ class CooperativeChatManager:
                     if memory_use is not None and memory_use.config.source_runtime_enabled else None),
                 memory_source_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled),
                 scoped_memory_lookup=(memory_use is not None and memory_use.config.source_runtime_enabled
-                    and getenv("AMADEUS_MVP_SCOPED_RECALL", "1") == "1"),
+                    and memory_use.config.scoped_recall_enabled),
                 memory_lookup_status=lambda turn_id, status:bus.emit_now(Method.CHAT_MEMORY_LOOKUP,
                     {"session_id":session_id, "turn_id":turn_id, "status":status}),
                 memory_history_derived=self.memory.history_is_derived if self.memory is not None else None,

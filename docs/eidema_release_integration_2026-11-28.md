@@ -31,16 +31,17 @@ them. Configure the backend before starting it:
 | Condition | Effect |
 | --- | --- |
 | `AMADEUS_MEMORY_ENABLED=true` | Starts the normal Host store owner; default is true. |
-| `AMADEUS_MEMORY_SOURCE_RUNTIME_ENABLED=true` | Opts into native Session source receipt/index/lookup; default is false. |
-| `AMADEUS_MVP_SCOPED_RECALL=1` | Enables the verified original-selection path for a user-requested lookup; absent or other values leave that selection off. |
-| `AMADEUS_TRIAL_SPEECH_RETIREMENT=1` | Installs the archive's opt-in registered-output speech retirement owner; absent leaves it off. |
+| `AMADEUS_MEMORY_USE_ENABLED=true` | Enables memory use, explicit Session lookup and retirement of queued speech that depends on recalled evidence. |
+| `AMADEUS_MEMORY_EXTRACTION_ENABLED=true` | Allows separate background formation requests for newly committed and eligible conversation sources. |
+
+For qualification, `AMADEUS_MVP_SCOPED_RECALL=0` disables scoped original selection
+inside explicit Session lookup. Selection is otherwise available when memory use is enabled.
 
 After the normal Host startup completes, send the existing `chat.send` request
 with `memory_lookup: true`, its real `session_id`, and a fresh `turn_id`. This
 retains the admitted question source and bypasses Work/AUIP routing. The desktop
 explicit-memory action uses this request. A normal role-proposed `memory_lookup`
-still uses the shared lookup pipeline, but does not gain scoped original selection
-merely because the environment flag is set.
+continues to use the shared lookup pipeline with its regular evidence budget.
 
 Scoped selection runs only when the bounded initial evidence pack omits originals
 for its payload budget, contains no saved-note group, and the accepted question has
@@ -57,13 +58,13 @@ nine groups, while preserving source/byte limits and all earlier read dependenci
 Role-proposed lookup retains the original eight-group/token bound. There is still
 only one supplemental read and one final buffered answer.
 
-These flags do not grant formation or adoption. Optional maintenance requires a
-trusted Python `DesktopMemoryMaintenance` passed to `bootstrap`, with explicit
-per-Session formation authority, scope, providers, clock and SDK budget. Reformation,
-adoption selectors and automatic cold context require their separate trusted
-options. Ordinary memory injection still requires its existing relevance threshold;
-this port does not bypass that gate. Maintenance uses the normal Host store and
-receiver, yields to foreground/audio work, and joins issued work before store close.
+Desktop extraction uses the configured provider in a separate background request.
+Tools can also pass trusted Python `DesktopMemoryMaintenance` to `bootstrap`
+with explicit per-Session authority, scope, providers, clock and SDK budget.
+Reformation, adoption selectors and automatic cold context retain their separate
+trusted options. Ordinary memory injection requires its existing relevance threshold.
+Maintenance uses the normal Host store and receiver, yields to foreground/audio
+work, and joins issued work before store close.
 
 ## Local checks
 

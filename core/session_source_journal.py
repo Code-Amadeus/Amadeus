@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from config.durable_io import _replace, _sync_directory
+from config.memory import standalone_journal_enabled, standalone_journal_grants, standalone_journal_owner
 
 FIELD = "source_journal"
 V1 = "amadeus-message-v1"
@@ -52,7 +53,7 @@ def configure_publication(observer=None, *, owner=None, scope_for_session=None, 
 
 
 def enabled():
-    return _publication_scope is not None or os.environ.get("AMADEUS_SESSION_JOURNAL_ENABLED") == "1"
+    return _publication_scope is not None or standalone_journal_enabled()
 
 
 def scope_fields(user, character, project):
@@ -69,9 +70,8 @@ def binding(character, session_id=None):
     scope_for_session = _publication_scope
     if scope_for_session is not None:
         return scope_for_session(session_id, character)
-    user = os.environ.get("AMADEUS_SESSION_JOURNAL_USER", "")
-    project = os.environ.get("AMADEUS_SESSION_JOURNAL_PROJECT") or None
-    if project is None and os.environ.get("AMADEUS_SESSION_JOURNAL_CHARACTER") != character:
+    user, owner_character, project = standalone_journal_owner()
+    if project is None and owner_character != character:
         raise ValueError("journal_explicit_owner_required")
     return scope_fields(user, character, project)
 
@@ -179,18 +179,10 @@ def _grant(session_id=None):
             formation = False
         return dict(formation_allowed=formation, policy_revision="host-explicit-lookup-v1",
                     lookup_allowed=True, derived_use_mask=1)
-    lookup = os.environ.get("AMADEUS_JOURNAL_LOOKUP_ALLOWED", "1") == "1"
-    ordinary = os.environ.get("AMADEUS_JOURNAL_ORDINARY_ALLOWED", "1") == "1"
-    derived_lookup = os.environ.get("AMADEUS_JOURNAL_DERIVED_LOOKUP_ALLOWED", "1") == "1"
-    formation = os.environ.get("AMADEUS_JOURNAL_FORMATION_ALLOWED", "1") == "1"
-    # Host policy generation is independent of its three purpose grants.
-    policy = os.environ.get("AMADEUS_JOURNAL_POLICY_REVISION", "g2-journal-grant-v1")
-    return dict(
-        formation_allowed=formation,
-        policy_revision=policy,
-        lookup_allowed=lookup,
-        derived_use_mask=int(derived_lookup) + 2 * int(ordinary),
-    )
+    grants = standalone_journal_grants()
+    derived_lookup = grants.pop("derived_lookup_allowed")
+    ordinary = grants.pop("ordinary_allowed")
+    return dict(**grants, derived_use_mask=int(derived_lookup) + 2 * int(ordinary))
 
 
 def _event(generation, sid, row, action, previous_grant=None):
