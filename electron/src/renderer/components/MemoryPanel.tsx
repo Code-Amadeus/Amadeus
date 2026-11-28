@@ -53,6 +53,8 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
   const [receipt, setReceipt] = useState('')
   const [pending, setPending] = useState<MemoryAttempt | null>(null)
   const [forgetPreview, setForgetPreview] = useState<MemoryForgetPreview | null>(null)
+  const forgetTargets = new Set(forgetPreview?.targets.map(item => item.memory_id))
+  const forgetMultiple = (forgetPreview?.memories.length ?? 0) > 1
   const reads = useRef(0)
   const listGeneration = useRef(0)
   const pageRequest = useRef({ serial: 0, active: false })
@@ -182,7 +184,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
       const messages: Record<string, string> = {
         saved: 'Memory saved durably.',
         corrected: 'Correction saved durably.',
-        forgotten: Array.isArray(attempt.params.confirmed_targets) && attempt.params.confirmed_targets.length > 1
+        forgotten: forgetMultiple
           ? 'The listed memories and their historical versions were forgotten.' : 'This memory and its historical versions were forgotten.',
         accepted: 'Suggestion saved as a memory.',
         rejected: 'Suggestion dismissed.',
@@ -219,7 +221,8 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
       })
       if (!connection.active || revision !== reads.current) return
       const preview = result.preview as MemoryForgetPreview | undefined
-      // Every destructive target must have been shown, including its reviewed version.
+      // The SDK's memories list includes automatic deletions. Targets are the
+      // versioned subset that must be returned as confirmation.
       if (!preview || !Array.isArray(preview.targets) || !Array.isArray(preview.memories) || !preview.targets.length
         || !preview.targets.some(target => target.memory_id === detail.memory.memory_id && target.row_version === detail.memory.row_version)
         || !preview.targets.every(target => preview.memories.some(item => item.memory_id === target.memory_id && item.row_version === target.row_version))) {
@@ -436,13 +439,14 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
               <SettingsButton tone="danger" disabled={locked} onClick={() => { void previewForget() }}>{t('Forget')}</SettingsButton>
             </div>
             {forgetPreview && <div className="memory-forget" role="group" aria-label={t('Confirm forgetting memory')}>
-              <p>{t(forgetPreview.targets.length > 1
-                ? 'Forget all listed memories and their correction history? Unlisted memories stay unchanged.'
-                : 'Forget this memory and all its correction history? Other saved memories stay unchanged.')}</p>
-              {forgetPreview.targets.length > 1 && <>
+              <p>{t(forgetMultiple
+                ? 'Forget all listed memories and their correction history?'
+                : 'Forget this memory and all its correction history?')}</p>
+              {forgetMultiple && <>
                 <p>{t('These memories share overlapping source text. Forgetting also removes every listed linked memory and its history.')}</p>
                 <ul className="memory-linked-list">{forgetPreview.memories.map(item => <li key={item.memory_id}>
                   <p className="memory-body">{item.text}</p><span className="memory-note">{scopeName(item.scope.kind)}</span>
+                  {!forgetTargets.has(item.memory_id) && <p className="memory-note">{t('Removed with the linked source')}</p>}
                 </li>)}</ul>
               </>}
               <p className="memory-note">{t('Known associated source spans will be excluded from future model context. The displayed chat remains; unrelated mentions and paraphrases are not automatically found.')}</p>
@@ -451,7 +455,7 @@ export default function MemoryPanel({ sessionId, characterName, projectName, vis
                 <SettingsButton tone="danger" disabled={locked} onClick={() => {
                   if (!locked) void perform(memoryAttempt('memory.forget', { memory_id: detail.memory.memory_id,
                     expected_version: detail.memory.row_version, confirmed_targets: forgetPreview.targets }))
-                }}>{t(busy ? 'Forgetting…' : forgetPreview.targets.length > 1 ? 'Forget all listed memories and history' : 'Forget memory and history')}</SettingsButton>
+                }}>{t(busy ? 'Forgetting…' : forgetMultiple ? 'Forget all listed memories and history' : 'Forget memory and history')}</SettingsButton>
                 <SettingsButton disabled={locked} onClick={() => setForgetPreview(null)}>{t('Cancel')}</SettingsButton>
               </div>
             </div>}

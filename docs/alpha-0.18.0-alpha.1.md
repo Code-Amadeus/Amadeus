@@ -6,18 +6,20 @@ This source preview bundles `eidema==0.2.0a3` from the independent
 ## Memory settings
 
 Open **Settings → General → Memory**. The panel reports the version of Eidema
-installed in the backend. The two switches are saved independently and apply
-after restarting the backend.
+installed in the backend. Both switches are off by default. They are saved
+independently and apply after restarting the backend.
 
 - **Let the character look up memories** allows the character to look up
-  saved notes and permitted conversation evidence. When a cloud character
-  reads evidence, its model provider receives the selected material. Use the
-  explicit memory lookup button or ask the character to recall something.
+  saved notes and permitted conversation evidence. A cloud character's
+  model provider receives the evidence for the reply and may also receive
+  candidate excerpts for selection, including excerpts left out of the final
+  reply request. Use the explicit lookup button or ask the character to recall
+  something.
 - **Automatically build memories from new chats** enrolls eligible new messages
   in the local index. With a key configured in Models, it sends their text,
   speaker roles and record times to DeepSeek Flash (low reasoning) at
-  `api.deepseek.com` in separate, bounded background requests. This switch is
-  off by default and can run with character lookup off. Unregistered older
+  `api.deepseek.com` in separate, bounded background requests. This switch
+  can run with character lookup off. Unregistered older
   conversations require a separate import.
 
 In **Memory → Review suggestions**, inspect generated statements and their
@@ -30,7 +32,8 @@ Alpha pauses cold comparison requests and retains existing checkpoints.
 With formation off, old permitted notes remain available when use is on. With
 use off, the character does not look up memory, and the note manager can still be
 used. Turning either switch off retains saved notes. Use the note manager to
-correct or forget a note.
+correct or forget a note. The forget confirmation lists the notes that will
+be removed, including notes removed because they depend on the same evidence.
 
 ## Runtime and resources
 
@@ -49,9 +52,10 @@ Foreground replies do not wait for a forming or comparing model call.
 
 This SDK uses SQLite schema 20. On upgrade, existing maintenance checkpoints
 are imported into the memory database. The old scheduler file stays in place.
-Keep a consistent copy of the pre-upgrade data if you need to return to an
-older SDK. Pending speech is checked against the same source and note versions
-used to publish the corresponding reply.
+For rollback, keep a consistent pre-upgrade copy of the Session files, the
+Eidema database, the source-policy sidecar and any previous maintenance
+checkpoint. Pending speech is checked against the same source and note
+versions used to publish the corresponding reply.
 
 The model provider interface remains open to other hosts and local LLMs. This
 release's background configuration uses DeepSeek Flash. Use of a cloud character

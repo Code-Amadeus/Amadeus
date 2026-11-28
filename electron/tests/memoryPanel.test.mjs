@@ -84,6 +84,9 @@ test('dynamic memory feedback and lifecycle labels have Chinese translations', (
     'Memory source protections are active. Protected chat history remains usable.',
     'Automatic recall is experimental and may include unrelated memories.',
     'Semantic indexing finds candidates; it does not establish that a memory is relevant.',
+    'Forget all listed memories and their correction history?',
+    'Forget this memory and all its correction history?',
+    'Removed with the linked source',
     ...['fact', 'preference', 'instruction', 'event', 'comparison', 'hypothesis'].map(state.suggestionKindText),
     'Suggestion saved as a memory.', 'Suggestion dismissed.',
     ...['starting', 'identity_mismatch', 'core_unreadable', 'core_missing', 'store_rollback', 'invalid_coordinates', 'sidecar_rebuild_required', 'publication_pending'].map(memorySourcePolicyReasonText),
@@ -355,6 +358,27 @@ test('overlapping-source forget discloses and freezes every target; an unrelated
   assert.deepEqual(request.params.confirmed_targets, targets)
   assert.ok(!request.params.confirmed_targets.some(item => item.memory_id === disjoint.memory_id))
   assert.match(panel.text, /Synthetic unrelated fact/)
+  panel.dispose()
+})
+
+test('forget confirmation shows an automatic dependent deletion even with one confirmation target', async () => {
+  const linked = { ...memory, memory_id: 'synthetic-dependent', row_version: 2, text: 'Automatic rehearsal note' }
+  const targets = [{ memory_id: memory.memory_id, row_version: memory.row_version }]
+  let forgotten = false
+  const panel = panelHarness(method => method === 'memory.forget_preview'
+    ? ok({ preview: { targets, memories: [memory, linked], source_exclusions: [] } })
+    : method === 'memory.forget' ? (forgotten = true, ok({ operation: { status: 'forgotten', memory_id: memory.memory_id } }))
+      : method === 'memory.list' ? ok({ items: forgotten ? [] : [memory] }) : backend(method))
+  await panel.flush()
+  panel.button('Synthetic preferenceCurrent · Semantic indexing pending').props.onClick(); await panel.flush()
+  panel.button('Forget').props.onClick(); await panel.flush()
+  assert.match(panel.text, /Automatic rehearsal note/)
+  assert.match(panel.text, /Removed with the linked source/)
+  assert.doesNotMatch(panel.text, /Other saved memories stay unchanged/)
+  panel.button('Forget all listed memories and history').props.onClick(); await panel.flush()
+  const request = panel.requests.find(item => item.method === 'memory.forget')
+  assert.deepEqual(request.params.confirmed_targets, targets)
+  assert.match(panel.text, /The listed memories and their historical versions were forgotten\./)
   panel.dispose()
 })
 

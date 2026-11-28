@@ -622,9 +622,10 @@ class HostMemoryService:
                 destructive = method in {"memory.correct", "memory.forget"}
                 targets = params.get("confirmed_targets")
                 if targets is not None:
-                    if (not isinstance(targets, list) or len(targets) > 100
-                            or any(not isinstance(item, dict) or set(item) != {"memory_id", "row_version"}
-                                for item in targets)):
+                    # Eidema bounds the forget plan and verifies the exact set of versions.
+                    if (not isinstance(targets, list) or any(
+                            not isinstance(item, dict) or set(item) != {"memory_id", "row_version"}
+                            or not isinstance(item["memory_id"], str) for item in targets)):
                         raise MemoryRequestError("invalid_request")
                     targets = [self._api.ForgetTarget(item["memory_id"], item["row_version"]) for item in targets]
                 if destructive:
@@ -890,15 +891,13 @@ class HostMemoryService:
         allowed = self._store.filter_output_read_sets(
             access, spans, now_ms=time.time_ns() // 1_000_000)
         view = self._sources.view(access)
-        valid, signatures = [], {}
+        valid, states = [], set()
         checked = {}
 
         def current(output):
             if output not in checked:
                 try:
-                    sid, _ = view.output_state(output)
-                    path, signature, *_ = view.files[sid]
-                    checked[output] = (path, signature)
+                    checked[output] = view.output_state(output)
                 except (FileNotFoundError, MemoryRequestError):
                     checked[output] = None
             return checked[output]
@@ -906,8 +905,8 @@ class HostMemoryService:
         for output, reads in allowed:
             if all(current(parent) is not None for parent in reads.outputs):
                 valid.append((output, reads.memories))
-                signatures.update(checked[parent] for parent in reads.outputs)
-        return valid, tuple(signatures.items())
+                states.update(checked[parent] for parent in reads.outputs)
+        return valid, view.signatures((), output_states=states)
 
     def _lookup_context(self, context, candidates):
         self.context(context["session_id"], token=context["context_token"])

@@ -149,6 +149,28 @@ async def test_source_paraphrase_validation_raw_coordinates_and_omission_boundar
     assert "抹茶" not in sm.conversation_history.build_gemini_full_prompt("", "next")
 
 
+async def test_forget_accepts_the_complete_preview_above_the_list_page_limit(host):
+    origin, text = source_for("The box is in the rehearsal hall.")
+    source = {**origin, "start_cp": 0, "end_cp": len(text)}
+    roots = [await remember(host, f"Note {index}", source=source, operation=f"save-{index}",
+                            item=f"item-{index}") for index in range(101)]
+    independent = await remember(host, "Unrelated note", operation="independent", item="independent")
+    params = dict(memory_id=roots[0]["memory_id"], expected_version=roots[0]["row_version"])
+    preview = await host.request(Method.MEMORY_FORGET_PREVIEW, **params)
+    assert preview["ok"], preview
+    targets = preview["preview"]["targets"]
+    assert {item["memory_id"] for item in targets} == {item["memory_id"] for item in roots}
+    assert len(targets) == 101
+    incomplete = await host.request(Method.MEMORY_FORGET, **params,
+        operation_id="incomplete", item_id="incomplete", confirmed_targets=targets[:-1])
+    assert incomplete["error"] == "conflict"
+    result = await host.request(Method.MEMORY_FORGET, **params,
+        operation_id="complete", item_id="complete", confirmed_targets=targets)
+    assert result["ok"] and result["operation"]["status"] == "forgotten", result
+    remaining = await host.request(Method.MEMORY_LIST)
+    assert [item["memory_id"] for item in remaining["items"]] == [independent["memory_id"]]
+
+
 async def test_excluded_assistant_hidden_and_control_copies_are_not_model_history(host):
     raw = '<think>HIDDEN_COPY</think>Before HIDDEN_COPY after[DELEGATE task="HIDDEN_COPY"]'
     origin, canonical = source_for(raw)

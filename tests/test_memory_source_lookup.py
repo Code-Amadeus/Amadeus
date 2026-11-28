@@ -27,11 +27,12 @@ QUESTION = "前に話した抹茶を覚えている？"
 ANSWER = "練習のあとに抹茶を注文したわ。"
 
 
-async def wire(context, tmp_path, monkeypatch, *, embedder=None, scoped_recall_enabled=True, speech=False):
+async def wire(context, tmp_path, monkeypatch, *, embedder=None, scoped_recall_enabled=True,
+               speech=False, capture_sources=True):
     monkeypatch.setenv("AMADEUS_SESSION_JOURNAL_ENABLED", "0")
     config = MemoryConfig(semantic_enabled=embedder is not None, source_runtime_enabled=True,
                           user_id=USER, db_path=tmp_path / "memory.sqlite3",
-                          scoped_recall_enabled=scoped_recall_enabled)
+                          scoped_recall_enabled=scoped_recall_enabled, capture_sources=capture_sources)
     host = HostMemoryService(config, embedder_factory=(lambda: embedder) if embedder else None)
     if speech:
         from server.memory_output_speech import install
@@ -64,6 +65,62 @@ async def send(ctx, *, direct, turn="current", question=QUESTION):
         "text": question, "session_id": ctx.session_id, "turn_id": turn, "memory_lookup": direct,
     }) == {"status": "ok", "turn_id": turn}
     await ctx.finish()
+
+
+@pytest.mark.parametrize("mutation", [None, "correct", "forget"])
+async def test_lookup_only_keeps_current_reply_and_its_provenance(
+    pending_host, tmp_path, monkeypatch, mutation,
+):
+    ctx = pending_host
+    host = await wire(ctx, tmp_path, monkeypatch, capture_sources=False)
+    answer = "抹茶は自分で買う予定だって。"
+    frames = []
+
+    async def model(messages, **_options):
+        frame = json.loads(messages[-1]["content"])
+        frames.append(frame)
+        if frame["source_kind"] != "user":
+            assert frame["current"]["memory_reference"]["entries"][0]["text"] == SAVED
+            return answer
+        previous = [row["text"] for row in frame["history"]]
+        return json.dumps({"say": answer if answer in previous else "もう一度確認する？", "action": None})
+
+    ctx.manager.query = model
+    try:
+        session = host.context(ctx.session_id)
+        save = await save_note(host, ctx.session_id)
+        assert save["ok"], save
+        note = save["operation"]
+        await send(ctx, direct=True)
+        first = ctx.publications[-1]
+        assert first["text"] == answer
+        origin = memory.SourceSpan(**journal.coordinate(ctx.session_id, first["message_id"], 1))
+        if mutation is not None:
+            params = dict(
+                **session, memory_id=note["memory_id"], expected_version=note["row_version"],
+                operation_id=mutation, item_id=mutation,
+            )
+            if mutation == "forget":
+                preview = await host.request(Method.MEMORY_FORGET_PREVIEW, params)
+                params["confirmed_targets"] = preview["preview"]["targets"]
+            else:
+                params.update(text="抹茶はもう買いました。", mode="error")
+            changed = await host.request("memory." + mutation, params)
+            assert changed["ok"], changed
+        await send(ctx, direct=False, turn="follow-up", question="もう一度言って？")
+        previous = [row["text"] for row in frames[-1]["history"]]
+        assert QUESTION in previous
+        assert (answer in previous) is (mutation is None)
+        if mutation is None:
+            follow_up = ctx.publications[-1]
+            assert follow_up["text"] == answer and follow_up["message_id"] != first["message_id"]
+            output = memory.SourceSpan(**journal.coordinate(ctx.session_id, follow_up["message_id"], 1))
+            reads = host._store.output_read_set(host._access(session), output)
+            assert reads.outputs == (origin,)
+        assert journal.FIELD not in journal.read(sessions._session_path(ctx.session_id))
+        assert not host._sources.accepted_streams()
+    finally:
+        await host.close()
 
 
 @pytest.mark.parametrize("direct", [True, False])

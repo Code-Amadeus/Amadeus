@@ -324,8 +324,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "允许角色查阅记忆"
         },
         "description": {
-          "en-US": "Look up saved notes and eligible chat history when needed. With a cloud character, selected evidence is sent to its model provider.",
-          "zh-CN": "按需查阅已有笔记和获准的会话原话。使用云端角色时，本次选中的依据会发给该角色的模型服务商。"
+          "en-US": "Look up saved notes and eligible chat history when needed. A cloud character’s model provider may receive candidate excerpts for selection and the evidence used to reply.",
+          "zh-CN": "按需查阅已有笔记和获准的会话原话。使用云端角色时，候选摘录可能发给该角色的模型服务商进行筛选，入选依据也会发给服务商用于回答。"
         },
         "default": false
       },

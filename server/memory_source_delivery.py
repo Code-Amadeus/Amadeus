@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import logging
 from pathlib import Path
 
@@ -250,6 +250,16 @@ class SourceDelivery:
             logger.warning("[Memory] source delivery unavailable (%s)", type(exc).__name__)
 
 
+@dataclass(frozen=True)
+class _SessionSnapshot:
+    path: Path
+    signature: tuple[int, ...]
+    scope: dict
+    generation: dict | None
+    events: dict
+    rows: dict
+
+
 class SessionReadView:
     """One read operation over exact committed Session versions."""
 
@@ -261,28 +271,39 @@ class SessionReadView:
         self.access = access
         self.files = {}
 
-    def _source(self, source):
-        sid, mid, incarnation = journal.decode(source)
+    def _session(self, sid, incarnation):
         if sid not in self.files:
             path = self.delivery._path(sid)
             signature = sessions._session_file_signature(path)
             data = journal.read(path)
             live = journal.live(data)
-            if live is None:
+            if live is None and journal.FIELD in data:
                 raise MemoryRequestError("conflict")
-            generation = live["generations"][-1]
+            generation = live["generations"][-1] if live is not None else None
             events = {}
-            for event in generation["events"]:
-                events.setdefault(event["source"]["record_key"], []).append(event)
-            self.files[sid] = (path, signature, generation, events,
-                               {row["message_id"]: row for row in data["dialog"]})
-        path, signature, generation, events, rows = self.files[sid]
-        scope = generation["scope"]
-        if (generation["incarnation"] != incarnation or scope["user_id"] != self.access.user_id
+            if generation is not None:
+                scope = generation["scope"]
+                for event in generation["events"]:
+                    events.setdefault(event["source"]["record_key"], []).append(event)
+            else:
+                scope = self.delivery._scope(sid, sessions._stored_character_id(data, sid))
+            rows = {row["message_id"]: row for row in data["dialog"]}
+            self.files[sid] = _SessionSnapshot(path, signature, scope, generation, events, rows)
+        snapshot = self.files[sid]
+        scope, generation = snapshot.scope, snapshot.generation
+        current_incarnation = generation["incarnation"] if generation is not None else None
+        if (current_incarnation != incarnation or scope["user_id"] != self.access.user_id
                 or scope["character_id"] != self.access.character_id
                 or scope["project_id"] not in (None, self.access.project_id)):
             raise MemoryRequestError("conflict")
-        return sid, mid, incarnation, generation["stream_id"], events, rows
+        return snapshot
+
+    def _source(self, source):
+        sid, mid, incarnation = journal.decode(source)
+        snapshot = self._session(sid, incarnation)
+        if snapshot.generation is None:
+            raise MemoryRequestError("conflict")
+        return sid, mid, incarnation, snapshot.generation["stream_id"], snapshot.events, snapshot.rows
 
     def pin(self, item):
         pin = self._pin(item.source)
@@ -337,12 +358,17 @@ class SessionReadView:
         return self.delivery.api.SourceContent(source, text, row["role"], speaker)
 
     def output_state(self, output):
-        """The current displayed reply has its own lifetime within this Session."""
-        sid, mid, _, _, events, rows = self._source(output)
-        row = rows.get(mid)
+        """Check a bound assistant reply against its committed Session row.
+
+        Replies can carry memory dependencies while new source capture is off.
+        Original evidence still needs a journal receipt through _source.
+        """
+        sid, mid, incarnation = journal.decode(output)
+        snapshot = self._session(sid, incarnation)
+        row = snapshot.rows.get(mid)
         if row is None or row["role"] != "assistant" or row["revision"] != output.revision:
             raise MemoryRequestError("conflict")
-        heads = events.get(output.record_key)
+        heads = snapshot.events.get(output.record_key)
         if heads:
             head = heads[-1]
             if head["action"] != "upsert" or head["source"]["revision"] != output.revision:
@@ -355,8 +381,8 @@ class SessionReadView:
         session_ids = {self._row(pin)[0] for pin in pins}
         session_ids.update(sid for sid, _ in output_states)
         for sid in session_ids:
-            path, signature, *_ = self.files[sid]
-            signatures[path] = signature
+            snapshot = self.files[sid]
+            signatures[snapshot.path] = snapshot.signature
         return tuple(signatures.items())
 
     def position(self, pin):
@@ -366,7 +392,7 @@ class SessionReadView:
     def recorded_offset(self, pin):
         """Read the originating offset from the already admitted snapshot."""
         sid, mid, _ = journal.decode(pin.source)
-        row = self.files[sid][4][mid]
+        row = self.files[sid].rows[mid]
         assert (row["revision"], row["created_at_ms"]) == (pin.source.revision, pin.recorded_at_ms)
         return row.get("utc_offset_minutes")
 

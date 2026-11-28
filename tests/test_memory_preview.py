@@ -81,8 +81,10 @@ def test_background_transport_is_bound_to_the_disclosed_provider(monkeypatch, co
     assert result.finish == "stop" and result.actual == eidema.Usage(90, 20, 1)
 
 
-@pytest.mark.asyncio
-async def test_formed_note_can_be_recalled_with_formation_off_and_retires_with_source(room, tmp_path, monkeypatch):
+@pytest.mark.parametrize("forget_linked", [False, True])
+async def test_formed_note_can_be_recalled_with_formation_off_and_retires_with_source(
+    room, tmp_path, monkeypatch, forget_linked,
+):
     source_session, denied_session = "formation-source", "ordinary-source"
     first = "The blue storage cabinet is beside the window."
     second = "工具室の予備の鍵は青い棚に入れました。"
@@ -162,8 +164,31 @@ async def test_formed_note_can_be_recalled_with_formation_off_and_retires_with_s
         evidence = await host.validate_lookup(reference)
         assert any(item.memory_id == learned.memory_id for item in evidence.candidates)
         assert not any("reader" in stream for _, stream in host._sources.accepted_streams())
-        assert sessions.delete_session(source_session)
-        await wait_for(lambda: note_rows(host), lambda notes: not notes)
+        if forget_linked:
+            assert sessions.load_session(source_session)[0]
+            context = host.context(source_session)
+            origin = sessions.read_session_source(source_session, "source-1", revision=1)
+            source = {key: origin[key] for key in ("session_id", "message_id", "revision", "projection_version")}
+            saved = await host.request("memory.remember", {
+                **context, "operation_id": "save-linked", "item_id": "note", "text": "Saved key location.",
+                "source": {**source, "start_cp": 0, "end_cp": len(second)},
+            })
+            assert saved["ok"], saved
+            note = saved["operation"]
+            params = {**context, "memory_id": note["memory_id"], "expected_version": note["row_version"]}
+            result = await host.request("memory.forget_preview", params)
+            assert result["ok"], result
+            preview = result["preview"]
+            assert preview["targets"] == [{"memory_id": note["memory_id"], "row_version": note["row_version"]}]
+            assert {row["memory_id"] for row in preview["memories"]} == {note["memory_id"], learned.memory_id}
+            result = await host.request("memory.forget", {
+                **params, "operation_id": "forget-linked", "item_id": "note", "confirmed_targets": preview["targets"],
+            })
+            assert result["ok"] and result["operation"]["status"] == "forgotten", result
+            assert not host._store.list_memories(access, include_history=True)
+        else:
+            assert sessions.delete_session(source_session)
+            await wait_for(lambda: note_rows(host), lambda notes: not notes)
         assert sorted(calls) == ["cold", "warm"]
     finally:
         await close(host)
